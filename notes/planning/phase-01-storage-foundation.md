@@ -70,15 +70,15 @@ All NIF functions that may take >1ms use the `#[rustler::nif(schedule = "DirtyCp
 
 ### 1.2.1 Database Lifecycle
 
-- [ ] **Task 1.2.1 Complete**
+- [x] **Task 1.2.1 Complete**
 
 Implement database open/close operations with column family configuration. The database handle is wrapped in a ResourceArc for safe cross-NIF-boundary passing.
 
-- [ ] 1.2.1.1 Implement `open(path, opts)` NIF returning `ResourceArc<DbRef>`
-- [ ] 1.2.1.2 Configure column families: `id2str`, `str2id`, `spo`, `pos`, `osp`, `derived`
-- [ ] 1.2.1.3 Implement `close(db)` NIF with proper resource cleanup
-- [ ] 1.2.1.4 Add `#[rustler::nif(schedule = "DirtyCpu")]` to all I/O operations
-- [ ] 1.2.1.5 Implement error handling with Rustler's `Error` type
+- [x] 1.2.1.1 Implement `open(path, opts)` NIF returning `ResourceArc<DbRef>`
+- [x] 1.2.1.2 Configure column families: `id2str`, `str2id`, `spo`, `pos`, `osp`, `derived`
+- [x] 1.2.1.3 Implement `close(db)` NIF with proper resource cleanup
+- [x] 1.2.1.4 Add `#[rustler::nif(schedule = "DirtyCpu")]` to all I/O operations
+- [x] 1.2.1.5 Implement error handling with Rustler's `Error` type
 
 ### 1.2.2 Basic Read/Write Operations
 
