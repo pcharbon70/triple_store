@@ -1,0 +1,14 @@
+[package]
+name = "rocksdb_nif"
+version = "0.1.0"
+edition = "2021"
+authors = []
+
+[lib]
+name = "rocksdb_nif"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.35"
+rocksdb = "0.22"

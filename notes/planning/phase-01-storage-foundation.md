@@ -29,14 +29,14 @@ Create the Elixir project with proper supervision tree structure and configure d
 
 ### 1.1.2 Rustler NIF Configuration
 
-- [ ] **Task 1.1.2 Complete**
+- [x] **Task 1.1.2 Complete**
 
 Configure Rustler to compile Rust NIFs with RocksDB integration. The Rust crate will handle all RocksDB operations through a clean NIF interface.
 
-- [ ] 1.1.2.1 Initialize Rustler with `mix rustler.new` creating `native/rocksdb_nif`
-- [ ] 1.1.2.2 Configure `Cargo.toml` with `rustler = "0.30"` and `rocksdb = "0.21"`
-- [ ] 1.1.2.3 Create `TripleStore.Backend.RocksDB` module with NIF stubs
-- [ ] 1.1.2.4 Verify NIF compilation with `mix compile`
+- [x] 1.1.2.1 Initialize Rustler with `mix rustler.new` creating `native/rocksdb_nif`
+- [x] 1.1.2.2 Configure `Cargo.toml` with `rustler = "0.35"` and `rocksdb = "0.22"`
+- [x] 1.1.2.3 Create `TripleStore.Backend.RocksDB` module with NIF stubs
+- [x] 1.1.2.4 Verify NIF compilation with `mix compile`
 
 ### 1.1.3 Development Environment
 
