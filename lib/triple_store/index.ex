@@ -47,6 +47,7 @@ defmodule TripleStore.Index do
   ```
   """
 
+  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
 
   # ===========================================================================
@@ -439,5 +440,116 @@ defmodule TripleStore.Index do
   def key_to_triple(:osp, key) do
     {object, subject, predicate} = decode_osp_key(key)
     {subject, predicate, object}
+  end
+
+  # ===========================================================================
+  # Triple Insert Operations
+  # ===========================================================================
+
+  @doc """
+  Inserts a single triple into all three indices atomically.
+
+  The triple is written to SPO, POS, and OSP indices using a single atomic
+  WriteBatch operation. If the triple already exists, this is a no-op
+  (idempotent operation).
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `triple` - Tuple `{subject_id, predicate_id, object_id}` of term IDs
+
+  ## Returns
+
+  - `:ok` on success
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triple(db, {1, 2, 3})
+      :ok
+
+  """
+  @spec insert_triple(NIF.db_ref(), triple()) :: :ok | {:error, term()}
+  def insert_triple(db, {subject, predicate, object})
+      when is_integer(subject) and is_integer(predicate) and is_integer(object) do
+    operations =
+      for {cf, key} <- encode_triple_keys(subject, predicate, object) do
+        {cf, key, <<>>}
+      end
+
+    NIF.write_batch(db, operations)
+  end
+
+  @doc """
+  Inserts multiple triples into all three indices atomically.
+
+  All triples are written to SPO, POS, and OSP indices using a single atomic
+  WriteBatch operation. Either all triples are inserted or none are.
+  Duplicate triples are handled idempotently.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `triples` - List of `{subject_id, predicate_id, object_id}` tuples
+
+  ## Returns
+
+  - `:ok` on success
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> triples = [{1, 2, 3}, {4, 5, 6}, {7, 8, 9}]
+      iex> Index.insert_triples(db, triples)
+      :ok
+
+  """
+  @spec insert_triples(NIF.db_ref(), [triple()]) :: :ok | {:error, term()}
+  def insert_triples(_db, []), do: :ok
+
+  def insert_triples(db, triples) when is_list(triples) do
+    operations =
+      for {subject, predicate, object} <- triples,
+          {cf, key} <- encode_triple_keys(subject, predicate, object) do
+        {cf, key, <<>>}
+      end
+
+    NIF.write_batch(db, operations)
+  end
+
+  @doc """
+  Checks if a triple exists in the database.
+
+  Uses the SPO index for the lookup as it's the primary index.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `triple` - Tuple `{subject_id, predicate_id, object_id}` of term IDs
+
+  ## Returns
+
+  - `{:ok, true}` if triple exists
+  - `{:ok, false}` if triple does not exist
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triple(db, {1, 2, 3})
+      :ok
+      iex> Index.triple_exists?(db, {1, 2, 3})
+      {:ok, true}
+      iex> Index.triple_exists?(db, {9, 9, 9})
+      {:ok, false}
+
+  """
+  @spec triple_exists?(NIF.db_ref(), triple()) :: {:ok, boolean()} | {:error, term()}
+  def triple_exists?(db, {subject, predicate, object})
+      when is_integer(subject) and is_integer(predicate) and is_integer(object) do
+    key = spo_key(subject, predicate, object)
+    NIF.exists(db, :spo, key)
   end
 end

@@ -252,14 +252,17 @@ Additional functions implemented:
 
 ### 1.4.2 Triple Insert
 
-- [ ] **Task 1.4.2 Complete**
+- [x] **Task 1.4.2 Complete** (2025-12-21)
 
 Implement triple insertion with atomic writes to all three indices. The dictionary is updated first to obtain IDs, then all index entries are written in a single batch.
 
-- [ ] 1.4.2.1 Implement `insert_triple(db, {s, p, o})` encoding terms and writing indices
-- [ ] 1.4.2.2 Implement `insert_triples(db, triples)` for batch insertion
-- [ ] 1.4.2.3 Ensure atomic commit across all three indices
-- [ ] 1.4.2.4 Handle duplicate triple insertion (idempotent)
+- [x] 1.4.2.1 Implement `insert_triple(db, {s, p, o})` encoding terms and writing indices
+- [x] 1.4.2.2 Implement `insert_triples(db, triples)` for batch insertion
+- [x] 1.4.2.3 Ensure atomic commit across all three indices
+- [x] 1.4.2.4 Handle duplicate triple insertion (idempotent)
+
+Additional function implemented:
+- `triple_exists?/2` for checking if a triple exists in the database
 
 ### 1.4.3 Triple Delete
 
