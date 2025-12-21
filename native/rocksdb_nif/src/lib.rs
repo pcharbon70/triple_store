@@ -4,9 +4,9 @@
 //! Elixir application. All I/O operations use dirty CPU schedulers to prevent
 //! blocking the BEAM schedulers.
 
-use rocksdb::{ColumnFamilyDescriptor, Options, WriteBatch, DB};
+use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, WriteBatch, DB};
 use rustler::{Binary, Encoder, Env, ListIterator, NewBinary, NifResult, Resource, ResourceArc, Term};
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Column family names used by TripleStore
 const CF_NAMES: [&str; 6] = ["id2str", "str2id", "spo", "pos", "osp", "derived"];
@@ -20,6 +20,25 @@ pub struct DbRef {
 
 #[rustler::resource_impl]
 impl Resource for DbRef {}
+
+/// Iterator reference wrapper for safe cross-NIF-boundary passing.
+/// Stores the iterator along with its prefix for bounds checking.
+/// The iterator is wrapped in a Mutex because it needs mutable access for next().
+/// We also store an Arc to the DbRef to keep the database alive.
+pub struct IteratorRef {
+    /// The RocksDB iterator. Uses 'static lifetime with raw pointer internally.
+    /// Safety: The DbRef Arc keeps the database alive for the iterator's lifetime.
+    iterator: Mutex<Option<DBIteratorWithThreadMode<'static, DB>>>,
+    /// Reference to the database to keep it alive
+    _db_ref: Arc<ResourceArc<DbRef>>,
+    /// The prefix used for this iterator (for bounds checking)
+    prefix: Vec<u8>,
+    /// Column family name for this iterator
+    cf_name: String,
+}
+
+#[rustler::resource_impl]
+impl Resource for IteratorRef {}
 
 impl DbRef {
     fn new(db: DB, path: String) -> Self {
@@ -56,6 +75,10 @@ mod atoms {
         // Operation types for batch - these map to Elixir atoms :put and :delete
         put,
         delete,
+        // Iterator atoms
+        iterator_end,
+        iterator_failed,
+        iterator_closed,
     }
 }
 
@@ -665,6 +688,253 @@ fn mixed_batch<'a>(
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
+}
+
+// ============================================================================
+// Iterator Operations
+// ============================================================================
+
+/// Creates a prefix iterator for a column family.
+///
+/// The iterator returns all key-value pairs where the key starts with the given prefix.
+/// The iterator must be closed with `iterator_close` when done.
+///
+/// # Arguments
+/// * `db_ref` - The database reference
+/// * `cf` - The column family atom
+/// * `prefix` - The prefix to iterate over
+///
+/// # Returns
+/// * `{:ok, iterator_ref}` on success
+/// * `{:error, :already_closed}` if database is closed
+/// * `{:error, {:invalid_cf, cf}}` if column family is invalid
+#[rustler::nif(schedule = "DirtyCpu")]
+fn prefix_iterator<'a>(
+    env: Env<'a>,
+    db_ref: ResourceArc<DbRef>,
+    cf: rustler::Atom,
+    prefix: Binary<'a>,
+) -> NifResult<Term<'a>> {
+    let cf_name = match cf_atom_to_name(cf) {
+        Some(name) => name,
+        None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
+    };
+
+    let db_guard = db_ref
+        .db
+        .read()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
+    };
+
+    let cf_handle = match db.cf_handle(cf_name) {
+        Some(cf) => cf,
+        None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
+    };
+
+    let prefix_bytes = prefix.as_slice().to_vec();
+
+    // Create the iterator with prefix mode
+    // Safety: We use unsafe to extend the lifetime because we're storing
+    // the db_ref Arc which keeps the database alive
+    let iterator = db.iterator_cf(&cf_handle, IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward));
+
+    // SAFETY: We keep the DbRef alive via Arc, so the iterator remains valid
+    let static_iterator: DBIteratorWithThreadMode<'static, DB> = unsafe {
+        std::mem::transmute(iterator)
+    };
+
+    let iter_ref = ResourceArc::new(IteratorRef {
+        iterator: Mutex::new(Some(static_iterator)),
+        _db_ref: Arc::new(db_ref.clone()),
+        prefix: prefix_bytes,
+        cf_name: cf_name.to_string(),
+    });
+
+    Ok((atoms::ok(), iter_ref).encode(env))
+}
+
+/// Gets the next key-value pair from the iterator.
+///
+/// # Arguments
+/// * `iter_ref` - The iterator reference
+///
+/// # Returns
+/// * `{:ok, key, value}` if there's a next item with matching prefix
+/// * `:end` if the iterator is exhausted or prefix no longer matches
+/// * `{:error, :iterator_closed}` if iterator was closed
+/// * `{:error, {:iterator_failed, reason}}` on error
+#[rustler::nif(schedule = "DirtyCpu")]
+fn iterator_next<'a>(env: Env<'a>, iter_ref: ResourceArc<IteratorRef>) -> NifResult<Term<'a>> {
+    let mut iter_guard = iter_ref
+        .iterator
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let iterator = match iter_guard.as_mut() {
+        Some(iter) => iter,
+        None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
+    };
+
+    match iterator.next() {
+        Some(Ok((key, value))) => {
+            // Check if key still has the prefix
+            if !key.starts_with(&iter_ref.prefix) {
+                return Ok(atoms::iterator_end().encode(env));
+            }
+
+            let mut key_binary = NewBinary::new(env, key.len());
+            key_binary.as_mut_slice().copy_from_slice(&key);
+
+            let mut value_binary = NewBinary::new(env, value.len());
+            value_binary.as_mut_slice().copy_from_slice(&value);
+
+            Ok((atoms::ok(), Binary::from(key_binary), Binary::from(value_binary)).encode(env))
+        }
+        Some(Err(e)) => {
+            Ok((atoms::error(), (atoms::iterator_failed(), e.to_string())).encode(env))
+        }
+        None => Ok(atoms::iterator_end().encode(env)),
+    }
+}
+
+/// Seeks the iterator to a specific key.
+///
+/// After seeking, the iterator will return keys >= target that match the prefix.
+/// This is essential for Leapfrog Triejoin in Phase 3.
+///
+/// # Arguments
+/// * `iter_ref` - The iterator reference
+/// * `target` - The key to seek to
+///
+/// # Returns
+/// * `:ok` on success
+/// * `{:error, :iterator_closed}` if iterator was closed
+#[rustler::nif(schedule = "DirtyCpu")]
+fn iterator_seek<'a>(
+    env: Env<'a>,
+    iter_ref: ResourceArc<IteratorRef>,
+    target: Binary<'a>,
+) -> NifResult<Term<'a>> {
+    let mut iter_guard = iter_ref
+        .iterator
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let iterator = match iter_guard.as_mut() {
+        Some(iter) => iter,
+        None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
+    };
+
+    // Get the database reference to create a new iterator at the seek position
+    let db_ref = &iter_ref._db_ref;
+    let db_guard = db_ref
+        .db
+        .read()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
+    };
+
+    let cf_handle = match db.cf_handle(&iter_ref.cf_name) {
+        Some(cf) => cf,
+        None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
+    };
+
+    // Create new iterator at the seek position
+    let target_bytes = target.as_slice();
+    let new_iterator = db.iterator_cf(&cf_handle, IteratorMode::From(target_bytes, rocksdb::Direction::Forward));
+
+    // SAFETY: We keep the DbRef alive via Arc, so the iterator remains valid
+    let static_iterator: DBIteratorWithThreadMode<'static, DB> = unsafe {
+        std::mem::transmute(new_iterator)
+    };
+
+    // Replace the old iterator
+    *iterator = static_iterator;
+
+    Ok(atoms::ok().encode(env))
+}
+
+/// Closes the iterator and releases resources.
+///
+/// # Arguments
+/// * `iter_ref` - The iterator reference
+///
+/// # Returns
+/// * `:ok` on success
+/// * `{:error, :iterator_closed}` if already closed
+#[rustler::nif]
+fn iterator_close<'a>(env: Env<'a>, iter_ref: ResourceArc<IteratorRef>) -> NifResult<Term<'a>> {
+    let mut iter_guard = iter_ref
+        .iterator
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    if iter_guard.is_none() {
+        return Ok((atoms::error(), atoms::iterator_closed()).encode(env));
+    }
+
+    // Drop the iterator
+    *iter_guard = None;
+
+    Ok(atoms::ok().encode(env))
+}
+
+/// Collects all remaining key-value pairs from an iterator into a list.
+///
+/// This is a convenience function that consumes the iterator and returns
+/// all matching entries. Useful for small result sets where streaming isn't needed.
+///
+/// # Arguments
+/// * `iter_ref` - The iterator reference
+///
+/// # Returns
+/// * `{:ok, [{key, value}, ...]}` with all remaining entries
+/// * `{:error, :iterator_closed}` if iterator was closed
+/// * `{:error, {:iterator_failed, reason}}` on error
+#[rustler::nif(schedule = "DirtyCpu")]
+fn iterator_collect<'a>(env: Env<'a>, iter_ref: ResourceArc<IteratorRef>) -> NifResult<Term<'a>> {
+    let mut iter_guard = iter_ref
+        .iterator
+        .lock()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let iterator = match iter_guard.as_mut() {
+        Some(iter) => iter,
+        None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
+    };
+
+    let mut results: Vec<Term<'a>> = Vec::new();
+
+    for result in iterator.by_ref() {
+        match result {
+            Ok((key, value)) => {
+                // Check if key still has the prefix
+                if !key.starts_with(&iter_ref.prefix) {
+                    break;
+                }
+
+                let mut key_binary = NewBinary::new(env, key.len());
+                key_binary.as_mut_slice().copy_from_slice(&key);
+
+                let mut value_binary = NewBinary::new(env, value.len());
+                value_binary.as_mut_slice().copy_from_slice(&value);
+
+                results.push((Binary::from(key_binary), Binary::from(value_binary)).encode(env));
+            }
+            Err(e) => {
+                return Ok((atoms::error(), (atoms::iterator_failed(), e.to_string())).encode(env));
+            }
+        }
+    }
+
+    Ok((atoms::ok(), results).encode(env))
 }
 
 rustler::init!("Elixir.TripleStore.Backend.RocksDB.NIF");

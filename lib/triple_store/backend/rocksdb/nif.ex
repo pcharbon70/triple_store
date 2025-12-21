@@ -360,4 +360,204 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   """
   @spec mixed_batch(db_ref(), [mixed_put() | mixed_delete()]) :: :ok | {:error, term()}
   def mixed_batch(_db_ref, _operations), do: :erlang.nif_error(:nif_not_loaded)
+
+  # ============================================================================
+  # Iterator Operations
+  # ============================================================================
+
+  @type iterator_ref :: reference()
+
+  @doc """
+  Creates a prefix iterator for a column family.
+
+  The iterator returns all key-value pairs where the key starts with the given prefix.
+  The iterator must be closed with `iterator_close/1` when done, or it will be
+  automatically closed when garbage collected.
+
+  Uses dirty CPU scheduler to prevent blocking BEAM schedulers.
+
+  ## Arguments
+  - `db_ref` - The database reference
+  - `cf` - The column family atom
+  - `prefix` - The prefix to iterate over (can be empty for full scan)
+
+  ## Returns
+  - `{:ok, iterator_ref}` on success
+  - `{:error, :already_closed}` if database is closed
+  - `{:error, {:invalid_cf, cf}}` if column family is invalid
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> NIF.put(db, :spo, "s1p1o1", "")
+      iex> {:ok, iter} = NIF.prefix_iterator(db, :spo, "s1")
+      iex> {:ok, key, _value} = NIF.iterator_next(iter)
+      iex> key
+      "s1p1o1"
+
+  """
+  @spec prefix_iterator(db_ref(), column_family(), binary()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(_db_ref, _cf, _prefix), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Gets the next key-value pair from the iterator.
+
+  Uses dirty CPU scheduler to prevent blocking BEAM schedulers.
+
+  ## Arguments
+  - `iter_ref` - The iterator reference
+
+  ## Returns
+  - `{:ok, key, value}` if there's a next item with matching prefix
+  - `:iterator_end` if the iterator is exhausted or prefix no longer matches
+  - `{:error, :iterator_closed}` if iterator was closed
+  - `{:error, {:iterator_failed, reason}}` on error
+
+  ## Examples
+
+      iex> {:ok, iter} = NIF.prefix_iterator(db, :spo, "s1")
+      iex> {:ok, key, value} = NIF.iterator_next(iter)
+      iex> NIF.iterator_next(iter)
+      :iterator_end
+
+  """
+  @spec iterator_next(iterator_ref()) ::
+          {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  def iterator_next(_iter_ref), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Seeks the iterator to a specific key.
+
+  After seeking, the iterator will return keys >= target that match the prefix.
+  This is essential for Leapfrog Triejoin in Phase 3.
+
+  Uses dirty CPU scheduler to prevent blocking BEAM schedulers.
+
+  ## Arguments
+  - `iter_ref` - The iterator reference
+  - `target` - The key to seek to
+
+  ## Returns
+  - `:ok` on success
+  - `{:error, :iterator_closed}` if iterator was closed
+  - `{:error, :already_closed}` if database was closed
+
+  ## Examples
+
+      iex> {:ok, iter} = NIF.prefix_iterator(db, :spo, "")
+      iex> NIF.iterator_seek(iter, "s2")
+      :ok
+      iex> {:ok, key, _value} = NIF.iterator_next(iter)
+      iex> key >= "s2"
+      true
+
+  """
+  @spec iterator_seek(iterator_ref(), binary()) :: :ok | {:error, term()}
+  def iterator_seek(_iter_ref, _target), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Closes the iterator and releases resources.
+
+  ## Arguments
+  - `iter_ref` - The iterator reference
+
+  ## Returns
+  - `:ok` on success
+  - `{:error, :iterator_closed}` if already closed
+
+  ## Examples
+
+      iex> {:ok, iter} = NIF.prefix_iterator(db, :spo, "s1")
+      iex> NIF.iterator_close(iter)
+      :ok
+      iex> NIF.iterator_close(iter)
+      {:error, :iterator_closed}
+
+  """
+  @spec iterator_close(iterator_ref()) :: :ok | {:error, :iterator_closed}
+  def iterator_close(_iter_ref), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Collects all remaining key-value pairs from an iterator into a list.
+
+  This is a convenience function that returns all matching entries.
+  Useful for small result sets where streaming isn't needed.
+  The iterator position advances to the end after this call.
+
+  Uses dirty CPU scheduler to prevent blocking BEAM schedulers.
+
+  ## Arguments
+  - `iter_ref` - The iterator reference
+
+  ## Returns
+  - `{:ok, [{key, value}, ...]}` with all remaining entries
+  - `{:error, :iterator_closed}` if iterator was closed
+  - `{:error, {:iterator_failed, reason}}` on error
+
+  ## Examples
+
+      iex> {:ok, iter} = NIF.prefix_iterator(db, :spo, "s1")
+      iex> {:ok, results} = NIF.iterator_collect(iter)
+      iex> length(results)
+      3
+
+  """
+  @spec iterator_collect(iterator_ref()) ::
+          {:ok, [{binary(), binary()}]} | {:error, term()}
+  def iterator_collect(_iter_ref), do: :erlang.nif_error(:nif_not_loaded)
+
+  # ============================================================================
+  # Stream Wrapper
+  # ============================================================================
+
+  @doc """
+  Creates an Elixir Stream from a prefix iterator.
+
+  This wraps the iterator in a lazy Stream that automatically handles
+  iteration and cleanup. The iterator is closed when the stream is
+  fully consumed or when the stream is garbage collected.
+
+  ## Arguments
+  - `db_ref` - The database reference
+  - `cf` - The column family atom
+  - `prefix` - The prefix to iterate over (can be empty for full scan)
+
+  ## Returns
+  - `{:ok, Stream.t()}` on success
+  - `{:error, term()}` on failure
+
+  ## Examples
+
+      iex> {:ok, stream} = NIF.prefix_stream(db, :spo, "s1")
+      iex> Enum.take(stream, 5)
+      [{"s1p1o1", ""}, {"s1p1o2", ""}, ...]
+
+  """
+  @spec prefix_stream(db_ref(), column_family(), binary()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
+  def prefix_stream(db_ref, cf, prefix) do
+    case prefix_iterator(db_ref, cf, prefix) do
+      {:ok, iter} ->
+        stream =
+          Stream.resource(
+            fn -> iter end,
+            &stream_next/1,
+            fn iter -> iterator_close(iter) end
+          )
+
+        {:ok, stream}
+
+      error ->
+        error
+    end
+  end
+
+  defp stream_next(iter) do
+    case iterator_next(iter) do
+      {:ok, key, value} -> {[{key, value}], iter}
+      :iterator_end -> {:halt, iter}
+      {:error, _} -> {:halt, iter}
+    end
+  end
 end

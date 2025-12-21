@@ -104,15 +104,15 @@ Implement atomic batch writes for multi-index consistency. When inserting a trip
 
 ### 1.2.4 Iterator API
 
-- [ ] **Task 1.2.4 Complete**
+- [x] **Task 1.2.4 Complete**
 
 Implement prefix iterators for range queries over indices. The iterator returns a stream of key-value pairs matching a given prefix.
 
-- [ ] 1.2.4.1 Implement `prefix_iterator(db, cf, prefix)` returning iterator resource
-- [ ] 1.2.4.2 Implement `iterator_next(iter)` returning `{:ok, key, value}` or `:end`
-- [ ] 1.2.4.3 Implement `iterator_seek(iter, target)` for Leapfrog support (Phase 3)
-- [ ] 1.2.4.4 Implement `iterator_close(iter)` for resource cleanup
-- [ ] 1.2.4.5 Create Elixir `Stream` wrapper for ergonomic iteration
+- [x] 1.2.4.1 Implement `prefix_iterator(db, cf, prefix)` returning iterator resource
+- [x] 1.2.4.2 Implement `iterator_next(iter)` returning `{:ok, key, value}` or `:end`
+- [x] 1.2.4.3 Implement `iterator_seek(iter, target)` for Leapfrog support (Phase 3)
+- [x] 1.2.4.4 Implement `iterator_close(iter)` for resource cleanup
+- [x] 1.2.4.5 Create Elixir `Stream` wrapper for ergonomic iteration
 
 ### 1.2.5 Snapshot Support
 
