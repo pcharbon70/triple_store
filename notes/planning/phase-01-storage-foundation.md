@@ -359,16 +359,23 @@ Bulk loading uses `Flow` for parallel processing with backpressure-aware batchin
 
 ### 1.5.1 Term Conversion
 
-- [ ] **Task 1.5.1 Complete**
+- [x] **Task 1.5.1 Complete** (2025-12-21)
 
 Implement conversion between RDF.ex term types and our internal representation.
 
-- [ ] 1.5.1.1 Implement `from_rdf_iri(RDF.IRI.t())` -> internal URI term
-- [ ] 1.5.1.2 Implement `from_rdf_bnode(RDF.BlankNode.t())` -> internal blank node term
-- [ ] 1.5.1.3 Implement `from_rdf_literal(RDF.Literal.t())` -> internal literal term
-- [ ] 1.5.1.4 Implement `to_rdf_iri(term)` -> `RDF.IRI.t()`
-- [ ] 1.5.1.5 Implement `to_rdf_bnode(term)` -> `RDF.BlankNode.t()`
-- [ ] 1.5.1.6 Implement `to_rdf_literal(term)` -> `RDF.Literal.t()`
+- [x] 1.5.1.1 Implement `from_rdf_iri(RDF.IRI.t())` -> internal URI term
+- [x] 1.5.1.2 Implement `from_rdf_bnode(RDF.BlankNode.t())` -> internal blank node term
+- [x] 1.5.1.3 Implement `from_rdf_literal(RDF.Literal.t())` -> internal literal term
+- [x] 1.5.1.4 Implement `to_rdf_iri(term)` -> `RDF.IRI.t()`
+- [x] 1.5.1.5 Implement `to_rdf_bnode(term)` -> `RDF.BlankNode.t()`
+- [x] 1.5.1.6 Implement `to_rdf_literal(term)` -> `RDF.Literal.t()`
+
+Additional functions implemented:
+- `term_to_id/2` - Generic term to ID dispatch
+- `terms_to_ids/2` - Batch term to ID conversion
+- `id_to_term/2` - Generic ID to term dispatch
+- `ids_to_terms/2` - Batch ID to term conversion
+- `lookup_term_id/2` - Read-only term ID lookup
 
 ### 1.5.2 Triple/Graph Conversion
 
