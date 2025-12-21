@@ -184,14 +184,14 @@ Implement the forward mapping from RDF term strings to IDs using the `str2id` co
 
 ### 1.3.4 ID-to-String Mapping
 
-- [ ] **Task 1.3.4 Complete**
+- [x] **Task 1.3.4 Complete** (2025-12-21)
 
 Implement the reverse mapping from IDs to RDF term strings using the `id2str` column family.
 
-- [ ] 1.3.4.1 Implement `lookup_term(db, id)` returning `{:ok, term}` or `:not_found`
-- [ ] 1.3.4.2 Implement `decode_term(binary)` parsing binary back to term struct
-- [ ] 1.3.4.3 Implement batch lookup `lookup_terms(db, ids)` for result serialization
-- [ ] 1.3.4.4 Handle inline-encoded IDs (return computed value, no lookup needed)
+- [x] 1.3.4.1 Implement `lookup_term(db, id)` returning `{:ok, term}` or `:not_found`
+- [x] 1.3.4.2 Implement `decode_term(binary)` parsing binary back to term struct
+- [x] 1.3.4.3 Implement batch lookup `lookup_terms(db, ids)` for result serialization
+- [x] 1.3.4.4 Handle inline-encoded IDs (return computed value, no lookup needed)
 
 ### 1.3.5 Inline Numeric Encoding
 
