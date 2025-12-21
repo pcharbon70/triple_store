@@ -11,7 +11,9 @@ defmodule TripleStore.Test.Fixtures do
   The directory is cleaned up after the test.
   """
   def tmp_db_path do
-    path = Path.join(System.tmp_dir!(), "triple_store_test_#{:erlang.unique_integer([:positive])}")
+    path =
+      Path.join(System.tmp_dir!(), "triple_store_test_#{:erlang.unique_integer([:positive])}")
+
     File.mkdir_p!(path)
     path
   end

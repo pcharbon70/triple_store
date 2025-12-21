@@ -36,6 +36,6 @@ defmodule TripleStore.Backend.RocksDB.NIF do
       "rocksdb_nif"
 
   """
-  @spec nif_loaded() :: String.t()
-  def nif_loaded(), do: :erlang.nif_error(:nif_not_loaded)
+  @spec nif_loaded :: String.t()
+  def nif_loaded, do: :erlang.nif_error(:nif_not_loaded)
 end

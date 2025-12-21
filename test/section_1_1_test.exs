@@ -10,6 +10,9 @@ defmodule TripleStore.Section11Test do
   """
   use ExUnit.Case, async: true
 
+  alias TripleStore.Backend.RocksDB
+  alias TripleStore.Dictionary
+
   describe "1.1.4.1 Mix project compiles without errors" do
     test "project compiles successfully" do
       # If we're running tests, compilation succeeded
@@ -49,15 +52,14 @@ defmodule TripleStore.Section11Test do
     end
 
     test "NIF is loaded and operational" do
-      result = TripleStore.Backend.RocksDB.NIF.nif_loaded()
+      result = RocksDB.NIF.nif_loaded()
       assert result == "rocksdb_nif"
     end
 
     test "NIF does not raise on call" do
-      # Verify NIF function can be called without raising
       assert_raise_or_return = fn ->
         try do
-          TripleStore.Backend.RocksDB.NIF.nif_loaded()
+          RocksDB.NIF.nif_loaded()
         rescue
           e -> {:error, e}
         end
@@ -104,15 +106,14 @@ defmodule TripleStore.Section11Test do
     end
 
     test "TripleStore.Dictionary namespace exists with type tags" do
-      assert Code.ensure_loaded?(TripleStore.Dictionary)
+      assert Code.ensure_loaded?(Dictionary)
 
-      # Verify type tag constants are defined
-      assert TripleStore.Dictionary.type_uri() == 0b0001
-      assert TripleStore.Dictionary.type_bnode() == 0b0010
-      assert TripleStore.Dictionary.type_literal() == 0b0011
-      assert TripleStore.Dictionary.type_integer() == 0b0100
-      assert TripleStore.Dictionary.type_decimal() == 0b0101
-      assert TripleStore.Dictionary.type_datetime() == 0b0110
+      assert Dictionary.type_uri() == 0b0001
+      assert Dictionary.type_bnode() == 0b0010
+      assert Dictionary.type_literal() == 0b0011
+      assert Dictionary.type_integer() == 0b0100
+      assert Dictionary.type_decimal() == 0b0101
+      assert Dictionary.type_datetime() == 0b0110
     end
 
     test "TripleStore.Index namespace exists" do
