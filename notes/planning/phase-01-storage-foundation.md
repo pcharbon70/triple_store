@@ -161,14 +161,14 @@ Define the 64-bit ID encoding scheme with type tags. The high 4 bits encode the 
 
 ### 1.3.2 Sequence Counter
 
-- [ ] **Task 1.3.2 Complete**
+- [x] **Task 1.3.2 Complete** (2025-12-21)
 
 Implement atomic sequence counter for generating unique IDs. We use `:atomics` for lock-free increment operations with persistence via RocksDB.
 
-- [ ] 1.3.2.1 Create `:atomics` counter initialized from persisted value on startup
-- [ ] 1.3.2.2 Implement `next_sequence()` with atomic increment
-- [ ] 1.3.2.3 Implement periodic persistence of counter to RocksDB
-- [ ] 1.3.2.4 Handle counter recovery on database open
+- [x] 1.3.2.1 Create `:atomics` counter initialized from persisted value on startup
+- [x] 1.3.2.2 Implement `next_sequence()` with atomic increment
+- [x] 1.3.2.3 Implement periodic persistence of counter to RocksDB
+- [x] 1.3.2.4 Handle counter recovery on database open
 
 ### 1.3.3 String-to-ID Mapping
 
