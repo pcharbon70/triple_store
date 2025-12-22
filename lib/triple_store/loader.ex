@@ -3,14 +3,27 @@ defmodule TripleStore.Loader do
   Bulk loading pipeline for efficient RDF data ingestion.
 
   Provides high-performance loading of RDF data from graphs and files
-  using parallel processing with Flow and batched writes.
+  using batched writes and progress reporting via Telemetry.
 
   ## Features
 
   - **Batched writes**: Groups triples into configurable batch sizes (default 1000)
-  - **Parallel processing**: Uses Flow for concurrent term conversion
+  - **Sequential processing**: Uses `Enum.reduce_while` with batched writes for reliable loading
   - **Progress reporting**: Emits Telemetry events for monitoring
   - **Format support**: Turtle, N-Triples, N-Quads, RDF/XML, TriG, JSON-LD
+  - **Path validation**: File paths are validated to prevent path traversal attacks
+  - **File size limits**: Configurable maximum file size (default 100MB)
+
+  ## Important Limitations
+
+  ### Named Graphs Not Supported
+
+  When loading N-Quads (`.nq`) or TriG (`.trig`) files, **only the default graph
+  is loaded**. Named graphs are discarded. This is a current architectural
+  limitation of the triple store which stores triples, not quads.
+
+  If you need named graph support for provenance tracking or SPARQL named graph
+  queries, this will be addressed in Phase 2 (SPARQL Engine) with quad storage.
 
   ## Telemetry Events
 
@@ -65,7 +78,8 @@ defmodule TripleStore.Loader do
   @type load_opts :: [
           batch_size: pos_integer(),
           format: atom() | nil,
-          base_iri: String.t() | nil
+          base_iri: String.t() | nil,
+          max_file_size: pos_integer() | nil
         ]
 
   # ===========================================================================
@@ -73,6 +87,7 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @default_batch_size 1000
+  @default_max_file_size 100_000_000  # 100MB
 
   # Supported RDF file formats
   @supported_formats %{
@@ -129,43 +144,16 @@ defmodule TripleStore.Loader do
   def load_graph(db, manager, %RDF.Graph{} = graph, opts \\ []) do
     batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
 
-    start_time = System.monotonic_time()
+    start_metadata = %{
+      source: :graph,
+      path: nil,
+      triple_count: RDF.Graph.triple_count(graph)
+    }
 
-    :telemetry.execute(
-      [:triple_store, :loader, :start],
-      %{system_time: System.system_time()},
-      %{source: :graph, path: nil, triple_count: RDF.Graph.triple_count(graph)}
-    )
-
-    try do
+    with_telemetry(start_metadata, fn ->
       triples = RDF.Graph.triples(graph)
-      result = load_triples(db, manager, triples, batch_size)
-
-      duration = System.monotonic_time() - start_time
-
-      case result do
-        {:ok, count} ->
-          :telemetry.execute(
-            [:triple_store, :loader, :stop],
-            %{total_count: count, duration: duration},
-            %{source: :graph}
-          )
-
-          {:ok, count}
-
-        {:error, _} = error ->
-          error
-      end
-    rescue
-      e ->
-        :telemetry.execute(
-          [:triple_store, :loader, :exception],
-          %{duration: System.monotonic_time() - start_time},
-          %{kind: :error, reason: e}
-        )
-
-        reraise e, __STACKTRACE__
-    end
+      load_triples(db, manager, triples, batch_size)
+    end)
   end
 
   # ===========================================================================
@@ -188,6 +176,7 @@ defmodule TripleStore.Loader do
 
   - `:format` - Force specific format (`:turtle`, `:ntriples`, `:rdfxml`, etc.)
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
+  - `:max_file_size` - Maximum file size in bytes (default: 100MB)
 
   ## Supported Formats
 
@@ -202,7 +191,9 @@ defmodule TripleStore.Loader do
 
   - `{:ok, count}` - Number of triples loaded
   - `{:error, :file_not_found}` - File does not exist
-  - `{:error, :unsupported_format}` - Unknown file format
+  - `{:error, :invalid_path}` - Path contains traversal sequences (`..`)
+  - `{:error, {:file_too_large, size, max}}` - File exceeds size limit
+  - `{:error, {:unsupported_format, ext, [supported: list]}}` - Unknown file format
   - `{:error, reason}` - On parse or load failure
 
   ## Examples
@@ -220,47 +211,19 @@ defmodule TripleStore.Loader do
           {:ok, non_neg_integer()} | {:error, term()}
   def load_file(db, manager, path, opts \\ []) do
     batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
 
-    start_time = System.monotonic_time()
+    start_metadata = %{source: :file, path: Path.basename(path)}
 
-    :telemetry.execute(
-      [:triple_store, :loader, :start],
-      %{system_time: System.system_time()},
-      %{source: :file, path: path}
-    )
-
-    try do
-      with {:ok, format} <- detect_format(path, opts),
-           {:ok, graph} <- parse_file(path, format) do
+    with_telemetry(start_metadata, fn ->
+      with {:ok, validated_path} <- validate_file_path(path),
+           {:ok, format} <- detect_format(validated_path, opts),
+           :ok <- check_file_size(validated_path, max_file_size),
+           {:ok, graph} <- parse_file(validated_path, format) do
         triples = RDF.Graph.triples(graph)
-        result = load_triples(db, manager, triples, batch_size)
-
-        duration = System.monotonic_time() - start_time
-
-        case result do
-          {:ok, count} ->
-            :telemetry.execute(
-              [:triple_store, :loader, :stop],
-              %{total_count: count, duration: duration},
-              %{source: :file, path: path}
-            )
-
-            {:ok, count}
-
-          {:error, _} = error ->
-            error
-        end
+        load_triples(db, manager, triples, batch_size)
       end
-    rescue
-      e ->
-        :telemetry.execute(
-          [:triple_store, :loader, :exception],
-          %{duration: System.monotonic_time() - start_time},
-          %{kind: :error, reason: e, path: path}
-        )
-
-        reraise e, __STACKTRACE__
-    end
+    end)
   end
 
   @doc """
@@ -355,6 +318,8 @@ defmodule TripleStore.Loader do
   # Private - Core Loading Logic
   # ===========================================================================
 
+  @spec load_triples(db_ref(), manager(), Enumerable.t(), pos_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   defp load_triples(db, manager, triples, batch_size) do
     triples
     |> Stream.chunk_every(batch_size)
@@ -381,6 +346,7 @@ defmodule TripleStore.Loader do
     end)
   end
 
+  @spec process_batch(db_ref(), manager(), [RDF.Triple.t()]) :: :ok | {:error, term()}
   defp process_batch(db, manager, rdf_triples) do
     case Adapter.from_rdf_triples(manager, rdf_triples) do
       {:ok, internal_triples} ->
@@ -392,17 +358,98 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Private - Telemetry Helper
+  # ===========================================================================
+
+  @spec with_telemetry(map(), (-> {:ok, non_neg_integer()} | {:error, term()})) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  defp with_telemetry(start_metadata, func) do
+    start_time = System.monotonic_time()
+
+    :telemetry.execute(
+      [:triple_store, :loader, :start],
+      %{system_time: System.system_time()},
+      start_metadata
+    )
+
+    try do
+      case func.() do
+        {:ok, count} ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :loader, :stop],
+            %{total_count: count, duration: duration},
+            Map.take(start_metadata, [:source, :path])
+          )
+
+          {:ok, count}
+
+        {:error, _} = error ->
+          error
+      end
+    rescue
+      e ->
+        :telemetry.execute(
+          [:triple_store, :loader, :exception],
+          %{duration: System.monotonic_time() - start_time},
+          Map.merge(Map.take(start_metadata, [:source, :path]), %{kind: :error, reason: e})
+        )
+
+        reraise e, __STACKTRACE__
+    end
+  end
+
+  # ===========================================================================
+  # Private - Path Validation
+  # ===========================================================================
+
+  @spec validate_file_path(Path.t()) :: {:ok, Path.t()} | {:error, :invalid_path}
+  defp validate_file_path(path) do
+    # Prevent path traversal attacks
+    if String.contains?(path, "..") do
+      {:error, :invalid_path}
+    else
+      {:ok, Path.expand(path)}
+    end
+  end
+
+  @spec check_file_size(Path.t(), pos_integer()) ::
+          :ok | {:error, {:file_too_large, non_neg_integer(), pos_integer()}}
+  defp check_file_size(path, max_size) do
+    case File.stat(path) do
+      {:ok, %File.Stat{size: size}} when size > max_size ->
+        {:error, {:file_too_large, size, max_size}}
+
+      {:ok, _stat} ->
+        :ok
+
+      {:error, :enoent} ->
+        # File doesn't exist - let parse_file handle this error
+        :ok
+
+      {:error, _reason} ->
+        :ok
+    end
+  end
+
+  # ===========================================================================
   # Private - Format Detection
   # ===========================================================================
 
+  @spec detect_format(Path.t(), keyword()) :: {:ok, atom()} | {:error, term()}
   defp detect_format(path, opts) do
     case Keyword.get(opts, :format) do
       nil ->
         ext = Path.extname(path) |> String.downcase()
 
         case Map.get(@supported_formats, ext) do
-          nil -> {:error, :unsupported_format}
-          format -> {:ok, format}
+          nil ->
+            supported = Map.keys(@supported_formats) |> Enum.sort()
+            {:error, {:unsupported_format, ext, [supported: supported]}}
+
+          format ->
+            {:ok, format}
         end
 
       format when is_atom(format) ->
@@ -414,6 +461,7 @@ defmodule TripleStore.Loader do
   # Private - Parsing
   # ===========================================================================
 
+  @spec parse_file(Path.t(), atom()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_file(path, format) do
     unless File.exists?(path) do
       {:error, :file_not_found}
@@ -430,6 +478,7 @@ defmodule TripleStore.Loader do
     end
   end
 
+  @spec parse_string(String.t(), atom(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_string(content, format, opts) do
     case format do
       :turtle -> RDF.Turtle.read_string(content, opts)
@@ -442,37 +491,41 @@ defmodule TripleStore.Loader do
     end
   end
 
-  # N-Quads returns a Dataset, extract default graph
+  # N-Quads and TriG return Datasets - we extract only the default graph.
+  # NOTE: Named graphs are discarded. See moduledoc for details on this limitation.
+
+  @spec parse_nquads_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_nquads_file(path) do
-    case RDF.NQuads.read_file(path) do
-      {:ok, dataset} -> {:ok, RDF.Dataset.default_graph(dataset)}
-      error -> error
-    end
+    RDF.NQuads.read_file(path) |> extract_default_graph()
   end
 
+  @spec parse_nquads_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_nquads_string(content, opts) do
-    case RDF.NQuads.read_string(content, opts) do
-      {:ok, dataset} -> {:ok, RDF.Dataset.default_graph(dataset)}
-      error -> error
-    end
+    RDF.NQuads.read_string(content, opts) |> extract_default_graph()
   end
 
-  # TriG returns a Dataset, extract default graph
+  @spec parse_trig_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_trig_file(path) do
-    case RDF.TriG.read_file(path) do
-      {:ok, dataset} -> {:ok, RDF.Dataset.default_graph(dataset)}
-      error -> error
-    end
+    RDF.TriG.read_file(path) |> extract_default_graph()
   end
 
+  @spec parse_trig_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_trig_string(content, opts) do
-    case RDF.TriG.read_string(content, opts) do
-      {:ok, dataset} -> {:ok, RDF.Dataset.default_graph(dataset)}
-      error -> error
-    end
+    RDF.TriG.read_string(content, opts) |> extract_default_graph()
   end
+
+  # Extract the default graph from a dataset parsing result.
+  # Named graphs in the dataset are discarded.
+  @spec extract_default_graph({:ok, RDF.Dataset.t()} | {:error, term()}) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  defp extract_default_graph({:ok, dataset}) do
+    {:ok, RDF.Dataset.default_graph(dataset)}
+  end
+
+  defp extract_default_graph(error), do: error
 
   # JSON-LD parsing
+  @spec parse_jsonld_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_jsonld_file(path) do
     if Code.ensure_loaded?(JSON.LD) do
       JSON.LD.read_file(path)
@@ -481,6 +534,7 @@ defmodule TripleStore.Loader do
     end
   end
 
+  @spec parse_jsonld_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_jsonld_string(content, opts) do
     if Code.ensure_loaded?(JSON.LD) do
       JSON.LD.read_string(content, opts)

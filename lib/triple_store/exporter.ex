@@ -11,6 +11,21 @@ defmodule TripleStore.Exporter do
   - **Pattern filtering**: Export only triples matching a pattern
   - **File output**: Write to Turtle, N-Triples, N-Quads, or other formats
   - **Streaming**: Memory-efficient export for large datasets
+  - **Telemetry**: Progress monitoring via telemetry events
+
+  ## Telemetry Events
+
+  The exporter emits the following telemetry events:
+
+  - `[:triple_store, :exporter, :start]` - When export begins
+    - Metadata: `%{operation: :graph | :file | :string, path: String.t() | nil}`
+
+  - `[:triple_store, :exporter, :stop]` - When export completes
+    - Measurements: `%{triple_count: integer, duration: integer}`
+    - Metadata: `%{operation: :graph | :file | :string}`
+
+  - `[:triple_store, :exporter, :exception]` - On error
+    - Metadata: `%{kind: :error | :exit | :throw, reason: term}`
 
   ## Usage
 
@@ -31,6 +46,8 @@ defmodule TripleStore.Exporter do
 
   alias TripleStore.Adapter
   alias TripleStore.Index
+
+  require Logger
 
   # ===========================================================================
   # Types
@@ -151,10 +168,12 @@ defmodule TripleStore.Exporter do
   end
 
   defp do_export_graph(db, pattern, opts) do
-    with {:ok, internal_triples} <- Index.lookup_all(db, pattern),
-         {:ok, graph} <- Adapter.to_rdf_graph(db, internal_triples, opts) do
-      {:ok, graph}
-    end
+    with_telemetry(%{operation: :graph, path: nil}, fn ->
+      with {:ok, internal_triples} <- Index.lookup_all(db, pattern),
+           {:ok, graph} <- Adapter.to_rdf_graph(db, internal_triples, opts) do
+        {:ok, graph}
+      end
+    end)
   end
 
   # ===========================================================================
@@ -209,9 +228,20 @@ defmodule TripleStore.Exporter do
     pattern = Keyword.get(opts, :pattern, {:var, :var, :var})
     graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
 
-    with {:ok, graph} <- export_graph(db, pattern, graph_opts),
-         :ok <- write_graph_to_file(graph, path, format) do
-      {:ok, RDF.Graph.triple_count(graph)}
+    with_telemetry(%{operation: :file, path: Path.basename(path), format: format}, fn ->
+      # Note: export_graph already has its own telemetry, but this wraps the full file operation
+      with {:ok, graph} <- do_export_graph_raw(db, pattern, graph_opts),
+           :ok <- write_graph_to_file(graph, path, format) do
+        {:ok, RDF.Graph.triple_count(graph)}
+      end
+    end)
+  end
+
+  # Raw export without telemetry (for use by export_file to avoid double telemetry)
+  defp do_export_graph_raw(db, pattern, opts) do
+    with {:ok, internal_triples} <- Index.lookup_all(db, pattern),
+         {:ok, graph} <- Adapter.to_rdf_graph(db, internal_triples, opts) do
+      {:ok, graph}
     end
   end
 
@@ -250,9 +280,11 @@ defmodule TripleStore.Exporter do
     pattern = Keyword.get(opts, :pattern, {:var, :var, :var})
     graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
 
-    with {:ok, graph} <- export_graph(db, pattern, graph_opts) do
-      serialize_graph(graph, format)
-    end
+    with_telemetry(%{operation: :string, path: nil, format: format}, fn ->
+      with {:ok, graph} <- do_export_graph_raw(db, pattern, graph_opts) do
+        serialize_graph(graph, format)
+      end
+    end)
   end
 
   # ===========================================================================
@@ -305,7 +337,9 @@ defmodule TripleStore.Exporter do
               # Filter out :not_found entries
               Enum.filter(rdf_triples, &is_tuple/1)
 
-            {:error, _} ->
+            {:error, reason} ->
+              # Log the error rather than silently swallowing it
+              Logger.warning("Error converting batch to RDF triples: #{inspect(reason)}")
               []
           end
         end)
@@ -391,6 +425,97 @@ defmodule TripleStore.Exporter do
   end
 
   # ===========================================================================
+  # Public API - Pattern Convenience Wrappers
+  # ===========================================================================
+
+  @doc """
+  Exports all triples with a specific subject.
+
+  Convenience wrapper around `export_graph/3` for subject-based filtering.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `subject_id` - The internal term ID for the subject
+
+  ## Options
+
+  Same as `export_graph/3`
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - Graph containing matching triples
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, graph} = Exporter.export_by_subject(db, subject_id)
+  """
+  @spec export_by_subject(db_ref(), non_neg_integer(), export_opts()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def export_by_subject(db, subject_id, opts \\ []) do
+    export_graph(db, {{:bound, subject_id}, :var, :var}, opts)
+  end
+
+  @doc """
+  Exports all triples with a specific predicate.
+
+  Convenience wrapper around `export_graph/3` for predicate-based filtering.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `predicate_id` - The internal term ID for the predicate
+
+  ## Options
+
+  Same as `export_graph/3`
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - Graph containing matching triples
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, graph} = Exporter.export_by_predicate(db, predicate_id)
+  """
+  @spec export_by_predicate(db_ref(), non_neg_integer(), export_opts()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def export_by_predicate(db, predicate_id, opts \\ []) do
+    export_graph(db, {:var, {:bound, predicate_id}, :var}, opts)
+  end
+
+  @doc """
+  Exports all triples with a specific object.
+
+  Convenience wrapper around `export_graph/3` for object-based filtering.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `object_id` - The internal term ID for the object
+
+  ## Options
+
+  Same as `export_graph/3`
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - Graph containing matching triples
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, graph} = Exporter.export_by_object(db, object_id)
+  """
+  @spec export_by_object(db_ref(), non_neg_integer(), export_opts()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def export_by_object(db, object_id, opts \\ []) do
+    export_graph(db, {:var, :var, {:bound, object_id}}, opts)
+  end
+
+  # ===========================================================================
   # Private - Serialization
   # ===========================================================================
 
@@ -439,5 +564,70 @@ defmodule TripleStore.Exporter do
 
   defp serialize_graph(_graph, format) do
     {:error, {:unsupported_format, format}}
+  end
+
+  # ===========================================================================
+  # Private - Telemetry Helper
+  # ===========================================================================
+
+  # Wraps an export operation with telemetry events.
+  # Handles :ok results for graph exports and {:ok, result} for count/string exports.
+  defp with_telemetry(metadata, func) do
+    start_time = System.monotonic_time()
+
+    :telemetry.execute(
+      [:triple_store, :exporter, :start],
+      %{system_time: System.system_time()},
+      metadata
+    )
+
+    try do
+      case func.() do
+        {:ok, %RDF.Graph{} = graph} ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :exporter, :stop],
+            %{triple_count: RDF.Graph.triple_count(graph), duration: duration},
+            Map.take(metadata, [:operation, :path])
+          )
+
+          {:ok, graph}
+
+        {:ok, count} when is_integer(count) ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :exporter, :stop],
+            %{triple_count: count, duration: duration},
+            Map.take(metadata, [:operation, :path])
+          )
+
+          {:ok, count}
+
+        {:ok, content} when is_binary(content) ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :exporter, :stop],
+            %{byte_size: byte_size(content), duration: duration},
+            Map.take(metadata, [:operation, :path])
+          )
+
+          {:ok, content}
+
+        {:error, _} = error ->
+          error
+      end
+    rescue
+      e ->
+        :telemetry.execute(
+          [:triple_store, :exporter, :exception],
+          %{duration: System.monotonic_time() - start_time},
+          Map.merge(Map.take(metadata, [:operation, :path]), %{kind: :error, reason: e})
+        )
+
+        reraise e, __STACKTRACE__
+    end
   end
 end

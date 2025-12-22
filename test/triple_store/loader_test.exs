@@ -249,7 +249,7 @@ defmodule TripleStore.LoaderTest do
       File.write!(txt_path, "some content")
 
       result = Loader.load_file(db, manager, txt_path)
-      assert {:error, :unsupported_format} = result
+      assert {:error, {:unsupported_format, ".txt", [supported: _]}} = result
     end
 
     test "respects explicit format option", %{db: db, manager: manager, files_dir: files_dir} do
@@ -262,6 +262,21 @@ defmodule TripleStore.LoaderTest do
 
       {:ok, count} = Loader.load_file(db, manager, data_path, format: :ntriples)
       assert count == 1
+    end
+
+    test "returns error for path traversal attempt", %{db: db, manager: manager} do
+      result = Loader.load_file(db, manager, "../../../etc/passwd")
+      assert {:error, :invalid_path} = result
+    end
+
+    test "returns error for file too large", %{db: db, manager: manager, files_dir: files_dir} do
+      # Create a small file
+      small_path = Path.join(files_dir, "small.ttl")
+      File.write!(small_path, "<http://example.org/s> <http://example.org/p> \"v\" .")
+
+      # Set a tiny max size to trigger the error
+      result = Loader.load_file(db, manager, small_path, max_file_size: 10)
+      assert {:error, {:file_too_large, _size, 10}} = result
     end
   end
 

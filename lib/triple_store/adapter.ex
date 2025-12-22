@@ -707,13 +707,35 @@ defmodule TripleStore.Adapter do
 
   - `{:ok, term_id}` - The existing term ID
   - `:not_found` - Term not in dictionary
+  - `{:error, :requires_manager}` - For non-inline literals (see below)
   - `{:error, reason}` - On validation or database error
+
+  ## Literal Handling
+
+  This function has special behavior for literals:
+
+  - **Inline-encodable literals** (xsd:integer, xsd:decimal, xsd:dateTime):
+    Returns `{:ok, inline_id}` directly without database lookup.
+
+  - **Non-inline literals** (strings, other datatypes): Returns
+    `{:error, :requires_manager}`. These literals require the Dictionary
+    Manager for proper lookup. Use `Manager.get_or_create_id/2` instead.
+
+  This design avoids database lookups for inline-encodable literals
+  while making the limitation explicit for other literal types.
 
   ## Examples
 
       iex> {:ok, id} = Adapter.lookup_term_id(db, RDF.iri("http://example.org"))
       iex> Adapter.lookup_term_id(db, RDF.iri("http://unknown.org"))
       :not_found
+
+      iex> # Inline literals work directly
+      iex> {:ok, id} = Adapter.lookup_term_id(db, RDF.integer(42))
+
+      iex> # Non-inline literals require the manager
+      iex> Adapter.lookup_term_id(db, ~L"hello")
+      {:error, :requires_manager}
   """
   @spec lookup_term_id(db_ref(), rdf_term()) :: {:ok, term_id()} | :not_found | {:error, term()}
   def lookup_term_id(_db, %RDF.Literal{} = literal) do

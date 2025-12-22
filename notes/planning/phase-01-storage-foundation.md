@@ -448,6 +448,35 @@ All tests implemented as part of tasks 1.5.1-1.5.4:
 
 Test coverage: 140 tests across RDF.ex integration layer
 
+### 1.5.6 Review Improvements
+
+- [x] **Task 1.5.6 Complete** (2025-12-22)
+
+Following the comprehensive review of Section 1.5, the following improvements were implemented:
+
+**Concerns Addressed:**
+- [x] 1.5.6.1 C1: Document named graph limitation prominently in loader.ex moduledoc
+- [x] 1.5.6.2 C2: Update documentation to reflect sequential processing (not Flow)
+- [x] 1.5.6.3 C3: Add path validation to prevent path traversal attacks
+- [x] 1.5.6.4 C4: Fix silent error swallowing in stream_triples/2 with Logger.warning
+- [x] 1.5.6.5 C5: Document lookup_term_id/2 literal behavior clearly
+- [x] 1.5.6.6 C6: Add @spec to all private functions in loader.ex
+- [x] 1.5.6.7 C7: Add configurable file size limits (default 100MB)
+
+**Suggestions Implemented:**
+- [x] 1.5.6.8 S1: Extract with_telemetry/2 helper in loader.ex
+- [x] 1.5.6.9 S2: Extract extract_default_graph/1 helper
+- [x] 1.5.6.10 S3: Create test/support/rdf_integration_test_helper.ex
+- [x] 1.5.6.11 S4: Enhanced error messages with {:unsupported_format, ext, [supported: list]}
+- [x] 1.5.6.12 S5: Add export_by_subject/3, export_by_predicate/3, export_by_object/3
+- [x] 1.5.6.13 S6: Add telemetry events to Exporter
+
+**Suggestions Deferred to Phase 5:**
+- [ ] S7: Property-based testing for roundtrip (requires stream_data dependency)
+- [ ] S8: Concurrent access tests (requires additional test infrastructure)
+
+Test coverage: 741 tests (up from 739)
+
 ---
 
 ## 1.6 Basic Statistics
