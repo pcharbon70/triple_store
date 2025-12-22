@@ -487,15 +487,20 @@ This section implements basic statistics collection for the triple store. Statis
 
 ### 1.6.1 Triple Counts
 
-- [ ] **Task 1.6.1 Complete**
+- [x] **Task 1.6.1 Complete** (2025-12-22)
 
 Implement counters for basic triple statistics.
 
-- [ ] 1.6.1.1 Implement `triple_count(db)` returning total number of triples
-- [ ] 1.6.1.2 Implement `predicate_count(db, predicate)` for per-predicate counts
-- [ ] 1.6.1.3 Implement `distinct_subjects(db)` approximation
-- [ ] 1.6.1.4 Implement `distinct_predicates(db)` exact count
-- [ ] 1.6.1.5 Implement `distinct_objects(db)` approximation
+- [x] 1.6.1.1 Implement `triple_count(db)` returning total number of triples
+- [x] 1.6.1.2 Implement `predicate_count(db, predicate)` for per-predicate counts
+- [x] 1.6.1.3 Implement `distinct_subjects(db)` approximation
+- [x] 1.6.1.4 Implement `distinct_predicates(db)` exact count
+- [x] 1.6.1.5 Implement `distinct_objects(db)` approximation
+
+Additional function implemented:
+- `all/1` - Returns all statistics in a single call
+
+Test coverage: 20 tests in statistics_test.exs
 
 ### 1.6.2 Statistics Cache
 
