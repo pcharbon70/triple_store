@@ -1,0 +1,15 @@
+[package]
+name = "sparql_parser_nif"
+version = "0.1.0"
+edition = "2021"
+authors = []
+
+[lib]
+name = "sparql_parser_nif"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.35"
+spargebra = "0.3"
+oxiri = "0.2"

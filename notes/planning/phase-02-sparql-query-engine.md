@@ -18,14 +18,14 @@ This section implements the SPARQL parser as a Rustler NIF using the spargebra c
 
 ### 2.1.1 Parser Crate Setup
 
-- [ ] **Task 2.1.1 Complete**
+- [x] **Task 2.1.1 Complete**
 
 Set up the Rust crate for SPARQL parsing with spargebra integration.
 
-- [ ] 2.1.1.1 Add `spargebra = "0.2"` to `native/sparql_parser_nif/Cargo.toml`
-- [ ] 2.1.1.2 Create `TripleStore.SPARQL.Parser` module with NIF bindings
-- [ ] 2.1.1.3 Define Elixir structs for AST nodes (Query, Pattern, Expression, etc.)
-- [ ] 2.1.1.4 Implement AST conversion from spargebra types to Elixir terms
+- [x] 2.1.1.1 Add `spargebra = "0.3"` to `native/sparql_parser_nif/Cargo.toml`
+- [x] 2.1.1.2 Create `TripleStore.SPARQL.Parser` module with NIF bindings
+- [x] 2.1.1.3 Define Elixir AST representation using tuples/atoms (not structs)
+- [x] 2.1.1.4 Implement AST conversion from spargebra types to Elixir terms
 
 ### 2.1.2 Query Parsing
 
