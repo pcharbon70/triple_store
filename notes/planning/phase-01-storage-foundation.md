@@ -481,7 +481,7 @@ Test coverage: 741 tests (up from 739)
 
 ## 1.6 Basic Statistics
 
-- [ ] **Section 1.6 Complete**
+- [x] **Section 1.6 Complete** (2025-12-22)
 
 This section implements basic statistics collection for the triple store. Statistics are used by the query optimizer in Phase 2 to estimate cardinalities and select efficient query plans.
 
@@ -504,23 +504,41 @@ Test coverage: 20 tests in statistics_test.exs
 
 ### 1.6.2 Statistics Cache
 
-- [ ] **Task 1.6.2 Complete**
+- [x] **Task 1.6.2 Complete** (2025-12-22)
 
 Implement caching for statistics to avoid repeated scans.
 
-- [ ] 1.6.2.1 Create `TripleStore.Statistics` GenServer for cached stats
-- [ ] 1.6.2.2 Implement periodic refresh of statistics
-- [ ] 1.6.2.3 Implement invalidation on bulk updates
-- [ ] 1.6.2.4 Store predicate frequency histogram
+- [x] 1.6.2.1 Create `TripleStore.Statistics.Cache` GenServer for cached stats
+- [x] 1.6.2.2 Implement periodic refresh of statistics via `Process.send_after`
+- [x] 1.6.2.3 Implement invalidation on bulk updates via `invalidate/1`
+- [x] 1.6.2.4 Store predicate frequency histogram
+
+Additional functions implemented:
+- `get/1` - Get cached statistics with lazy computation
+- `predicate_histogram/1` - Get predicate frequency map
+- `refresh/1` - Force synchronous refresh
+- `stop/1` - Stop the cache GenServer
+
+Test coverage: 19 tests in statistics/cache_test.exs
 
 ### 1.6.3 Unit Tests
 
-- [ ] **Task 1.6.3 Complete**
+- [x] **Task 1.6.3 Complete** (2025-12-22)
 
-- [ ] Test triple count accuracy
-- [ ] Test predicate count accuracy
-- [ ] Test statistics cache returns consistent values
-- [ ] Test statistics invalidation on updates
+- [x] Test triple count accuracy (statistics_test.exs)
+- [x] Test predicate count accuracy (statistics_test.exs)
+- [x] Test statistics cache returns consistent values (statistics/cache_test.exs)
+- [x] Test statistics invalidation on updates (statistics/cache_test.exs)
+
+Additional test coverage:
+- [x] Test distinct_subjects, distinct_predicates, distinct_objects
+- [x] Test all/1 combined statistics function
+- [x] Test predicate_histogram accuracy
+- [x] Test periodic auto-refresh
+- [x] Test concurrent access to cache
+- [x] Test rapid invalidation handling
+
+Total: 39 tests (20 for Statistics + 19 for Cache)
 
 ---
 
