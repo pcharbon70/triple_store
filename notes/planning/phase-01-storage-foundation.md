@@ -395,16 +395,20 @@ Additional functions implemented:
 
 ### 1.5.3 Bulk Loading Pipeline
 
-- [ ] **Task 1.5.3 Complete**
+- [x] **Task 1.5.3 Complete** (2025-12-22)
 
-Implement efficient bulk loading using Flow for parallel processing with batched writes.
+Implement efficient bulk loading using batched writes and Telemetry progress reporting.
 
-- [ ] 1.5.3.1 Implement `load_graph(db, graph)` streaming triples into storage
-- [ ] 1.5.3.2 Implement `load_file(db, path)` parsing and loading RDF files
-- [ ] 1.5.3.3 Support Turtle, N-Triples, and RDF/XML formats via RDF.ex
-- [ ] 1.5.3.4 Implement batching (1000 triples per batch) for efficient writes
-- [ ] 1.5.3.5 Implement progress reporting via Telemetry events
-- [ ] 1.5.3.6 Target: 1M triples in <30 seconds
+- [x] 1.5.3.1 Implement `load_graph(db, graph)` streaming triples into storage
+- [x] 1.5.3.2 Implement `load_file(db, path)` parsing and loading RDF files
+- [x] 1.5.3.3 Support Turtle, N-Triples, N-Quads, TriG, RDF/XML, JSON-LD formats
+- [x] 1.5.3.4 Implement batching (1000 triples per batch) for efficient writes
+- [x] 1.5.3.5 Implement progress reporting via Telemetry events
+- [ ] 1.5.3.6 Target: 1M triples in <30 seconds (deferred to Phase 5 optimization)
+
+Additional functions implemented:
+- `load_string/5` - Parse and load RDF content from string
+- `load_stream/4` - Load from arbitrary enumerable of triples
 
 ### 1.5.4 Export Functions
 
