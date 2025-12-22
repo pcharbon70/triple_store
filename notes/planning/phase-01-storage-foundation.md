@@ -412,14 +412,21 @@ Additional functions implemented:
 
 ### 1.5.4 Export Functions
 
-- [ ] **Task 1.5.4 Complete**
+- [x] **Task 1.5.4 Complete** (2025-12-22)
 
 Implement export functions to serialize stored triples back to RDF formats.
 
-- [ ] 1.5.4.1 Implement `export_graph(db)` returning `RDF.Graph.t()` of all triples
-- [ ] 1.5.4.2 Implement `export_graph(db, pattern)` for filtered export
-- [ ] 1.5.4.3 Implement `export_file(db, path, format)` writing to file
-- [ ] 1.5.4.4 Support streaming export for large datasets
+- [x] 1.5.4.1 Implement `export_graph(db)` returning `RDF.Graph.t()` of all triples
+- [x] 1.5.4.2 Implement `export_graph(db, pattern)` for filtered export
+- [x] 1.5.4.3 Implement `export_file(db, path, format)` writing to file
+- [x] 1.5.4.4 Support streaming export for large datasets
+
+Additional functions implemented:
+- `export_string/3` - Serialize triples to string
+- `stream_triples/2` - Lazy stream of RDF triples
+- `stream_internal_triples/2` - Lazy stream of internal triple IDs
+- `count/2` - Count triples matching pattern
+- `format_extension/1` - Get file extension for format
 
 ### 1.5.5 Unit Tests
 
