@@ -53,6 +53,12 @@ defmodule TripleStore.Adapter do
   @typedoc "RDF term (IRI, blank node, or literal)"
   @type rdf_term :: RDF.IRI.t() | RDF.BlankNode.t() | RDF.Literal.t()
 
+  @typedoc "RDF triple as 3-tuple of RDF terms"
+  @type rdf_triple :: {RDF.IRI.t() | RDF.BlankNode.t(), RDF.IRI.t(), rdf_term()}
+
+  @typedoc "Internal triple as 3-tuple of term IDs"
+  @type internal_triple :: {term_id(), term_id(), term_id()}
+
   @typedoc "64-bit term ID from dictionary encoding"
   @type term_id :: Dictionary.term_id()
 
@@ -405,6 +411,280 @@ defmodule TripleStore.Adapter do
 
   def ids_to_terms(db, ids) when is_list(ids) do
     IdToString.lookup_terms(db, ids)
+  end
+
+  # ===========================================================================
+  # Triple Conversion
+  # ===========================================================================
+
+  @doc """
+  Converts an RDF triple to internal representation.
+
+  Converts each term in the triple `{s, p, o}` to its dictionary-encoded ID.
+  The subject must be an IRI or BlankNode, predicate must be an IRI,
+  and object can be any RDF term.
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `triple` - RDF triple as `{subject, predicate, object}` tuple
+
+  ## Returns
+
+  - `{:ok, {s_id, p_id, o_id}}` - Internal triple with term IDs
+  - `{:error, reason}` - On validation or allocation failure
+
+  ## Examples
+
+      iex> triple = {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("o")}
+      iex> {:ok, {s_id, p_id, o_id}} = Adapter.from_rdf_triple(manager, triple)
+      iex> is_integer(s_id) and is_integer(p_id) and is_integer(o_id)
+      true
+  """
+  @spec from_rdf_triple(manager(), rdf_triple()) ::
+          {:ok, internal_triple()} | {:error, term()}
+  def from_rdf_triple(manager, {subject, predicate, object}) do
+    with {:ok, s_id} <- term_to_id(manager, subject),
+         {:ok, p_id} <- term_to_id(manager, predicate),
+         {:ok, o_id} <- term_to_id(manager, object) do
+      {:ok, {s_id, p_id, o_id}}
+    end
+  end
+
+  @doc """
+  Converts an internal triple to RDF representation.
+
+  Looks up each term ID in the dictionary and returns the corresponding
+  RDF terms as a triple tuple.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `triple` - Internal triple as `{s_id, p_id, o_id}` tuple
+
+  ## Returns
+
+  - `{:ok, {subject, predicate, object}}` - RDF triple
+  - `:not_found` - One or more IDs not found in dictionary
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      iex> {:ok, {s, p, o}} = Adapter.to_rdf_triple(db, {s_id, p_id, o_id})
+      iex> s
+      %RDF.IRI{value: "http://ex.org/s"}
+  """
+  @spec to_rdf_triple(db_ref(), internal_triple()) ::
+          {:ok, rdf_triple()} | :not_found | {:error, term()}
+  def to_rdf_triple(db, {s_id, p_id, o_id}) do
+    with {:ok, s} <- id_to_term(db, s_id),
+         {:ok, p} <- id_to_term(db, p_id),
+         {:ok, o} <- id_to_term(db, o_id) do
+      {:ok, {s, p, o}}
+    end
+  end
+
+  @doc """
+  Converts multiple RDF triples to internal representation.
+
+  Batch conversion for efficiency - processes all terms together.
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `triples` - List of RDF triples
+
+  ## Returns
+
+  - `{:ok, [internal_triple]}` - List of internal triples
+  - `{:error, reason}` - On first validation or allocation failure
+
+  ## Examples
+
+      iex> triples = [triple1, triple2, triple3]
+      iex> {:ok, internal_triples} = Adapter.from_rdf_triples(manager, triples)
+      iex> length(internal_triples)
+      3
+  """
+  @spec from_rdf_triples(manager(), [rdf_triple()]) ::
+          {:ok, [internal_triple()]} | {:error, term()}
+  def from_rdf_triples(_manager, []), do: {:ok, []}
+
+  def from_rdf_triples(manager, triples) when is_list(triples) do
+    # Collect all terms for batch processing
+    all_terms =
+      Enum.flat_map(triples, fn {s, p, o} -> [s, p, o] end)
+
+    case terms_to_ids(manager, all_terms) do
+      {:ok, all_ids} ->
+        # Reassemble into triples
+        internal_triples =
+          all_ids
+          |> Enum.chunk_every(3)
+          |> Enum.map(fn [s_id, p_id, o_id] -> {s_id, p_id, o_id} end)
+
+        {:ok, internal_triples}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Converts multiple internal triples to RDF representation.
+
+  Batch conversion for efficiency.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `triples` - List of internal triples
+
+  ## Returns
+
+  - `{:ok, [rdf_triple]}` - List of RDF triples
+  - `{:error, reason}` - On database error
+
+  Note: Individual triples with missing IDs will have `:not_found` in their position.
+  """
+  @spec to_rdf_triples(db_ref(), [internal_triple()]) ::
+          {:ok, [rdf_triple() | :not_found]} | {:error, term()}
+  def to_rdf_triples(_db, []), do: {:ok, []}
+
+  def to_rdf_triples(db, triples) when is_list(triples) do
+    # Collect all IDs for batch lookup
+    all_ids =
+      Enum.flat_map(triples, fn {s_id, p_id, o_id} -> [s_id, p_id, o_id] end)
+
+    case ids_to_terms(db, all_ids) do
+      {:ok, all_results} ->
+        # Reassemble into triples
+        rdf_triples =
+          all_results
+          |> Enum.chunk_every(3)
+          |> Enum.map(fn results ->
+            case results do
+              [{:ok, s}, {:ok, p}, {:ok, o}] -> {s, p, o}
+              _ -> :not_found
+            end
+          end)
+
+        {:ok, rdf_triples}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # ===========================================================================
+  # Graph Conversion
+  # ===========================================================================
+
+  @doc """
+  Converts an RDF.Graph to a stream of internal triples.
+
+  Efficiently converts all triples in a graph to internal representation
+  using batch term conversion for better performance.
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `graph` - RDF.Graph to convert
+
+  ## Returns
+
+  - `{:ok, [internal_triple]}` - List of internal triples
+  - `{:error, reason}` - On validation or allocation failure
+
+  ## Examples
+
+      iex> graph = RDF.Graph.new([triple1, triple2, triple3])
+      iex> {:ok, internal_triples} = Adapter.from_rdf_graph(manager, graph)
+      iex> length(internal_triples)
+      3
+  """
+  @spec from_rdf_graph(manager(), RDF.Graph.t()) ::
+          {:ok, [internal_triple()]} | {:error, term()}
+  def from_rdf_graph(manager, %RDF.Graph{} = graph) do
+    triples = RDF.Graph.triples(graph)
+    from_rdf_triples(manager, triples)
+  end
+
+  @doc """
+  Converts a list of internal triples to an RDF.Graph.
+
+  Creates a new RDF.Graph containing all the decoded triples.
+  Triples with missing term IDs are skipped.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `triples` - List of internal triples
+  - `opts` - Optional graph options (name, base_iri, prefixes)
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - The constructed graph
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      iex> {:ok, graph} = Adapter.to_rdf_graph(db, internal_triples)
+      iex> RDF.Graph.triple_count(graph)
+      3
+  """
+  @spec to_rdf_graph(db_ref(), [internal_triple()], keyword()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def to_rdf_graph(db, triples, opts \\ [])
+
+  def to_rdf_graph(_db, [], opts) do
+    {:ok, RDF.Graph.new(opts)}
+  end
+
+  def to_rdf_graph(db, triples, opts) when is_list(triples) do
+    case to_rdf_triples(db, triples) do
+      {:ok, rdf_triples} ->
+        # Filter out :not_found entries
+        valid_triples = Enum.filter(rdf_triples, &is_tuple/1)
+        {:ok, RDF.Graph.new(valid_triples, opts)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Converts an RDF.Graph to a stream of internal triples (lazy evaluation).
+
+  Unlike `from_rdf_graph/2`, this returns a Stream that converts triples
+  on demand. Useful for very large graphs where you want to process
+  incrementally.
+
+  Note: Each triple is converted individually, so this is less efficient
+  than `from_rdf_graph/2` for small graphs. Use for large graphs or when
+  you need streaming semantics.
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `graph` - RDF.Graph to convert
+
+  ## Returns
+
+  - Stream of `{:ok, internal_triple}` or `{:error, reason}` tuples
+
+  ## Examples
+
+      iex> graph = RDF.Graph.new([triple1, triple2, triple3])
+      iex> stream = Adapter.stream_from_rdf_graph(manager, graph)
+      iex> Enum.take(stream, 2)
+      [{:ok, {1, 2, 3}}, {:ok, {1, 2, 4}}]
+  """
+  @spec stream_from_rdf_graph(manager(), RDF.Graph.t()) :: Enumerable.t()
+  def stream_from_rdf_graph(manager, %RDF.Graph{} = graph) do
+    graph
+    |> RDF.Graph.triples()
+    |> Stream.map(fn triple -> from_rdf_triple(manager, triple) end)
   end
 
   # ===========================================================================

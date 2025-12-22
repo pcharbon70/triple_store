@@ -379,14 +379,19 @@ Additional functions implemented:
 
 ### 1.5.2 Triple/Graph Conversion
 
-- [ ] **Task 1.5.2 Complete**
+- [x] **Task 1.5.2 Complete** (2025-12-22)
 
 Implement conversion for composite structures including triples and graphs.
 
-- [ ] 1.5.2.1 Implement `from_rdf_triple(RDF.Triple.t())` -> `{s, p, o}` internal tuple
-- [ ] 1.5.2.2 Implement `to_rdf_triple({s, p, o})` -> `RDF.Triple.t()`
-- [ ] 1.5.2.3 Implement `from_rdf_graph(RDF.Graph.t())` -> stream of internal triples
-- [ ] 1.5.2.4 Implement `to_rdf_graph(db, triples)` -> `RDF.Graph.t()`
+- [x] 1.5.2.1 Implement `from_rdf_triple(RDF.Triple.t())` -> `{s, p, o}` internal tuple
+- [x] 1.5.2.2 Implement `to_rdf_triple({s, p, o})` -> `RDF.Triple.t()`
+- [x] 1.5.2.3 Implement `from_rdf_graph(RDF.Graph.t())` -> stream of internal triples
+- [x] 1.5.2.4 Implement `to_rdf_graph(db, triples)` -> `RDF.Graph.t()`
+
+Additional functions implemented:
+- `from_rdf_triples/2` - Batch triple conversion (efficient term batching)
+- `to_rdf_triples/2` - Batch reverse conversion
+- `stream_from_rdf_graph/2` - Lazy stream conversion for large graphs
 
 ### 1.5.3 Bulk Loading Pipeline
 
