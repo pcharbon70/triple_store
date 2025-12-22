@@ -29,15 +29,15 @@ Set up the Rust crate for SPARQL parsing with spargebra integration.
 
 ### 2.1.2 Query Parsing
 
-- [ ] **Task 2.1.2 Complete**
+- [x] **Task 2.1.2 Complete**
 
 Implement query parsing for all SPARQL query forms.
 
-- [ ] 2.1.2.1 Implement `parse_query(sparql)` -> `{:ok, ast}` or `{:error, reason}`
-- [ ] 2.1.2.2 Support SELECT queries with all projection forms
-- [ ] 2.1.2.3 Support CONSTRUCT queries with template patterns
-- [ ] 2.1.2.4 Support ASK queries for boolean results
-- [ ] 2.1.2.5 Support DESCRIBE queries with IRI expansion
+- [x] 2.1.2.1 Implement `parse_query(sparql)` -> `{:ok, ast}` or `{:error, reason}`
+- [x] 2.1.2.2 Support SELECT queries with all projection forms
+- [x] 2.1.2.3 Support CONSTRUCT queries with template patterns
+- [x] 2.1.2.4 Support ASK queries for boolean results
+- [x] 2.1.2.5 Support DESCRIBE queries with IRI expansion
 
 ### 2.1.3 Update Parsing
 
