@@ -56,4 +56,24 @@ defmodule TripleStore.SPARQL.Parser.NIF do
   """
   @spec parse_query(String.t()) :: {:ok, term()} | {:error, {:parse_error, String.t()}}
   def parse_query(_sparql), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Parses a SPARQL UPDATE string into an AST.
+
+  ## Arguments
+  - `sparql` - The SPARQL UPDATE string to parse
+
+  ## Returns
+  - `{:ok, ast}` on success where ast is the Elixir representation
+  - `{:error, {:parse_error, message}}` on parse failure
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.NIF.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      iex> elem(ast, 0)
+      :update
+
+  """
+  @spec parse_update(String.t()) :: {:ok, term()} | {:error, {:parse_error, String.t()}}
+  def parse_update(_sparql), do: :erlang.nif_error(:nif_not_loaded)
 end

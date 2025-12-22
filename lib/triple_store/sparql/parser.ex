@@ -1,23 +1,27 @@
 defmodule TripleStore.SPARQL.Parser do
   @moduledoc """
-  SPARQL query parser using spargebra NIF.
+  SPARQL query and update parser using spargebra NIF.
 
-  This module provides functions to parse SPARQL query strings into an
+  This module provides functions to parse SPARQL query and update strings into an
   Elixir-native AST representation. The parser supports all SPARQL 1.1
-  query forms (SELECT, CONSTRUCT, ASK, DESCRIBE).
+  query forms (SELECT, CONSTRUCT, ASK, DESCRIBE) and update operations
+  (INSERT DATA, DELETE DATA, DELETE/INSERT WHERE, LOAD, CLEAR, CREATE, DROP).
 
   ## Usage
 
       {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?name WHERE { ?s foaf:name ?name }")
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("INSERT DATA { <s> <p> <o> }")
 
   ## AST Structure
 
   The AST is returned as nested Elixir tuples and lists representing:
 
   - **Query types**: `:select`, `:construct`, `:ask`, `:describe`
+  - **Update type**: `:update` with list of operations
   - **Pattern types**: `:bgp`, `:join`, `:left_join`, `:union`, `:filter`, etc.
   - **Term types**: `:variable`, `:named_node`, `:blank_node`, `:literal`
   - **Expression types**: `:and`, `:or`, `:equal`, `:less`, `:greater`, etc.
+  - **Update operations**: `:insert_data`, `:delete_data`, `:delete_insert`, `:load`, `:clear`, `:create`, `:drop`
 
   ## Examples
 
@@ -33,6 +37,9 @@ defmodule TripleStore.SPARQL.Parser do
       iex> {:error, {:parse_error, msg}} = TripleStore.SPARQL.Parser.parse("INVALID QUERY")
       iex> is_binary(msg)
       true
+
+      # Parse UPDATE operations
+      iex> {:ok, {:update, _}} = TripleStore.SPARQL.Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
 
   """
 
@@ -84,6 +91,55 @@ defmodule TripleStore.SPARQL.Parser do
     case parse(sparql) do
       {:ok, ast} -> ast
       {:error, {:parse_error, message}} -> raise ArgumentError, "SPARQL parse error: #{message}"
+    end
+  end
+
+  @doc """
+  Parses a SPARQL UPDATE string into an AST.
+
+  ## Arguments
+  - `sparql` - The SPARQL UPDATE string to parse
+
+  ## Returns
+  - `{:ok, ast}` on success
+  - `{:error, {:parse_error, message}}` on parse failure
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      iex> elem(ast, 0)
+      :update
+
+  """
+  @spec parse_update(String.t()) :: {:ok, term()} | {:error, {:parse_error, String.t()}}
+  def parse_update(sparql) when is_binary(sparql) do
+    NIF.parse_update(sparql)
+  end
+
+  @doc """
+  Parses a SPARQL UPDATE string, raising on error.
+
+  ## Arguments
+  - `sparql` - The SPARQL UPDATE string to parse
+
+  ## Returns
+  - The parsed AST on success
+
+  ## Raises
+  - `ArgumentError` on parse failure
+
+  ## Examples
+
+      iex> ast = TripleStore.SPARQL.Parser.parse_update!("CLEAR ALL")
+      iex> elem(ast, 0)
+      :update
+
+  """
+  @spec parse_update!(String.t()) :: term()
+  def parse_update!(sparql) when is_binary(sparql) do
+    case parse_update(sparql) do
+      {:ok, ast} -> ast
+      {:error, {:parse_error, message}} -> raise ArgumentError, "SPARQL UPDATE parse error: #{message}"
     end
   end
 
@@ -159,6 +215,46 @@ defmodule TripleStore.SPARQL.Parser do
   @spec describe?(term()) :: boolean()
   def describe?({:describe, _}), do: true
   def describe?(_), do: false
+
+  @doc """
+  Checks if the AST represents an UPDATE operation.
+  """
+  @spec update?(term()) :: boolean()
+  def update?({:update, _}), do: true
+  def update?(_), do: false
+
+  # ===========================================================================
+  # UPDATE AST Helpers
+  # ===========================================================================
+
+  @doc """
+  Extracts operations from a parsed UPDATE AST.
+
+  ## Arguments
+  - `ast` - The parsed UPDATE AST
+
+  ## Returns
+  - A list of update operations
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      iex> ops = TripleStore.SPARQL.Parser.get_operations(ast)
+      iex> length(ops) == 1
+      true
+
+  """
+  @spec get_operations(term()) :: [term()]
+  def get_operations({:update, props}) when is_list(props) do
+    props
+    |> Enum.find(fn {key, _} -> key == "operations" end)
+    |> case do
+      {"operations", ops} -> ops
+      nil -> []
+    end
+  end
+
+  def get_operations(_), do: []
 
   @doc """
   Extracts the pattern from a parsed query AST.

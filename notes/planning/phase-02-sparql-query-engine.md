@@ -41,15 +41,15 @@ Implement query parsing for all SPARQL query forms.
 
 ### 2.1.3 Update Parsing
 
-- [ ] **Task 2.1.3 Complete**
+- [x] **Task 2.1.3 Complete**
 
 Implement SPARQL UPDATE parsing (used in Phase 3).
 
-- [ ] 2.1.3.1 Implement `parse_update(sparql)` -> `{:ok, ast}` or `{:error, reason}`
-- [ ] 2.1.3.2 Support INSERT DATA operations
-- [ ] 2.1.3.3 Support DELETE DATA operations
-- [ ] 2.1.3.4 Support DELETE WHERE / INSERT WHERE operations
-- [ ] 2.1.3.5 Support LOAD and CLEAR operations
+- [x] 2.1.3.1 Implement `parse_update(sparql)` -> `{:ok, ast}` or `{:error, reason}`
+- [x] 2.1.3.2 Support INSERT DATA operations
+- [x] 2.1.3.3 Support DELETE DATA operations
+- [x] 2.1.3.4 Support DELETE WHERE / INSERT WHERE operations
+- [x] 2.1.3.5 Support LOAD and CLEAR operations
 
 ### 2.1.4 Error Handling
 

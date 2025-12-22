@@ -622,4 +622,368 @@ defmodule TripleStore.SPARQL.ParserTest do
       {:ok, {:describe, _props}} = Parser.parse(query)
     end
   end
+
+  # ===========================================================================
+  # Task 2.1.3: UPDATE Parsing
+  # ===========================================================================
+
+  # Task 2.1.3.1: parse_update API
+  describe "parse_update/1" do
+    test "returns {:ok, ast} for valid UPDATE" do
+      assert {:ok, {:update, _props}} =
+               Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+    end
+
+    test "returns {:error, {:parse_error, msg}} for invalid UPDATE" do
+      assert {:error, {:parse_error, msg}} = Parser.parse_update("NOT AN UPDATE")
+      assert is_binary(msg)
+    end
+  end
+
+  describe "parse_update!/1" do
+    test "returns AST for valid UPDATE" do
+      ast = Parser.parse_update!("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      assert {:update, _} = ast
+    end
+
+    test "raises ArgumentError for invalid UPDATE" do
+      assert_raise ArgumentError, ~r/SPARQL UPDATE parse error/, fn ->
+        Parser.parse_update!("NOT AN UPDATE")
+      end
+    end
+  end
+
+  describe "update?/1" do
+    test "returns true for UPDATE AST" do
+      {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      assert Parser.update?(ast)
+    end
+
+    test "returns false for QUERY AST" do
+      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      refute Parser.update?(ast)
+    end
+  end
+
+  describe "get_operations/1" do
+    test "extracts operations from UPDATE AST" do
+      {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      ops = Parser.get_operations(ast)
+      assert length(ops) == 1
+    end
+
+    test "returns empty list for non-UPDATE AST" do
+      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      assert Parser.get_operations(ast) == []
+    end
+  end
+
+  # Task 2.1.3.2: INSERT DATA operations
+  describe "Task 2.1.3.2: INSERT DATA operations" do
+    test "parses INSERT DATA with single triple" do
+      query = "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      assert [{:insert_data, quads}] = ops
+      assert length(quads) == 1
+
+      [{:quad, s, p, o, g}] = quads
+      assert {:named_node, "http://example.org/s"} = s
+      assert {:named_node, "http://example.org/p"} = p
+      assert {:named_node, "http://example.org/o"} = o
+      assert :default_graph = g
+    end
+
+    test "parses INSERT DATA with multiple triples" do
+      query = """
+      INSERT DATA {
+        <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
+        <http://example.org/s2> <http://example.org/p> <http://example.org/o2>
+      }
+      """
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:insert_data, quads}] = ops
+      assert length(quads) == 2
+    end
+
+    test "parses INSERT DATA with literal value" do
+      query = "INSERT DATA { <http://example.org/s> <http://example.org/name> \"John\" }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:insert_data, [{:quad, _s, _p, o, _g}]}] = ops
+      assert {:literal, :simple, "John"} = o
+    end
+
+    test "parses INSERT DATA with typed literal" do
+      query = "INSERT DATA { <http://example.org/s> <http://example.org/age> \"30\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+
+    test "parses INSERT DATA with named graph" do
+      query = "INSERT DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:insert_data, [{:quad, _s, _p, _o, g}]}] = ops
+      assert {:named_graph, "http://example.org/graph1"} = g
+    end
+  end
+
+  # Task 2.1.3.3: DELETE DATA operations
+  describe "Task 2.1.3.3: DELETE DATA operations" do
+    test "parses DELETE DATA with single triple" do
+      query = "DELETE DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      assert [{:delete_data, quads}] = ops
+      assert length(quads) == 1
+    end
+
+    test "parses DELETE DATA with multiple triples" do
+      query = """
+      DELETE DATA {
+        <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
+        <http://example.org/s2> <http://example.org/p> <http://example.org/o2>
+      }
+      """
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:delete_data, quads}] = ops
+      assert length(quads) == 2
+    end
+
+    test "parses DELETE DATA with named graph" do
+      query = "DELETE DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+  end
+
+  # Task 2.1.3.4: DELETE WHERE / INSERT WHERE operations
+  describe "Task 2.1.3.4: DELETE WHERE / INSERT WHERE operations" do
+    test "parses DELETE WHERE" do
+      query = "DELETE { ?s <http://example.org/p> ?o } WHERE { ?s <http://example.org/p> ?o }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:delete_insert, op_props}] = ops
+
+      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
+      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
+      pattern = Enum.find_value(op_props, fn {"pattern", p} -> p; _ -> nil end)
+
+      assert length(delete) == 1
+      assert insert == []
+      assert pattern != nil
+    end
+
+    test "parses INSERT WHERE" do
+      query = "INSERT { ?s <http://example.org/newPred> ?o } WHERE { ?s <http://example.org/oldPred> ?o }"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:delete_insert, op_props}] = ops
+
+      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
+      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
+
+      assert delete == []
+      assert length(insert) == 1
+    end
+
+    test "parses DELETE INSERT WHERE (modify)" do
+      query = """
+      DELETE { ?s <http://example.org/oldPred> ?o }
+      INSERT { ?s <http://example.org/newPred> ?o }
+      WHERE { ?s <http://example.org/oldPred> ?o }
+      """
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:delete_insert, op_props}] = ops
+
+      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
+      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
+
+      assert length(delete) == 1
+      assert length(insert) == 1
+    end
+
+    test "parses DELETE WHERE with complex pattern" do
+      query = """
+      DELETE { ?s <http://example.org/p> ?o }
+      WHERE {
+        ?s <http://example.org/p> ?o .
+        FILTER(?o > 10)
+      }
+      """
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+  end
+
+  # Task 2.1.3.5: LOAD and CLEAR operations
+  describe "Task 2.1.3.5: LOAD and CLEAR operations" do
+    test "parses LOAD" do
+      query = "LOAD <http://example.org/data.ttl>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:load, load_props}] = ops
+
+      silent = Enum.find_value(load_props, fn {"silent", s} -> s; _ -> nil end)
+      source = Enum.find_value(load_props, fn {"source", s} -> s; _ -> nil end)
+
+      refute silent
+      assert {:named_node, "http://example.org/data.ttl"} = source
+    end
+
+    test "parses LOAD SILENT" do
+      query = "LOAD SILENT <http://example.org/data.ttl>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:load, load_props}] = ops
+
+      silent = Enum.find_value(load_props, fn {"silent", s} -> s; _ -> nil end)
+      assert silent
+    end
+
+    test "parses LOAD INTO GRAPH" do
+      query = "LOAD <http://example.org/data.ttl> INTO GRAPH <http://example.org/graph1>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:load, load_props}] = ops
+
+      dest = Enum.find_value(load_props, fn {"destination", d} -> d; _ -> nil end)
+      assert {:named_graph, "http://example.org/graph1"} = dest
+    end
+
+    test "parses CLEAR ALL" do
+      query = "CLEAR ALL"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:clear, clear_props}] = ops
+
+      silent = Enum.find_value(clear_props, fn {"silent", s} -> s; _ -> nil end)
+      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+
+      refute silent
+      assert :all_graphs = graph
+    end
+
+    test "parses CLEAR SILENT ALL" do
+      query = "CLEAR SILENT ALL"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:clear, clear_props}] = ops
+
+      silent = Enum.find_value(clear_props, fn {"silent", s} -> s; _ -> nil end)
+      assert silent
+    end
+
+    test "parses CLEAR DEFAULT" do
+      query = "CLEAR DEFAULT"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:clear, clear_props}] = ops
+
+      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      assert :default_graph = graph
+    end
+
+    test "parses CLEAR NAMED" do
+      query = "CLEAR NAMED"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:clear, clear_props}] = ops
+
+      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      assert :all_named = graph
+    end
+
+    test "parses CLEAR GRAPH" do
+      query = "CLEAR GRAPH <http://example.org/graph1>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:clear, clear_props}] = ops
+
+      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      assert {:named_graph, "http://example.org/graph1"} = graph
+    end
+
+    test "parses DROP GRAPH" do
+      query = "DROP GRAPH <http://example.org/graph1>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:drop, drop_props}] = ops
+
+      graph = Enum.find_value(drop_props, fn {"graph", g} -> g; _ -> nil end)
+      assert {:named_graph, "http://example.org/graph1"} = graph
+    end
+
+    test "parses CREATE GRAPH" do
+      query = "CREATE GRAPH <http://example.org/newgraph>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:create, create_props}] = ops
+
+      silent = Enum.find_value(create_props, fn {"silent", s} -> s; _ -> nil end)
+      graph = Enum.find_value(create_props, fn {"graph", g} -> g; _ -> nil end)
+
+      refute silent
+      assert {:named_node, "http://example.org/newgraph"} = graph
+    end
+
+    test "parses CREATE SILENT GRAPH" do
+      query = "CREATE SILENT GRAPH <http://example.org/newgraph>"
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      [{:create, create_props}] = ops
+
+      silent = Enum.find_value(create_props, fn {"silent", s} -> s; _ -> nil end)
+      assert silent
+    end
+  end
+
+  # Multiple operations in single update
+  describe "multiple UPDATE operations" do
+    test "parses multiple operations separated by semicolon" do
+      query = """
+      INSERT DATA { <http://example.org/s1> <http://example.org/p> <http://example.org/o1> } ;
+      DELETE DATA { <http://example.org/s2> <http://example.org/p> <http://example.org/o2> }
+      """
+      {:ok, {:update, props}} = Parser.parse_update(query)
+
+      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      assert length(ops) == 2
+
+      assert {:insert_data, _} = Enum.at(ops, 0)
+      assert {:delete_data, _} = Enum.at(ops, 1)
+    end
+  end
+
+  # PREFIX support in UPDATE
+  describe "UPDATE with PREFIX" do
+    test "parses UPDATE with PREFIX declarations" do
+      query = """
+      PREFIX ex: <http://example.org/>
+      INSERT DATA { ex:s ex:p ex:o }
+      """
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+  end
 end

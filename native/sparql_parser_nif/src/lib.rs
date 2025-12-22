@@ -5,14 +5,15 @@
 //! SPARQL query strings into an Elixir-native AST representation.
 
 use rustler::{Encoder, Env, NifResult, Term};
-use spargebra::Query;
+use spargebra::{GraphUpdateOperation, Query, Update};
 use spargebra::algebra::{
     AggregateExpression, AggregateFunction, Expression, Function, GraphPattern,
-    OrderExpression, PropertyPathExpression,
+    GraphTarget, OrderExpression, PropertyPathExpression,
 };
 use spargebra::term::{
-    BlankNode, GroundTerm, Literal, NamedNode, NamedNodePattern, TermPattern,
-    TriplePattern, Variable,
+    BlankNode, GraphName, GraphNamePattern, GroundQuad, GroundQuadPattern,
+    GroundSubject, GroundTerm, GroundTermPattern, Literal, NamedNode, NamedNodePattern,
+    Quad, QuadPattern, Subject, TermPattern, TriplePattern, Variable,
 };
 use oxiri::Iri;
 
@@ -100,6 +101,25 @@ mod atoms {
 
         // Parse error types
         parse_error,
+
+        // Update operation types
+        update,
+        insert_data,
+        delete_data,
+        delete_insert,
+        load,
+        clear,
+        create,
+        drop,
+
+        // Graph targets
+        default_graph,
+        named_graph,
+        all_graphs,
+        all_named,
+
+        // Quad/graph-related
+        quad,
     }
 }
 
@@ -122,6 +142,28 @@ fn parse_query<'a>(env: Env<'a>, sparql: &str) -> NifResult<Term<'a>> {
     match Query::parse(sparql, None) {
         Ok(query) => {
             let ast = query_to_term(env, &query);
+            Ok((atoms::ok(), ast).encode(env))
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            Ok((atoms::error(), (atoms::parse_error(), error_msg)).encode(env))
+        }
+    }
+}
+
+/// Parses a SPARQL UPDATE string into an Elixir AST.
+///
+/// # Arguments
+/// * `sparql` - The SPARQL UPDATE string to parse
+///
+/// # Returns
+/// * `{:ok, ast}` on success where ast is the Elixir representation
+/// * `{:error, {:parse_error, message}}` on parse failure
+#[rustler::nif]
+fn parse_update<'a>(env: Env<'a>, sparql: &str) -> NifResult<Term<'a>> {
+    match Update::parse(sparql, None) {
+        Ok(update) => {
+            let ast = update_to_term(env, &update);
             Ok((atoms::ok(), ast).encode(env))
         }
         Err(e) => {
@@ -757,4 +799,216 @@ fn construct_template_to_term<'a>(env: Env<'a>, template: &[TriplePattern]) -> T
     triple_terms.encode(env)
 }
 
-rustler::init!("Elixir.TripleStore.SPARQL.Parser.NIF");
+// ===========================================================================
+// UPDATE Conversion Functions
+// ===========================================================================
+
+/// Converts a spargebra Update to an Elixir term.
+fn update_to_term<'a>(env: Env<'a>, update: &Update) -> Term<'a> {
+    let operations: Vec<Term<'a>> = update
+        .operations
+        .iter()
+        .map(|op| graph_update_operation_to_term(env, op))
+        .collect();
+
+    let base_term = option_iri_to_term(env, &update.base_iri);
+
+    (
+        atoms::update(),
+        vec![
+            ("operations", operations.encode(env)),
+            ("base_iri", base_term),
+        ],
+    ).encode(env)
+}
+
+/// Converts a GraphUpdateOperation to an Elixir term.
+fn graph_update_operation_to_term<'a>(env: Env<'a>, op: &GraphUpdateOperation) -> Term<'a> {
+    match op {
+        GraphUpdateOperation::InsertData { data } => {
+            let quads: Vec<Term<'a>> = data
+                .iter()
+                .map(|q| quad_to_term(env, q))
+                .collect();
+            (atoms::insert_data(), quads).encode(env)
+        }
+        GraphUpdateOperation::DeleteData { data } => {
+            let quads: Vec<Term<'a>> = data
+                .iter()
+                .map(|q| ground_quad_to_term(env, q))
+                .collect();
+            (atoms::delete_data(), quads).encode(env)
+        }
+        GraphUpdateOperation::DeleteInsert {
+            delete,
+            insert,
+            using,
+            pattern,
+        } => {
+            let delete_terms: Vec<Term<'a>> = delete
+                .iter()
+                .map(|q| ground_quad_pattern_to_term(env, q))
+                .collect();
+            let insert_terms: Vec<Term<'a>> = insert
+                .iter()
+                .map(|q| quad_pattern_to_term(env, q))
+                .collect();
+            let using_term = option_to_term(env, using, |e, d| query_dataset_to_term(e, d));
+            let pattern_term = graph_pattern_to_term(env, pattern);
+
+            (
+                atoms::delete_insert(),
+                vec![
+                    ("delete", delete_terms.encode(env)),
+                    ("insert", insert_terms.encode(env)),
+                    ("using", using_term),
+                    ("pattern", pattern_term),
+                ],
+            ).encode(env)
+        }
+        GraphUpdateOperation::Load {
+            silent,
+            source,
+            destination,
+        } => {
+            let source_term = named_node_to_term(env, source);
+            let dest_term = graph_name_to_term(env, destination);
+            (
+                atoms::load(),
+                vec![
+                    ("silent", silent.encode(env)),
+                    ("source", source_term),
+                    ("destination", dest_term),
+                ],
+            ).encode(env)
+        }
+        GraphUpdateOperation::Clear { silent, graph } => {
+            let graph_term = graph_target_to_term(env, graph);
+            (
+                atoms::clear(),
+                vec![
+                    ("silent", silent.encode(env)),
+                    ("graph", graph_term),
+                ],
+            ).encode(env)
+        }
+        GraphUpdateOperation::Create { silent, graph } => {
+            let graph_term = named_node_to_term(env, graph);
+            (
+                atoms::create(),
+                vec![
+                    ("silent", silent.encode(env)),
+                    ("graph", graph_term),
+                ],
+            ).encode(env)
+        }
+        GraphUpdateOperation::Drop { silent, graph } => {
+            let graph_term = graph_target_to_term(env, graph);
+            (
+                atoms::drop(),
+                vec![
+                    ("silent", silent.encode(env)),
+                    ("graph", graph_term),
+                ],
+            ).encode(env)
+        }
+    }
+}
+
+/// Converts a Quad to an Elixir term.
+fn quad_to_term<'a>(env: Env<'a>, quad: &Quad) -> Term<'a> {
+    let subject = subject_to_term(env, &quad.subject);
+    let predicate = named_node_to_term(env, &quad.predicate);
+    let object = spargebra_term_to_elixir_term(env, &quad.object);
+    let graph = graph_name_to_term(env, &quad.graph_name);
+    (atoms::quad(), subject, predicate, object, graph).encode(env)
+}
+
+/// Converts a GroundQuad to an Elixir term.
+fn ground_quad_to_term<'a>(env: Env<'a>, quad: &GroundQuad) -> Term<'a> {
+    let subject = ground_subject_to_term(env, &quad.subject);
+    let predicate = named_node_to_term(env, &quad.predicate);
+    let object = ground_term_to_term(env, &quad.object);
+    let graph = graph_name_to_term(env, &quad.graph_name);
+    (atoms::quad(), subject, predicate, object, graph).encode(env)
+}
+
+/// Converts a QuadPattern to an Elixir term.
+fn quad_pattern_to_term<'a>(env: Env<'a>, quad: &QuadPattern) -> Term<'a> {
+    let subject = term_pattern_to_term(env, &quad.subject);
+    let predicate = named_node_pattern_to_term(env, &quad.predicate);
+    let object = term_pattern_to_term(env, &quad.object);
+    let graph = graph_name_pattern_to_term(env, &quad.graph_name);
+    (atoms::quad(), subject, predicate, object, graph).encode(env)
+}
+
+/// Converts a GroundQuadPattern to an Elixir term.
+fn ground_quad_pattern_to_term<'a>(env: Env<'a>, quad: &GroundQuadPattern) -> Term<'a> {
+    let subject = ground_term_pattern_to_term(env, &quad.subject);
+    let predicate = named_node_pattern_to_term(env, &quad.predicate);
+    let object = ground_term_pattern_to_term(env, &quad.object);
+    let graph = graph_name_pattern_to_term(env, &quad.graph_name);
+    (atoms::quad(), subject, predicate, object, graph).encode(env)
+}
+
+/// Converts a Subject to an Elixir term.
+fn subject_to_term<'a>(env: Env<'a>, subject: &Subject) -> Term<'a> {
+    match subject {
+        Subject::NamedNode(nn) => named_node_to_term(env, nn),
+        Subject::BlankNode(bn) => blank_node_to_term(env, bn),
+    }
+}
+
+/// Converts a GroundSubject to an Elixir term.
+fn ground_subject_to_term<'a>(env: Env<'a>, subject: &GroundSubject) -> Term<'a> {
+    match subject {
+        GroundSubject::NamedNode(nn) => named_node_to_term(env, nn),
+    }
+}
+
+/// Converts a spargebra Term to an Elixir term.
+fn spargebra_term_to_elixir_term<'a>(env: Env<'a>, term: &spargebra::term::Term) -> Term<'a> {
+    match term {
+        spargebra::term::Term::NamedNode(nn) => named_node_to_term(env, nn),
+        spargebra::term::Term::BlankNode(bn) => blank_node_to_term(env, bn),
+        spargebra::term::Term::Literal(lit) => literal_to_term(env, lit),
+    }
+}
+
+/// Converts a GroundTermPattern to an Elixir term.
+fn ground_term_pattern_to_term<'a>(env: Env<'a>, term: &GroundTermPattern) -> Term<'a> {
+    match term {
+        GroundTermPattern::NamedNode(nn) => named_node_to_term(env, nn),
+        GroundTermPattern::Literal(lit) => literal_to_term(env, lit),
+        GroundTermPattern::Variable(var) => variable_to_term(env, var),
+    }
+}
+
+/// Converts a GraphName to an Elixir term.
+fn graph_name_to_term<'a>(env: Env<'a>, graph: &GraphName) -> Term<'a> {
+    match graph {
+        GraphName::NamedNode(nn) => (atoms::named_graph(), nn.as_str()).encode(env),
+        GraphName::DefaultGraph => atoms::default_graph().encode(env),
+    }
+}
+
+/// Converts a GraphNamePattern to an Elixir term.
+fn graph_name_pattern_to_term<'a>(env: Env<'a>, graph: &GraphNamePattern) -> Term<'a> {
+    match graph {
+        GraphNamePattern::NamedNode(nn) => (atoms::named_graph(), nn.as_str()).encode(env),
+        GraphNamePattern::DefaultGraph => atoms::default_graph().encode(env),
+        GraphNamePattern::Variable(var) => variable_to_term(env, var),
+    }
+}
+
+/// Converts a GraphTarget to an Elixir term.
+fn graph_target_to_term<'a>(env: Env<'a>, target: &GraphTarget) -> Term<'a> {
+    match target {
+        GraphTarget::NamedNode(nn) => (atoms::named_graph(), nn.as_str()).encode(env),
+        GraphTarget::DefaultGraph => atoms::default_graph().encode(env),
+        GraphTarget::NamedGraphs => atoms::all_named().encode(env),
+        GraphTarget::AllGraphs => atoms::all_graphs().encode(env),
+    }
+}
+
+rustler::init!("Elixir.TripleStore.SPARQL.Parser.NIF", [nif_loaded, parse_query, parse_update]);
