@@ -351,7 +351,7 @@ Following the comprehensive review of Section 1.4, the following improvements we
 
 ## 1.5 RDF.ex Integration
 
-- [ ] **Section 1.5 Complete**
+- [x] **Section 1.5 Complete** (2025-12-22)
 
 This section provides the adapter layer between the `rdf` hex package and our internal storage representation. The adapter converts `RDF.Triple`, `RDF.Graph`, and `RDF.Dataset` structures to our dictionary-encoded format.
 
@@ -430,19 +430,23 @@ Additional functions implemented:
 
 ### 1.5.5 Unit Tests
 
-- [ ] **Task 1.5.5 Complete**
+- [x] **Task 1.5.5 Complete** (2025-12-22)
 
-- [ ] Test IRI conversion roundtrip
-- [ ] Test blank node conversion roundtrip
-- [ ] Test typed literal conversion roundtrip
-- [ ] Test language-tagged literal conversion roundtrip
-- [ ] Test triple conversion roundtrip
-- [ ] Test graph loading stores all triples
-- [ ] Test file loading for Turtle format
-- [ ] Test file loading for N-Triples format
-- [ ] Test batch loading respects batch size
-- [ ] Test export produces valid RDF graph
-- [ ] Test export with pattern filters correctly
+All tests implemented as part of tasks 1.5.1-1.5.4:
+
+- [x] Test IRI conversion roundtrip (term_conversion_test.exs)
+- [x] Test blank node conversion roundtrip (term_conversion_test.exs)
+- [x] Test typed literal conversion roundtrip (term_conversion_test.exs)
+- [x] Test language-tagged literal conversion roundtrip (term_conversion_test.exs)
+- [x] Test triple conversion roundtrip (triple_graph_conversion_test.exs)
+- [x] Test graph loading stores all triples (loader_test.exs)
+- [x] Test file loading for Turtle format (loader_test.exs)
+- [x] Test file loading for N-Triples format (loader_test.exs)
+- [x] Test batch loading respects batch size (loader_test.exs)
+- [x] Test export produces valid RDF graph (exporter_test.exs)
+- [x] Test export with pattern filters correctly (exporter_test.exs)
+
+Test coverage: 140 tests across RDF.ex integration layer
 
 ---
 
