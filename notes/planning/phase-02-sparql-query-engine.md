@@ -53,14 +53,14 @@ Implement SPARQL UPDATE parsing (used in Phase 3).
 
 ### 2.1.4 Error Handling
 
-- [ ] **Task 2.1.4 Complete**
+- [x] **Task 2.1.4 Complete**
 
 Implement comprehensive error handling with informative messages.
 
-- [ ] 2.1.4.1 Return parse position (line, column) on syntax errors
-- [ ] 2.1.4.2 Provide descriptive error messages for common mistakes
-- [ ] 2.1.4.3 Handle prefix resolution errors
-- [ ] 2.1.4.4 Validate variable scoping
+- [x] 2.1.4.1 Return parse position (line, column) on syntax errors
+- [x] 2.1.4.2 Provide descriptive error messages for common mistakes
+- [x] 2.1.4.3 Handle prefix resolution errors
+- [x] 2.1.4.4 Validate variable scoping
 
 ### 2.1.5 Unit Tests
 

@@ -4,6 +4,8 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   Task 2.1.1: Parser Crate Setup
   Task 2.1.2: Query Parsing - All SPARQL query forms
+  Task 2.1.3: Update Parsing - SPARQL UPDATE operations
+  Task 2.1.4: Error Handling - Line/column position, descriptive messages, prefix errors, variable scoping
   """
 
   use ExUnit.Case, async: true
@@ -984,6 +986,174 @@ defmodule TripleStore.SPARQL.ParserTest do
       INSERT DATA { ex:s ex:p ex:o }
       """
       {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+  end
+
+  # ===========================================================================
+  # Task 2.1.4: Error Handling
+  # ===========================================================================
+
+  # Task 2.1.4.1: Parse position (line, column) on syntax errors
+  describe "Task 2.1.4.1: parse_with_details/1 - line/column position" do
+    test "returns line and column for syntax error" do
+      {:error, error} = Parser.parse_with_details("INVALID QUERY")
+      assert error.line == 1
+      assert error.column == 10
+    end
+
+    test "returns correct position for missing WHERE clause" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE")
+      assert error.line == 1
+      assert error.column == 16
+    end
+
+    test "handles multiline queries with error on later line" do
+      # Using explicit newlines to have predictable line numbers
+      query = "SELECT ?s ?p ?o\nWHERE {\n  ?s ?p\n}"
+      {:error, error} = Parser.parse_with_details(query)
+      # Error is at line 4, column 2 (the closing brace after incomplete triple)
+      assert error.line == 4
+      assert error.column == 2
+    end
+
+    test "returns structured error map with all fields" do
+      {:error, error} = Parser.parse_with_details("INVALID")
+      assert Map.has_key?(error, :message)
+      assert Map.has_key?(error, :line)
+      assert Map.has_key?(error, :column)
+      assert Map.has_key?(error, :raw_message)
+      assert Map.has_key?(error, :hint)
+    end
+
+    test "returns {:ok, ast} for valid queries" do
+      {:ok, ast} = Parser.parse_with_details("SELECT ?s WHERE { ?s ?p ?o }")
+      assert {:select, _} = ast
+    end
+  end
+
+  describe "Task 2.1.4.1: parse_update_with_details/1 - line/column position" do
+    test "returns line and column for UPDATE syntax error" do
+      {:error, error} = Parser.parse_update_with_details("INSERT DATA")
+      assert error.line == 1
+      assert error.column == 12
+    end
+
+    test "returns {:ok, ast} for valid UPDATE" do
+      {:ok, ast} = Parser.parse_update_with_details("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      assert {:update, _} = ast
+    end
+  end
+
+  # Task 2.1.4.2: Descriptive error messages for common mistakes
+  describe "Task 2.1.4.2: descriptive error messages" do
+    test "provides clear message for invalid query form" do
+      {:error, error} = Parser.parse_with_details("INVALID QUERY")
+      assert error.message =~ "Invalid query form"
+      assert error.message =~ "SELECT"
+      assert error.message =~ "CONSTRUCT"
+    end
+
+    test "provides clear message for missing WHERE clause" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE")
+      assert error.message =~ "Missing WHERE clause" or error.message =~ "'{'"
+    end
+
+    test "provides clear message for incomplete triple pattern" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s ?p }")
+      assert error.message =~ "Incomplete triple" or error.message =~ "triple"
+    end
+
+    test "provides hint about unclosed braces" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s ?p ?o")
+      assert error.hint =~ "brace" or error.hint =~ "{"
+    end
+
+    test "provides hint about missing object in triple" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s ?p }")
+      assert error.hint =~ "object" or error.hint =~ "three parts"
+    end
+  end
+
+  # Task 2.1.4.3: Prefix resolution errors
+  describe "Task 2.1.4.3: prefix resolution errors" do
+    test "detects undefined prefix" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s foaf:name ?name }")
+      assert error.message =~ "prefix" or error.message =~ "Undefined"
+    end
+
+    test "provides helpful hint for undefined prefix" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s foaf:name ?name }")
+      assert error.hint =~ "PREFIX"
+      assert error.hint =~ "foaf"
+    end
+
+    test "suggests common prefixes when undefined" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s foaf:name ?name }")
+      # Should suggest at least foaf since it's a common prefix
+      assert error.hint =~ "foaf:" or error.hint =~ "xmlns.com/foaf"
+    end
+
+    test "parses successfully with declared prefix" do
+      {:ok, _} = Parser.parse_with_details("PREFIX foaf: <http://xmlns.com/foaf/0.1/> SELECT ?s WHERE { ?s foaf:name ?name }")
+    end
+  end
+
+  # Task 2.1.4.4: Variable scoping validation
+  describe "Task 2.1.4.4: variable scoping validation" do
+    test "detects unbound variable in GROUP BY query" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s ?p WHERE { ?s ?p ?o } GROUP BY ?s")
+      assert error.message =~ "scoping" or error.message =~ "unbound"
+    end
+
+    test "detects unbound variable with aggregate function" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+      assert error.message =~ "scoping" or error.message =~ "unbound"
+    end
+
+    test "provides helpful hint for GROUP BY scoping error" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s ?p WHERE { ?s ?p ?o } GROUP BY ?s")
+      assert error.hint =~ "GROUP BY"
+      assert error.hint =~ "aggregate"
+    end
+
+    test "provides helpful hint for aggregate without GROUP BY" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+      assert error.hint =~ "GROUP BY" or error.hint =~ "aggregate"
+    end
+
+    test "parses valid GROUP BY query" do
+      {:ok, _} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?s")
+    end
+  end
+
+  # format_error/2 helper
+  describe "format_error/2" do
+    test "includes line and column in formatted message" do
+      {:error, error} = Parser.parse_with_details("INVALID QUERY")
+      formatted = Parser.format_error(error, "INVALID QUERY")
+      assert formatted =~ "line 1"
+      assert formatted =~ "column"
+    end
+
+    test "includes context line with caret pointer" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE")
+      formatted = Parser.format_error(error, "SELECT ?s WHERE")
+      assert formatted =~ "SELECT ?s WHERE"
+      assert formatted =~ "^"
+    end
+
+    test "includes hint when available" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE { ?s ?p }")
+      formatted = Parser.format_error(error, "SELECT ?s WHERE { ?s ?p }")
+      assert formatted =~ "Hint:"
+    end
+
+    test "handles multiline queries correctly" do
+      query = "SELECT ?s\nWHERE\n{ ?s ?p"
+      {:error, error} = Parser.parse_with_details(query)
+      formatted = Parser.format_error(error, query)
+      # Should format properly without errors
+      assert is_binary(formatted)
     end
   end
 end
