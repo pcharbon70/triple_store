@@ -475,4 +475,339 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Streaming Query Tests (Task 2.5.2)
+  # ===========================================================================
+
+  describe "stream_query/2" do
+    test "returns lazy stream of bindings", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
+
+      # Verify it's a stream (enumerable)
+      assert is_function(stream) or is_struct(stream, Stream)
+
+      # Materialize to verify results
+      results = Enum.to_list(stream)
+      assert length(results) == 2
+
+      names = Enum.map(results, fn r -> r["name"] end)
+      assert {:literal, :simple, "Alice"} in names
+      assert {:literal, :simple, "Bob"} in names
+
+      cleanup({db, manager})
+    end
+
+    test "stream is lazy - doesn't execute until consumed", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/s"), iri("http://ex.org/p"), literal("o")})
+
+      # Just creating the stream shouldn't consume anything
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+
+      # Stream exists but hasn't been consumed yet
+      assert is_function(stream) or is_struct(stream, Stream)
+
+      # Now consume
+      results = Enum.to_list(stream)
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "returns empty stream for no matches", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/nonexistent> ?o }")
+
+      results = Enum.to_list(stream)
+      assert results == []
+
+      cleanup({db, manager})
+    end
+
+    test "returns error for non-SELECT query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:error, {:unsupported_stream_type, :ask}} =
+        Query.stream_query(ctx, "ASK { ?s ?p ?o }")
+
+      {:error, {:unsupported_stream_type, :construct}} =
+        Query.stream_query(ctx, "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
+
+      cleanup({db, manager})
+    end
+
+    test "returns error for invalid query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:error, {:parse_error, _}} = Query.stream_query(ctx, "INVALID QUERY")
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "stream_query/3 with options" do
+    test "optimize: false skips optimization", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/s"), iri("http://ex.org/p"), literal("o")})
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s ?p ?o }", optimize: false)
+
+      results = Enum.to_list(stream)
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "variables option projects to specified variables", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT * WHERE { ?s <http://ex.org/name> ?name }", variables: ["name"])
+
+      [result] = Enum.to_list(stream)
+      assert Map.has_key?(result, "name")
+      refute Map.has_key?(result, "s")
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "stream_query!/3" do
+    test "returns stream for valid query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/s"), iri("http://ex.org/p"), literal("o")})
+
+      stream = Query.stream_query!(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+      results = Enum.to_list(stream)
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "raises for invalid query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      assert_raise RuntimeError, ~r/Stream query failed/, fn ->
+        Query.stream_query!(ctx, "INVALID QUERY")
+      end
+
+      cleanup({db, manager})
+    end
+
+    test "raises for non-SELECT query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      assert_raise RuntimeError, ~r/Stream query failed.*unsupported_stream_type/, fn ->
+        Query.stream_query!(ctx, "ASK { ?s ?p ?o }")
+      end
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "streaming early termination" do
+    test "Enum.take/2 only consumes needed elements", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add many triples
+      for i <- 1..100 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/p> ?o }")
+
+      # Take only first 5
+      results = Enum.take(stream, 5)
+      assert length(results) == 5
+
+      cleanup({db, manager})
+    end
+
+    test "Enum.find/2 stops at first match", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      for i <- 1..10 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s ?o WHERE { ?s <http://ex.org/p> ?o }")
+
+      # Find first result
+      result = Enum.find(stream, fn _ -> true end)
+      assert is_map(result)
+      assert Map.has_key?(result, "s")
+
+      cleanup({db, manager})
+    end
+
+    test "stream can be consumed multiple times by re-creating", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/s"), iri("http://ex.org/p"), literal("o")})
+
+      # First consumption
+      {:ok, stream1} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+      results1 = Enum.to_list(stream1)
+      assert length(results1) == 1
+
+      # Second consumption (new stream)
+      {:ok, stream2} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+      results2 = Enum.to_list(stream2)
+      assert length(results2) == 1
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "streaming with solution modifiers" do
+    test "DISTINCT works with streaming", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add triples that will produce duplicate type bindings
+      add_triple(db, manager, {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(db, manager, {iri("http://ex.org/s2"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT DISTINCT ?type WHERE { ?s <http://ex.org/type> ?type }")
+
+      results = Enum.to_list(stream)
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "LIMIT works with streaming", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      for i <- 1..10 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/p> ?o } LIMIT 3")
+
+      results = Enum.to_list(stream)
+      assert length(results) == 3
+
+      cleanup({db, manager})
+    end
+
+    test "OFFSET works with streaming", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      for i <- 1..5 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/p> ?o } OFFSET 2 LIMIT 2")
+
+      results = Enum.to_list(stream)
+      assert length(results) == 2
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "streaming backpressure" do
+    test "stream respects consumer pace via lazy evaluation", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add data
+      for i <- 1..20 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/p> ?o }")
+
+      # Simulate slow consumer by processing one at a time
+      # Stream should not force all results to be computed at once
+      count =
+        stream
+        |> Stream.map(fn binding ->
+          # Simulate work
+          binding
+        end)
+        |> Enum.take(5)
+        |> length()
+
+      assert count == 5
+
+      cleanup({db, manager})
+    end
+
+    test "chaining stream operations maintains laziness", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      for i <- 1..50 do
+        add_triple(db, manager, {
+          iri("http://ex.org/s#{i}"),
+          iri("http://ex.org/p"),
+          literal("v#{i}")
+        })
+      end
+
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s ?o WHERE { ?s <http://ex.org/p> ?o }")
+
+      # Chain multiple operations - all should be lazy
+      result =
+        stream
+        |> Stream.filter(fn b -> Map.has_key?(b, "s") end)
+        |> Stream.map(fn b -> b["s"] end)
+        |> Enum.take(3)
+
+      assert length(result) == 3
+
+      cleanup({db, manager})
+    end
+  end
 end

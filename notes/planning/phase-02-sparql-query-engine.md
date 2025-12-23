@@ -441,13 +441,18 @@ Test coverage: 23 tests in query_test.exs.
 
 ### 2.5.2 Streaming Results
 
-- [ ] **Task 2.5.2 Complete**
+- [x] **Task 2.5.2 Complete** (2025-12-23)
 
 Support streaming query results for large result sets.
 
-- [ ] 2.5.2.1 Implement `TripleStore.stream_query(db, sparql)` returning Stream
-- [ ] 2.5.2.2 Support backpressure-aware consumption
-- [ ] 2.5.2.3 Handle early termination cleanly
+- [x] 2.5.2.1 Implement `TripleStore.stream_query(db, sparql)` returning Stream
+- [x] 2.5.2.2 Support backpressure-aware consumption
+- [x] 2.5.2.3 Handle early termination cleanly
+
+Added `stream_query/2`, `stream_query/3`, and `stream_query!/3` to the Query module.
+Streams provide lazy evaluation, backpressure support, and clean early termination.
+Only SELECT queries support streaming (other query types require materialization).
+Test coverage: 18 new tests (41 total in query_test.exs).
 
 ### 2.5.3 Prepared Queries
 

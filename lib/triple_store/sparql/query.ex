@@ -175,6 +175,153 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   # ===========================================================================
+  # Streaming Query API
+  # ===========================================================================
+
+  @typedoc "Streaming query result - lazy stream of bindings"
+  @type stream_result :: Enumerable.t()
+
+  @doc """
+  Executes a SPARQL SELECT query and returns a lazy stream of bindings.
+
+  Unlike `query/2` which materializes all results, this function returns a
+  lazy `Stream` that produces bindings on demand. This is ideal for:
+
+  - Large result sets that shouldn't be held in memory
+  - Early termination (e.g., finding the first N matches)
+  - Backpressure-aware processing pipelines
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `sparql` - SPARQL SELECT query string
+
+  ## Returns
+
+  - `{:ok, stream}` - Lazy stream of binding maps
+  - `{:error, reason}` - Error with reason
+
+  ## Notes
+
+  - Only SELECT queries are supported for streaming
+  - The stream is lazy - no work is done until consumed
+  - Early termination (e.g., `Enum.take/2`) is efficient
+  - Backpressure is naturally handled by Elixir Streams
+
+  ## Examples
+
+      # Stream all results
+      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+      stream |> Enum.each(&process_binding/1)
+
+      # Take only first 10 results efficiently
+      {:ok, stream} = Query.stream_query(ctx, sparql)
+      first_10 = stream |> Enum.take(10)
+
+      # Process with backpressure using Flow
+      {:ok, stream} = Query.stream_query(ctx, sparql)
+      stream
+      |> Flow.from_enumerable()
+      |> Flow.map(&process/1)
+      |> Flow.run()
+
+  """
+  @spec stream_query(context(), String.t()) :: {:ok, stream_result()} | {:error, term()}
+  def stream_query(ctx, sparql) do
+    stream_query(ctx, sparql, [])
+  end
+
+  @doc """
+  Executes a SPARQL SELECT query with options and returns a lazy stream.
+
+  ## Options
+
+  - `:optimize` - Enable query optimization (default: true)
+  - `:stats` - Statistics map for optimizer
+  - `:variables` - Project to specific variables (default: all from query)
+
+  Note: `:timeout` is not supported for streaming queries as the stream
+  is lazy - timeout would only apply during setup, not consumption.
+
+  ## Examples
+
+      # Disable optimization
+      {:ok, stream} = Query.stream_query(ctx, sparql, optimize: false)
+
+      # Project to specific variables
+      {:ok, stream} = Query.stream_query(ctx, sparql, variables: ["name", "age"])
+
+  """
+  @spec stream_query(context(), String.t(), keyword()) ::
+          {:ok, stream_result()} | {:error, term()}
+  def stream_query(ctx, sparql, opts) when is_binary(sparql) and is_list(opts) do
+    optimize? = Keyword.get(opts, :optimize, true)
+    stats = Keyword.get(opts, :stats, %{})
+    project_vars = Keyword.get(opts, :variables, nil)
+
+    with {:ok, ast} <- parse_query(sparql),
+         :ok <- validate_select_query(ast),
+         {:ok, _query_type, pattern, metadata} <- extract_query_info(ast),
+         {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
+      build_stream(ctx, optimized, metadata, project_vars)
+    end
+  rescue
+    e -> {:error, {:exception, Exception.message(e)}}
+  end
+
+  @doc """
+  Executes a streaming SPARQL query, raising on error.
+
+  Same as `stream_query/3` but raises `RuntimeError` on failure.
+
+  ## Examples
+
+      stream = Query.stream_query!(ctx, "SELECT ?s WHERE { ?s ?p ?o }")
+      stream |> Enum.take(10)
+
+  """
+  @spec stream_query!(context(), String.t(), keyword()) :: stream_result()
+  def stream_query!(ctx, sparql, opts \\ []) do
+    case stream_query(ctx, sparql, opts) do
+      {:ok, stream} -> stream
+      {:error, reason} -> raise "Stream query failed: #{inspect(reason)}"
+    end
+  end
+
+  # Validate that the query is a SELECT query (only SELECT supports streaming)
+  defp validate_select_query({:select, _}), do: :ok
+  defp validate_select_query({type, _}), do: {:error, {:unsupported_stream_type, type}}
+  defp validate_select_query(_), do: {:error, :invalid_query}
+
+  # Build lazy stream from pattern
+  defp build_stream(ctx, pattern, metadata, project_vars) do
+    case execute_pattern(ctx, pattern) do
+      {:ok, stream} ->
+        # Apply solution modifiers (these are all lazy except order_by)
+        stream = apply_modifiers(stream, metadata.modifiers)
+
+        # Project to specified variables if provided
+        stream =
+          case project_vars do
+            nil ->
+              # Use variables from query
+              case metadata.variables do
+                nil -> stream
+                vars -> Executor.project(stream, extract_variable_names(vars))
+              end
+
+            vars when is_list(vars) ->
+              Executor.project(stream, vars)
+          end
+
+        {:ok, stream}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # ===========================================================================
   # Query Execution Pipeline
   # ===========================================================================
 
