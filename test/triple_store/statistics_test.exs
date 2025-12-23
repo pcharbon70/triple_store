@@ -13,10 +13,10 @@ defmodule TripleStore.StatisticsTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Statistics
-  alias TripleStore.Index
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
+  alias TripleStore.Statistics
 
   @test_db_base "/tmp/triple_store_statistics_test"
 
@@ -86,11 +86,16 @@ defmodule TripleStore.StatisticsTest do
 
     test "returns correct count for predicate", %{db: db} do
       triples = [
-        {1000, 100, 2000},  # predicate 100
-        {1001, 100, 2001},  # predicate 100
-        {1002, 100, 2002},  # predicate 100
-        {1003, 200, 2003},  # predicate 200
-        {1004, 200, 2004}   # predicate 200
+        # predicate 100
+        {1000, 100, 2000},
+        # predicate 100
+        {1001, 100, 2001},
+        # predicate 100
+        {1002, 100, 2002},
+        # predicate 200
+        {1003, 200, 2003},
+        # predicate 200
+        {1004, 200, 2004}
       ]
 
       :ok = Index.insert_triples(db, triples)
@@ -129,8 +134,10 @@ defmodule TripleStore.StatisticsTest do
         {1000, 100, 2000},
         {1001, 100, 2001},
         {1002, 100, 2002},
-        {1000, 101, 2003},  # Same subject 1000
-        {1001, 102, 2004}   # Same subject 1001
+        # Same subject 1000
+        {1000, 101, 2003},
+        # Same subject 1001
+        {1001, 102, 2004}
       ]
 
       :ok = Index.insert_triples(db, triples)
@@ -164,8 +171,10 @@ defmodule TripleStore.StatisticsTest do
         {1000, 100, 2000},
         {1001, 101, 2001},
         {1002, 102, 2002},
-        {1003, 100, 2003},  # Same predicate 100
-        {1004, 101, 2004}   # Same predicate 101
+        # Same predicate 100
+        {1003, 100, 2003},
+        # Same predicate 101
+        {1004, 101, 2004}
       ]
 
       :ok = Index.insert_triples(db, triples)
@@ -199,8 +208,10 @@ defmodule TripleStore.StatisticsTest do
         {1000, 100, 2000},
         {1001, 101, 2001},
         {1002, 102, 2002},
-        {1003, 103, 2000},  # Same object 2000
-        {1004, 104, 2001}   # Same object 2001
+        # Same object 2000
+        {1003, 103, 2000},
+        # Same object 2001
+        {1004, 104, 2001}
       ]
 
       :ok = Index.insert_triples(db, triples)
@@ -237,9 +248,12 @@ defmodule TripleStore.StatisticsTest do
       {:ok, stats} = Statistics.all(db)
 
       assert stats.triple_count == 5
-      assert stats.distinct_subjects == 3  # 1000, 1001, 1002
-      assert stats.distinct_predicates == 3  # 100, 101, 102
-      assert stats.distinct_objects == 3  # 2000, 2001, 2002
+      # 1000, 1001, 1002
+      assert stats.distinct_subjects == 3
+      # 100, 101, 102
+      assert stats.distinct_predicates == 3
+      # 2000, 2001, 2002
+      assert stats.distinct_objects == 3
     end
   end
 
@@ -268,9 +282,12 @@ defmodule TripleStore.StatisticsTest do
       {:ok, stats} = Statistics.all(db)
 
       assert stats.triple_count == 100
-      assert stats.distinct_subjects == 10  # 1000-1009
-      assert stats.distinct_predicates == 5  # 100-104
-      assert stats.distinct_objects == 100  # All unique
+      # 1000-1009
+      assert stats.distinct_subjects == 10
+      # 100-104
+      assert stats.distinct_predicates == 5
+      # All unique
+      assert stats.distinct_objects == 100
     end
   end
 end

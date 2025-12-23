@@ -151,7 +151,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
     test "converts triple with inline integer roundtrip", %{db: db, manager: manager} do
       subject = RDF.iri("http://example.org/subject")
       predicate = RDF.iri("http://example.org/predicate")
-      object = RDF.literal(12345)
+      object = RDF.literal(12_345)
 
       triple = {subject, predicate, object}
       {:ok, internal_triple} = Adapter.from_rdf_triple(manager, triple)
@@ -160,7 +160,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
 
       assert s == subject
       assert p == predicate
-      assert RDF.Literal.value(o) == 12345
+      assert RDF.Literal.value(o) == 12_345
     end
 
     test "returns :not_found for unknown ID", %{db: db} do
@@ -203,6 +203,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
       {:ok, internal_triples} = Adapter.from_rdf_triples(manager, triples)
 
       assert length(internal_triples) == 3
+
       Enum.each(internal_triples, fn {s, p, o} ->
         assert is_integer(s)
         assert is_integer(p)
@@ -263,6 +264,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
       {:ok, rdf_triples} = Adapter.to_rdf_triples(db, internal_triples)
 
       assert length(rdf_triples) == 3
+
       Enum.each(rdf_triples, fn {s, p, o} ->
         assert %RDF.IRI{} = s
         assert %RDF.IRI{} = p
@@ -308,6 +310,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
         RDF.iri("http://example.org/p"),
         RDF.literal("o")
       }
+
       graph = RDF.Graph.new([triple])
 
       {:ok, [internal_triple]} = Adapter.from_rdf_graph(manager, graph)
@@ -322,6 +325,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
         {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p2"), RDF.literal("o2")},
         {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p3"), RDF.literal("o3")}
       ]
+
       graph = RDF.Graph.new(triples)
 
       {:ok, internal_triples} = Adapter.from_rdf_graph(manager, graph)
@@ -331,10 +335,12 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
 
     test "handles graph with various term types", %{manager: manager} do
       triples = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("string")},
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
+         RDF.literal("string")},
         {RDF.bnode("b1"), RDF.iri("http://example.org/p"), RDF.literal(42)},
         {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.bnode("b2")}
       ]
+
       graph = RDF.Graph.new(triples)
 
       {:ok, internal_triples} = Adapter.from_rdf_graph(manager, graph)
@@ -418,6 +424,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
         {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2")},
         {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"), RDF.literal("o3")}
       ]
+
       graph = RDF.Graph.new(triples)
 
       stream = Adapter.stream_from_rdf_graph(manager, graph)
@@ -426,6 +433,7 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
       results = Enum.take(stream, 2)
 
       assert length(results) == 2
+
       Enum.each(results, fn result ->
         assert {:ok, {s_id, p_id, o_id}} = result
         assert is_integer(s_id)
@@ -440,13 +448,14 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
         {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2")},
         {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"), RDF.literal("o3")}
       ]
+
       graph = RDF.Graph.new(triples)
 
       stream = Adapter.stream_from_rdf_graph(manager, graph)
       results = Enum.to_list(stream)
 
       assert length(results) == 3
-      assert Enum.all?(results, fn {:ok, _} -> true; _ -> false end)
+      assert Enum.all?(results, &match?({:ok, _}, &1))
     end
   end
 
@@ -476,8 +485,10 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
       triples = [
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"), RDF.literal("o1")},
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p2"), RDF.literal("o2")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"), RDF.iri("http://example.org/o3")}
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"),
+         RDF.iri("http://example.org/o3")}
       ]
+
       original_graph = RDF.Graph.new(triples)
 
       {:ok, internal_triples} = Adapter.from_rdf_graph(manager, original_graph)
@@ -496,13 +507,14 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
     end
 
     test "batch triple conversion roundtrip", %{db: db, manager: manager} do
-      triples = for i <- 1..10 do
-        {
-          RDF.iri("http://example.org/s#{i}"),
-          RDF.iri("http://example.org/p#{i}"),
-          RDF.literal("o#{i}")
-        }
-      end
+      triples =
+        for i <- 1..10 do
+          {
+            RDF.iri("http://example.org/s#{i}"),
+            RDF.iri("http://example.org/p#{i}"),
+            RDF.literal("o#{i}")
+          }
+        end
 
       {:ok, internal_triples} = Adapter.from_rdf_triples(manager, triples)
       {:ok, result_triples} = Adapter.to_rdf_triples(db, internal_triples)
@@ -541,13 +553,14 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
 
     test "handles large graphs", %{db: db, manager: manager} do
       # Create 100 triples
-      triples = for i <- 1..100 do
-        {
-          RDF.iri("http://example.org/subject/#{i}"),
-          RDF.iri("http://example.org/predicate/#{rem(i, 5)}"),
-          RDF.literal("value-#{i}")
-        }
-      end
+      triples =
+        for i <- 1..100 do
+          {
+            RDF.iri("http://example.org/subject/#{i}"),
+            RDF.iri("http://example.org/predicate/#{rem(i, 5)}"),
+            RDF.literal("value-#{i}")
+          }
+        end
 
       graph = RDF.Graph.new(triples)
 
@@ -564,9 +577,11 @@ defmodule TripleStore.Adapter.TripleGraphConversionTest do
         # Inline-encoded integer
         {RDF.iri("http://ex.org/s2"), RDF.iri("http://ex.org/p"), RDF.literal(42)},
         # Inline-encoded decimal
-        {RDF.iri("http://ex.org/s3"), RDF.iri("http://ex.org/p"), RDF.literal(Decimal.new("3.14"))},
+        {RDF.iri("http://ex.org/s3"), RDF.iri("http://ex.org/p"),
+         RDF.literal(Decimal.new("3.14"))},
         # Language-tagged (dictionary)
-        {RDF.iri("http://ex.org/s4"), RDF.iri("http://ex.org/p"), RDF.literal("hello", language: "en")}
+        {RDF.iri("http://ex.org/s4"), RDF.iri("http://ex.org/p"),
+         RDF.literal("hello", language: "en")}
       ]
 
       {:ok, internal_triples} = Adapter.from_rdf_triples(manager, triples)

@@ -13,9 +13,9 @@ defmodule TripleStore.Statistics.CacheTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Statistics.Cache
-  alias TripleStore.Index
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Index
+  alias TripleStore.Statistics.Cache
 
   @test_db_base "/tmp/triple_store_stats_cache_test"
 

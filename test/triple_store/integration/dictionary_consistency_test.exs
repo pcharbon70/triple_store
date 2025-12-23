@@ -12,11 +12,12 @@ defmodule TripleStore.Integration.DictionaryConsistencyTest do
 
   use ExUnit.Case, async: false
 
+  alias RDF.XSD
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
+  alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.StringToId
-  alias TripleStore.Dictionary.IdToString
 
   @test_db_base "/tmp/triple_store_dict_consistency_test"
 
@@ -72,7 +73,7 @@ defmodule TripleStore.Integration.DictionaryConsistencyTest do
     end
 
     test "typed literal returns same ID on repeated lookups", %{manager: manager} do
-      literal = RDF.XSD.Date.new!("2023-12-22")
+      literal = XSD.Date.new!("2023-12-22")
 
       {:ok, id1} = Manager.get_or_create_id(manager, literal)
       {:ok, id2} = Manager.get_or_create_id(manager, literal)
@@ -146,13 +147,15 @@ defmodule TripleStore.Integration.DictionaryConsistencyTest do
     end
 
     test "typed literal roundtrip preserves datatype", %{db: db, manager: manager} do
-      literal = RDF.XSD.Boolean.new!(true)
+      literal = XSD.Boolean.new!(true)
 
       {:ok, id} = Manager.get_or_create_id(manager, literal)
       {:ok, recovered} = IdToString.lookup_term(db, id)
 
       assert recovered == literal
-      assert RDF.Literal.datatype_id(recovered) == RDF.iri("http://www.w3.org/2001/XMLSchema#boolean")
+
+      assert RDF.Literal.datatype_id(recovered) ==
+               RDF.iri("http://www.w3.org/2001/XMLSchema#boolean")
     end
 
     test "language-tagged literal roundtrip preserves language", %{db: db, manager: manager} do
@@ -171,7 +174,7 @@ defmodule TripleStore.Integration.DictionaryConsistencyTest do
         RDF.bnode("b1"),
         RDF.literal("value"),
         RDF.literal("hello", language: "en"),
-        RDF.XSD.Integer.new!(2023)
+        XSD.Integer.new!(2023)
       ]
 
       {:ok, ids} = Manager.get_or_create_ids(manager, terms)
@@ -304,7 +307,7 @@ defmodule TripleStore.Integration.DictionaryConsistencyTest do
 
     test "large integers fallback to dictionary encoding", %{db: db, manager: manager} do
       # Value larger than inline range - use XSD.Integer
-      large_literal = RDF.XSD.Integer.new!(10_000_000_000_000_000_000)
+      large_literal = XSD.Integer.new!(10_000_000_000_000_000_000)
 
       {:ok, id} = Manager.get_or_create_id(manager, large_literal)
 

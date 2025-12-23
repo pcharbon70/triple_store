@@ -12,11 +12,11 @@ defmodule TripleStore.ExporterTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Exporter
-  alias TripleStore.Loader
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Exporter
+  alias TripleStore.Loader
 
   @test_db_base "/tmp/triple_store_exporter_test"
 
@@ -500,8 +500,7 @@ defmodule TripleStore.ExporterTest do
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"),
          RDF.literal("value1")},
         {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p2"), RDF.literal(42)},
-        {RDF.bnode("b1"), RDF.iri("http://example.org/p3"),
-         RDF.literal("hello", language: "en")}
+        {RDF.bnode("b1"), RDF.iri("http://example.org/p3"), RDF.literal("hello", language: "en")}
       ]
 
       original_graph = RDF.Graph.new(original_triples)

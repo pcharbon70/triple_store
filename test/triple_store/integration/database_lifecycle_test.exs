@@ -15,6 +15,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
+  alias TripleStore.Statistics.Cache
 
   @test_db_base "/tmp/triple_store_lifecycle_test"
 
@@ -57,6 +58,10 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       # Close everything
       Manager.stop(manager1)
       NIF.close(db1)
+
+      # Ensure the db reference is garbage collected and file handles released
+      :erlang.garbage_collect()
+      Process.sleep(200)
 
       # Phase 2: Reopen and verify data persisted
       {:ok, db2} = NIF.open(path)
@@ -156,6 +161,10 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, stats1} = TripleStore.Statistics.all(db1)
 
       NIF.close(db1)
+
+      # Ensure the db reference is garbage collected and file handles released
+      :erlang.garbage_collect()
+      Process.sleep(200)
 
       # Phase 2: Reopen and verify statistics
       {:ok, db2} = NIF.open(path)
@@ -332,7 +341,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       for _ <- 1..5 do
         {:ok, db} = NIF.open(path)
-        Index.insert_triple(db, {:rand.uniform(10000), 100, :rand.uniform(10000)})
+        Index.insert_triple(db, {:rand.uniform(10_000), 100, :rand.uniform(10_000)})
         NIF.close(db)
       end
 
@@ -492,20 +501,20 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       for i <- 1..50, do: Index.insert_triple(db2, {3000 + i, 300, 4000 + i})
 
       # Start caches
-      {:ok, cache1} = TripleStore.Statistics.Cache.start_link(db: db1)
-      {:ok, cache2} = TripleStore.Statistics.Cache.start_link(db: db2)
+      {:ok, cache1} = Cache.start_link(db: db1)
+      {:ok, cache2} = Cache.start_link(db: db2)
 
       Process.sleep(100)
 
       # Verify independent statistics
-      {:ok, stats1} = TripleStore.Statistics.Cache.get(cache1)
-      {:ok, stats2} = TripleStore.Statistics.Cache.get(cache2)
+      {:ok, stats1} = Cache.get(cache1)
+      {:ok, stats2} = Cache.get(cache2)
 
       assert stats1.triple_count == 10
       assert stats2.triple_count == 50
 
-      TripleStore.Statistics.Cache.stop(cache1)
-      TripleStore.Statistics.Cache.stop(cache2)
+      Cache.stop(cache1)
+      Cache.stop(cache2)
       NIF.close(db1)
       NIF.close(db2)
       cleanup_path(path1)

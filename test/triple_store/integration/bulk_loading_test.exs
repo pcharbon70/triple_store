@@ -49,9 +49,12 @@ defmodule TripleStore.Integration.BulkLoadingTest do
       # Generate 100K triples with 100 predicates
       triples =
         for i <- 1..100_000 do
-          subject = 1000 + div(i, 100)  # 1000 subjects
-          predicate = 100 + rem(i, 100)  # 100 predicates
-          object = 100_000 + i           # unique objects
+          # 1000 subjects
+          subject = 1000 + div(i, 100)
+          # 100 predicates
+          predicate = 100 + rem(i, 100)
+          # unique objects
+          object = 100_000 + i
 
           {subject, predicate, object}
         end
@@ -81,10 +84,12 @@ defmodule TripleStore.Integration.BulkLoadingTest do
       assert length(results) == 99
 
       # Spot check - verify calculations:
-      # For i=1: subject=1000+div(1,100)=1000, predicate=100+rem(1,100)=101, object=100001
+      # For i=1: subject=1000+div(1,100)=1000, predicate=100+rem(1,100)=101, object=10_0001
       # For i=100: subject=1000+div(100,100)=1001, predicate=100+rem(100,100)=100, object=100100
-      assert {:ok, true} = Index.triple_exists?(db, {1000, 101, 100_001})  # i=1
-      assert {:ok, true} = Index.triple_exists?(db, {1001, 100, 100_100})  # i=100
+      # i=1
+      assert {:ok, true} = Index.triple_exists?(db, {1000, 101, 100_001})
+      # i=100
+      assert {:ok, true} = Index.triple_exists?(db, {1001, 100, 100_100})
     end
 
     @tag :slow
@@ -235,17 +240,17 @@ defmodule TripleStore.Integration.BulkLoadingTest do
       _course = 104
 
       # 1 university with 10 departments
-      university_id = 10000
+      university_id = 10_000
 
       university_triples = [
         {university_id, rdf_type, university},
-        {university_id, has_name, 20000}
+        {university_id, has_name, 20_000}
       ]
 
       # Each department has 5 professors and 50 students
       dept_triples =
         for dept_num <- 1..10 do
-          dept_id = 10000 + dept_num * 100
+          dept_id = 10_000 + dept_num * 100
 
           dept_base = [
             {dept_id, rdf_type, department},
@@ -260,7 +265,7 @@ defmodule TripleStore.Integration.BulkLoadingTest do
               [
                 {prof_id, rdf_type, professor},
                 {prof_id, works_for, dept_id},
-                {prof_id, teaches, 30000 + dept_num * 100 + prof_num}
+                {prof_id, teaches, 30_000 + dept_num * 100 + prof_num}
               ]
             end
             |> List.flatten()
@@ -310,8 +315,7 @@ defmodule TripleStore.Integration.BulkLoadingTest do
 
           [
             {subject, RDF.type(), RDF.iri("http://xmlns.com/foaf/0.1/Person")},
-            {subject, RDF.iri("http://xmlns.com/foaf/0.1/name"),
-             RDF.literal("Person #{i}")},
+            {subject, RDF.iri("http://xmlns.com/foaf/0.1/name"), RDF.literal("Person #{i}")},
             {subject, RDF.iri("http://xmlns.com/foaf/0.1/age"),
              RDF.XSD.Integer.new!(20 + rem(i, 60))}
           ]

@@ -13,6 +13,17 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   alias TripleStore.SPARQL.Parser
 
+  # Helper to extract a named property from parser properties
+  defp get_prop(props, key) do
+    Enum.find_value(props, fn
+      {^key, v} -> v
+      _ -> nil
+    end)
+  end
+
+  # Convenience helper for common pattern extraction
+  defp get_pattern(props), do: get_prop(props, "pattern")
+
   # ===========================================================================
   # NIF Loading
   # ===========================================================================
@@ -42,7 +53,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses CONSTRUCT query" do
-      query = "CONSTRUCT { ?s <http://example.org/hasName> ?name } WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }"
+      query =
+        "CONSTRUCT { ?s <http://example.org/hasName> ?name } WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }"
+
       assert {:ok, {:construct, props}} = Parser.parse(query)
       assert is_list(props)
     end
@@ -126,7 +139,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "extracts pattern from complex query" do
-      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+      {:ok, ast} =
+        Parser.parse("SELECT ?s WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+
       pattern = Parser.get_pattern(ast)
       assert pattern != nil
     end
@@ -144,7 +159,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "extracts variables from multiple triple patterns" do
-      {:ok, ast} = Parser.parse("SELECT * WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+      {:ok, ast} =
+        Parser.parse("SELECT * WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+
       pattern = Parser.get_pattern(ast)
       vars = Parser.extract_variables(pattern)
 
@@ -165,7 +182,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "extracts triples from multiple patterns" do
-      {:ok, ast} = Parser.parse("SELECT * WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+      {:ok, ast} =
+        Parser.parse("SELECT * WHERE { ?s ?p ?o . ?s <http://example.org/name> ?name }")
+
       pattern = Parser.get_pattern(ast)
       triples = Parser.extract_bgp_triples(pattern)
 
@@ -184,12 +203,16 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses FILTER with string function" do
-      query = "SELECT ?name WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name . FILTER(CONTAINS(?name, \"John\")) }"
+      query =
+        "SELECT ?name WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name . FILTER(CONTAINS(?name, \"John\")) }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
     test "parses FILTER with AND/OR" do
-      query = "SELECT ?age WHERE { ?s <http://example.org/age> ?age . FILTER(?age > 18 && ?age < 65) }"
+      query =
+        "SELECT ?age WHERE { ?s <http://example.org/age> ?age . FILTER(?age > 18 && ?age < 65) }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -202,6 +225,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/age> ?age }
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
@@ -213,6 +237,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/mbox> ?email }
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -226,6 +251,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         { ?s <http://schema.org/name> ?name }
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -242,7 +268,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses multiple ORDER BY expressions" do
-      query = "SELECT ?name ?age WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name . ?s <http://xmlns.com/foaf/0.1/age> ?age } ORDER BY ?name DESC(?age)"
+      query =
+        "SELECT ?name ?age WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name . ?s <http://xmlns.com/foaf/0.1/age> ?age } ORDER BY ?name DESC(?age)"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -283,12 +311,16 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses GROUP BY with multiple aggregates" do
-      query = "SELECT ?type (COUNT(?s) AS ?count) (AVG(?age) AS ?avgAge) WHERE { ?s a ?type . ?s <http://xmlns.com/foaf/0.1/age> ?age } GROUP BY ?type"
+      query =
+        "SELECT ?type (COUNT(?s) AS ?count) (AVG(?age) AS ?avgAge) WHERE { ?s a ?type . ?s <http://xmlns.com/foaf/0.1/age> ?age } GROUP BY ?type"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
     test "parses HAVING clause" do
-      query = "SELECT ?type (COUNT(?s) AS ?count) WHERE { ?s a ?type } GROUP BY ?type HAVING (COUNT(?s) > 10)"
+      query =
+        "SELECT ?type (COUNT(?s) AS ?count) WHERE { ?s a ?type } GROUP BY ?type HAVING (COUNT(?s) > 10)"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -301,6 +333,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         ?s <http://xmlns.com/foaf/0.1/name> ?name
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -311,6 +344,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX foaf: <http://xmlns.com/foaf/0.1/>
       SELECT ?name WHERE { ?s foaf:name ?name }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
@@ -323,6 +357,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         ?s schema:description ?description
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
@@ -332,6 +367,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX foaf: <http://xmlns.com/foaf/0.1/>
       SELECT ?name WHERE { ?s foaf:name ?name }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -342,17 +378,23 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   describe "property paths" do
     test "parses inverse path (^)" do
-      query = "SELECT ?parent WHERE { <http://example.org/child> ^<http://example.org/hasChild> ?parent }"
+      query =
+        "SELECT ?parent WHERE { <http://example.org/child> ^<http://example.org/hasChild> ?parent }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
     test "parses sequence path (/)" do
-      query = "SELECT ?grandparent WHERE { ?s <http://example.org/parent>/<http://example.org/parent> ?grandparent }"
+      query =
+        "SELECT ?grandparent WHERE { ?s <http://example.org/parent>/<http://example.org/parent> ?grandparent }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
     test "parses alternative path (|)" do
-      query = "SELECT ?name WHERE { ?s <http://xmlns.com/foaf/0.1/name>|<http://schema.org/name> ?name }"
+      query =
+        "SELECT ?name WHERE { ?s <http://xmlns.com/foaf/0.1/name>|<http://schema.org/name> ?name }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
@@ -386,6 +428,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         ?s <http://xmlns.com/foaf/0.1/name> ?name
       }
       """
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
   end
@@ -406,7 +449,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses typed literal" do
-      query = "SELECT ?s WHERE { ?s <http://xmlns.com/foaf/0.1/age> \"30\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
+      query =
+        "SELECT ?s WHERE { ?s <http://xmlns.com/foaf/0.1/age> \"30\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
+
       assert {:ok, {:select, _}} = Parser.parse(query)
     end
 
@@ -429,7 +474,7 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "Task 2.1.2.2: SELECT projection forms" do
     test "SELECT with explicit variables projects specified variables" do
       {:ok, {:select, props}} = Parser.parse("SELECT ?s ?p WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # Should have project node with selected variables
       assert {:project, _inner, vars} = pattern
@@ -441,7 +486,7 @@ defmodule TripleStore.SPARQL.ParserTest do
 
     test "SELECT * projects all in-scope variables" do
       {:ok, {:select, props}} = Parser.parse("SELECT * WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # SELECT * should still have a project node
       assert {:project, _inner, vars} = pattern
@@ -453,7 +498,7 @@ defmodule TripleStore.SPARQL.ParserTest do
 
     test "SELECT DISTINCT wraps result in distinct node" do
       {:ok, {:select, props}} = Parser.parse("SELECT DISTINCT ?s WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # Should have distinct wrapper
       assert {:distinct, {:project, _inner, _vars}} = pattern
@@ -461,7 +506,7 @@ defmodule TripleStore.SPARQL.ParserTest do
 
     test "SELECT REDUCED wraps result in reduced node" do
       {:ok, {:select, props}} = Parser.parse("SELECT REDUCED ?s WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # Should have reduced wrapper
       assert {:reduced, {:project, _inner, _vars}} = pattern
@@ -469,7 +514,7 @@ defmodule TripleStore.SPARQL.ParserTest do
 
     test "SELECT with expression alias (AS) creates extend node" do
       {:ok, {:select, props}} = Parser.parse("SELECT (?x + 1 AS ?y) WHERE { ?s ?p ?x }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # Should have extend node for the expression binding
       assert {:project, inner, _vars} = pattern
@@ -479,7 +524,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "SELECT with multiple expression aliases" do
       query = "SELECT (?x + 1 AS ?y) (?x * 2 AS ?z) WHERE { ?s ?p ?x }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
 
       # Should project both computed variables
       assert {:project, _inner, vars} = pattern
@@ -492,10 +537,12 @@ defmodule TripleStore.SPARQL.ParserTest do
   # Task 2.1.2.3: CONSTRUCT queries with template patterns
   describe "Task 2.1.2.3: CONSTRUCT template patterns" do
     test "CONSTRUCT returns template as list of triple patterns" do
-      query = "CONSTRUCT { ?s <http://example.org/name> ?name } WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }"
+      query =
+        "CONSTRUCT { ?s <http://example.org/name> ?name } WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }"
+
       {:ok, {:construct, props}} = Parser.parse(query)
 
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
 
       assert is_list(template)
       assert length(template) == 1
@@ -515,9 +562,10 @@ defmodule TripleStore.SPARQL.ParserTest do
         ?s <http://xmlns.com/foaf/0.1/name> ?name
       }
       """
+
       {:ok, {:construct, props}} = Parser.parse(query)
 
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
       assert length(template) == 2
     end
 
@@ -525,7 +573,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CONSTRUCT WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }"
       {:ok, {:construct, props}} = Parser.parse(query)
 
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
       assert is_list(template)
       assert length(template) == 1
     end
@@ -534,7 +582,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CONSTRUCT { ?s <http://example.org/knows> _:b0 } WHERE { ?s ?p ?o }"
       {:ok, {:construct, props}} = Parser.parse(query)
 
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
       [{:triple, _s, _p, o}] = template
       assert {:blank_node, _} = o
     end
@@ -545,7 +593,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "ASK query has pattern but no projection" do
       {:ok, {:ask, props}} = Parser.parse("ASK WHERE { ?s ?p ?o }")
 
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert pattern != nil
 
       # ASK should have BGP pattern, not project
@@ -555,7 +603,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "ASK without explicit WHERE keyword" do
       {:ok, {:ask, props}} = Parser.parse("ASK { ?s a <http://example.org/Person> }")
 
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert {:bgp, _triples} = pattern
     end
 
@@ -567,9 +615,10 @@ defmodule TripleStore.SPARQL.ParserTest do
         FILTER(STRLEN(?name) > 5)
       }
       """
+
       {:ok, {:ask, props}} = Parser.parse(query)
 
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert {:filter, _expr, _inner} = pattern
     end
 
@@ -580,6 +629,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         OPTIONAL { ?s <http://xmlns.com/foaf/0.1/age> ?age }
       }
       """
+
       {:ok, {:ask, _props}} = Parser.parse(query)
     end
   end
@@ -589,7 +639,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "DESCRIBE with single variable" do
       {:ok, {:describe, props}} = Parser.parse("DESCRIBE ?s WHERE { ?s ?p ?o }")
 
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert pattern != nil
     end
 
@@ -597,7 +647,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       {:ok, {:describe, props}} = Parser.parse("DESCRIBE <http://example.org/person1>")
 
       # DESCRIBE with just IRI should still parse
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # Pattern may be a table with the single IRI
       assert pattern != nil
     end
@@ -608,7 +658,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "DESCRIBE with mixed variables and IRIs" do
-      query = "DESCRIBE ?s <http://example.org/person1> WHERE { ?s a <http://example.org/Person> }"
+      query =
+        "DESCRIBE ?s <http://example.org/person1> WHERE { ?s a <http://example.org/Person> }"
+
       {:ok, {:describe, _props}} = Parser.parse(query)
     end
 
@@ -622,6 +674,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX ex: <http://example.org/>
       DESCRIBE ex:person1
       """
+
       {:ok, {:describe, _props}} = Parser.parse(query)
     end
   end
@@ -634,7 +687,9 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "parse_update/1" do
     test "returns {:ok, ast} for valid UPDATE" do
       assert {:ok, {:update, _props}} =
-               Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+               Parser.parse_update(
+                 "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+               )
     end
 
     test "returns {:error, {:parse_error, msg}} for invalid UPDATE" do
@@ -645,7 +700,11 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   describe "parse_update!/1" do
     test "returns AST for valid UPDATE" do
-      ast = Parser.parse_update!("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      ast =
+        Parser.parse_update!(
+          "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+        )
+
       assert {:update, _} = ast
     end
 
@@ -658,7 +717,11 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   describe "update?/1" do
     test "returns true for UPDATE AST" do
-      {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      {:ok, ast} =
+        Parser.parse_update(
+          "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+        )
+
       assert Parser.update?(ast)
     end
 
@@ -670,7 +733,11 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   describe "get_operations/1" do
     test "extracts operations from UPDATE AST" do
-      {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      {:ok, ast} =
+        Parser.parse_update(
+          "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+        )
+
       ops = Parser.get_operations(ast)
       assert length(ops) == 1
     end
@@ -684,10 +751,12 @@ defmodule TripleStore.SPARQL.ParserTest do
   # Task 2.1.3.2: INSERT DATA operations
   describe "Task 2.1.3.2: INSERT DATA operations" do
     test "parses INSERT DATA with single triple" do
-      query = "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+      query =
+        "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       assert [{:insert_data, quads}] = ops
       assert length(quads) == 1
 
@@ -705,9 +774,10 @@ defmodule TripleStore.SPARQL.ParserTest do
         <http://example.org/s2> <http://example.org/p> <http://example.org/o2>
       }
       """
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:insert_data, quads}] = ops
       assert length(quads) == 2
     end
@@ -716,21 +786,25 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "INSERT DATA { <http://example.org/s> <http://example.org/name> \"John\" }"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:insert_data, [{:quad, _s, _p, o, _g}]}] = ops
       assert {:literal, :simple, "John"} = o
     end
 
     test "parses INSERT DATA with typed literal" do
-      query = "INSERT DATA { <http://example.org/s> <http://example.org/age> \"30\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
+      query =
+        "INSERT DATA { <http://example.org/s> <http://example.org/age> \"30\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
+
       {:ok, {:update, _}} = Parser.parse_update(query)
     end
 
     test "parses INSERT DATA with named graph" do
-      query = "INSERT DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+      query =
+        "INSERT DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:insert_data, [{:quad, _s, _p, _o, g}]}] = ops
       assert {:named_graph, "http://example.org/graph1"} = g
     end
@@ -739,10 +813,12 @@ defmodule TripleStore.SPARQL.ParserTest do
   # Task 2.1.3.3: DELETE DATA operations
   describe "Task 2.1.3.3: DELETE DATA operations" do
     test "parses DELETE DATA with single triple" do
-      query = "DELETE DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+      query =
+        "DELETE DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       assert [{:delete_data, quads}] = ops
       assert length(quads) == 1
     end
@@ -754,15 +830,18 @@ defmodule TripleStore.SPARQL.ParserTest do
         <http://example.org/s2> <http://example.org/p> <http://example.org/o2>
       }
       """
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:delete_data, quads}] = ops
       assert length(quads) == 2
     end
 
     test "parses DELETE DATA with named graph" do
-      query = "DELETE DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+      query =
+        "DELETE DATA { GRAPH <http://example.org/graph1> { <http://example.org/s> <http://example.org/p> <http://example.org/o> } }"
+
       {:ok, {:update, _}} = Parser.parse_update(query)
     end
   end
@@ -773,12 +852,12 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "DELETE { ?s <http://example.org/p> ?o } WHERE { ?s <http://example.org/p> ?o }"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:delete_insert, op_props}] = ops
 
-      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
-      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
-      pattern = Enum.find_value(op_props, fn {"pattern", p} -> p; _ -> nil end)
+      delete = get_prop(op_props, "delete")
+      insert = get_prop(op_props, "insert")
+      pattern = get_prop(op_props, "pattern")
 
       assert length(delete) == 1
       assert insert == []
@@ -786,14 +865,16 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses INSERT WHERE" do
-      query = "INSERT { ?s <http://example.org/newPred> ?o } WHERE { ?s <http://example.org/oldPred> ?o }"
+      query =
+        "INSERT { ?s <http://example.org/newPred> ?o } WHERE { ?s <http://example.org/oldPred> ?o }"
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:delete_insert, op_props}] = ops
 
-      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
-      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
+      delete = get_prop(op_props, "delete")
+      insert = get_prop(op_props, "insert")
 
       assert delete == []
       assert length(insert) == 1
@@ -805,13 +886,14 @@ defmodule TripleStore.SPARQL.ParserTest do
       INSERT { ?s <http://example.org/newPred> ?o }
       WHERE { ?s <http://example.org/oldPred> ?o }
       """
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:delete_insert, op_props}] = ops
 
-      delete = Enum.find_value(op_props, fn {"delete", d} -> d; _ -> nil end)
-      insert = Enum.find_value(op_props, fn {"insert", i} -> i; _ -> nil end)
+      delete = get_prop(op_props, "delete")
+      insert = get_prop(op_props, "insert")
 
       assert length(delete) == 1
       assert length(insert) == 1
@@ -825,6 +907,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         FILTER(?o > 10)
       }
       """
+
       {:ok, {:update, _}} = Parser.parse_update(query)
     end
   end
@@ -835,11 +918,11 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "LOAD <http://example.org/data.ttl>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:load, load_props}] = ops
 
-      silent = Enum.find_value(load_props, fn {"silent", s} -> s; _ -> nil end)
-      source = Enum.find_value(load_props, fn {"source", s} -> s; _ -> nil end)
+      silent = get_prop(load_props, "silent")
+      source = get_prop(load_props, "source")
 
       refute silent
       assert {:named_node, "http://example.org/data.ttl"} = source
@@ -849,10 +932,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "LOAD SILENT <http://example.org/data.ttl>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:load, load_props}] = ops
 
-      silent = Enum.find_value(load_props, fn {"silent", s} -> s; _ -> nil end)
+      silent = get_prop(load_props, "silent")
       assert silent
     end
 
@@ -860,10 +943,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "LOAD <http://example.org/data.ttl> INTO GRAPH <http://example.org/graph1>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:load, load_props}] = ops
 
-      dest = Enum.find_value(load_props, fn {"destination", d} -> d; _ -> nil end)
+      dest = get_prop(load_props, "destination")
       assert {:named_graph, "http://example.org/graph1"} = dest
     end
 
@@ -871,11 +954,11 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CLEAR ALL"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:clear, clear_props}] = ops
 
-      silent = Enum.find_value(clear_props, fn {"silent", s} -> s; _ -> nil end)
-      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      silent = get_prop(clear_props, "silent")
+      graph = get_prop(clear_props, "graph")
 
       refute silent
       assert :all_graphs = graph
@@ -885,10 +968,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CLEAR SILENT ALL"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:clear, clear_props}] = ops
 
-      silent = Enum.find_value(clear_props, fn {"silent", s} -> s; _ -> nil end)
+      silent = get_prop(clear_props, "silent")
       assert silent
     end
 
@@ -896,10 +979,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CLEAR DEFAULT"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:clear, clear_props}] = ops
 
-      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      graph = get_prop(clear_props, "graph")
       assert :default_graph = graph
     end
 
@@ -907,10 +990,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CLEAR NAMED"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:clear, clear_props}] = ops
 
-      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      graph = get_prop(clear_props, "graph")
       assert :all_named = graph
     end
 
@@ -918,10 +1001,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CLEAR GRAPH <http://example.org/graph1>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:clear, clear_props}] = ops
 
-      graph = Enum.find_value(clear_props, fn {"graph", g} -> g; _ -> nil end)
+      graph = get_prop(clear_props, "graph")
       assert {:named_graph, "http://example.org/graph1"} = graph
     end
 
@@ -929,10 +1012,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "DROP GRAPH <http://example.org/graph1>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:drop, drop_props}] = ops
 
-      graph = Enum.find_value(drop_props, fn {"graph", g} -> g; _ -> nil end)
+      graph = get_prop(drop_props, "graph")
       assert {:named_graph, "http://example.org/graph1"} = graph
     end
 
@@ -940,11 +1023,11 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CREATE GRAPH <http://example.org/newgraph>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:create, create_props}] = ops
 
-      silent = Enum.find_value(create_props, fn {"silent", s} -> s; _ -> nil end)
-      graph = Enum.find_value(create_props, fn {"graph", g} -> g; _ -> nil end)
+      silent = get_prop(create_props, "silent")
+      graph = get_prop(create_props, "graph")
 
       refute silent
       assert {:named_node, "http://example.org/newgraph"} = graph
@@ -954,10 +1037,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       query = "CREATE SILENT GRAPH <http://example.org/newgraph>"
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       [{:create, create_props}] = ops
 
-      silent = Enum.find_value(create_props, fn {"silent", s} -> s; _ -> nil end)
+      silent = get_prop(create_props, "silent")
       assert silent
     end
   end
@@ -969,9 +1052,10 @@ defmodule TripleStore.SPARQL.ParserTest do
       INSERT DATA { <http://example.org/s1> <http://example.org/p> <http://example.org/o1> } ;
       DELETE DATA { <http://example.org/s2> <http://example.org/p> <http://example.org/o2> }
       """
+
       {:ok, {:update, props}} = Parser.parse_update(query)
 
-      ops = Enum.find_value(props, fn {"operations", o} -> o; _ -> nil end)
+      ops = get_prop(props, "operations")
       assert length(ops) == 2
 
       assert {:insert_data, _} = Enum.at(ops, 0)
@@ -986,6 +1070,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX ex: <http://example.org/>
       INSERT DATA { ex:s ex:p ex:o }
       """
+
       {:ok, {:update, _}} = Parser.parse_update(query)
     end
   end
@@ -1040,7 +1125,11 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "returns {:ok, ast} for valid UPDATE" do
-      {:ok, ast} = Parser.parse_update_with_details("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      {:ok, ast} =
+        Parser.parse_update_with_details(
+          "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+        )
+
       assert {:update, _} = ast
     end
   end
@@ -1095,7 +1184,10 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses successfully with declared prefix" do
-      {:ok, _} = Parser.parse_with_details("PREFIX foaf: <http://xmlns.com/foaf/0.1/> SELECT ?s WHERE { ?s foaf:name ?name }")
+      {:ok, _} =
+        Parser.parse_with_details(
+          "PREFIX foaf: <http://xmlns.com/foaf/0.1/> SELECT ?s WHERE { ?s foaf:name ?name }"
+        )
     end
   end
 
@@ -1107,7 +1199,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "detects unbound variable with aggregate function" do
-      {:error, error} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+      {:error, error} =
+        Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+
       assert error.message =~ "scoping" or error.message =~ "unbound"
     end
 
@@ -1118,12 +1212,17 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "provides helpful hint for aggregate without GROUP BY" do
-      {:error, error} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+      {:error, error} =
+        Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o }")
+
       assert error.hint =~ "GROUP BY" or error.hint =~ "aggregate"
     end
 
     test "parses valid GROUP BY query" do
-      {:ok, _} = Parser.parse_with_details("SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?s")
+      {:ok, _} =
+        Parser.parse_with_details(
+          "SELECT ?s (COUNT(?o) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?s"
+        )
     end
   end
 
@@ -1167,7 +1266,7 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "Task 2.1.5: simple SELECT query parsing" do
     test "parses minimal SELECT query" do
       {:ok, {:select, props}} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert pattern != nil
     end
 
@@ -1181,7 +1280,7 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "Task 2.1.5: SELECT with multiple variables" do
     test "parses SELECT with explicit variable list" do
       {:ok, {:select, props}} = Parser.parse("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # Pattern should have a project node
       assert {:project, _, vars} = pattern
       assert length(vars) == 3
@@ -1212,7 +1311,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses FILTER with numeric comparison" do
       query = "SELECT ?x WHERE { ?s ?p ?x FILTER(?x > 10) }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # Should contain a filter node
       assert {:project, {:filter, _, _}, _} = pattern
     end
@@ -1223,7 +1322,9 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses FILTER with BOUND" do
-      query = "SELECT ?x WHERE { ?s ?p ?x OPTIONAL { ?s <http://ex.org/q> ?y } FILTER(BOUND(?y)) }"
+      query =
+        "SELECT ?x WHERE { ?s ?p ?x OPTIONAL { ?s <http://ex.org/q> ?y } FILTER(BOUND(?y)) }"
+
       {:ok, _} = Parser.parse(query)
     end
   end
@@ -1232,7 +1333,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "OPTIONAL produces left_join pattern" do
       query = "SELECT ?s ?o WHERE { ?s ?p1 ?o OPTIONAL { ?s ?p2 ?extra } }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # Pattern should contain left_join
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "left_join")
@@ -1245,6 +1346,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         OPTIONAL { ?s ?p1 ?a OPTIONAL { ?a ?p2 ?b } }
       }
       """
+
       {:ok, _} = Parser.parse(query)
     end
   end
@@ -1253,7 +1355,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "UNION produces union pattern" do
       query = "SELECT ?x WHERE { { ?s ?p ?x } UNION { ?t ?q ?x } }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "union")
     end
@@ -1268,6 +1370,7 @@ defmodule TripleStore.SPARQL.ParserTest do
         { ?s <http://ex.org/p3> ?x }
       }
       """
+
       {:ok, _} = Parser.parse(query)
     end
   end
@@ -1276,7 +1379,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "ORDER BY produces order_by pattern" do
       query = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY ?x"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "order_by")
     end
@@ -1284,7 +1387,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "LIMIT produces slice pattern" do
       query = "SELECT ?x WHERE { ?s ?p ?x } LIMIT 10"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "slice")
     end
@@ -1292,7 +1395,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "OFFSET produces slice pattern" do
       query = "SELECT ?x WHERE { ?s ?p ?x } OFFSET 5"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "slice")
     end
@@ -1307,7 +1410,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "CONSTRUCT returns construct tuple" do
       query = "CONSTRUCT { ?s <http://ex.org/p> ?o } WHERE { ?s ?p ?o }"
       {:ok, {:construct, props}} = Parser.parse(query)
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
       assert is_list(template)
       assert length(template) == 1
     end
@@ -1320,8 +1423,9 @@ defmodule TripleStore.SPARQL.ParserTest do
       }
       WHERE { ?s ?p ?o1 . ?s ?q ?o2 }
       """
+
       {:ok, {:construct, props}} = Parser.parse(query)
-      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      template = get_prop(props, "template")
       assert length(template) == 2
     end
   end
@@ -1329,12 +1433,14 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "Task 2.1.5: ASK query parsing" do
     test "ASK returns ask tuple" do
       {:ok, {:ask, props}} = Parser.parse("ASK WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert pattern != nil
     end
 
     test "ASK with complex pattern" do
-      query = "ASK WHERE { ?s <http://ex.org/type> <http://ex.org/Person> . ?s <http://ex.org/age> ?age FILTER(?age > 18) }"
+      query =
+        "ASK WHERE { ?s <http://ex.org/type> <http://ex.org/Person> . ?s <http://ex.org/age> ?age FILTER(?age > 18) }"
+
       {:ok, {:ask, _}} = Parser.parse(query)
     end
   end
@@ -1342,7 +1448,7 @@ defmodule TripleStore.SPARQL.ParserTest do
   describe "Task 2.1.5: DESCRIBE query parsing" do
     test "DESCRIBE returns describe tuple" do
       {:ok, {:describe, props}} = Parser.parse("DESCRIBE ?s WHERE { ?s ?p ?o }")
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       assert pattern != nil
     end
 
@@ -1377,7 +1483,7 @@ defmodule TripleStore.SPARQL.ParserTest do
       {:ok, ast} = Parser.parse_update(query)
       ops = Parser.get_operations(ast)
       assert [{:delete_insert, props}] = ops
-      delete = Enum.find_value(props, fn {"delete", d} -> d; _ -> nil end)
+      delete = get_prop(props, "delete")
       assert length(delete) == 1
     end
   end
@@ -1414,8 +1520,9 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX foaf: <http://xmlns.com/foaf/0.1/>
       SELECT ?name WHERE { ?s foaf:name ?name }
       """
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       # The prefix should be expanded in the AST
       assert String.contains?(pattern_str, "http://xmlns.com/foaf/0.1/name")
@@ -1427,8 +1534,9 @@ defmodule TripleStore.SPARQL.ParserTest do
       PREFIX foaf: <http://xmlns.com/foaf/0.1/>
       SELECT ?s WHERE { ?s rdf:type foaf:Person }
       """
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
       assert String.contains?(pattern_str, "http://xmlns.com/foaf/0.1/Person")
@@ -1448,7 +1556,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses BIND expression" do
       query = "SELECT ?s ?label WHERE { ?s <http://example.org/p> ?o . BIND(STR(?o) AS ?label) }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # BIND creates an extend node in the AST
       assert {:project, inner, _vars} = pattern
       pattern_str = inspect(inner)
@@ -1457,9 +1565,11 @@ defmodule TripleStore.SPARQL.ParserTest do
     end
 
     test "parses BIND with arithmetic expression" do
-      query = "SELECT ?s ?doubled WHERE { ?s <http://example.org/value> ?v . BIND(?v * 2 AS ?doubled) }"
+      query =
+        "SELECT ?s ?doubled WHERE { ?s <http://example.org/value> ?v . BIND(?v * 2 AS ?doubled) }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "extend")
       assert String.contains?(pattern_str, "multiply")
@@ -1470,7 +1580,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses MINUS pattern" do
       query = "SELECT ?s WHERE { ?s ?p ?o . MINUS { ?s <http://example.org/excluded> ?x } }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "minus")
     end
@@ -1485,23 +1595,28 @@ defmodule TripleStore.SPARQL.ParserTest do
         }
       }
       """
+
       {:ok, {:select, _props}} = Parser.parse(query)
     end
   end
 
   describe "Review Fixes: EXISTS and NOT EXISTS" do
     test "parses EXISTS in FILTER" do
-      query = "SELECT ?s WHERE { ?s ?p ?o . FILTER EXISTS { ?s <http://example.org/related> ?r } }"
+      query =
+        "SELECT ?s WHERE { ?s ?p ?o . FILTER EXISTS { ?s <http://example.org/related> ?r } }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "exists")
     end
 
     test "parses NOT EXISTS in FILTER" do
-      query = "SELECT ?s WHERE { ?s ?p ?o . FILTER NOT EXISTS { ?s <http://example.org/deleted> ?d } }"
+      query =
+        "SELECT ?s WHERE { ?s ?p ?o . FILTER NOT EXISTS { ?s <http://example.org/deleted> ?d } }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       # NOT EXISTS is represented as :not wrapping :exists
       assert String.contains?(pattern_str, "not")
@@ -1511,17 +1626,21 @@ defmodule TripleStore.SPARQL.ParserTest do
 
   describe "Review Fixes: IN and NOT IN expressions" do
     test "parses IN expression in FILTER" do
-      query = "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status IN (\"active\", \"pending\")) }"
+      query =
+        "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status IN (\"active\", \"pending\")) }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "in_expr")
     end
 
     test "parses NOT IN expression in FILTER" do
-      query = "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status NOT IN (\"deleted\", \"archived\")) }"
+      query =
+        "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status NOT IN (\"deleted\", \"archived\")) }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       # NOT IN is represented as :not wrapping :in_expr
       assert String.contains?(pattern_str, "not")
@@ -1533,7 +1652,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses GRAPH pattern with IRI" do
       query = "SELECT ?s WHERE { GRAPH <http://example.org/graph1> { ?s ?p ?o } }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "graph")
       assert String.contains?(pattern_str, "http://example.org/graph1")
@@ -1542,7 +1661,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses GRAPH pattern with variable" do
       query = "SELECT ?s ?g WHERE { GRAPH ?g { ?s ?p ?o } }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "graph")
     end
@@ -1552,7 +1671,7 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses SUM aggregate" do
       query = "SELECT (SUM(?value) AS ?total) WHERE { ?s <http://example.org/value> ?value }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "sum")
     end
@@ -1560,32 +1679,38 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "parses AVG aggregate" do
       query = "SELECT (AVG(?value) AS ?average) WHERE { ?s <http://example.org/value> ?value }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "avg")
     end
 
     test "parses MIN and MAX aggregates" do
-      query = "SELECT (MIN(?value) AS ?minimum) (MAX(?value) AS ?maximum) WHERE { ?s <http://example.org/value> ?value }"
+      query =
+        "SELECT (MIN(?value) AS ?minimum) (MAX(?value) AS ?maximum) WHERE { ?s <http://example.org/value> ?value }"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "min")
       assert String.contains?(pattern_str, "max")
     end
 
     test "parses GROUP_CONCAT aggregate" do
-      query = "SELECT ?s (GROUP_CONCAT(?label; SEPARATOR=\", \") AS ?labels) WHERE { ?s <http://example.org/label> ?label } GROUP BY ?s"
+      query =
+        "SELECT ?s (GROUP_CONCAT(?label; SEPARATOR=\", \") AS ?labels) WHERE { ?s <http://example.org/label> ?label } GROUP BY ?s"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "group_concat")
     end
 
     test "parses SAMPLE aggregate" do
-      query = "SELECT ?type (SAMPLE(?s) AS ?example) WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type } GROUP BY ?type"
+      query =
+        "SELECT ?type (SAMPLE(?s) AS ?example) WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type } GROUP BY ?type"
+
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       assert String.contains?(pattern_str, "sample")
     end
@@ -1602,7 +1727,13 @@ defmodule TripleStore.SPARQL.ParserTest do
 
     test "rejects update exceeding max size" do
       # Create an update larger than the max size
-      large_update = "INSERT DATA { " <> String.duplicate("<http://example.org/s> <http://example.org/p> <http://example.org/o> . ", 50_000) <> "}"
+      large_update =
+        "INSERT DATA { " <>
+          String.duplicate(
+            "<http://example.org/s> <http://example.org/p> <http://example.org/o> . ",
+            50_000
+          ) <> "}"
+
       assert byte_size(large_update) > Parser.max_query_size()
       {:error, {:parse_error, msg}} = Parser.parse_update(large_update)
       assert String.contains?(msg, "exceeds maximum size")
@@ -1634,17 +1765,19 @@ defmodule TripleStore.SPARQL.ParserTest do
     test "property paths use atoms not strings" do
       query = "SELECT ?s WHERE { ?s <http://example.org/p>* ?o }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       # The pattern should contain :zero_or_more atom, not "zero_or_more" string
       pattern_str = inspect(pattern)
-      assert String.contains?(pattern_str, ":zero_or_more") or String.contains?(pattern_str, ":path")
+
+      assert String.contains?(pattern_str, ":zero_or_more") or
+               String.contains?(pattern_str, ":path")
     end
 
     test "sequence path is expanded by spargebra" do
       # Note: spargebra optimizes simple sequence paths into BGPs with blank nodes
       query = "SELECT ?s WHERE { ?s <http://example.org/p1>/<http://example.org/p2> ?o }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       # The sequence path is expanded into two triple patterns connected by a blank node
       assert String.contains?(pattern_str, ":bgp") or String.contains?(pattern_str, ":path")
@@ -1656,16 +1789,18 @@ defmodule TripleStore.SPARQL.ParserTest do
       # Alternative paths that can't be simplified result in :path with :alternative
       query = "SELECT ?s WHERE { ?s (<http://example.org/p1>|<http://example.org/p2>)* ?o }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
-      assert String.contains?(pattern_str, ":alternative") or String.contains?(pattern_str, ":path")
+
+      assert String.contains?(pattern_str, ":alternative") or
+               String.contains?(pattern_str, ":path")
     end
 
     test "reverse path is expanded by spargebra" do
       # Note: spargebra optimizes simple reverse paths by swapping subject/object
       query = "SELECT ?s WHERE { ?s ^<http://example.org/p> ?o }"
       {:ok, {:select, props}} = Parser.parse(query)
-      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern = get_pattern(props)
       pattern_str = inspect(pattern)
       # Simple reverse is optimized: ?s ^:p ?o becomes ?o :p ?s
       assert String.contains?(pattern_str, ":bgp") or String.contains?(pattern_str, ":path")

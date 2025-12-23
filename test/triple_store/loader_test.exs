@@ -13,10 +13,10 @@ defmodule TripleStore.LoaderTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Loader
-  alias TripleStore.Index
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
+  alias TripleStore.Loader
 
   @test_db_base "/tmp/triple_store_loader_test"
 
@@ -440,7 +440,8 @@ defmodule TripleStore.LoaderTest do
     end
 
     test "handles duplicate triples in input", %{db: db, manager: manager} do
-      triple = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o")}
+      triple =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o")}
 
       # RDF.Graph deduplicates, so this tests that case
       graph = RDF.Graph.new([triple, triple, triple])

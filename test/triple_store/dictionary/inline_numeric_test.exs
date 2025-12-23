@@ -523,7 +523,7 @@ defmodule TripleStore.Dictionary.InlineNumericTest do
 
     test "rejects coefficient exceeding maximum" do
       # Coefficient just over max
-      too_large = (1 <<< 48)
+      too_large = 1 <<< 48
       decimal = %Decimal{sign: 1, coef: too_large, exp: 0}
 
       refute Dictionary.inline_encodable_decimal?(decimal)
@@ -578,6 +578,7 @@ defmodule TripleStore.Dictionary.InlineNumericTest do
 
       for str <- test_values do
         decimal = Decimal.new(str)
+
         if Dictionary.inline_encodable_decimal?(decimal) do
           {:ok, id} = Dictionary.encode_decimal(decimal)
           {:ok, decoded} = Dictionary.decode_decimal(id)

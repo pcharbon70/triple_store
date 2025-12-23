@@ -356,7 +356,7 @@ defmodule TripleStore.Integration.IndexConsistencyTest do
       # Insert 1000 triples
       triples =
         for i <- 1..1000 do
-          {i, rem(i, 10), i + 10000}
+          {i, rem(i, 10), i + 10_000}
         end
 
       :ok = Index.insert_triples(db, triples)
@@ -371,9 +371,9 @@ defmodule TripleStore.Integration.IndexConsistencyTest do
       end
 
       # Spot check some triples
-      assert {:ok, true} = Index.triple_exists?(db, {1, 1, 10001})
-      assert {:ok, true} = Index.triple_exists?(db, {500, 0, 10500})
-      assert {:ok, true} = Index.triple_exists?(db, {1000, 0, 11000})
+      assert {:ok, true} = Index.triple_exists?(db, {1, 1, 10_001})
+      assert {:ok, true} = Index.triple_exists?(db, {500, 0, 10_500})
+      assert {:ok, true} = Index.triple_exists?(db, {1000, 0, 11_000})
     end
 
     test "concurrent batch operations maintain consistency", %{db: db} do
@@ -383,7 +383,7 @@ defmodule TripleStore.Integration.IndexConsistencyTest do
           Task.async(fn ->
             triples =
               for i <- 1..100 do
-                {batch * 1000 + i, batch, batch * 10000 + i}
+                {batch * 1000 + i, batch, batch * 10_000 + i}
               end
 
             Index.insert_triples(db, triples)

@@ -12,10 +12,11 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
 
   use ExUnit.Case, async: false
 
+  alias RDF.XSD
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.Loader
   alias TripleStore.Exporter
+  alias TripleStore.Loader
 
   @test_db_base "/tmp/triple_store_rdf_roundtrip_test"
 
@@ -49,8 +50,7 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
            RDF.iri("http://example.org/o1")},
           {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p2"),
            RDF.literal("hello")},
-          {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"),
-           RDF.literal(42)}
+          {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"), RDF.literal(42)}
         ])
 
       # Load into store
@@ -216,13 +216,13 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
       original =
         RDF.graph([
           {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/int"),
-           RDF.XSD.Integer.new!(42)},
+           XSD.Integer.new!(42)},
           {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/dec"),
-           RDF.XSD.Decimal.new!(Decimal.new("3.14"))},
+           XSD.Decimal.new!(Decimal.new("3.14"))},
           {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/bool"),
-           RDF.XSD.Boolean.new!(true)},
+           XSD.Boolean.new!(true)},
           {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/date"),
-           RDF.XSD.Date.new!("2023-12-22")}
+           XSD.Date.new!("2023-12-22")}
         ])
 
       {:ok, _} = Loader.load_graph(db, manager, original)
@@ -304,7 +304,7 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
         RDF.graph([
           {bnode, RDF.type(), RDF.iri("http://xmlns.com/foaf/0.1/Person")},
           {bnode, RDF.iri("http://xmlns.com/foaf/0.1/name"), RDF.literal("Alice")},
-          {bnode, RDF.iri("http://xmlns.com/foaf/0.1/age"), RDF.XSD.Integer.new!(30)}
+          {bnode, RDF.iri("http://xmlns.com/foaf/0.1/age"), XSD.Integer.new!(30)}
         ])
 
       {:ok, _} = Loader.load_graph(db, manager, original)
