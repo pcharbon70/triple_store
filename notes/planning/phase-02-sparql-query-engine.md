@@ -416,9 +416,11 @@ now has 173 tests covering all functionality (includes 6 review improvement test
 
 ## 2.5 Query API
 
-- [ ] **Section 2.5 Complete**
+- [x] **Section 2.5 Complete** (2025-12-23)
 
 This section implements the public query API providing a clean interface for executing SPARQL queries against the triple store.
+
+Implemented in `lib/triple_store/sparql/query.ex` with 68 tests in query_test.exs.
 
 ### 2.5.1 Query Function
 
@@ -456,24 +458,34 @@ Test coverage: 18 new tests (41 total in query_test.exs).
 
 ### 2.5.3 Prepared Queries
 
-- [ ] **Task 2.5.3 Complete**
+- [x] **Task 2.5.3 Complete** (2025-12-23)
 
 Support prepared queries with parameter binding.
 
-- [ ] 2.5.3.1 Implement `TripleStore.prepare_query(sparql)` returning prepared query
-- [ ] 2.5.3.2 Implement `TripleStore.execute(db, prepared, params)` with bindings
-- [ ] 2.5.3.3 Cache parsed/optimized algebra for prepared queries
+- [x] 2.5.3.1 Implement `TripleStore.prepare_query(sparql)` returning prepared query
+- [x] 2.5.3.2 Implement `TripleStore.execute(db, prepared, params)` with bindings
+- [x] 2.5.3.3 Cache parsed/optimized algebra for prepared queries
+
+Added `Query.Prepared` struct caching parsed AST, optimized algebra, and parameter names.
+Added `prepare/1`, `prepare/2`, `prepare!/1` for query compilation.
+Added `execute/3`, `execute/4`, `execute!/3` for parameterized execution.
+Parameter syntax uses `$param` prefix, converted to variables during parsing.
+Test coverage: 27 new tests (68 total in query_test.exs).
 
 ### 2.5.4 Unit Tests
 
-- [ ] **Task 2.5.4 Complete**
+- [x] **Task 2.5.4 Complete** (2025-12-23)
 
-- [ ] Test query returns correct results
-- [ ] Test query with timeout terminates
-- [ ] Test streaming query produces all results
-- [ ] Test streaming query handles early termination
-- [ ] Test prepared query with parameter binding
-- [ ] Test prepared query caching
+All unit tests for Query API have been implemented across 2.5.1, 2.5.2, and 2.5.3:
+
+- [x] Test query returns correct results (2.5.1 - 23 tests)
+- [x] Test query with timeout terminates (2.5.1)
+- [x] Test streaming query produces all results (2.5.2 - 18 tests)
+- [x] Test streaming query handles early termination (2.5.2)
+- [x] Test prepared query with parameter binding (2.5.3 - 27 tests)
+- [x] Test prepared query caching (2.5.3)
+
+Total test coverage: 68 tests in query_test.exs
 
 ---
 

@@ -82,6 +82,54 @@ defmodule TripleStore.SPARQL.Query do
   @default_timeout 30_000
 
   # ===========================================================================
+  # Prepared Query Struct
+  # ===========================================================================
+
+  @typedoc "Prepared query struct containing pre-compiled query components"
+  @type prepared_query :: %__MODULE__.Prepared{
+          sparql: String.t(),
+          query_type: :select | :ask | :construct | :describe,
+          pattern: term(),
+          optimized_pattern: term(),
+          metadata: map(),
+          parameters: [String.t()]
+        }
+
+  defmodule Prepared do
+    @moduledoc """
+    Represents a prepared SPARQL query.
+
+    Prepared queries cache the parsed and optimized algebra, allowing repeated
+    execution with different parameter bindings without re-parsing or re-optimizing.
+
+    ## Parameters
+
+    Parameters are SPARQL variables that will be bound at execution time.
+    They are identified by the `$` prefix in the query string (e.g., `$person`).
+
+    ## Example
+
+        # Prepare a query with parameters
+        {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person foaf:name ?name }")
+
+        # Execute with different bindings
+        {:ok, results1} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+        {:ok, results2} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Bob"})
+
+    """
+
+    @enforce_keys [:sparql, :query_type, :pattern, :optimized_pattern, :metadata]
+    defstruct [
+      :sparql,
+      :query_type,
+      :pattern,
+      :optimized_pattern,
+      :metadata,
+      parameters: []
+    ]
+  end
+
+  # ===========================================================================
   # Public API
   # ===========================================================================
 
@@ -173,6 +221,383 @@ defmodule TripleStore.SPARQL.Query do
       {:error, reason} -> raise "Query failed: #{inspect(reason)}"
     end
   end
+
+  # ===========================================================================
+  # Prepared Query API
+  # ===========================================================================
+
+  @typedoc "Prepare options"
+  @type prepare_opts :: [
+          optimize: boolean(),
+          stats: map()
+        ]
+
+  @typedoc "Parameter bindings for prepared query execution"
+  @type params :: %{String.t() => term()}
+
+  @doc """
+  Prepares a SPARQL query for repeated execution.
+
+  Parses and optimizes the query once, caching the compiled algebra for
+  efficient repeated execution with different parameter bindings.
+
+  ## Parameters
+
+  Parameters are SPARQL variables with a `$` prefix in the query string.
+  When executed, these are replaced with bound values from the params map.
+
+  ## Arguments
+
+  - `sparql` - SPARQL query string (may contain $param placeholders)
+
+  ## Returns
+
+  - `{:ok, prepared}` - Prepared query struct
+  - `{:error, reason}` - Error with reason
+
+  ## Examples
+
+      # Prepare a parameterized query
+      {:ok, prepared} = Query.prepare(\"\"\"
+        SELECT ?name ?age WHERE {
+          $person foaf:name ?name .
+          $person foaf:age ?age
+        }
+      \"\"\")
+
+      # Execute multiple times with different parameters
+      {:ok, results} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+
+  """
+  @spec prepare(String.t()) :: {:ok, prepared_query()} | {:error, term()}
+  def prepare(sparql) do
+    prepare(sparql, [])
+  end
+
+  @doc """
+  Prepares a SPARQL query with options.
+
+  ## Options
+
+  - `:optimize` - Enable query optimization (default: true)
+  - `:stats` - Statistics map for optimizer
+
+  ## Examples
+
+      # Prepare without optimization
+      {:ok, prepared} = Query.prepare(sparql, optimize: false)
+
+      # Prepare with statistics for better optimization
+      {:ok, prepared} = Query.prepare(sparql, stats: %{rdf_type: 10000})
+
+  """
+  @spec prepare(String.t(), prepare_opts()) :: {:ok, prepared_query()} | {:error, term()}
+  def prepare(sparql, opts) when is_binary(sparql) and is_list(opts) do
+    optimize? = Keyword.get(opts, :optimize, true)
+    stats = Keyword.get(opts, :stats, %{})
+
+    # Extract parameters from the query (variables starting with $)
+    {normalized_sparql, parameters} = extract_parameters(sparql)
+
+    with {:ok, ast} <- parse_query(normalized_sparql),
+         {:ok, query_type, pattern, metadata} <- extract_query_info(ast),
+         {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
+      prepared = %Prepared{
+        sparql: sparql,
+        query_type: query_type,
+        pattern: pattern,
+        optimized_pattern: optimized,
+        metadata: metadata,
+        parameters: parameters
+      }
+
+      {:ok, prepared}
+    end
+  rescue
+    e -> {:error, {:exception, Exception.message(e)}}
+  end
+
+  @doc """
+  Prepares a SPARQL query, raising on error.
+
+  Same as `prepare/2` but raises `RuntimeError` on failure.
+
+  ## Examples
+
+      prepared = Query.prepare!("SELECT ?name WHERE { ?s foaf:name ?name }")
+
+  """
+  @spec prepare!(String.t(), prepare_opts()) :: prepared_query()
+  def prepare!(sparql, opts \\ []) do
+    case prepare(sparql, opts) do
+      {:ok, prepared} -> prepared
+      {:error, reason} -> raise "Prepare failed: #{inspect(reason)}"
+    end
+  end
+
+  @doc """
+  Executes a prepared query with parameter bindings.
+
+  Uses the pre-compiled algebra from the prepared query, substituting
+  parameter values from the params map.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `prepared` - Prepared query from `prepare/1`
+  - `params` - Map of parameter names to values (optional, default: %{})
+
+  ## Parameter Values
+
+  Parameter values can be:
+  - URIs as strings: `"http://example.org/resource"`
+  - Literal tuples: `{:literal, :simple, "value"}`
+  - Typed literals: `{:literal, {:typed, "xsd:integer"}, "42"}`
+
+  ## Returns
+
+  - `{:ok, results}` - Query results (type depends on query form)
+  - `{:error, reason}` - Error with reason
+
+  ## Examples
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person foaf:name ?name }")
+
+      # Execute with parameter binding
+      {:ok, results} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+
+      # Execute without parameters (for non-parameterized queries)
+      {:ok, results} = Query.execute(ctx, prepared)
+
+  """
+  @spec execute(context(), prepared_query(), params()) :: {:ok, query_result()} | {:error, term()}
+  def execute(ctx, %Prepared{} = prepared, params \\ %{}) do
+    execute(ctx, prepared, params, [])
+  end
+
+  @doc """
+  Executes a prepared query with options.
+
+  ## Options
+
+  - `:timeout` - Maximum execution time in milliseconds (default: 30000)
+
+  ## Examples
+
+      {:ok, results} = Query.execute(ctx, prepared, params, timeout: 5000)
+
+  """
+  @spec execute(context(), prepared_query(), params(), keyword()) ::
+          {:ok, query_result()} | {:error, term()}
+  def execute(ctx, %Prepared{} = prepared, params, opts) when is_map(params) and is_list(opts) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+
+    # Validate all required parameters are provided
+    case validate_parameters(prepared.parameters, params) do
+      :ok ->
+        task =
+          Task.async(fn ->
+            execute_prepared(ctx, prepared, params)
+          end)
+
+        case Task.yield(task, timeout) || Task.shutdown(task) do
+          {:ok, result} -> result
+          nil -> {:error, :timeout}
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  rescue
+    e -> {:error, {:exception, Exception.message(e)}}
+  end
+
+  @doc """
+  Executes a prepared query, raising on error.
+
+  Same as `execute/4` but raises `RuntimeError` on failure.
+
+  ## Examples
+
+      results = Query.execute!(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+
+  """
+  @spec execute!(context(), prepared_query(), params(), keyword()) :: query_result()
+  def execute!(ctx, prepared, params \\ %{}, opts \\ []) do
+    case execute(ctx, prepared, params, opts) do
+      {:ok, result} -> result
+      {:error, reason} -> raise "Execute failed: #{inspect(reason)}"
+    end
+  end
+
+  # Execute a prepared query with bound parameters
+  defp execute_prepared(ctx, prepared, params) do
+    # Substitute parameters in the optimized pattern
+    pattern = substitute_parameters(prepared.optimized_pattern, params)
+
+    # Execute and serialize
+    execute_and_serialize(ctx, prepared.query_type, pattern, prepared.metadata)
+  end
+
+  # Extract $param placeholders and convert to regular ?param variables
+  defp extract_parameters(sparql) do
+    # Find all $param patterns (parameter names)
+    param_regex = ~r/\$([a-zA-Z_][a-zA-Z0-9_]*)/
+    params = Regex.scan(param_regex, sparql) |> Enum.map(fn [_, name] -> name end) |> Enum.uniq()
+
+    # Replace $param with ?param for the parser
+    normalized = Regex.replace(param_regex, sparql, "?\\1")
+
+    {normalized, params}
+  end
+
+  # Validate that all required parameters are provided
+  defp validate_parameters(required, provided) do
+    missing = required -- Map.keys(provided)
+
+    if Enum.empty?(missing) do
+      :ok
+    else
+      {:error, {:missing_parameters, missing}}
+    end
+  end
+
+  # Substitute parameter values into the pattern
+  defp substitute_parameters(pattern, params) when map_size(params) == 0 do
+    pattern
+  end
+
+  defp substitute_parameters(pattern, params) do
+    do_substitute(pattern, params)
+  end
+
+  defp do_substitute({:bgp, triples}, params) do
+    substituted_triples = Enum.map(triples, fn triple -> substitute_triple(triple, params) end)
+    {:bgp, substituted_triples}
+  end
+
+  defp do_substitute({:join, left, right}, params) do
+    {:join, do_substitute(left, params), do_substitute(right, params)}
+  end
+
+  defp do_substitute({:left_join, left, right, expr}, params) do
+    {:left_join, do_substitute(left, params), do_substitute(right, params),
+     substitute_expr(expr, params)}
+  end
+
+  defp do_substitute({:union, left, right}, params) do
+    {:union, do_substitute(left, params), do_substitute(right, params)}
+  end
+
+  defp do_substitute({:filter, expr, inner}, params) do
+    {:filter, substitute_expr(expr, params), do_substitute(inner, params)}
+  end
+
+  defp do_substitute({:project, inner, vars}, params) do
+    {:project, do_substitute(inner, params), vars}
+  end
+
+  defp do_substitute({:distinct, inner}, params) do
+    {:distinct, do_substitute(inner, params)}
+  end
+
+  defp do_substitute({:reduced, inner}, params) do
+    {:reduced, do_substitute(inner, params)}
+  end
+
+  defp do_substitute({:slice, inner, offset, limit}, params) do
+    {:slice, do_substitute(inner, params), offset, limit}
+  end
+
+  defp do_substitute({:order_by, inner, conditions}, params) do
+    {:order_by, do_substitute(inner, params), conditions}
+  end
+
+  defp do_substitute({:extend, inner, var, expr}, params) do
+    {:extend, do_substitute(inner, params), var, substitute_expr(expr, params)}
+  end
+
+  defp do_substitute({:minus, left, right}, params) do
+    {:minus, do_substitute(left, params), do_substitute(right, params)}
+  end
+
+  defp do_substitute({:graph, graph_name, inner}, params) do
+    {:graph, substitute_term(graph_name, params), do_substitute(inner, params)}
+  end
+
+  defp do_substitute(nil, _params), do: nil
+
+  defp do_substitute(other, _params), do: other
+
+  # Substitute parameters in a triple pattern
+  defp substitute_triple({:triple, s, p, o}, params) do
+    {:triple, substitute_term(s, params), substitute_term(p, params), substitute_term(o, params)}
+  end
+
+  defp substitute_triple({s, p, o}, params) do
+    {substitute_term(s, params), substitute_term(p, params), substitute_term(o, params)}
+  end
+
+  # Substitute a term if it's a variable matching a parameter
+  defp substitute_term({:variable, name}, params) do
+    case Map.get(params, name) do
+      nil -> {:variable, name}
+      value -> convert_param_value(value)
+    end
+  end
+
+  defp substitute_term(term, _params), do: term
+
+  # Convert parameter value to the appropriate internal representation
+  defp convert_param_value(value) when is_binary(value) do
+    # Check if it looks like a URI
+    if String.starts_with?(value, "http://") or String.starts_with?(value, "https://") or
+         String.starts_with?(value, "urn:") do
+      {:named_node, value}
+    else
+      {:literal, :simple, value}
+    end
+  end
+
+  defp convert_param_value({:literal, _, _} = literal), do: literal
+  defp convert_param_value({:named_node, _} = node), do: node
+  defp convert_param_value({:blank_node, _} = node), do: node
+
+  defp convert_param_value(value) when is_integer(value) do
+    {:literal, {:typed, "http://www.w3.org/2001/XMLSchema#integer"}, Integer.to_string(value)}
+  end
+
+  defp convert_param_value(value) when is_float(value) do
+    {:literal, {:typed, "http://www.w3.org/2001/XMLSchema#double"}, Float.to_string(value)}
+  end
+
+  defp convert_param_value(true) do
+    {:literal, {:typed, "http://www.w3.org/2001/XMLSchema#boolean"}, "true"}
+  end
+
+  defp convert_param_value(false) do
+    {:literal, {:typed, "http://www.w3.org/2001/XMLSchema#boolean"}, "false"}
+  end
+
+  defp convert_param_value(value), do: {:literal, :simple, inspect(value)}
+
+  # Substitute parameters in an expression
+  defp substitute_expr(nil, _params), do: nil
+  defp substitute_expr({:variable, name}, params), do: substitute_term({:variable, name}, params)
+
+  defp substitute_expr({op, args}, params) when is_list(args) do
+    {op, Enum.map(args, fn arg -> substitute_expr(arg, params) end)}
+  end
+
+  defp substitute_expr({op, arg1, arg2}, params) do
+    {op, substitute_expr(arg1, params), substitute_expr(arg2, params)}
+  end
+
+  defp substitute_expr({op, arg}, params) when is_atom(op) do
+    {op, substitute_expr(arg, params)}
+  end
+
+  defp substitute_expr(expr, _params), do: expr
 
   # ===========================================================================
   # Streaming Query API

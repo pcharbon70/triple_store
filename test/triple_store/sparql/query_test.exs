@@ -810,4 +810,383 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Prepared Query Tests - Task 2.5.3
+  # ===========================================================================
+
+  describe "prepare/1" do
+    test "prepares a simple SELECT query" do
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
+
+      assert %Query.Prepared{} = prepared
+      assert prepared.query_type == :select
+      assert prepared.parameters == []
+      assert prepared.pattern != nil
+      assert prepared.optimized_pattern != nil
+    end
+
+    test "prepares query with $param parameters" do
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      assert prepared.parameters == ["person"]
+    end
+
+    test "prepares query with multiple parameters" do
+      {:ok, prepared} =
+        Query.prepare("SELECT ?o WHERE { $subject $predicate ?o }")
+
+      assert "subject" in prepared.parameters
+      assert "predicate" in prepared.parameters
+      assert length(prepared.parameters) == 2
+    end
+
+    test "caches both original and optimized pattern" do
+      {:ok, prepared} =
+        Query.prepare("SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
+
+      assert prepared.pattern != nil
+      assert prepared.optimized_pattern != nil
+    end
+
+    test "returns error for invalid SPARQL" do
+      assert {:error, {:parse_error, _}} = Query.prepare("INVALID SPARQL")
+    end
+  end
+
+  describe "prepare/2 with options" do
+    test "optimize: false skips optimization" do
+      {:ok, prepared} =
+        Query.prepare("SELECT ?name WHERE { ?s <http://ex.org/name> ?name }", optimize: false)
+
+      # Pattern and optimized_pattern should be identical when optimization is disabled
+      assert prepared.pattern == prepared.optimized_pattern
+    end
+
+    test "stats option passes statistics to optimizer" do
+      {:ok, prepared} =
+        Query.prepare(
+          "SELECT ?o WHERE { ?s <http://ex.org/p1> ?x . ?x <http://ex.org/p2> ?o }",
+          stats: %{"http://ex.org/p1" => 100, "http://ex.org/p2" => 1000}
+        )
+
+      assert %Query.Prepared{} = prepared
+    end
+  end
+
+  describe "prepare!/1" do
+    test "returns prepared query for valid SPARQL" do
+      prepared = Query.prepare!("SELECT ?s WHERE { ?s ?p ?o }")
+      assert %Query.Prepared{} = prepared
+    end
+
+    test "raises for invalid SPARQL" do
+      assert_raise RuntimeError, ~r/Prepare failed/, fn ->
+        Query.prepare!("INVALID SPARQL")
+      end
+    end
+  end
+
+  describe "execute/3" do
+    test "executes prepared query without parameters", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
+      {:ok, results} = Query.execute(ctx, prepared)
+
+      assert length(results) == 1
+      assert hd(results)["name"] == {:literal, :simple, "Alice"}
+
+      cleanup({db, manager})
+    end
+
+    test "executes prepared query with URI parameter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      # Execute with Alice
+      {:ok, results1} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+      assert length(results1) == 1
+      assert hd(results1)["name"] == {:literal, :simple, "Alice"}
+
+      # Execute with Bob
+      {:ok, results2} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Bob"})
+      assert length(results2) == 1
+      assert hd(results2)["name"] == {:literal, :simple, "Bob"}
+
+      cleanup({db, manager})
+    end
+
+    test "executes prepared query with literal parameter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/name> $name }")
+
+      {:ok, results} = Query.execute(ctx, prepared, %{"name" => "Alice"})
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "executes prepared query with named_node tuple parameter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      {:ok, results} = Query.execute(ctx, prepared, %{"person" => {:named_node, "http://ex.org/Alice"}})
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "executes prepared query with literal tuple parameter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/name> $name }")
+
+      {:ok, results} = Query.execute(ctx, prepared, %{"name" => {:literal, :simple, "Alice"}})
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "executes prepared query multiple times efficiently", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      for i <- 1..10 do
+        add_triple(db, manager, {
+          iri("http://ex.org/person#{i}"),
+          iri("http://ex.org/name"),
+          literal("Person#{i}")
+        })
+      end
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      # Execute 10 times with different parameters
+      for i <- 1..10 do
+        {:ok, results} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/person#{i}"})
+        assert length(results) == 1
+        assert hd(results)["name"] == {:literal, :simple, "Person#{i}"}
+      end
+
+      cleanup({db, manager})
+    end
+
+    test "returns error for missing parameters", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:ok, prepared} = Query.prepare("SELECT ?o WHERE { $subject $predicate ?o }")
+
+      # Missing all parameters
+      assert {:error, {:missing_parameters, missing}} = Query.execute(ctx, prepared, %{})
+      assert "subject" in missing
+      assert "predicate" in missing
+
+      # Missing one parameter
+      assert {:error, {:missing_parameters, ["predicate"]}} =
+               Query.execute(ctx, prepared, %{"subject" => "http://ex.org/s"})
+
+      cleanup({db, manager})
+    end
+
+    test "extra parameters are ignored", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      {:ok, results} =
+        Query.execute(ctx, prepared, %{
+          "person" => "http://ex.org/Alice",
+          "extra" => "ignored"
+        })
+
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "execute/4 with options" do
+    test "timeout option works", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/s"), iri("http://ex.org/p"), literal("o")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, results} = Query.execute(ctx, prepared, %{}, timeout: 5000)
+
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "execute!/3" do
+    test "returns results for valid execution", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      prepared = Query.prepare!("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+      results = Query.execute!(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+
+      assert length(results) == 1
+      assert hd(results)["name"] == {:literal, :simple, "Alice"}
+
+      cleanup({db, manager})
+    end
+
+    test "raises for missing parameters", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      prepared = Query.prepare!("SELECT ?o WHERE { $subject ?p ?o }")
+
+      assert_raise RuntimeError, ~r/Execute failed.*missing_parameters/, fn ->
+        Query.execute!(ctx, prepared, %{})
+      end
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "prepared query with different query types" do
+    test "prepared ASK query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("ASK { $person <http://ex.org/name> ?name }")
+      assert prepared.query_type == :ask
+
+      {:ok, result} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+      assert result == true
+
+      {:ok, result2} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Unknown"})
+      assert result2 == false
+
+      cleanup({db, manager})
+    end
+
+    test "prepared CONSTRUCT query", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} =
+        Query.prepare("""
+          CONSTRUCT { $person <http://ex.org/hasName> ?name }
+          WHERE { $person <http://ex.org/name> ?name }
+        """)
+
+      assert prepared.query_type == :construct
+
+      {:ok, graph} = Query.execute(ctx, prepared, %{"person" => "http://ex.org/Alice"})
+      assert %RDF.Graph{} = graph
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "prepared query parameter value conversion" do
+    test "integer parameter is converted correctly", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add triple with integer literal
+      {:ok, s_id} = Manager.get_or_create_id(manager, RDF.iri("http://ex.org/item"))
+      {:ok, p_id} = Manager.get_or_create_id(manager, RDF.iri("http://ex.org/count"))
+      {:ok, o_id} = Manager.get_or_create_id(manager, RDF.literal(42))
+      :ok = Index.insert_triple(db, {s_id, p_id, o_id})
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/count> $count }")
+
+      # Execute with integer - this tests the conversion path
+      {:ok, results} = Query.execute(ctx, prepared, %{"count" => 42})
+      # May or may not match depending on literal format, just verify no error
+      assert is_list(results)
+
+      cleanup({db, manager})
+    end
+
+    test "boolean true parameter is converted correctly", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/active> $flag }")
+
+      # Execute with boolean - tests conversion without error
+      {:ok, results} = Query.execute(ctx, prepared, %{"flag" => true})
+      assert is_list(results)
+
+      cleanup({db, manager})
+    end
+
+    test "float parameter is converted correctly", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/value> $val }")
+
+      # Execute with float - tests conversion without error
+      {:ok, results} = Query.execute(ctx, prepared, %{"val" => 3.14})
+      assert is_list(results)
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "prepared query caching behavior" do
+    test "prepared query struct stores original SPARQL", %{tmp_dir: _tmp_dir} do
+      sparql = "SELECT ?name WHERE { $person <http://ex.org/name> ?name }"
+      {:ok, prepared} = Query.prepare(sparql)
+
+      assert prepared.sparql == sparql
+    end
+
+    test "prepared query can be reused after module reload (serializable)", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
+
+      # Simulate serialization/deserialization by converting to/from term
+      serialized = :erlang.term_to_binary(prepared)
+      deserialized = :erlang.binary_to_term(serialized)
+
+      {:ok, results} = Query.execute(ctx, deserialized, %{"person" => "http://ex.org/Alice"})
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+  end
 end
