@@ -42,9 +42,9 @@ defmodule TripleStore.Adapter do
   """
 
   alias TripleStore.Dictionary
+  alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.StringToId
-  alias TripleStore.Dictionary.IdToString
 
   # ===========================================================================
   # Types
@@ -286,7 +286,8 @@ defmodule TripleStore.Adapter do
       iex> bnode
       %RDF.BlankNode{value: "b1"}
   """
-  @spec to_rdf_bnode(db_ref(), term_id()) :: {:ok, RDF.BlankNode.t()} | :not_found | {:error, term()}
+  @spec to_rdf_bnode(db_ref(), term_id()) ::
+          {:ok, RDF.BlankNode.t()} | :not_found | {:error, term()}
   def to_rdf_bnode(db, id) when is_integer(id) and id >= 0 do
     {type, _value} = Dictionary.decode_id(id)
 

@@ -10,25 +10,11 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
   - Concurrent access
   - Overflow protection
   """
-  use ExUnit.Case, async: false
+  use TripleStore.PooledDbCase
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.SequenceCounter
-
-  @test_db_base "/tmp/triple_store_seq_counter_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
 
   describe "start_link/1" do
     test "starts counter with database reference", %{db: db} do
@@ -258,7 +244,9 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       assert MapSet.size(overlap) == 0
 
       # New sequences should be higher than old ones
-      old_max = generated_after_flush |> Enum.map(&elem(Dictionary.decode_id(&1), 1)) |> Enum.max()
+      old_max =
+        generated_after_flush |> Enum.map(&elem(Dictionary.decode_id(&1), 1)) |> Enum.max()
+
       new_min = new_ids |> Enum.map(&elem(Dictionary.decode_id(&1), 1)) |> Enum.min()
       assert new_min > old_max
 

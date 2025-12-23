@@ -2,23 +2,7 @@ defmodule TripleStore.Backend.RocksDB.IteratorTest do
   @moduledoc """
   Tests for RocksDB Iterator operations (Task 1.2.4).
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Backend.RocksDB.NIF
-
-  @test_db_base "/tmp/triple_store_iterator_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
+  use TripleStore.PooledDbCase
 
   describe "prefix_iterator/3" do
     test "creates an iterator for a column family", %{db: db} do
@@ -49,7 +33,7 @@ defmodule TripleStore.Backend.RocksDB.IteratorTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.prefix_iterator(db, :nonexistent, "")
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
 
@@ -364,6 +348,110 @@ defmodule TripleStore.Backend.RocksDB.IteratorTest do
       assert length(results) >= 2
 
       NIF.iterator_close(iter)
+    end
+  end
+
+  describe "iterator lifetime safety" do
+    @tag :lifetime_safety
+    test "iterator continues to work after database close()", %{db_path: path} do
+      # This test verifies the fix for the use-after-free bug documented in
+      # docs/20251222/rocksdb-close-lifetime-risk.md
+      #
+      # Previously, calling close() would drop the DB while iterators still held
+      # pointers to it, causing use-after-free. The fix stores Arc<SharedDb> in
+      # iterators, so the DB stays alive until all iterators are dropped.
+
+      # Create a separate database for this test (not from the pool)
+      {:ok, db} = NIF.open("#{path}_lifetime")
+
+      # Insert some data
+      NIF.put(db, :spo, "key1", "value1")
+      NIF.put(db, :spo, "key2", "value2")
+      NIF.put(db, :spo, "key3", "value3")
+
+      # Create iterator BEFORE closing the database
+      {:ok, iter} = NIF.prefix_iterator(db, :spo, "key")
+
+      # Close the database - this used to cause use-after-free when using the iterator
+      assert :ok = NIF.close(db)
+
+      # Iterator should still work because it holds its own Arc<SharedDb> reference
+      # Before the fix, this would crash the VM or return garbage
+      assert {:ok, "key1", "value1"} = NIF.iterator_next(iter)
+      assert {:ok, "key2", "value2"} = NIF.iterator_next(iter)
+      assert {:ok, "key3", "value3"} = NIF.iterator_next(iter)
+      assert :iterator_end = NIF.iterator_next(iter)
+
+      # Clean up
+      NIF.iterator_close(iter)
+      File.rm_rf("#{path}_lifetime")
+    end
+
+    @tag :lifetime_safety
+    test "iterator_seek works after database close()", %{db_path: path} do
+      {:ok, db} = NIF.open("#{path}_lifetime_seek")
+
+      NIF.put(db, :spo, "a", "1")
+      NIF.put(db, :spo, "b", "2")
+      NIF.put(db, :spo, "c", "3")
+
+      {:ok, iter} = NIF.prefix_iterator(db, :spo, "")
+
+      # Close the database
+      assert :ok = NIF.close(db)
+
+      # Seek should still work
+      assert :ok = NIF.iterator_seek(iter, "b")
+      assert {:ok, "b", "2"} = NIF.iterator_next(iter)
+      assert {:ok, "c", "3"} = NIF.iterator_next(iter)
+      assert :iterator_end = NIF.iterator_next(iter)
+
+      NIF.iterator_close(iter)
+      File.rm_rf("#{path}_lifetime_seek")
+    end
+
+    @tag :lifetime_safety
+    test "iterator_collect works after database close()", %{db_path: path} do
+      {:ok, db} = NIF.open("#{path}_lifetime_collect")
+
+      NIF.put(db, :spo, "key1", "value1")
+      NIF.put(db, :spo, "key2", "value2")
+
+      {:ok, iter} = NIF.prefix_iterator(db, :spo, "key")
+
+      # Close the database
+      assert :ok = NIF.close(db)
+
+      # Collect should still work
+      assert {:ok, results} = NIF.iterator_collect(iter)
+      assert length(results) == 2
+      assert {"key1", "value1"} in results
+      assert {"key2", "value2"} in results
+
+      NIF.iterator_close(iter)
+      File.rm_rf("#{path}_lifetime_collect")
+    end
+
+    @tag :lifetime_safety
+    test "multiple iterators work after database close()", %{db_path: path} do
+      {:ok, db} = NIF.open("#{path}_lifetime_multi")
+
+      NIF.put(db, :spo, "a1", "v1")
+      NIF.put(db, :spo, "b1", "v2")
+
+      {:ok, iter_a} = NIF.prefix_iterator(db, :spo, "a")
+      {:ok, iter_b} = NIF.prefix_iterator(db, :spo, "b")
+
+      # Close the database
+      assert :ok = NIF.close(db)
+
+      # Both iterators should still work
+      assert {:ok, "a1", "v1"} = NIF.iterator_next(iter_a)
+      assert {:ok, "b1", "v2"} = NIF.iterator_next(iter_b)
+
+      NIF.iterator_close(iter_a)
+      NIF.iterator_close(iter_b)
+      File.rm_rf("#{path}_lifetime_multi")
     end
   end
 

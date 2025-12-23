@@ -284,7 +284,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
     # Best-effort flush on shutdown
     case flush_all_counters(state) do
       :ok ->
-        Logger.debug("Sequence counters flushed successfully on shutdown")
+        :ok
 
       {:error, reason} ->
         Logger.warning("Failed to flush sequence counters on shutdown: #{inspect(reason)}")
@@ -333,9 +333,9 @@ defmodule TripleStore.Dictionary.SequenceCounter do
             type_index = @type_indices[type]
             :atomics.put(state.counter_ref, type_index, initial_value)
 
-            Logger.debug(
-              "Initialized #{type} counter: persisted=#{value}, starting=#{initial_value}"
-            )
+            # Logger.debug(
+            #   "Initialized #{type} counter: persisted=#{value}, starting=#{initial_value}"
+            # )
 
             {:ok, type}
 

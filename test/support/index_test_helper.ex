@@ -8,46 +8,42 @@ defmodule TripleStore.Index.TestHelper do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.Test.DbPool
 
   @doc """
-  Creates a temporary test database with a unique path.
+  Checks out a pooled test database.
 
   ## Arguments
 
-  - `base_name` - Base name for the database path (for identification)
+  - `base_name` - Base name for identification (unused with pooled databases)
 
   ## Returns
 
-  `{db, path}` tuple where `db` is the database reference and `path` is
-  the filesystem path.
+  A map containing the database reference, filesystem path, and pool id.
 
   ## Example
 
-      {db, path} = IndexTestHelper.setup_test_db("my_test")
+      db_info = IndexTestHelper.setup_test_db("my_test")
   """
-  @spec setup_test_db(String.t()) :: {NIF.db_ref(), String.t()}
-  def setup_test_db(base_name) do
-    test_path = "/tmp/triple_store_#{base_name}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-    {db, test_path}
+  @spec setup_test_db(String.t()) :: %{db: NIF.db_ref(), path: String.t(), id: integer()}
+  def setup_test_db(_base_name) do
+    DbPool.checkout()
   end
 
   @doc """
-  Cleans up a test database by closing it and removing files.
+  Returns a pooled test database to the pool.
 
   ## Arguments
 
-  - `db` - Database reference
-  - `path` - Filesystem path to the database
+  - `db_info` - Database info map from `setup_test_db/1`
 
   ## Example
 
-      IndexTestHelper.cleanup_test_db(db, path)
+      IndexTestHelper.cleanup_test_db(db_info)
   """
-  @spec cleanup_test_db(NIF.db_ref(), String.t()) :: :ok
-  def cleanup_test_db(db, path) do
-    NIF.close(db)
-    File.rm_rf(path)
+  @spec cleanup_test_db(%{db: NIF.db_ref(), path: String.t(), id: integer()}) :: :ok
+  def cleanup_test_db(db_info) do
+    DbPool.checkin(db_info)
     :ok
   end
 
@@ -203,13 +199,13 @@ defmodule TripleStore.Index.TestHelper do
       @test_db_base "/tmp/triple_store_index_test"
 
       setup do
-        {db, path} = IndexTestHelper.setup_test_db("test")
+        db_info = IndexTestHelper.setup_test_db("test")
 
         on_exit(fn ->
-          IndexTestHelper.cleanup_test_db(db, path)
+          IndexTestHelper.cleanup_test_db(db_info)
         end)
 
-        {:ok, db: db, path: path}
+        {:ok, db: db_info.db, path: db_info.path}
       end
     end
   end

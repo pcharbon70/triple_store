@@ -2,23 +2,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
   @moduledoc """
   Tests for RocksDB WriteBatch operations (Task 1.2.3).
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Backend.RocksDB.NIF
-
-  @test_db_base "/tmp/triple_store_batch_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
+  use TripleStore.PooledDbCase
 
   describe "write_batch/2" do
     test "writes multiple key-value pairs atomically", %{db: db} do
@@ -78,7 +62,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.write_batch(db, operations)
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
 
@@ -168,7 +152,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.delete_batch(db, operations)
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
 
@@ -297,7 +281,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.mixed_batch(db, operations)
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
 
@@ -328,7 +312,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:ok, "value"} = NIF.get(db, :id2str, "existing")
     end
 
-    test "data persists after batch write and reopen", %{path: path} do
+    test "data persists after batch write and reopen", %{db_path: path} do
       {:ok, db1} = NIF.open("#{path}_persist")
 
       operations = [

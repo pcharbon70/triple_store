@@ -5,30 +5,15 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
   These tests verify cross-component functionality and integration scenarios
   that span multiple NIF operations working together.
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Backend.RocksDB.NIF
-
-  @test_db_base "/tmp/triple_store_integration_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
+  use TripleStore.PooledDbCase
 
   describe "database lifecycle with operations" do
-    test "data persists across close and reopen cycles", %{path: path} do
+    test "data persists across close and reopen cycles", %{db_path: path} do
       # First session: write data
       {:ok, db1} = NIF.open("#{path}_persist")
 
       NIF.put(db1, :spo, "key1", "value1")
+
       NIF.write_batch(db1, [
         {:id2str, "id1", "string1"},
         {:str2id, "string1", "id1"}
@@ -56,7 +41,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       File.rm_rf("#{path}_persist")
     end
 
-    test "operations fail gracefully after database close", %{path: path} do
+    test "operations fail gracefully after database close", %{db_path: path} do
       {:ok, db} = NIF.open("#{path}_close_test")
       NIF.put(db, :spo, "key", "value")
       NIF.close(db)
