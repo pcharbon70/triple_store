@@ -1481,4 +1481,473 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Solution Modifier Tests (Task 2.4.5)
+  # ===========================================================================
+
+  describe "project/2" do
+    test "projects specified variables" do
+      bindings = [
+        %{"x" => 1, "y" => 2, "z" => 3},
+        %{"x" => 4, "y" => 5, "z" => 6}
+      ]
+
+      results = Executor.project(bindings, ["x", "z"]) |> Enum.to_list()
+
+      assert results == [%{"x" => 1, "z" => 3}, %{"x" => 4, "z" => 6}]
+    end
+
+    test "handles empty variable list" do
+      bindings = [%{"x" => 1, "y" => 2}]
+
+      results = Executor.project(bindings, []) |> Enum.to_list()
+
+      assert results == [%{}]
+    end
+
+    test "handles missing variables in binding" do
+      bindings = [
+        %{"x" => 1, "y" => 2},
+        %{"x" => 3}  # missing y
+      ]
+
+      results = Executor.project(bindings, ["x", "y"]) |> Enum.to_list()
+
+      assert Enum.at(results, 0) == %{"x" => 1, "y" => 2}
+      assert Enum.at(results, 1) == %{"x" => 3}  # y not added
+    end
+
+    test "handles RDF term values" do
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/A"}, "name" => {:literal, :simple, "Alice"}, "age" => {:literal, :typed, "30", @xsd_integer}}
+      ]
+
+      results = Executor.project(bindings, ["s", "name"]) |> Enum.to_list()
+
+      assert length(results) == 1
+      [binding] = results
+      assert binding["s"] == {:named_node, "http://ex.org/A"}
+      assert binding["name"] == {:literal, :simple, "Alice"}
+      refute Map.has_key?(binding, "age")
+    end
+
+    test "preserves order" do
+      bindings = [
+        %{"x" => 1, "y" => "a"},
+        %{"x" => 2, "y" => "b"},
+        %{"x" => 3, "y" => "c"}
+      ]
+
+      results = Executor.project(bindings, ["x"]) |> Enum.to_list()
+
+      assert Enum.at(results, 0) == %{"x" => 1}
+      assert Enum.at(results, 1) == %{"x" => 2}
+      assert Enum.at(results, 2) == %{"x" => 3}
+    end
+
+    test "works with streams" do
+      stream = Stream.map([1, 2, 3], fn x -> %{"x" => x, "y" => x * 2} end)
+
+      results = Executor.project(stream, ["x"]) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+    end
+  end
+
+  describe "distinct/1" do
+    test "removes duplicate bindings" do
+      bindings = [
+        %{"x" => 1},
+        %{"x" => 2},
+        %{"x" => 1},  # duplicate
+        %{"x" => 3},
+        %{"x" => 2}   # duplicate
+      ]
+
+      results = Executor.distinct(bindings) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "preserves first occurrence order" do
+      bindings = [
+        %{"x" => 3},
+        %{"x" => 1},
+        %{"x" => 2},
+        %{"x" => 1}  # duplicate
+      ]
+
+      results = Executor.distinct(bindings) |> Enum.to_list()
+
+      assert results == [%{"x" => 3}, %{"x" => 1}, %{"x" => 2}]
+    end
+
+    test "handles empty stream" do
+      results = Executor.distinct([]) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles all duplicates" do
+      bindings = [
+        %{"x" => 1},
+        %{"x" => 1},
+        %{"x" => 1}
+      ]
+
+      results = Executor.distinct(bindings) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}]
+    end
+
+    test "distinguishes different bindings" do
+      bindings = [
+        %{"x" => 1, "y" => "a"},
+        %{"x" => 1, "y" => "b"},  # different
+        %{"x" => 1, "y" => "a"}   # duplicate of first
+      ]
+
+      results = Executor.distinct(bindings) |> Enum.to_list()
+
+      assert length(results) == 2
+      assert %{"x" => 1, "y" => "a"} in results
+      assert %{"x" => 1, "y" => "b"} in results
+    end
+
+    test "handles RDF term values" do
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/A"}},
+        %{"s" => {:named_node, "http://ex.org/B"}},
+        %{"s" => {:named_node, "http://ex.org/A"}}  # duplicate
+      ]
+
+      results = Executor.distinct(bindings) |> Enum.to_list()
+
+      assert length(results) == 2
+    end
+  end
+
+  describe "reduced/1" do
+    test "removes duplicates (same as distinct)" do
+      bindings = [
+        %{"x" => 1},
+        %{"x" => 1},
+        %{"x" => 2}
+      ]
+
+      results = Executor.reduced(bindings) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}]
+    end
+  end
+
+  describe "order_by/2" do
+    test "orders by single variable ascending" do
+      bindings = [
+        %{"name" => {:literal, :simple, "Carol"}},
+        %{"name" => {:literal, :simple, "Alice"}},
+        %{"name" => {:literal, :simple, "Bob"}}
+      ]
+
+      results = Executor.order_by(bindings, [{"name", :asc}]) |> Enum.to_list()
+
+      assert Enum.at(results, 0)["name"] == {:literal, :simple, "Alice"}
+      assert Enum.at(results, 1)["name"] == {:literal, :simple, "Bob"}
+      assert Enum.at(results, 2)["name"] == {:literal, :simple, "Carol"}
+    end
+
+    test "orders by single variable descending" do
+      bindings = [
+        %{"name" => {:literal, :simple, "Alice"}},
+        %{"name" => {:literal, :simple, "Carol"}},
+        %{"name" => {:literal, :simple, "Bob"}}
+      ]
+
+      results = Executor.order_by(bindings, [{"name", :desc}]) |> Enum.to_list()
+
+      assert Enum.at(results, 0)["name"] == {:literal, :simple, "Carol"}
+      assert Enum.at(results, 1)["name"] == {:literal, :simple, "Bob"}
+      assert Enum.at(results, 2)["name"] == {:literal, :simple, "Alice"}
+    end
+
+    test "orders by multiple variables" do
+      bindings = [
+        %{"group" => "A", "name" => "Carol"},
+        %{"group" => "B", "name" => "Alice"},
+        %{"group" => "A", "name" => "Bob"},
+        %{"group" => "B", "name" => "Dave"}
+      ]
+
+      results = Executor.order_by(bindings, [{"group", :asc}, {"name", :asc}]) |> Enum.to_list()
+
+      # Group A first (alphabetically), then sorted by name within group
+      assert Enum.at(results, 0) == %{"group" => "A", "name" => "Bob"}
+      assert Enum.at(results, 1) == %{"group" => "A", "name" => "Carol"}
+      assert Enum.at(results, 2) == %{"group" => "B", "name" => "Alice"}
+      assert Enum.at(results, 3) == %{"group" => "B", "name" => "Dave"}
+    end
+
+    test "orders numeric values correctly" do
+      bindings = [
+        %{"age" => {:literal, :typed, "25", @xsd_integer}},
+        %{"age" => {:literal, :typed, "5", @xsd_integer}},
+        %{"age" => {:literal, :typed, "15", @xsd_integer}}
+      ]
+
+      results = Executor.order_by(bindings, [{"age", :asc}]) |> Enum.to_list()
+
+      assert Enum.at(results, 0)["age"] == {:literal, :typed, "5", @xsd_integer}
+      assert Enum.at(results, 1)["age"] == {:literal, :typed, "15", @xsd_integer}
+      assert Enum.at(results, 2)["age"] == {:literal, :typed, "25", @xsd_integer}
+    end
+
+    test "handles nil (unbound) values" do
+      bindings = [
+        %{"x" => 2},
+        %{},  # x is unbound
+        %{"x" => 1}
+      ]
+
+      results = Executor.order_by(bindings, [{"x", :asc}]) |> Enum.to_list()
+
+      # Unbound (nil) comes first in ascending order
+      assert Enum.at(results, 0) == %{}
+      assert Enum.at(results, 1) == %{"x" => 1}
+      assert Enum.at(results, 2) == %{"x" => 2}
+    end
+
+    test "handles empty comparator list" do
+      bindings = [%{"x" => 2}, %{"x" => 1}]
+
+      results = Executor.order_by(bindings, []) |> Enum.to_list()
+
+      # No sorting, original order preserved
+      assert results == [%{"x" => 2}, %{"x" => 1}]
+    end
+
+    test "handles empty stream" do
+      results = Executor.order_by([], [{"x", :asc}]) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "orders IRIs lexicographically" do
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/C"}},
+        %{"s" => {:named_node, "http://ex.org/A"}},
+        %{"s" => {:named_node, "http://ex.org/B"}}
+      ]
+
+      results = Executor.order_by(bindings, [{"s", :asc}]) |> Enum.to_list()
+
+      assert Enum.at(results, 0)["s"] == {:named_node, "http://ex.org/A"}
+      assert Enum.at(results, 1)["s"] == {:named_node, "http://ex.org/B"}
+      assert Enum.at(results, 2)["s"] == {:named_node, "http://ex.org/C"}
+    end
+
+    test "orders with variable tuple syntax" do
+      bindings = [
+        %{"x" => 2},
+        %{"x" => 1}
+      ]
+
+      # Using {:variable, "x"} instead of just "x"
+      results = Executor.order_by(bindings, [{{:variable, "x"}, :asc}]) |> Enum.to_list()
+
+      assert length(results) == 2
+      assert Enum.at(results, 0) == %{"x" => 1}
+      assert Enum.at(results, 1) == %{"x" => 2}
+    end
+  end
+
+  describe "slice/3" do
+    test "applies offset only" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}, %{"x" => 5}]
+
+      results = Executor.slice(bindings, 2, nil) |> Enum.to_list()
+
+      assert results == [%{"x" => 3}, %{"x" => 4}, %{"x" => 5}]
+    end
+
+    test "applies limit only" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}, %{"x" => 5}]
+
+      results = Executor.slice(bindings, 0, 3) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "applies both offset and limit" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}, %{"x" => 5}]
+
+      results = Executor.slice(bindings, 1, 2) |> Enum.to_list()
+
+      assert results == [%{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "handles offset beyond stream length" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.slice(bindings, 10, nil) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles limit of 0" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.slice(bindings, 0, 0) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles offset 0 and nil limit (returns all)" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.slice(bindings, 0, nil) |> Enum.to_list()
+
+      assert results == bindings
+    end
+
+    test "works with streams" do
+      stream = Stream.map(1..10, fn x -> %{"x" => x} end)
+
+      results = Executor.slice(stream, 3, 4) |> Enum.to_list()
+
+      assert results == [%{"x" => 4}, %{"x" => 5}, %{"x" => 6}, %{"x" => 7}]
+    end
+  end
+
+  describe "offset/2" do
+    test "skips first n bindings" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+
+      results = Executor.offset(bindings, 1) |> Enum.to_list()
+
+      assert results == [%{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "offset 0 returns unchanged" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.offset(bindings, 0) |> Enum.to_list()
+
+      assert results == bindings
+    end
+  end
+
+  describe "limit/2" do
+    test "takes first n bindings" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+
+      results = Executor.limit(bindings, 2) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}]
+    end
+
+    test "limit 0 returns empty" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.limit(bindings, 0) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "limit greater than stream length returns all" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+
+      results = Executor.limit(bindings, 10) |> Enum.to_list()
+
+      assert results == bindings
+    end
+  end
+
+  describe "solution modifiers integration" do
+    test "project + distinct combination" do
+      bindings = [
+        %{"x" => 1, "y" => "a"},
+        %{"x" => 1, "y" => "b"},
+        %{"x" => 2, "y" => "a"}
+      ]
+
+      # Project to x only, then distinct
+      results = bindings
+        |> Executor.project(["x"])
+        |> Executor.distinct()
+        |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}]
+    end
+
+    test "order + slice combination" do
+      bindings = [
+        %{"x" => 5},
+        %{"x" => 1},
+        %{"x" => 4},
+        %{"x" => 2},
+        %{"x" => 3}
+      ]
+
+      # Order by x, then take 2 starting from offset 1
+      results = bindings
+        |> Executor.order_by([{"x", :asc}])
+        |> Executor.slice(1, 2)
+        |> Enum.to_list()
+
+      # After sorting: 1, 2, 3, 4, 5. Skip 1, take 2: 2, 3
+      assert results == [%{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "full pipeline: filter + project + distinct + order + slice", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add test data
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/age"),
+        typed_literal("25", @xsd_integer)
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Bob"),
+        iri("http://example.org/age"),
+        typed_literal("30", @xsd_integer)
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Carol"),
+        iri("http://example.org/age"),
+        typed_literal("20", @xsd_integer)
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Dave"),
+        iri("http://example.org/age"),
+        typed_literal("15", @xsd_integer)
+      })
+
+      # Execute BGP
+      {:ok, bgp_stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/age"), var("age"))
+      ])
+
+      # Filter: age >= 20
+      filter_expr = {:greater_or_equal, {:variable, "age"}, {:literal, :typed, "20", @xsd_integer}}
+
+      results = bgp_stream
+        |> Executor.filter(filter_expr)
+        |> Executor.project(["s", "age"])
+        |> Executor.order_by([{"age", :desc}])
+        |> Executor.slice(0, 2)
+        |> Enum.to_list()
+
+      # Should have Alice (25), Bob (30), Carol (20) passing filter
+      # Ordered by age desc: Bob (30), Alice (25), Carol (20)
+      # Limit 2: Bob, Alice
+      assert length(results) == 2
+      assert Enum.at(results, 0)["s"] == {:named_node, "http://example.org/Bob"}
+      assert Enum.at(results, 1)["s"] == {:named_node, "http://example.org/Alice"}
+
+      cleanup({db, manager})
+    end
+  end
 end

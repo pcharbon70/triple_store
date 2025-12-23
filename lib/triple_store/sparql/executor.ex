@@ -1281,4 +1281,366 @@ defmodule TripleStore.SPARQL.Executor do
   def unit_stream do
     Stream.iterate(%{}, & &1) |> Stream.take(1)
   end
+
+  # ===========================================================================
+  # Solution Modifiers (Task 2.4.5)
+  # ===========================================================================
+
+  @doc """
+  Projects bindings to include only specified variables.
+
+  This implements SPARQL SELECT projection, retaining only the listed
+  variables in each binding. Variables not present in a binding are
+  omitted from the result (not set to nil or :unbound).
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `vars` - List of variable names to retain
+
+  ## Returns
+
+  Stream of projected bindings.
+
+  ## Examples
+
+      bindings = [
+        %{"x" => 1, "y" => 2, "z" => 3},
+        %{"x" => 4, "y" => 5, "z" => 6}
+      ]
+      result = Executor.project(bindings, ["x", "z"]) |> Enum.to_list()
+      # => [%{"x" => 1, "z" => 3}, %{"x" => 4, "z" => 6}]
+
+  """
+  @spec project(Enumerable.t(), [String.t()]) :: binding_stream()
+  def project(stream, vars) when is_list(vars) do
+    var_set = MapSet.new(vars)
+
+    Stream.map(stream, fn binding ->
+      Map.filter(binding, fn {key, _value} ->
+        MapSet.member?(var_set, key)
+      end)
+    end)
+  end
+
+  @doc """
+  Removes duplicate bindings from a stream.
+
+  This implements SPARQL DISTINCT, removing bindings that have already
+  been seen. Uses a MapSet internally to track seen bindings.
+
+  Note: This operation materializes the stream to track duplicates,
+  so memory usage is O(n) where n is the number of unique bindings.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+
+  ## Returns
+
+  Stream of distinct bindings.
+
+  ## Examples
+
+      bindings = [
+        %{"x" => 1},
+        %{"x" => 2},
+        %{"x" => 1},  # duplicate
+        %{"x" => 3}
+      ]
+      result = Executor.distinct(bindings) |> Enum.to_list()
+      # => [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+
+  """
+  @spec distinct(Enumerable.t()) :: binding_stream()
+  def distinct(stream) do
+    Stream.transform(stream, MapSet.new(), fn binding, seen ->
+      if MapSet.member?(seen, binding) do
+        {[], seen}
+      else
+        {[binding], MapSet.put(seen, binding)}
+      end
+    end)
+  end
+
+  @doc """
+  Removes some duplicate bindings from a stream.
+
+  This implements SPARQL REDUCED, which allows but does not require
+  duplicate elimination. This implementation is equivalent to DISTINCT
+  but exists for semantic completeness.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+
+  ## Returns
+
+  Stream with some duplicates removed.
+
+  """
+  @spec reduced(Enumerable.t()) :: binding_stream()
+  def reduced(stream) do
+    # REDUCED is allowed to eliminate duplicates but not required
+    # We implement it as DISTINCT for correctness
+    distinct(stream)
+  end
+
+  @doc """
+  Orders bindings by one or more comparators.
+
+  This implements SPARQL ORDER BY, sorting bindings by the specified
+  comparators. Each comparator is a tuple of `{variable, direction}`
+  where direction is `:asc` or `:desc`.
+
+  SPARQL ordering rules:
+  1. Unbound < Blank nodes < IRIs < Literals
+  2. Blank nodes ordered by identifier
+  3. IRIs ordered lexicographically by IRI string
+  4. Literals ordered by value within datatype, then by datatype
+  5. For typed literals: compare values appropriately (numerics, strings, etc.)
+
+  Note: This operation materializes the stream for sorting, so memory
+  usage is O(n) where n is the total number of bindings.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `comparators` - List of `{variable, direction}` tuples or
+                    `{expression, direction}` tuples
+
+  ## Returns
+
+  Stream of ordered bindings.
+
+  ## Examples
+
+      bindings = [
+        %{"name" => {:literal, :simple, "Bob"}},
+        %{"name" => {:literal, :simple, "Alice"}},
+        %{"name" => {:literal, :simple, "Carol"}}
+      ]
+      result = Executor.order_by(bindings, [{"name", :asc}]) |> Enum.to_list()
+      # => [%{"name" => "Alice"}, %{"name" => "Bob"}, %{"name" => "Carol"}]
+
+  """
+  @spec order_by(Enumerable.t(), [{String.t() | tuple(), :asc | :desc}]) :: binding_stream()
+  def order_by(stream, []), do: stream
+
+  def order_by(stream, comparators) when is_list(comparators) do
+    # Materialize for sorting
+    bindings = Enum.to_list(stream)
+
+    sorted =
+      Enum.sort(bindings, fn a, b ->
+        compare_bindings(a, b, comparators)
+      end)
+
+    # Return as a stream by wrapping the list
+    Stream.concat(sorted, [])
+  end
+
+  # Compare two bindings using the comparator list
+  defp compare_bindings(_a, _b, []), do: true
+
+  defp compare_bindings(a, b, [{var_or_expr, direction} | rest]) do
+    val_a = get_sort_value(a, var_or_expr)
+    val_b = get_sort_value(b, var_or_expr)
+
+    case compare_terms(val_a, val_b) do
+      :eq -> compare_bindings(a, b, rest)
+      :lt -> direction == :asc
+      :gt -> direction == :desc
+    end
+  end
+
+  # Get value for sorting - either from variable or expression
+  defp get_sort_value(binding, var) when is_binary(var) do
+    Map.get(binding, var)
+  end
+
+  defp get_sort_value(binding, {:variable, name}) do
+    Map.get(binding, name)
+  end
+
+  defp get_sort_value(binding, expr) when is_tuple(expr) do
+    case Expression.evaluate(expr, binding) do
+      {:ok, value} -> value
+      _ -> nil
+    end
+  end
+
+  # Compare two RDF terms according to SPARQL ordering rules
+  defp compare_terms(nil, nil), do: :eq
+  defp compare_terms(nil, _), do: :lt
+  defp compare_terms(_, nil), do: :gt
+
+  defp compare_terms({:blank_node, a}, {:blank_node, b}) do
+    cond do
+      a < b -> :lt
+      a > b -> :gt
+      true -> :eq
+    end
+  end
+
+  defp compare_terms({:blank_node, _}, _), do: :lt
+  defp compare_terms(_, {:blank_node, _}), do: :gt
+
+  defp compare_terms({:named_node, a}, {:named_node, b}) do
+    cond do
+      a < b -> :lt
+      a > b -> :gt
+      true -> :eq
+    end
+  end
+
+  defp compare_terms({:named_node, _}, _), do: :lt
+  defp compare_terms(_, {:named_node, _}), do: :gt
+
+  defp compare_terms({:literal, _, _, _} = a, {:literal, _, _, _} = b) do
+    compare_literals(a, b)
+  end
+
+  defp compare_terms({:literal, _, _} = a, {:literal, _, _} = b) do
+    compare_literals(a, b)
+  end
+
+  defp compare_terms({:literal, _, _} = a, {:literal, _, _, _} = b) do
+    compare_literals(a, b)
+  end
+
+  defp compare_terms({:literal, _, _, _} = a, {:literal, _, _} = b) do
+    compare_literals(a, b)
+  end
+
+  defp compare_terms(a, b) do
+    cond do
+      a < b -> :lt
+      a > b -> :gt
+      true -> :eq
+    end
+  end
+
+  # Compare literals - try numeric comparison first, then lexicographic
+  defp compare_literals(a, b) do
+    a_numeric = try_numeric_value(a)
+    b_numeric = try_numeric_value(b)
+
+    cond do
+      a_numeric != nil and b_numeric != nil ->
+        cond do
+          a_numeric < b_numeric -> :lt
+          a_numeric > b_numeric -> :gt
+          true -> :eq
+        end
+
+      true ->
+        # Fall back to lexicographic comparison
+        a_str = literal_sort_key(a)
+        b_str = literal_sort_key(b)
+
+        cond do
+          a_str < b_str -> :lt
+          a_str > b_str -> :gt
+          true -> :eq
+        end
+    end
+  end
+
+  # Try to extract numeric value from a literal
+  defp try_numeric_value({:literal, :typed, value, type})
+       when type in [@xsd_integer, @xsd_decimal, @xsd_float, @xsd_double] do
+    case Float.parse(value) do
+      {n, ""} -> n
+      {n, _} -> n
+      :error -> nil
+    end
+  end
+
+  defp try_numeric_value(_), do: nil
+
+  # Get sort key for a literal
+  defp literal_sort_key({:literal, :simple, value}), do: value
+  defp literal_sort_key({:literal, :typed, value, _}), do: value
+  defp literal_sort_key({:literal, :lang, value, _}), do: value
+
+  @doc """
+  Applies offset and limit to a binding stream.
+
+  This implements SPARQL OFFSET and LIMIT, skipping the first `offset`
+  bindings and returning at most `limit` bindings.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `offset` - Number of bindings to skip (default: 0)
+  - `limit` - Maximum number of bindings to return (default: nil for no limit)
+
+  ## Returns
+
+  Stream with offset and limit applied.
+
+  ## Examples
+
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}, %{"x" => 5}]
+      result = Executor.slice(bindings, 1, 2) |> Enum.to_list()
+      # => [%{"x" => 2}, %{"x" => 3}]
+
+  """
+  @spec slice(Enumerable.t(), non_neg_integer(), non_neg_integer() | nil) :: binding_stream()
+  def slice(stream, offset \\ 0, limit \\ nil)
+
+  def slice(stream, 0, nil), do: stream
+
+  def slice(stream, offset, nil) when offset > 0 do
+    Stream.drop(stream, offset)
+  end
+
+  def slice(stream, 0, limit) when is_integer(limit) and limit >= 0 do
+    Stream.take(stream, limit)
+  end
+
+  def slice(stream, offset, limit)
+      when is_integer(offset) and offset >= 0 and is_integer(limit) and limit >= 0 do
+    stream
+    |> Stream.drop(offset)
+    |> Stream.take(limit)
+  end
+
+  @doc """
+  Applies offset to a binding stream.
+
+  Convenience function for applying only offset without limit.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `offset` - Number of bindings to skip
+
+  ## Returns
+
+  Stream with first `offset` bindings skipped.
+
+  """
+  @spec offset(Enumerable.t(), non_neg_integer()) :: binding_stream()
+  def offset(stream, 0), do: stream
+  def offset(stream, n) when is_integer(n) and n > 0, do: Stream.drop(stream, n)
+
+  @doc """
+  Applies limit to a binding stream.
+
+  Convenience function for applying only limit without offset.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `limit` - Maximum number of bindings to return
+
+  ## Returns
+
+  Stream with at most `limit` bindings.
+
+  """
+  @spec limit(Enumerable.t(), non_neg_integer()) :: binding_stream()
+  def limit(stream, n) when is_integer(n) and n >= 0, do: Stream.take(stream, n)
 end
