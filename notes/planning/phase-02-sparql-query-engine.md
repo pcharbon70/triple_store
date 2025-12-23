@@ -12,7 +12,7 @@ Query execution uses iterator-based lazy evaluation with Elixir Streams, providi
 
 ## 2.1 SPARQL Parser NIF
 
-- [ ] **Section 2.1 Complete**
+- [x] **Section 2.1 Complete**
 
 This section implements the SPARQL parser as a Rustler NIF using the spargebra crate. The parser returns an Elixir-native AST representation that the algebra compiler can process.
 
@@ -64,22 +64,22 @@ Implement comprehensive error handling with informative messages.
 
 ### 2.1.5 Unit Tests
 
-- [ ] **Task 2.1.5 Complete**
+- [x] **Task 2.1.5 Complete**
 
-- [ ] Test simple SELECT query parsing
-- [ ] Test SELECT with multiple variables
-- [ ] Test SELECT with WHERE clause
-- [ ] Test SELECT with FILTER
-- [ ] Test SELECT with OPTIONAL
-- [ ] Test SELECT with UNION
-- [ ] Test SELECT with ORDER BY, LIMIT, OFFSET
-- [ ] Test CONSTRUCT query parsing
-- [ ] Test ASK query parsing
-- [ ] Test DESCRIBE query parsing
-- [ ] Test INSERT DATA parsing
-- [ ] Test DELETE WHERE parsing
-- [ ] Test syntax error reporting with position
-- [ ] Test prefix expansion
+- [x] Test simple SELECT query parsing
+- [x] Test SELECT with multiple variables
+- [x] Test SELECT with WHERE clause
+- [x] Test SELECT with FILTER
+- [x] Test SELECT with OPTIONAL
+- [x] Test SELECT with UNION
+- [x] Test SELECT with ORDER BY, LIMIT, OFFSET
+- [x] Test CONSTRUCT query parsing
+- [x] Test ASK query parsing
+- [x] Test DESCRIBE query parsing
+- [x] Test INSERT DATA parsing
+- [x] Test DELETE WHERE parsing
+- [x] Test syntax error reporting with position
+- [x] Test prefix expansion
 
 ---
 

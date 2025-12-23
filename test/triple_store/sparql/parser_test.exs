@@ -6,6 +6,7 @@ defmodule TripleStore.SPARQL.ParserTest do
   Task 2.1.2: Query Parsing - All SPARQL query forms
   Task 2.1.3: Update Parsing - SPARQL UPDATE operations
   Task 2.1.4: Error Handling - Line/column position, descriptive messages, prefix errors, variable scoping
+  Task 2.1.5: Unit Tests - Comprehensive coverage for all parser functionality
   """
 
   use ExUnit.Case, async: true
@@ -1154,6 +1155,288 @@ defmodule TripleStore.SPARQL.ParserTest do
       formatted = Parser.format_error(error, query)
       # Should format properly without errors
       assert is_binary(formatted)
+    end
+  end
+
+  # ===========================================================================
+  # Task 2.1.5: Unit Tests - Consolidated Coverage Verification
+  # ===========================================================================
+  # This section provides explicit tests for each item in the Task 2.1.5 checklist
+  # to verify complete coverage of the SPARQL parser functionality.
+
+  describe "Task 2.1.5: simple SELECT query parsing" do
+    test "parses minimal SELECT query" do
+      {:ok, {:select, props}} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      assert pattern != nil
+    end
+
+    test "returns correct query type for SELECT" do
+      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      assert Parser.query_type(ast) == :select
+      assert Parser.select?(ast)
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with multiple variables" do
+    test "parses SELECT with explicit variable list" do
+      {:ok, {:select, props}} = Parser.parse("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      # Pattern should have a project node
+      assert {:project, _, vars} = pattern
+      assert length(vars) == 3
+    end
+
+    test "parses SELECT * (all variables)" do
+      {:ok, {:select, _}} = Parser.parse("SELECT * WHERE { ?s ?p ?o }")
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with WHERE clause" do
+    test "WHERE clause produces BGP pattern" do
+      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      pattern = Parser.get_pattern(ast)
+      triples = Parser.extract_bgp_triples(pattern)
+      assert length(triples) == 1
+    end
+
+    test "WHERE clause with multiple triple patterns" do
+      {:ok, ast} = Parser.parse("SELECT ?s WHERE { ?s ?p1 ?o1 . ?s ?p2 ?o2 }")
+      pattern = Parser.get_pattern(ast)
+      triples = Parser.extract_bgp_triples(pattern)
+      assert length(triples) == 2
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with FILTER" do
+    test "parses FILTER with numeric comparison" do
+      query = "SELECT ?x WHERE { ?s ?p ?x FILTER(?x > 10) }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      # Should contain a filter node
+      assert {:project, {:filter, _, _}, _} = pattern
+    end
+
+    test "parses FILTER with REGEX" do
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name FILTER(REGEX(?name, \"^A\")) }"
+      {:ok, _} = Parser.parse(query)
+    end
+
+    test "parses FILTER with BOUND" do
+      query = "SELECT ?x WHERE { ?s ?p ?x OPTIONAL { ?s <http://ex.org/q> ?y } FILTER(BOUND(?y)) }"
+      {:ok, _} = Parser.parse(query)
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with OPTIONAL" do
+    test "OPTIONAL produces left_join pattern" do
+      query = "SELECT ?s ?o WHERE { ?s ?p1 ?o OPTIONAL { ?s ?p2 ?extra } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      # Pattern should contain left_join
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "left_join")
+    end
+
+    test "nested OPTIONAL clauses" do
+      query = """
+      SELECT ?s ?a ?b WHERE {
+        ?s ?p ?o
+        OPTIONAL { ?s ?p1 ?a OPTIONAL { ?a ?p2 ?b } }
+      }
+      """
+      {:ok, _} = Parser.parse(query)
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with UNION" do
+    test "UNION produces union pattern" do
+      query = "SELECT ?x WHERE { { ?s ?p ?x } UNION { ?t ?q ?x } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "union")
+    end
+
+    test "multiple UNION branches" do
+      query = """
+      SELECT ?x WHERE {
+        { ?s <http://ex.org/p1> ?x }
+        UNION
+        { ?s <http://ex.org/p2> ?x }
+        UNION
+        { ?s <http://ex.org/p3> ?x }
+      }
+      """
+      {:ok, _} = Parser.parse(query)
+    end
+  end
+
+  describe "Task 2.1.5: SELECT with ORDER BY, LIMIT, OFFSET" do
+    test "ORDER BY produces order_by pattern" do
+      query = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY ?x"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "order_by")
+    end
+
+    test "LIMIT produces slice pattern" do
+      query = "SELECT ?x WHERE { ?s ?p ?x } LIMIT 10"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "slice")
+    end
+
+    test "OFFSET produces slice pattern" do
+      query = "SELECT ?x WHERE { ?s ?p ?x } OFFSET 5"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "slice")
+    end
+
+    test "combined ORDER BY, LIMIT, OFFSET" do
+      query = "SELECT ?x WHERE { ?s ?p ?x } ORDER BY DESC(?x) LIMIT 10 OFFSET 20"
+      {:ok, _} = Parser.parse(query)
+    end
+  end
+
+  describe "Task 2.1.5: CONSTRUCT query parsing" do
+    test "CONSTRUCT returns construct tuple" do
+      query = "CONSTRUCT { ?s <http://ex.org/p> ?o } WHERE { ?s ?p ?o }"
+      {:ok, {:construct, props}} = Parser.parse(query)
+      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      assert is_list(template)
+      assert length(template) == 1
+    end
+
+    test "CONSTRUCT with multiple template triples" do
+      query = """
+      CONSTRUCT {
+        ?s <http://ex.org/p1> ?o1 .
+        ?s <http://ex.org/p2> ?o2
+      }
+      WHERE { ?s ?p ?o1 . ?s ?q ?o2 }
+      """
+      {:ok, {:construct, props}} = Parser.parse(query)
+      template = Enum.find_value(props, fn {"template", t} -> t; _ -> nil end)
+      assert length(template) == 2
+    end
+  end
+
+  describe "Task 2.1.5: ASK query parsing" do
+    test "ASK returns ask tuple" do
+      {:ok, {:ask, props}} = Parser.parse("ASK WHERE { ?s ?p ?o }")
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      assert pattern != nil
+    end
+
+    test "ASK with complex pattern" do
+      query = "ASK WHERE { ?s <http://ex.org/type> <http://ex.org/Person> . ?s <http://ex.org/age> ?age FILTER(?age > 18) }"
+      {:ok, {:ask, _}} = Parser.parse(query)
+    end
+  end
+
+  describe "Task 2.1.5: DESCRIBE query parsing" do
+    test "DESCRIBE returns describe tuple" do
+      {:ok, {:describe, props}} = Parser.parse("DESCRIBE ?s WHERE { ?s ?p ?o }")
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      assert pattern != nil
+    end
+
+    test "DESCRIBE with IRI" do
+      {:ok, {:describe, _}} = Parser.parse("DESCRIBE <http://example.org/resource>")
+    end
+  end
+
+  describe "Task 2.1.5: INSERT DATA parsing" do
+    test "INSERT DATA returns update with insert_data operation" do
+      query = "INSERT DATA { <http://ex.org/s> <http://ex.org/p> <http://ex.org/o> }"
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+
+    test "INSERT DATA operation structure" do
+      query = "INSERT DATA { <http://ex.org/s> <http://ex.org/p> \"value\" }"
+      {:ok, ast} = Parser.parse_update(query)
+      ops = Parser.get_operations(ast)
+      assert [{:insert_data, quads}] = ops
+      assert length(quads) == 1
+    end
+  end
+
+  describe "Task 2.1.5: DELETE WHERE parsing" do
+    test "DELETE WHERE returns update with delete_insert operation" do
+      query = "DELETE { ?s ?p ?o } WHERE { ?s ?p ?o . FILTER(?o = \"old\") }"
+      {:ok, {:update, _}} = Parser.parse_update(query)
+    end
+
+    test "DELETE WHERE operation structure" do
+      query = "DELETE { ?s <http://ex.org/p> ?o } WHERE { ?s <http://ex.org/p> ?o }"
+      {:ok, ast} = Parser.parse_update(query)
+      ops = Parser.get_operations(ast)
+      assert [{:delete_insert, props}] = ops
+      delete = Enum.find_value(props, fn {"delete", d} -> d; _ -> nil end)
+      assert length(delete) == 1
+    end
+  end
+
+  describe "Task 2.1.5: syntax error reporting with position" do
+    test "reports line number for error" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE")
+      assert is_integer(error.line)
+      assert error.line == 1
+    end
+
+    test "reports column number for error" do
+      {:error, error} = Parser.parse_with_details("SELECT ?s WHERE")
+      assert is_integer(error.column)
+      assert error.column == 16
+    end
+
+    test "reports position for multiline query error" do
+      query = "SELECT ?s\nWHERE {\n  ?s ?p\n}"
+      {:error, error} = Parser.parse_with_details(query)
+      assert error.line == 4
+    end
+
+    test "provides human-readable error message" do
+      {:error, error} = Parser.parse_with_details("INVALID")
+      assert is_binary(error.message)
+      assert String.length(error.message) > 0
+    end
+  end
+
+  describe "Task 2.1.5: prefix expansion" do
+    test "PREFIX expands to full IRI in AST" do
+      query = """
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      SELECT ?name WHERE { ?s foaf:name ?name }
+      """
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      # The prefix should be expanded in the AST
+      assert String.contains?(pattern_str, "http://xmlns.com/foaf/0.1/name")
+    end
+
+    test "multiple PREFIX declarations expand correctly" do
+      query = """
+      PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      SELECT ?s WHERE { ?s rdf:type foaf:Person }
+      """
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+      assert String.contains?(pattern_str, "http://xmlns.com/foaf/0.1/Person")
+    end
+
+    test "undefined prefix produces parse error" do
+      query = "SELECT ?s WHERE { ?s foaf:name ?name }"
+      {:error, {:parse_error, _}} = Parser.parse(query)
     end
   end
 end
