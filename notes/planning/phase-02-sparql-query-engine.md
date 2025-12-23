@@ -94,7 +94,7 @@ Implement comprehensive error handling with informative messages.
 
 ## 2.2 SPARQL Algebra
 
-- [ ] **Section 2.2 Complete**
+- [x] **Section 2.2 Complete** (2025-12-23)
 
 This section implements the SPARQL algebra representation and compilation from parsed AST. The algebra forms the intermediate representation between parsing and execution, enabling optimization passes.
 
@@ -141,28 +141,34 @@ Test coverage: 107 tests in algebra_test.exs (35 new for 2.2.2)
 
 ### 2.2.3 Expression Compilation
 
-- [ ] **Task 2.2.3 Complete**
+- [x] **Task 2.2.3 Complete** (2025-12-23)
 
 Compile SPARQL expressions (FILTER conditions, BIND expressions) to evaluable form.
 
-- [ ] 2.2.3.1 Implement arithmetic expressions (+, -, *, /)
-- [ ] 2.2.3.2 Implement comparison expressions (=, !=, <, >, <=, >=)
-- [ ] 2.2.3.3 Implement logical expressions (&&, ||, !)
-- [ ] 2.2.3.4 Implement built-in functions (STR, LANG, DATATYPE, BOUND, etc.)
-- [ ] 2.2.3.5 Implement aggregate functions (COUNT, SUM, AVG, MIN, MAX, GROUP_CONCAT)
+- [x] 2.2.3.1 Implement arithmetic expressions (+, -, *, /)
+- [x] 2.2.3.2 Implement comparison expressions (=, !=, <, >, <=, >=)
+- [x] 2.2.3.3 Implement logical expressions (&&, ||, !)
+- [x] 2.2.3.4 Implement built-in functions (STR, LANG, DATATYPE, BOUND, etc.)
+- [x] 2.2.3.5 Implement aggregate functions (COUNT, SUM, AVG, MIN, MAX, GROUP_CONCAT)
+
+Created `lib/triple_store/sparql/expression.ex` with full expression evaluation support
+including all SPARQL 1.1 built-in functions. Test coverage: 112 tests in expression_test.exs.
 
 ### 2.2.4 Unit Tests
 
-- [ ] **Task 2.2.4 Complete**
+- [x] **Task 2.2.4 Complete** (2025-12-23)
 
-- [ ] Test BGP algebra node creation
-- [ ] Test join algebra from multiple patterns
-- [ ] Test left_join algebra from OPTIONAL
-- [ ] Test union algebra from UNION
-- [ ] Test filter algebra with expression
-- [ ] Test complete algebra tree for complex query
-- [ ] Test expression compilation for all operators
-- [ ] Test aggregate expression compilation
+Tests are included in each task's implementation:
+- [x] Test BGP algebra node creation (in 2.2.1)
+- [x] Test join algebra from multiple patterns (in 2.2.1)
+- [x] Test left_join algebra from OPTIONAL (in 2.2.1)
+- [x] Test union algebra from UNION (in 2.2.1)
+- [x] Test filter algebra with expression (in 2.2.1)
+- [x] Test complete algebra tree for complex query (in 2.2.1/2.2.2)
+- [x] Test expression compilation for all operators (in 2.2.3)
+- [x] Test aggregate expression compilation (in 2.2.3)
+
+Total algebra test coverage: 107 tests (algebra_test.exs) + 112 tests (expression_test.exs) = 219 tests
 
 ---
 
