@@ -174,9 +174,16 @@ Total algebra test coverage: 107 tests (algebra_test.exs) + 112 tests (expressio
 
 ## 2.3 Query Optimization
 
-- [ ] **Section 2.3 Complete**
+- [x] **Section 2.3 Complete** (2025-12-23)
 
 This section implements rule-based query optimization transforms on the algebra tree. Optimizations include filter pushing, constant folding, and join reordering based on selectivity estimates.
+
+Implemented in `lib/triple_store/sparql/optimizer.ex` with 113 tests in optimizer_test.exs.
+
+**Review improvements applied (2025-12-23):**
+- Added recursion depth limits (max 100) to prevent DoS via deeply nested queries
+- All optimization passes now raise ArgumentError on excessively deep nesting
+- Added 7 security-focused tests for depth limiting
 
 ### 2.3.1 Filter Push-Down
 
@@ -226,26 +233,33 @@ Test coverage: 24 new tests (91 total in optimizer_test.exs).
 
 ### 2.3.4 Optimizer Pipeline
 
-- [ ] **Task 2.3.4 Complete**
+- [x] **Task 2.3.4 Complete** (2025-12-23)
 
 Combine optimizations into a pipeline applied to all queries.
 
-- [ ] 2.3.4.1 Implement `Optimizer.optimize(algebra, stats)` entry point
-- [ ] 2.3.4.2 Apply optimizations in optimal order
-- [ ] 2.3.4.3 Add optimization logging for debugging
-- [ ] 2.3.4.4 Handle optimization bypass for EXPLAIN queries
+- [x] 2.3.4.1 Implement `Optimizer.optimize(algebra, stats)` entry point
+- [x] 2.3.4.2 Apply optimizations in optimal order
+- [x] 2.3.4.3 Add optimization logging for debugging
+- [x] 2.3.4.4 Handle optimization bypass for EXPLAIN queries
+
+Enhanced optimizer with pipeline architecture, debug logging via Logger,
+and EXPLAIN mode that returns query analysis without modifying the algebra.
+Test coverage: 15 new tests (106 total in optimizer_test.exs).
 
 ### 2.3.5 Unit Tests
 
-- [ ] **Task 2.3.5 Complete**
+- [x] **Task 2.3.5 Complete** (2025-12-23)
 
-- [ ] Test filter push-down past join
-- [ ] Test filter push-down stops at OPTIONAL
-- [ ] Test conjunctive filter splitting
-- [ ] Test constant folding for arithmetic
-- [ ] Test constant folding for comparisons
-- [ ] Test BGP reordering prefers selective patterns
-- [ ] Test optimizer pipeline produces valid algebra
+- [x] Test filter push-down past join
+- [x] Test filter push-down stops at OPTIONAL
+- [x] Test conjunctive filter splitting
+- [x] Test constant folding for arithmetic
+- [x] Test constant folding for comparisons
+- [x] Test BGP reordering prefers selective patterns
+- [x] Test optimizer pipeline produces valid algebra
+
+All optimizer tests are integrated with their respective feature implementations.
+Total test coverage: 113 tests in optimizer_test.exs (including 7 security tests).
 
 ---
 

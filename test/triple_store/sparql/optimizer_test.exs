@@ -1268,4 +1268,306 @@ defmodule TripleStore.SPARQL.OptimizerTest do
   defp find_bgp({:project, inner, _}), do: find_bgp(inner)
   defp find_bgp({:distinct, inner}), do: find_bgp(inner)
   defp find_bgp(_), do: nil
+
+  # ===========================================================================
+  # Optimizer Pipeline Tests
+  # ===========================================================================
+
+  describe "optimize/2 pipeline options" do
+    test "applies all optimizations by default" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      # Constant that can be folded
+      expr = and_expr(bool(true), greater(var("x"), int(5)))
+      algebra = filter(expr, {:bgp, patterns})
+
+      result = Optimizer.optimize(algebra)
+
+      # All optimizations should have been applied:
+      # 1. Constant folding: true && expr -> expr
+      # 2. BGP reordering: bound pattern first
+      # 3. Filter push-down: filter stays with BGP
+      {:filter, result_expr, {:bgp, result_patterns}} = result
+
+      # Constant folded - true AND removed
+      assert result_expr == greater(var("x"), int(5))
+
+      # BGP reordered - bound subject first
+      assert hd(result_patterns) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+
+    test "can disable all optimizations" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      algebra = {:bgp, patterns}
+
+      result = Optimizer.optimize(algebra,
+        fold_constants: false,
+        reorder_bgp: false,
+        push_filters: false
+      )
+
+      # Should be unchanged
+      assert result == algebra
+    end
+
+    test "log option does not affect output" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      algebra = {:bgp, patterns}
+
+      # With logging
+      result_with_log = Optimizer.optimize(algebra, log: true)
+      # Without logging
+      result_without_log = Optimizer.optimize(algebra, log: false)
+
+      # Results should be identical
+      assert result_with_log == result_without_log
+    end
+
+    test "stats option is passed to BGP reordering" do
+      rare_pred = triple(var("s"), iri("http://ex.org/rare"), var("o"))
+      common_pred = triple(var("s"), iri("http://ex.org/common"), var("o"))
+
+      stats = %{
+        {:predicate_count, "http://ex.org/rare"} => 5,
+        {:predicate_count, "http://ex.org/common"} => 50000
+      }
+
+      result = Optimizer.optimize({:bgp, [common_pred, rare_pred]}, stats: stats)
+
+      {:bgp, [first, _second]} = result
+      # Rare predicate should come first due to stats
+      assert first == rare_pred
+    end
+  end
+
+  describe "explain/2" do
+    test "returns explain tuple with analysis" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+
+      result = Optimizer.optimize(algebra, explain: true)
+
+      assert {:explain, info} = result
+      assert info.original == algebra
+      assert is_list(info.optimizations)
+      assert is_map(info.statistics)
+      assert info.estimated_improvement in [:low, :moderate, :high]
+    end
+
+    test "explain identifies filter push-down opportunity" do
+      patterns = [triple(var("x"), var("p"), var("o"))]
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert :filter_push_down in info.optimizations
+      assert info.statistics.filters.total_filters == 1
+    end
+
+    test "explain identifies BGP reordering opportunity" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(var("y"), var("q"), var("z"))
+      ]
+      algebra = {:bgp, patterns}
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert :bgp_reordering in info.optimizations
+      assert info.statistics.bgp_patterns.multi_pattern_bgps == 1
+    end
+
+    test "explain identifies constant folding opportunity" do
+      patterns = [triple(var("x"), var("p"), var("o"))]
+      # Foldable constant expression: 1 + 1 = 2
+      expr = equal(add(int(1), int(1)), int(2))
+      algebra = filter(expr, {:bgp, patterns})
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert :constant_folding in info.optimizations
+    end
+
+    test "explain returns empty optimizations for simple query" do
+      # Single pattern BGP with no filters - nothing to optimize
+      algebra = {:bgp, [triple(var("x"), var("p"), var("o"))]}
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      # Only BGP reordering might be listed, but with single pattern it won't help
+      refute :filter_push_down in info.optimizations
+      refute :constant_folding in info.optimizations
+    end
+
+    test "explain includes BGP statistics" do
+      algebra = join(
+        {:bgp, [
+          triple(var("a"), var("b"), var("c")),
+          triple(var("x"), var("y"), var("z"))
+        ]},
+        {:bgp, [triple(var("s"), var("p"), var("o"))]}
+      )
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert info.statistics.bgp_patterns.total_bgps == 2
+      assert info.statistics.bgp_patterns.total_patterns == 3
+      assert info.statistics.bgp_patterns.multi_pattern_bgps == 1
+      assert info.statistics.bgp_patterns.max_patterns_in_bgp == 2
+    end
+
+    test "explain indicates when predicate stats are available" do
+      algebra = {:bgp, [triple(var("x"), var("p"), var("o"))]}
+
+      # Without stats
+      {:explain, info1} = Optimizer.optimize(algebra, explain: true)
+      refute info1.statistics.predicate_stats_available
+
+      # With stats
+      stats = %{{:predicate_count, "http://ex.org/p"} => 100}
+      {:explain, info2} = Optimizer.optimize(algebra, explain: true, stats: stats)
+      assert info2.statistics.predicate_stats_available
+    end
+
+    test "explain respects disabled optimizations" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(var("y"), var("q"), var("z"))
+      ]
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+
+      {:explain, info} = Optimizer.optimize(algebra,
+        explain: true,
+        push_filters: false,
+        reorder_bgp: false
+      )
+
+      refute :filter_push_down in info.optimizations
+      refute :bgp_reordering in info.optimizations
+    end
+
+    test "explain estimates high improvement for complex query" do
+      # Query with filters AND multi-pattern BGP
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(var("y"), var("q"), var("z"))
+      ]
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert info.estimated_improvement == :high
+    end
+
+    test "explain estimates low improvement for already optimal query" do
+      # Single pattern BGP, no filters
+      algebra = {:bgp, [triple(var("x"), var("p"), var("o"))]}
+
+      {:explain, info} = Optimizer.optimize(algebra, explain: true)
+
+      assert info.estimated_improvement == :low
+    end
+  end
+
+  describe "explain/2 direct function" do
+    test "can be called directly" do
+      algebra = {:bgp, [triple(var("x"), var("p"), var("o"))]}
+
+      result = Optimizer.explain(algebra)
+
+      assert {:explain, info} = result
+      assert info.original == algebra
+    end
+  end
+
+  describe "depth limiting (security)" do
+    # Helper to create deeply nested algebra
+    defp deeply_nested_joins(depth) do
+      base = bgp([triple(var("x"), var("p"), var("o"))])
+      Enum.reduce(1..depth, base, fn _, acc ->
+        join(acc, bgp([triple(var("y"), var("q"), var("z"))]))
+      end)
+    end
+
+    defp deeply_nested_filters(depth) do
+      base = bgp([triple(var("x"), var("p"), var("o"))])
+      Enum.reduce(1..depth, base, fn _, acc ->
+        filter(greater(var("x"), int(5)), acc)
+      end)
+    end
+
+    defp deeply_nested_unions(depth) do
+      base = bgp([triple(var("x"), var("p"), var("o"))])
+      Enum.reduce(1..depth, base, fn _, acc ->
+        union(acc, bgp([triple(var("y"), var("q"), var("z"))]))
+      end)
+    end
+
+    test "push_filters_down raises on deeply nested queries" do
+      # Depth of 101 should exceed the max depth of 100
+      algebra = deeply_nested_filters(101)
+
+      assert_raise ArgumentError, ~r/Query too deeply nested/, fn ->
+        Optimizer.push_filters_down(algebra)
+      end
+    end
+
+    test "fold_constants raises on deeply nested queries" do
+      algebra = deeply_nested_joins(101)
+
+      assert_raise ArgumentError, ~r/Query too deeply nested/, fn ->
+        Optimizer.fold_constants(algebra)
+      end
+    end
+
+    test "reorder_bgp_patterns raises on deeply nested queries" do
+      algebra = deeply_nested_unions(101)
+
+      assert_raise ArgumentError, ~r/Query too deeply nested/, fn ->
+        Optimizer.reorder_bgp_patterns(algebra)
+      end
+    end
+
+    test "optimize raises on deeply nested queries" do
+      algebra = deeply_nested_joins(101)
+
+      assert_raise ArgumentError, ~r/Query too deeply nested/, fn ->
+        Optimizer.optimize(algebra)
+      end
+    end
+
+    test "allows queries within depth limit" do
+      # Depth of 50 should be fine (well under 100)
+      algebra = deeply_nested_joins(50)
+
+      # Should not raise
+      result = Optimizer.optimize(algebra)
+      assert result != nil
+    end
+
+    test "error message includes max depth info" do
+      algebra = deeply_nested_filters(101)
+
+      error = catch_error(Optimizer.push_filters_down(algebra))
+      assert error.message =~ "max depth: 100"
+    end
+
+    test "error message warns about potential attack" do
+      algebra = deeply_nested_joins(101)
+
+      error = catch_error(Optimizer.fold_constants(algebra))
+      assert error.message =~ "malformed query or an attack"
+    end
+  end
 end

@@ -44,7 +44,20 @@ defmodule TripleStore.SPARQL.Optimizer do
   alias TripleStore.SPARQL.Algebra
   alias TripleStore.SPARQL.Expression
 
+  require Logger
+
   @type algebra :: Algebra.t()
+
+  # Maximum recursion depth to prevent stack overflow from deeply nested queries
+  @max_depth 100
+
+  @typedoc "Optimization options"
+  @type opt :: {:push_filters, boolean()}
+             | {:fold_constants, boolean()}
+             | {:reorder_bgp, boolean()}
+             | {:stats, map()}
+             | {:log, boolean()}
+             | {:explain, boolean()}
 
   # ===========================================================================
   # Main Entry Point
@@ -53,13 +66,18 @@ defmodule TripleStore.SPARQL.Optimizer do
   @doc """
   Applies all optimizations to an algebra tree.
 
-  Currently applies constant folding, filter push-down, and BGP reordering.
+  Runs the optimization pipeline in this order:
+  1. Constant folding - Evaluate constant expressions at compile time
+  2. BGP reordering - Reorder triple patterns by selectivity
+  3. Filter push-down - Push filters closer to data sources
 
   ## Options
   - `:push_filters` - Enable filter push-down (default: true)
   - `:fold_constants` - Enable constant folding (default: true)
   - `:reorder_bgp` - Enable BGP pattern reordering (default: true)
   - `:stats` - Statistics map for selectivity estimation (optional)
+  - `:log` - Enable debug logging of optimization steps (default: false)
+  - `:explain` - Return explanation instead of optimizing (default: false)
 
   ## Examples
 
@@ -68,18 +86,335 @@ defmodule TripleStore.SPARQL.Optimizer do
       iex> optimized = TripleStore.SPARQL.Optimizer.optimize(pattern)
       # Filter is pushed closer to the BGP containing ?x
 
+      # With logging enabled:
+      iex> optimized = TripleStore.SPARQL.Optimizer.optimize(pattern, log: true)
+      # Logs each optimization pass and changes made
+
+      # Get explanation without optimizing:
+      iex> {:explain, info} = TripleStore.SPARQL.Optimizer.optimize(pattern, explain: true)
+      # Returns optimization analysis without modifying the algebra
+
   """
-  @spec optimize(algebra(), keyword()) :: algebra()
+  @spec optimize(algebra(), [opt()]) :: algebra() | {:explain, map()}
   def optimize(algebra, opts \\ []) do
+    explain? = Keyword.get(opts, :explain, false)
+
+    if explain? do
+      explain(algebra, opts)
+    else
+      run_pipeline(algebra, opts)
+    end
+  end
+
+  # Run the full optimization pipeline
+  defp run_pipeline(algebra, opts) do
     push_filters? = Keyword.get(opts, :push_filters, true)
     fold_constants? = Keyword.get(opts, :fold_constants, true)
     reorder_bgp? = Keyword.get(opts, :reorder_bgp, true)
     stats = Keyword.get(opts, :stats, %{})
+    log? = Keyword.get(opts, :log, false)
+
+    if log?, do: log_start(algebra)
 
     algebra
-    |> then(fn a -> if fold_constants?, do: fold_constants(a), else: a end)
-    |> then(fn a -> if reorder_bgp?, do: reorder_bgp_patterns(a, stats), else: a end)
-    |> then(fn a -> if push_filters?, do: push_filters_down(a), else: a end)
+    |> run_pass(:constant_folding, fold_constants?, fn a -> fold_constants(a) end, log?)
+    |> run_pass(:bgp_reordering, reorder_bgp?, fn a -> reorder_bgp_patterns(a, stats) end, log?)
+    |> run_pass(:filter_push_down, push_filters?, fn a -> push_filters_down(a) end, log?)
+    |> tap(fn result -> if log?, do: log_complete(result) end)
+  end
+
+  # Run a single optimization pass with optional logging
+  defp run_pass(algebra, _name, false, _fun, _log?), do: algebra
+
+  defp run_pass(algebra, name, true, fun, log?) do
+    result = fun.(algebra)
+
+    if log? do
+      changed = algebra != result
+      log_pass(name, changed)
+    end
+
+    result
+  end
+
+  # ===========================================================================
+  # Explain Mode
+  # ===========================================================================
+
+  @doc """
+  Analyzes an algebra tree and returns optimization opportunities without applying them.
+
+  This is useful for understanding what optimizations would be applied and why,
+  without actually modifying the query.
+
+  ## Returns
+
+  A map containing:
+  - `:original` - The original algebra tree
+  - `:optimizations` - List of optimizations that would be applied
+  - `:statistics` - Analysis statistics (filters, patterns, etc.)
+  - `:estimated_improvement` - Rough estimate of improvement potential
+
+  ## Examples
+
+      iex> {:explain, info} = Optimizer.optimize(algebra, explain: true)
+      iex> info.optimizations
+      [:constant_folding, :bgp_reordering, :filter_push_down]
+
+  """
+  @spec explain(algebra(), keyword()) :: {:explain, map()}
+  def explain(algebra, opts \\ []) do
+    stats = Keyword.get(opts, :stats, %{})
+
+    # Analyze the algebra tree
+    filter_stats = analyze_filters(algebra)
+    bgp_stats = analyze_bgp_patterns(algebra)
+
+    # Determine which optimizations would apply
+    optimizations = determine_applicable_optimizations(algebra, filter_stats, bgp_stats, opts)
+
+    # Calculate potential improvement
+    improvement = estimate_improvement(filter_stats, bgp_stats)
+
+    {:explain, %{
+      original: algebra,
+      optimizations: optimizations,
+      statistics: %{
+        filters: filter_stats,
+        bgp_patterns: bgp_stats,
+        predicate_stats_available: map_size(stats) > 0
+      },
+      estimated_improvement: improvement
+    }}
+  end
+
+  # Determine which optimizations would actually change the algebra
+  defp determine_applicable_optimizations(algebra, filter_stats, bgp_stats, opts) do
+    push_filters? = Keyword.get(opts, :push_filters, true)
+    fold_constants? = Keyword.get(opts, :fold_constants, true)
+    reorder_bgp? = Keyword.get(opts, :reorder_bgp, true)
+
+    optimizations = []
+
+    # Check constant folding
+    optimizations = if fold_constants? and has_foldable_constants?(algebra) do
+      [:constant_folding | optimizations]
+    else
+      optimizations
+    end
+
+    # Check BGP reordering
+    optimizations = if reorder_bgp? and bgp_stats.multi_pattern_bgps > 0 do
+      [:bgp_reordering | optimizations]
+    else
+      optimizations
+    end
+
+    # Check filter push-down
+    optimizations = if push_filters? and filter_stats.total_filters > 0 do
+      [:filter_push_down | optimizations]
+    else
+      optimizations
+    end
+
+    Enum.reverse(optimizations)
+  end
+
+  # Estimate potential improvement from optimizations
+  defp estimate_improvement(filter_stats, bgp_stats) do
+    filter_improvement = if filter_stats.total_filters > 0, do: :moderate, else: :none
+    bgp_improvement = if bgp_stats.multi_pattern_bgps > 0, do: :moderate, else: :none
+
+    cond do
+      filter_improvement == :moderate and bgp_improvement == :moderate -> :high
+      filter_improvement == :moderate or bgp_improvement == :moderate -> :moderate
+      true -> :low
+    end
+  end
+
+  # Check if algebra contains constants that could be folded
+  defp has_foldable_constants?(algebra) do
+    case algebra do
+      {:filter, expr, pattern} ->
+        has_constant_expression?(expr) or has_foldable_constants?(pattern)
+
+      {:extend, pattern, _var, expr} ->
+        has_constant_expression?(expr) or has_foldable_constants?(pattern)
+
+      {:join, left, right} ->
+        has_foldable_constants?(left) or has_foldable_constants?(right)
+
+      {:left_join, left, right, filter} ->
+        has_foldable_constants?(left) or has_foldable_constants?(right) or
+          (filter != nil and has_constant_expression?(filter))
+
+      {:union, left, right} ->
+        has_foldable_constants?(left) or has_foldable_constants?(right)
+
+      {:project, pattern, _} ->
+        has_foldable_constants?(pattern)
+
+      {:distinct, pattern} ->
+        has_foldable_constants?(pattern)
+
+      {:order_by, pattern, conditions} ->
+        has_foldable_constants?(pattern) or
+          Enum.any?(conditions, fn {_dir, expr} -> has_constant_expression?(expr) end)
+
+      _ ->
+        false
+    end
+  end
+
+  # Check if expression contains constant sub-expressions
+  defp has_constant_expression?(expr) do
+    case expr do
+      {:add, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:subtract, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:multiply, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:divide, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:and, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:or, left, right} ->
+        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+          has_constant_expression?(left) or has_constant_expression?(right)
+
+      {:not, arg} ->
+        Expression.is_constant?(arg) or has_constant_expression?(arg)
+
+      {:equal, left, right} ->
+        Expression.is_constant?(left) and Expression.is_constant?(right)
+
+      {:greater, left, right} ->
+        Expression.is_constant?(left) and Expression.is_constant?(right)
+
+      {:less, left, right} ->
+        Expression.is_constant?(left) and Expression.is_constant?(right)
+
+      _ ->
+        false
+    end
+  end
+
+  # Analyze BGP patterns in the algebra tree
+  defp analyze_bgp_patterns(algebra) do
+    analyze_bgp_recursive(algebra, %{
+      total_bgps: 0,
+      total_patterns: 0,
+      multi_pattern_bgps: 0,
+      max_patterns_in_bgp: 0
+    })
+  end
+
+  defp analyze_bgp_recursive({:bgp, patterns}, stats) do
+    count = length(patterns)
+    %{stats |
+      total_bgps: stats.total_bgps + 1,
+      total_patterns: stats.total_patterns + count,
+      multi_pattern_bgps: stats.multi_pattern_bgps + if(count > 1, do: 1, else: 0),
+      max_patterns_in_bgp: max(stats.max_patterns_in_bgp, count)
+    }
+  end
+
+  defp analyze_bgp_recursive({:join, left, right}, stats) do
+    stats
+    |> then(&analyze_bgp_recursive(left, &1))
+    |> then(&analyze_bgp_recursive(right, &1))
+  end
+
+  defp analyze_bgp_recursive({:left_join, left, right, _}, stats) do
+    stats
+    |> then(&analyze_bgp_recursive(left, &1))
+    |> then(&analyze_bgp_recursive(right, &1))
+  end
+
+  defp analyze_bgp_recursive({:union, left, right}, stats) do
+    stats
+    |> then(&analyze_bgp_recursive(left, &1))
+    |> then(&analyze_bgp_recursive(right, &1))
+  end
+
+  defp analyze_bgp_recursive({:filter, _, pattern}, stats) do
+    analyze_bgp_recursive(pattern, stats)
+  end
+
+  defp analyze_bgp_recursive({:project, pattern, _}, stats) do
+    analyze_bgp_recursive(pattern, stats)
+  end
+
+  defp analyze_bgp_recursive({:distinct, pattern}, stats) do
+    analyze_bgp_recursive(pattern, stats)
+  end
+
+  defp analyze_bgp_recursive({:order_by, pattern, _}, stats) do
+    analyze_bgp_recursive(pattern, stats)
+  end
+
+  defp analyze_bgp_recursive({:extend, pattern, _, _}, stats) do
+    analyze_bgp_recursive(pattern, stats)
+  end
+
+  defp analyze_bgp_recursive(_, stats), do: stats
+
+  # ===========================================================================
+  # Logging Helpers
+  # ===========================================================================
+
+  defp log_start(algebra) do
+    node_count = count_nodes(algebra)
+    Logger.debug("[Optimizer] Starting optimization pipeline",
+      nodes: node_count,
+      root_type: elem(algebra, 0)
+    )
+  end
+
+  defp log_pass(name, changed) do
+    if changed do
+      Logger.debug("[Optimizer] Pass #{name} made changes")
+    else
+      Logger.debug("[Optimizer] Pass #{name} - no changes")
+    end
+  end
+
+  defp log_complete(result) do
+    node_count = count_nodes(result)
+    Logger.debug("[Optimizer] Optimization complete",
+      nodes: node_count,
+      root_type: elem(result, 0)
+    )
+  end
+
+  # Count nodes in algebra tree
+  defp count_nodes(algebra) do
+    case algebra do
+      {:bgp, patterns} -> 1 + length(patterns)
+      {:filter, _, pattern} -> 1 + count_nodes(pattern)
+      {:join, left, right} -> 1 + count_nodes(left) + count_nodes(right)
+      {:left_join, left, right, _} -> 1 + count_nodes(left) + count_nodes(right)
+      {:union, left, right} -> 1 + count_nodes(left) + count_nodes(right)
+      {:project, pattern, _} -> 1 + count_nodes(pattern)
+      {:distinct, pattern} -> 1 + count_nodes(pattern)
+      {:order_by, pattern, _} -> 1 + count_nodes(pattern)
+      {:extend, pattern, _, _} -> 1 + count_nodes(pattern)
+      {:group, pattern, _, _} -> 1 + count_nodes(pattern)
+      {:graph, _, pattern} -> 1 + count_nodes(pattern)
+      {:slice, pattern, _, _} -> 1 + count_nodes(pattern)
+      _ -> 1
+    end
   end
 
   # ===========================================================================
@@ -110,7 +445,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   """
   @spec push_filters_down(algebra()) :: algebra()
   def push_filters_down(algebra) do
-    push_filters_recursive(algebra)
+    push_filters_recursive(algebra, 0)
   end
 
   # ===========================================================================
@@ -118,79 +453,86 @@ defmodule TripleStore.SPARQL.Optimizer do
   # ===========================================================================
 
   # Main recursive traversal - processes nodes bottom-up then applies push-down
-  defp push_filters_recursive({:filter, expr, pattern}) do
+  # Includes depth limiting to prevent stack overflow from deeply nested queries
+  defp push_filters_recursive(_algebra, depth) when depth > @max_depth do
+    raise ArgumentError,
+          "Query too deeply nested (max depth: #{@max_depth}). " <>
+            "This may indicate a malformed query or an attack."
+  end
+
+  defp push_filters_recursive({:filter, expr, pattern}, depth) do
     # First, recursively optimize the inner pattern
-    optimized_pattern = push_filters_recursive(pattern)
+    optimized_pattern = push_filters_recursive(pattern, depth + 1)
 
     # Split conjunctive filters and push each part
     split_and_push_filter(expr, optimized_pattern)
   end
 
-  defp push_filters_recursive({:join, left, right}) do
-    {:join, push_filters_recursive(left), push_filters_recursive(right)}
+  defp push_filters_recursive({:join, left, right}, depth) do
+    {:join, push_filters_recursive(left, depth + 1), push_filters_recursive(right, depth + 1)}
   end
 
-  defp push_filters_recursive({:left_join, left, right, filter}) do
+  defp push_filters_recursive({:left_join, left, right, filter}, depth) do
     # Optimize left side, but be careful with right side
     # Filters in OPTIONAL can be pushed into the right side if they only
     # reference right-side variables, but this is complex - for now just recurse
-    optimized_left = push_filters_recursive(left)
-    optimized_right = push_filters_recursive(right)
+    optimized_left = push_filters_recursive(left, depth + 1)
+    optimized_right = push_filters_recursive(right, depth + 1)
     {:left_join, optimized_left, optimized_right, filter}
   end
 
-  defp push_filters_recursive({:minus, left, right}) do
-    {:minus, push_filters_recursive(left), push_filters_recursive(right)}
+  defp push_filters_recursive({:minus, left, right}, depth) do
+    {:minus, push_filters_recursive(left, depth + 1), push_filters_recursive(right, depth + 1)}
   end
 
-  defp push_filters_recursive({:union, left, right}) do
+  defp push_filters_recursive({:union, left, right}, depth) do
     # Don't push filters into UNION - it changes semantics
-    {:union, push_filters_recursive(left), push_filters_recursive(right)}
+    {:union, push_filters_recursive(left, depth + 1), push_filters_recursive(right, depth + 1)}
   end
 
-  defp push_filters_recursive({:extend, pattern, var, expr}) do
-    {:extend, push_filters_recursive(pattern), var, expr}
+  defp push_filters_recursive({:extend, pattern, var, expr}, depth) do
+    {:extend, push_filters_recursive(pattern, depth + 1), var, expr}
   end
 
-  defp push_filters_recursive({:group, pattern, vars, aggs}) do
-    {:group, push_filters_recursive(pattern), vars, aggs}
+  defp push_filters_recursive({:group, pattern, vars, aggs}, depth) do
+    {:group, push_filters_recursive(pattern, depth + 1), vars, aggs}
   end
 
-  defp push_filters_recursive({:project, pattern, vars}) do
-    {:project, push_filters_recursive(pattern), vars}
+  defp push_filters_recursive({:project, pattern, vars}, depth) do
+    {:project, push_filters_recursive(pattern, depth + 1), vars}
   end
 
-  defp push_filters_recursive({:distinct, pattern}) do
-    {:distinct, push_filters_recursive(pattern)}
+  defp push_filters_recursive({:distinct, pattern}, depth) do
+    {:distinct, push_filters_recursive(pattern, depth + 1)}
   end
 
-  defp push_filters_recursive({:reduced, pattern}) do
-    {:reduced, push_filters_recursive(pattern)}
+  defp push_filters_recursive({:reduced, pattern}, depth) do
+    {:reduced, push_filters_recursive(pattern, depth + 1)}
   end
 
-  defp push_filters_recursive({:order_by, pattern, conditions}) do
-    {:order_by, push_filters_recursive(pattern), conditions}
+  defp push_filters_recursive({:order_by, pattern, conditions}, depth) do
+    {:order_by, push_filters_recursive(pattern, depth + 1), conditions}
   end
 
-  defp push_filters_recursive({:slice, pattern, offset, limit}) do
-    {:slice, push_filters_recursive(pattern), offset, limit}
+  defp push_filters_recursive({:slice, pattern, offset, limit}, depth) do
+    {:slice, push_filters_recursive(pattern, depth + 1), offset, limit}
   end
 
-  defp push_filters_recursive({:graph, term, pattern}) do
-    {:graph, term, push_filters_recursive(pattern)}
+  defp push_filters_recursive({:graph, term, pattern}, depth) do
+    {:graph, term, push_filters_recursive(pattern, depth + 1)}
   end
 
-  defp push_filters_recursive({:service, endpoint, pattern, silent}) do
-    {:service, endpoint, push_filters_recursive(pattern), silent}
+  defp push_filters_recursive({:service, endpoint, pattern, silent}, depth) do
+    {:service, endpoint, push_filters_recursive(pattern, depth + 1), silent}
   end
 
   # Leaf nodes - no recursion needed
-  defp push_filters_recursive({:bgp, _} = node), do: node
-  defp push_filters_recursive({:values, _, _} = node), do: node
-  defp push_filters_recursive({:path, _, _, _} = node), do: node
+  defp push_filters_recursive({:bgp, _} = node, _depth), do: node
+  defp push_filters_recursive({:values, _, _} = node, _depth), do: node
+  defp push_filters_recursive({:path, _, _, _} = node, _depth), do: node
 
   # Catch-all for any other nodes
-  defp push_filters_recursive(node), do: node
+  defp push_filters_recursive(node, _depth), do: node
 
   # ===========================================================================
   # Conjunctive Filter Splitting
@@ -449,12 +791,19 @@ defmodule TripleStore.SPARQL.Optimizer do
   """
   @spec fold_constants(algebra()) :: algebra()
   def fold_constants(algebra) do
-    fold_constants_recursive(algebra)
+    fold_constants_recursive(algebra, 0)
   end
 
   # Recursive constant folding over algebra tree
-  defp fold_constants_recursive({:filter, expr, pattern}) do
-    folded_pattern = fold_constants_recursive(pattern)
+  # Includes depth limiting to prevent stack overflow from deeply nested queries
+  defp fold_constants_recursive(_algebra, depth) when depth > @max_depth do
+    raise ArgumentError,
+          "Query too deeply nested (max depth: #{@max_depth}). " <>
+            "This may indicate a malformed query or an attack."
+  end
+
+  defp fold_constants_recursive({:filter, expr, pattern}, depth) do
+    folded_pattern = fold_constants_recursive(pattern, depth + 1)
     folded_expr = fold_expression(expr)
 
     case evaluate_constant_filter(folded_expr) do
@@ -472,9 +821,9 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp fold_constants_recursive({:join, left, right}) do
-    folded_left = fold_constants_recursive(left)
-    folded_right = fold_constants_recursive(right)
+  defp fold_constants_recursive({:join, left, right}, depth) do
+    folded_left = fold_constants_recursive(left, depth + 1)
+    folded_right = fold_constants_recursive(right, depth + 1)
 
     # If either side is empty, the join is empty
     case {folded_left, folded_right} do
@@ -484,9 +833,9 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp fold_constants_recursive({:left_join, left, right, filter}) do
-    folded_left = fold_constants_recursive(left)
-    folded_right = fold_constants_recursive(right)
+  defp fold_constants_recursive({:left_join, left, right, filter}, depth) do
+    folded_left = fold_constants_recursive(left, depth + 1)
+    folded_right = fold_constants_recursive(right, depth + 1)
     folded_filter = if filter, do: fold_expression(filter), else: nil
 
     # If left is empty, the result is empty
@@ -496,13 +845,13 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp fold_constants_recursive({:minus, left, right}) do
-    {:minus, fold_constants_recursive(left), fold_constants_recursive(right)}
+  defp fold_constants_recursive({:minus, left, right}, depth) do
+    {:minus, fold_constants_recursive(left, depth + 1), fold_constants_recursive(right, depth + 1)}
   end
 
-  defp fold_constants_recursive({:union, left, right}) do
-    folded_left = fold_constants_recursive(left)
-    folded_right = fold_constants_recursive(right)
+  defp fold_constants_recursive({:union, left, right}, depth) do
+    folded_left = fold_constants_recursive(left, depth + 1)
+    folded_right = fold_constants_recursive(right, depth + 1)
 
     # If one side is empty, return the other
     case {folded_left, folded_right} do
@@ -512,50 +861,50 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp fold_constants_recursive({:extend, pattern, var, expr}) do
-    folded_pattern = fold_constants_recursive(pattern)
+  defp fold_constants_recursive({:extend, pattern, var, expr}, depth) do
+    folded_pattern = fold_constants_recursive(pattern, depth + 1)
     folded_expr = fold_expression(expr)
     {:extend, folded_pattern, var, folded_expr}
   end
 
-  defp fold_constants_recursive({:group, pattern, vars, aggs}) do
-    {:group, fold_constants_recursive(pattern), vars, aggs}
+  defp fold_constants_recursive({:group, pattern, vars, aggs}, depth) do
+    {:group, fold_constants_recursive(pattern, depth + 1), vars, aggs}
   end
 
-  defp fold_constants_recursive({:project, pattern, vars}) do
-    {:project, fold_constants_recursive(pattern), vars}
+  defp fold_constants_recursive({:project, pattern, vars}, depth) do
+    {:project, fold_constants_recursive(pattern, depth + 1), vars}
   end
 
-  defp fold_constants_recursive({:distinct, pattern}) do
-    {:distinct, fold_constants_recursive(pattern)}
+  defp fold_constants_recursive({:distinct, pattern}, depth) do
+    {:distinct, fold_constants_recursive(pattern, depth + 1)}
   end
 
-  defp fold_constants_recursive({:reduced, pattern}) do
-    {:reduced, fold_constants_recursive(pattern)}
+  defp fold_constants_recursive({:reduced, pattern}, depth) do
+    {:reduced, fold_constants_recursive(pattern, depth + 1)}
   end
 
-  defp fold_constants_recursive({:order_by, pattern, conditions}) do
+  defp fold_constants_recursive({:order_by, pattern, conditions}, depth) do
     folded_conds = Enum.map(conditions, fn {dir, expr} -> {dir, fold_expression(expr)} end)
-    {:order_by, fold_constants_recursive(pattern), folded_conds}
+    {:order_by, fold_constants_recursive(pattern, depth + 1), folded_conds}
   end
 
-  defp fold_constants_recursive({:slice, pattern, offset, limit}) do
-    {:slice, fold_constants_recursive(pattern), offset, limit}
+  defp fold_constants_recursive({:slice, pattern, offset, limit}, depth) do
+    {:slice, fold_constants_recursive(pattern, depth + 1), offset, limit}
   end
 
-  defp fold_constants_recursive({:graph, term, pattern}) do
-    {:graph, term, fold_constants_recursive(pattern)}
+  defp fold_constants_recursive({:graph, term, pattern}, depth) do
+    {:graph, term, fold_constants_recursive(pattern, depth + 1)}
   end
 
-  defp fold_constants_recursive({:service, endpoint, pattern, silent}) do
-    {:service, endpoint, fold_constants_recursive(pattern), silent}
+  defp fold_constants_recursive({:service, endpoint, pattern, silent}, depth) do
+    {:service, endpoint, fold_constants_recursive(pattern, depth + 1), silent}
   end
 
   # Leaf nodes
-  defp fold_constants_recursive({:bgp, _} = node), do: node
-  defp fold_constants_recursive({:values, _, _} = node), do: node
-  defp fold_constants_recursive({:path, _, _, _} = node), do: node
-  defp fold_constants_recursive(node), do: node
+  defp fold_constants_recursive({:bgp, _} = node, _depth), do: node
+  defp fold_constants_recursive({:values, _, _} = node, _depth), do: node
+  defp fold_constants_recursive({:path, _, _, _} = node, _depth), do: node
+  defp fold_constants_recursive(node, _depth), do: node
 
   # ===========================================================================
   # Expression Folding
@@ -967,78 +1316,91 @@ defmodule TripleStore.SPARQL.Optimizer do
   """
   @spec reorder_bgp_patterns(algebra(), map()) :: algebra()
   def reorder_bgp_patterns(algebra, stats \\ %{}) do
-    reorder_bgp_recursive(algebra, stats)
+    reorder_bgp_recursive(algebra, stats, 0)
   end
 
   # Recursive traversal for BGP reordering
-  defp reorder_bgp_recursive({:bgp, patterns}, stats) do
+  # Includes depth limiting to prevent stack overflow from deeply nested queries
+  defp reorder_bgp_recursive(_algebra, _stats, depth) when depth > @max_depth do
+    raise ArgumentError,
+          "Query too deeply nested (max depth: #{@max_depth}). " <>
+            "This may indicate a malformed query or an attack."
+  end
+
+  defp reorder_bgp_recursive({:bgp, patterns}, stats, _depth) do
     reordered = reorder_patterns(patterns, stats)
     {:bgp, reordered}
   end
 
-  defp reorder_bgp_recursive({:filter, expr, pattern}, stats) do
-    {:filter, expr, reorder_bgp_recursive(pattern, stats)}
+  defp reorder_bgp_recursive({:filter, expr, pattern}, stats, depth) do
+    {:filter, expr, reorder_bgp_recursive(pattern, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:join, left, right}, stats) do
-    {:join, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  defp reorder_bgp_recursive({:join, left, right}, stats, depth) do
+    {:join,
+     reorder_bgp_recursive(left, stats, depth + 1),
+     reorder_bgp_recursive(right, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:left_join, left, right, filter}, stats) do
+  defp reorder_bgp_recursive({:left_join, left, right, filter}, stats, depth) do
     {:left_join,
-     reorder_bgp_recursive(left, stats),
-     reorder_bgp_recursive(right, stats),
+     reorder_bgp_recursive(left, stats, depth + 1),
+     reorder_bgp_recursive(right, stats, depth + 1),
      filter}
   end
 
-  defp reorder_bgp_recursive({:minus, left, right}, stats) do
-    {:minus, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  defp reorder_bgp_recursive({:minus, left, right}, stats, depth) do
+    {:minus,
+     reorder_bgp_recursive(left, stats, depth + 1),
+     reorder_bgp_recursive(right, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:union, left, right}, stats) do
-    {:union, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  defp reorder_bgp_recursive({:union, left, right}, stats, depth) do
+    {:union,
+     reorder_bgp_recursive(left, stats, depth + 1),
+     reorder_bgp_recursive(right, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:extend, pattern, var, expr}, stats) do
-    {:extend, reorder_bgp_recursive(pattern, stats), var, expr}
+  defp reorder_bgp_recursive({:extend, pattern, var, expr}, stats, depth) do
+    {:extend, reorder_bgp_recursive(pattern, stats, depth + 1), var, expr}
   end
 
-  defp reorder_bgp_recursive({:group, pattern, vars, aggs}, stats) do
-    {:group, reorder_bgp_recursive(pattern, stats), vars, aggs}
+  defp reorder_bgp_recursive({:group, pattern, vars, aggs}, stats, depth) do
+    {:group, reorder_bgp_recursive(pattern, stats, depth + 1), vars, aggs}
   end
 
-  defp reorder_bgp_recursive({:project, pattern, vars}, stats) do
-    {:project, reorder_bgp_recursive(pattern, stats), vars}
+  defp reorder_bgp_recursive({:project, pattern, vars}, stats, depth) do
+    {:project, reorder_bgp_recursive(pattern, stats, depth + 1), vars}
   end
 
-  defp reorder_bgp_recursive({:distinct, pattern}, stats) do
-    {:distinct, reorder_bgp_recursive(pattern, stats)}
+  defp reorder_bgp_recursive({:distinct, pattern}, stats, depth) do
+    {:distinct, reorder_bgp_recursive(pattern, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:reduced, pattern}, stats) do
-    {:reduced, reorder_bgp_recursive(pattern, stats)}
+  defp reorder_bgp_recursive({:reduced, pattern}, stats, depth) do
+    {:reduced, reorder_bgp_recursive(pattern, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:order_by, pattern, conditions}, stats) do
-    {:order_by, reorder_bgp_recursive(pattern, stats), conditions}
+  defp reorder_bgp_recursive({:order_by, pattern, conditions}, stats, depth) do
+    {:order_by, reorder_bgp_recursive(pattern, stats, depth + 1), conditions}
   end
 
-  defp reorder_bgp_recursive({:slice, pattern, offset, limit}, stats) do
-    {:slice, reorder_bgp_recursive(pattern, stats), offset, limit}
+  defp reorder_bgp_recursive({:slice, pattern, offset, limit}, stats, depth) do
+    {:slice, reorder_bgp_recursive(pattern, stats, depth + 1), offset, limit}
   end
 
-  defp reorder_bgp_recursive({:graph, term, pattern}, stats) do
-    {:graph, term, reorder_bgp_recursive(pattern, stats)}
+  defp reorder_bgp_recursive({:graph, term, pattern}, stats, depth) do
+    {:graph, term, reorder_bgp_recursive(pattern, stats, depth + 1)}
   end
 
-  defp reorder_bgp_recursive({:service, endpoint, pattern, silent}, stats) do
-    {:service, endpoint, reorder_bgp_recursive(pattern, stats), silent}
+  defp reorder_bgp_recursive({:service, endpoint, pattern, silent}, stats, depth) do
+    {:service, endpoint, reorder_bgp_recursive(pattern, stats, depth + 1), silent}
   end
 
   # Leaf nodes and catch-all
-  defp reorder_bgp_recursive({:values, _, _} = node, _stats), do: node
-  defp reorder_bgp_recursive({:path, _, _, _} = node, _stats), do: node
-  defp reorder_bgp_recursive(node, _stats), do: node
+  defp reorder_bgp_recursive({:values, _, _} = node, _stats, _depth), do: node
+  defp reorder_bgp_recursive({:path, _, _, _} = node, _stats, _depth), do: node
+  defp reorder_bgp_recursive(node, _stats, _depth), do: node
 
   # ===========================================================================
   # Pattern Reordering Logic
