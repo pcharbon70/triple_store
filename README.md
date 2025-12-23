@@ -80,6 +80,12 @@ mix compile
 # Run tests
 mix test
 
+# Run Rust NIF tests
+(cd native/rocksdb_nif && cargo test)
+
+# Run both
+mix test && (cd native/rocksdb_nif && cargo test)
+
 # Run benchmarks
 mix run bench/bsbm.exs
 ```
