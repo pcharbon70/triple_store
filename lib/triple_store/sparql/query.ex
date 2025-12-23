@@ -37,17 +37,46 @@ defmodule TripleStore.SPARQL.Query do
   - `:explain` - Return query plan instead of executing (default: false)
   - `:optimize` - Enable query optimization (default: true)
   - `:stats` - Statistics for optimizer (predicate cardinalities, etc.)
+  - `:log` - Enable debug logging (default: false)
+
+  ## Performance Characteristics
+
+  - **SELECT**: O(n) where n is result set size
+  - **ASK**: O(1) after finding first solution (short-circuits)
+  - **CONSTRUCT/DESCRIBE**: O(n) result set + O(m) triple construction
+  - **Prepared Queries**: Amortizes parsing/optimization over multiple executions
+
+  ## Security Notes
+
+  - Prepared queries should not be deserialized from untrusted sources
+  - Parameter values are substituted at AST level (no injection risk)
+  - Timeout protection prevents unbounded query execution
+
+  ## Architecture Notes
+
+  Query execution uses `Task.async/1` for timeout isolation. We intentionally
+  do not use `Task.Supervisor` because:
+
+  1. Queries are short-lived and self-contained
+  2. The calling process handles task cleanup via `Task.shutdown/2`
+  3. Error propagation is handled explicitly via return values
+  4. Adding supervision would add complexity without clear benefit
+
+  For long-running or high-concurrency scenarios, consider wrapping query
+  calls in a dedicated `Task.Supervisor` at the application level.
 
   """
 
   alias TripleStore.SPARQL.{Parser, Optimizer, Executor}
+  require Logger
 
   # ===========================================================================
   # Types
+  # Task 2.5.1: Query Execution
   # ===========================================================================
 
   @typedoc "Query execution context with db and dict_manager"
-  @type context :: %{db: reference(), dict_manager: pid()}
+  @type context :: %{db: reference(), dict_manager: GenServer.server()}
 
   @typedoc "SELECT query result - list of variable bindings"
   @type select_result :: [%{String.t() => term()}]
@@ -70,6 +99,19 @@ defmodule TripleStore.SPARQL.Query do
           optimizations: map()
         }
 
+  @typedoc "Error reasons returned by query functions"
+  @type error_reason ::
+          {:parse_error, term()}
+          | {:exception, module(), String.t()}
+          | :timeout
+          | {:task_exit, term()}
+          | {:missing_parameters, [String.t()]}
+          | {:unsupported_pattern, term()}
+          | {:unsupported_stream_type, atom()}
+          | {:invalid_option, atom()}
+          | :unsupported_query_type
+          | :invalid_query
+
   @typedoc "Query options"
   @type query_opts :: [
           timeout: pos_integer(),
@@ -78,11 +120,18 @@ defmodule TripleStore.SPARQL.Query do
           stats: map()
         ]
 
+  # Valid query options for validation (S6: added :log option)
+  @valid_query_opts [:timeout, :explain, :optimize, :stats, :log]
+  @valid_prepare_opts [:optimize, :stats, :log]
+  @valid_stream_opts [:optimize, :stats, :variables, :log]
+  @valid_execute_opts [:timeout, :log]
+
   # Default timeout: 30 seconds
   @default_timeout 30_000
 
   # ===========================================================================
   # Prepared Query Struct
+  # Task 2.5.3: Prepared Queries
   # ===========================================================================
 
   @typedoc "Prepared query struct containing pre-compiled query components"
@@ -91,8 +140,25 @@ defmodule TripleStore.SPARQL.Query do
           query_type: :select | :ask | :construct | :describe,
           pattern: term(),
           optimized_pattern: term(),
-          metadata: map(),
+          metadata: prepared_metadata(),
           parameters: [String.t()]
+        }
+
+  @typedoc "Metadata stored in prepared queries"
+  @type prepared_metadata :: %{
+          variables: term() | nil,
+          template: term() | nil,
+          modifiers: modifier_map(),
+          props: keyword()
+        }
+
+  @typedoc "Solution modifiers extracted from query"
+  @type modifier_map :: %{
+          distinct: boolean(),
+          reduced: boolean(),
+          order_by: term() | nil,
+          limit: non_neg_integer() | nil,
+          offset: non_neg_integer() | nil
         }
 
   defmodule Prepared do
@@ -106,6 +172,12 @@ defmodule TripleStore.SPARQL.Query do
 
     Parameters are SPARQL variables that will be bound at execution time.
     They are identified by the `$` prefix in the query string (e.g., `$person`).
+
+    ## Security Warning
+
+    Prepared queries contain executable AST and should NOT be deserialized from
+    untrusted sources. Only use prepared queries that were created within your
+    application's trusted context.
 
     ## Example
 
@@ -131,6 +203,7 @@ defmodule TripleStore.SPARQL.Query do
 
   # ===========================================================================
   # Public API
+  # Task 2.5.1: Query Execution
   # ===========================================================================
 
   @doc """
@@ -155,7 +228,7 @@ defmodule TripleStore.SPARQL.Query do
       {:ok, true} = Query.query(ctx, "ASK { <http://ex.org/Alice> ?p ?o }")
 
   """
-  @spec query(context(), String.t()) :: {:ok, query_result()} | {:error, term()}
+  @spec query(context(), String.t()) :: {:ok, query_result()} | {:error, error_reason()}
   def query(ctx, sparql) do
     query(ctx, sparql, [])
   end
@@ -183,25 +256,15 @@ defmodule TripleStore.SPARQL.Query do
 
   """
   @spec query(context(), String.t(), query_opts()) ::
-          {:ok, query_result() | {:explain, explanation()}} | {:error, term()}
+          {:ok, query_result() | {:explain, explanation()}} | {:error, error_reason()}
   def query(ctx, sparql, opts) when is_binary(sparql) and is_list(opts) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    case validate_opts(opts, @valid_query_opts) do
+      :ok ->
+        with_timeout(opts, fn -> execute_query(ctx, sparql, opts) end)
 
-    # Run query with timeout protection
-    task =
-      Task.async(fn ->
-        execute_query(ctx, sparql, opts)
-      end)
-
-    case Task.yield(task, timeout) || Task.shutdown(task) do
-      {:ok, result} ->
-        result
-
-      nil ->
-        {:error, :timeout}
+      {:error, _} = error ->
+        error
     end
-  rescue
-    e -> {:error, {:exception, Exception.message(e)}}
   end
 
   @doc """
@@ -224,6 +287,7 @@ defmodule TripleStore.SPARQL.Query do
 
   # ===========================================================================
   # Prepared Query API
+  # Task 2.5.3: Prepared Queries
   # ===========================================================================
 
   @typedoc "Prepare options"
@@ -293,28 +357,34 @@ defmodule TripleStore.SPARQL.Query do
   """
   @spec prepare(String.t(), prepare_opts()) :: {:ok, prepared_query()} | {:error, term()}
   def prepare(sparql, opts) when is_binary(sparql) and is_list(opts) do
-    optimize? = Keyword.get(opts, :optimize, true)
-    stats = Keyword.get(opts, :stats, %{})
+    case validate_opts(opts, @valid_prepare_opts) do
+      :ok ->
+        optimize? = Keyword.get(opts, :optimize, true)
+        stats = Keyword.get(opts, :stats, %{})
 
-    # Extract parameters from the query (variables starting with $)
-    {normalized_sparql, parameters} = extract_parameters(sparql)
+        # Extract parameters from the query (variables starting with $)
+        {normalized_sparql, parameters} = extract_parameters(sparql)
 
-    with {:ok, ast} <- parse_query(normalized_sparql),
-         {:ok, query_type, pattern, metadata} <- extract_query_info(ast),
-         {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
-      prepared = %Prepared{
-        sparql: sparql,
-        query_type: query_type,
-        pattern: pattern,
-        optimized_pattern: optimized,
-        metadata: metadata,
-        parameters: parameters
-      }
+        with {:ok, ast} <- parse_query(normalized_sparql),
+             {:ok, query_type, pattern, metadata} <- extract_query_info(ast),
+             {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
+          prepared = %Prepared{
+            sparql: sparql,
+            query_type: query_type,
+            pattern: pattern,
+            optimized_pattern: optimized,
+            metadata: metadata,
+            parameters: parameters
+          }
 
-      {:ok, prepared}
+          {:ok, prepared}
+        end
+
+      {:error, _} = error ->
+        error
     end
   rescue
-    e -> {:error, {:exception, Exception.message(e)}}
+    e -> {:error, {:exception, e.__struct__, Exception.message(e)}}
   end
 
   @doc """
@@ -390,26 +460,11 @@ defmodule TripleStore.SPARQL.Query do
   @spec execute(context(), prepared_query(), params(), keyword()) ::
           {:ok, query_result()} | {:error, term()}
   def execute(ctx, %Prepared{} = prepared, params, opts) when is_map(params) and is_list(opts) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
-
-    # Validate all required parameters are provided
-    case validate_parameters(prepared.parameters, params) do
-      :ok ->
-        task =
-          Task.async(fn ->
-            execute_prepared(ctx, prepared, params)
-          end)
-
-        case Task.yield(task, timeout) || Task.shutdown(task) do
-          {:ok, result} -> result
-          nil -> {:error, :timeout}
-        end
-
-      {:error, _} = error ->
-        error
+    # Validate options and parameters
+    with :ok <- validate_opts(opts, @valid_execute_opts),
+         :ok <- validate_parameters(prepared.parameters, params) do
+      with_timeout(opts, fn -> execute_prepared(ctx, prepared, params) end)
     end
-  rescue
-    e -> {:error, {:exception, Exception.message(e)}}
   end
 
   @doc """
@@ -462,8 +517,8 @@ defmodule TripleStore.SPARQL.Query do
     end
   end
 
-  # Substitute parameter values into the pattern
-  defp substitute_parameters(pattern, params) when map_size(params) == 0 do
+  # Substitute parameter values into the pattern (C4: added is_map guard)
+  defp substitute_parameters(pattern, params) when is_map(params) and map_size(params) == 0 do
     pattern
   end
 
@@ -548,11 +603,9 @@ defmodule TripleStore.SPARQL.Query do
 
   defp substitute_term(term, _params), do: term
 
-  # Convert parameter value to the appropriate internal representation
+  # Convert parameter value to the appropriate internal representation (C8: improved URI validation)
   defp convert_param_value(value) when is_binary(value) do
-    # Check if it looks like a URI
-    if String.starts_with?(value, "http://") or String.starts_with?(value, "https://") or
-         String.starts_with?(value, "urn:") do
+    if looks_like_uri?(value) do
       {:named_node, value}
     else
       {:literal, :simple, value}
@@ -581,6 +634,22 @@ defmodule TripleStore.SPARQL.Query do
 
   defp convert_param_value(value), do: {:literal, :simple, inspect(value)}
 
+  # Validate URI-like strings more robustly (C8)
+  defp looks_like_uri?(value) do
+    case URI.parse(value) do
+      %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and is_binary(host) ->
+        # Validate host is not empty
+        host != ""
+
+      %URI{scheme: "urn", path: path} when is_binary(path) ->
+        # URNs have scheme and path (urn:isbn:123)
+        path != ""
+
+      _ ->
+        false
+    end
+  end
+
   # Substitute parameters in an expression
   defp substitute_expr(nil, _params), do: nil
   defp substitute_expr({:variable, name}, params), do: substitute_term({:variable, name}, params)
@@ -601,6 +670,7 @@ defmodule TripleStore.SPARQL.Query do
 
   # ===========================================================================
   # Streaming Query API
+  # Task 2.5.2: Query Streaming
   # ===========================================================================
 
   @typedoc "Streaming query result - lazy stream of bindings"
@@ -626,12 +696,17 @@ defmodule TripleStore.SPARQL.Query do
   - `{:ok, stream}` - Lazy stream of binding maps
   - `{:error, reason}` - Error with reason
 
-  ## Notes
+  ## Important Limitations
 
   - Only SELECT queries are supported for streaming
   - The stream is lazy - no work is done until consumed
   - Early termination (e.g., `Enum.take/2`) is efficient
   - Backpressure is naturally handled by Elixir Streams
+  - **No timeout protection**: The stream is lazy, so timeouts cannot be
+    applied at setup time. The consumer controls execution timing.
+  - **ORDER BY forces materialization**: When ORDER BY is used, the entire
+    result set must be materialized in memory before streaming begins,
+    negating the memory benefits for large result sets.
 
   ## Examples
 
@@ -680,18 +755,24 @@ defmodule TripleStore.SPARQL.Query do
   @spec stream_query(context(), String.t(), keyword()) ::
           {:ok, stream_result()} | {:error, term()}
   def stream_query(ctx, sparql, opts) when is_binary(sparql) and is_list(opts) do
-    optimize? = Keyword.get(opts, :optimize, true)
-    stats = Keyword.get(opts, :stats, %{})
-    project_vars = Keyword.get(opts, :variables, nil)
+    case validate_opts(opts, @valid_stream_opts) do
+      :ok ->
+        optimize? = Keyword.get(opts, :optimize, true)
+        stats = Keyword.get(opts, :stats, %{})
+        project_vars = Keyword.get(opts, :variables, nil)
 
-    with {:ok, ast} <- parse_query(sparql),
-         :ok <- validate_select_query(ast),
-         {:ok, _query_type, pattern, metadata} <- extract_query_info(ast),
-         {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
-      build_stream(ctx, optimized, metadata, project_vars)
+        with {:ok, ast} <- parse_query(sparql),
+             :ok <- validate_select_query(ast),
+             {:ok, _query_type, pattern, metadata} <- extract_query_info(ast),
+             {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
+          build_stream(ctx, optimized, metadata, project_vars)
+        end
+
+      {:error, _} = error ->
+        error
     end
   rescue
-    e -> {:error, {:exception, Exception.message(e)}}
+    e -> {:error, {:exception, e.__struct__, Exception.message(e)}}
   end
 
   @doc """
@@ -1049,4 +1130,76 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   defp get_prop(_, _), do: nil
+
+  # Validate options against allowed list (C5-C6)
+  defp validate_opts(opts, valid_opts) do
+    invalid = Keyword.keys(opts) -- valid_opts
+
+    case invalid do
+      [] -> :ok
+      [opt | _] -> {:error, {:invalid_option, opt}}
+    end
+  end
+
+  # Execute function with timeout protection (B1, S2)
+  # Properly handles Task.yield return values including {:exit, reason}
+  defp with_timeout(opts, fun) do
+    timeout = Keyword.get(opts, :timeout, @default_timeout)
+    log? = Keyword.get(opts, :log, false)
+    start_time = System.monotonic_time()
+
+    # S6: Optional debug logging
+    if log?, do: Logger.debug("[Query] Starting execution with timeout=#{timeout}ms")
+
+    # S1: Telemetry start event
+    :telemetry.execute(
+      [:triple_store, :sparql, :query, :start],
+      %{system_time: System.system_time()},
+      %{timeout: timeout}
+    )
+
+    task = Task.async(fun)
+
+    result =
+      case Task.yield(task, timeout) do
+        {:ok, result} ->
+          result
+
+        {:exit, reason} ->
+          {:error, {:task_exit, reason}}
+
+        nil ->
+          Task.shutdown(task, :brutal_kill)
+          {:error, :timeout}
+      end
+
+    # S1: Telemetry stop event
+    duration = System.monotonic_time() - start_time
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :query, :stop],
+      %{duration: duration},
+      %{timeout: timeout, result: result_status(result)}
+    )
+
+    # S6: Optional debug logging
+    duration_ms = System.convert_time_unit(duration, :native, :millisecond)
+    if log?, do: Logger.debug("[Query] Completed in #{duration_ms}ms with status=#{result_status(result)}")
+
+    result
+  rescue
+    e ->
+      # S1: Telemetry exception event
+      :telemetry.execute(
+        [:triple_store, :sparql, :query, :exception],
+        %{system_time: System.system_time()},
+        %{exception: e.__struct__, message: Exception.message(e)}
+      )
+
+      {:error, {:exception, e.__struct__, Exception.message(e)}}
+  end
+
+  defp result_status({:ok, _}), do: :ok
+  defp result_status({:error, :timeout}), do: :timeout
+  defp result_status({:error, _}), do: :error
 end

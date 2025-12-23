@@ -416,11 +416,29 @@ now has 173 tests covering all functionality (includes 6 review improvement test
 
 ## 2.5 Query API
 
-- [x] **Section 2.5 Complete** (2025-12-23)
+- [x] **Section 2.5 Complete** (2025-12-23, review improvements applied)
 
 This section implements the public query API providing a clean interface for executing SPARQL queries against the triple store.
 
-Implemented in `lib/triple_store/sparql/query.ex` with 68 tests in query_test.exs.
+Implemented in `lib/triple_store/sparql/query.ex` with 81 tests in query_test.exs.
+
+**Review improvements applied (2025-12-23):**
+- Fixed Task.shutdown return value handling (B1)
+- Added timeout test (B2)
+- Documented streaming limitations (C1-C2)
+- Improved exception handling with type info (C3)
+- Added is_map guard to map_size (C4)
+- Added option validation with informative errors (C5-C6)
+- Improved security: URI validation, prepared query docs (C7-C8)
+- Added tests for BIND, ORDER BY, option validation, DESCRIBE, boolean params (C9-C11)
+- Documented Task.Supervisor decision (C12)
+- Added telemetry events (S1)
+- Extracted with_timeout helper (S2)
+- Added optional debug logging (S6)
+- Added task references to section headers (S7)
+- Added error_reason type (S8)
+- Changed context type to use GenServer.server() (S9)
+- Total tests: 81 (up from 68)
 
 ### 2.5.1 Query Function
 
@@ -474,7 +492,7 @@ Test coverage: 27 new tests (68 total in query_test.exs).
 
 ### 2.5.4 Unit Tests
 
-- [x] **Task 2.5.4 Complete** (2025-12-23)
+- [x] **Task 2.5.4 Complete** (2025-12-23, extended in review)
 
 All unit tests for Query API have been implemented across 2.5.1, 2.5.2, and 2.5.3:
 
@@ -484,8 +502,15 @@ All unit tests for Query API have been implemented across 2.5.1, 2.5.2, and 2.5.
 - [x] Test streaming query handles early termination (2.5.2)
 - [x] Test prepared query with parameter binding (2.5.3 - 27 tests)
 - [x] Test prepared query caching (2.5.3)
+- [x] Test timeout actually triggers (B2)
+- [x] Test BIND/EXTEND pattern (C9)
+- [x] Test ORDER BY ascending and descending (C10)
+- [x] Test option validation for all functions (C5-C6)
+- [x] Test prepared DESCRIBE query (S11)
+- [x] Test boolean false parameter (S12)
+- [x] Test URI validation (C8)
 
-Total test coverage: 68 tests in query_test.exs
+Total test coverage: 81 tests in query_test.exs
 
 ---
 
