@@ -914,4 +914,358 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       assert unwrapped == {:bgp, []}
     end
   end
+
+  # ===========================================================================
+  # BGP Reordering Tests
+  # ===========================================================================
+
+  describe "reorder_bgp_patterns/2" do
+    test "empty BGP stays empty" do
+      result = Optimizer.reorder_bgp_patterns({:bgp, []})
+      assert result == {:bgp, []}
+    end
+
+    test "single pattern BGP stays unchanged" do
+      pattern = triple(var("x"), var("p"), var("o"))
+      result = Optimizer.reorder_bgp_patterns({:bgp, [pattern]})
+      assert result == {:bgp, [pattern]}
+    end
+
+    test "bound subject pattern comes before unbound" do
+      # Pattern with bound subject is more selective
+      unbound = triple(var("x"), var("p"), var("o"))
+      bound_subject = triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [unbound, bound_subject]})
+
+      {:bgp, [first, second]} = result
+      # Bound subject should come first
+      assert first == bound_subject
+      assert second == unbound
+    end
+
+    test "bound predicate pattern is more selective than all variables" do
+      all_vars = triple(var("x"), var("p"), var("o"))
+      bound_pred = triple(var("s"), iri("http://ex.org/knows"), var("o"))
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [all_vars, bound_pred]})
+
+      {:bgp, [first, _second]} = result
+      # Bound predicate should come first
+      assert first == bound_pred
+    end
+
+    test "bound object pattern is considered" do
+      all_vars = triple(var("x"), var("p"), var("o"))
+      bound_obj = triple(var("s"), var("p"), iri("http://ex.org/Value"))
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [all_vars, bound_obj]})
+
+      {:bgp, [first, _second]} = result
+      # Bound object should come first
+      assert first == bound_obj
+    end
+
+    test "fully bound pattern comes first" do
+      # S P O all bound is most selective
+      all_vars = triple(var("x"), var("p"), var("o"))
+      one_bound = triple(iri("http://ex.org/Bob"), var("p"), var("o"))
+      all_bound = triple(
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/knows"),
+        iri("http://ex.org/Bob")
+      )
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [all_vars, one_bound, all_bound]})
+
+      {:bgp, [first, second, third]} = result
+      assert first == all_bound
+      assert second == one_bound
+      assert third == all_vars
+    end
+
+    test "considers variable binding propagation" do
+      # If pattern1 binds ?x, pattern2 using ?x becomes more selective
+      pattern1 = triple(iri("http://ex.org/Bob"), iri("http://ex.org/knows"), var("x"))
+      pattern2 = triple(var("x"), var("p"), var("o"))
+      pattern3 = triple(var("a"), var("b"), var("c"))
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [pattern3, pattern2, pattern1]})
+
+      {:bgp, patterns} = result
+      # pattern1 should be first (bound subject + predicate)
+      # pattern2 should be second (uses ?x which is now bound)
+      # pattern3 should be last (all unbound, no shared variables)
+      assert Enum.at(patterns, 0) == pattern1
+      assert Enum.at(patterns, 1) == pattern2
+      assert Enum.at(patterns, 2) == pattern3
+    end
+
+    test "works with literal objects" do
+      var_pattern = triple(var("x"), var("p"), var("o"))
+      lit_pattern = triple(var("s"), var("p"), int(42))
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [var_pattern, lit_pattern]})
+
+      {:bgp, [first, _second]} = result
+      # Literal object is more selective
+      assert first == lit_pattern
+    end
+
+    test "reorders patterns inside join" do
+      left_patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      right_patterns = [
+        triple(var("a"), var("b"), var("c")),
+        triple(var("s"), iri("http://ex.org/type"), var("t"))
+      ]
+
+      algebra = join({:bgp, left_patterns}, {:bgp, right_patterns})
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:join, {:bgp, left_result}, {:bgp, right_result}} = result
+
+      # Left: bound subject should be first
+      assert hd(left_result) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      # Right: bound predicate should be first
+      assert hd(right_result) == triple(var("s"), iri("http://ex.org/type"), var("t"))
+    end
+
+    test "reorders patterns inside union" do
+      left_patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Alice"), var("q"), var("z"))
+      ]
+      right_patterns = [
+        triple(var("a"), var("b"), var("c")),
+        triple(iri("http://ex.org/Bob"), var("d"), var("e"))
+      ]
+
+      algebra = union({:bgp, left_patterns}, {:bgp, right_patterns})
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:union, {:bgp, left_result}, {:bgp, right_result}} = result
+
+      # Both sides should have bound subject patterns first
+      assert hd(left_result) == triple(iri("http://ex.org/Alice"), var("q"), var("z"))
+      assert hd(right_result) == triple(iri("http://ex.org/Bob"), var("d"), var("e"))
+    end
+
+    test "reorders patterns through filter" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:filter, _, {:bgp, reordered}} = result
+      assert hd(reordered) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+
+    test "reorders patterns through project" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+
+      algebra = {:project, {:bgp, patterns}, [variable: "x"]}
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:project, {:bgp, reordered}, _vars} = result
+      assert hd(reordered) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+
+    test "reorders patterns through distinct" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+
+      algebra = {:distinct, {:bgp, patterns}}
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:distinct, {:bgp, reordered}} = result
+      assert hd(reordered) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+
+    test "uses predicate statistics when available" do
+      # Rare predicate should be more selective than common one
+      rare_pred = triple(var("s"), iri("http://ex.org/rare"), var("o"))
+      common_pred = triple(var("s"), iri("http://ex.org/common"), var("o"))
+
+      stats = %{
+        {:predicate_count, "http://ex.org/rare"} => 5,
+        {:predicate_count, "http://ex.org/common"} => 50000
+      }
+
+      result = Optimizer.reorder_bgp_patterns({:bgp, [common_pred, rare_pred]}, stats)
+
+      {:bgp, [first, second]} = result
+      # Rare predicate should come first
+      assert first == rare_pred
+      assert second == common_pred
+    end
+
+    test "handles left_join correctly" do
+      left_patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      right_patterns = [
+        triple(var("a"), var("b"), var("c")),
+        triple(iri("http://ex.org/Alice"), var("d"), var("e"))
+      ]
+
+      algebra = left_join({:bgp, left_patterns}, {:bgp, right_patterns})
+      result = Optimizer.reorder_bgp_patterns(algebra)
+
+      {:left_join, {:bgp, left_result}, {:bgp, right_result}, _filter} = result
+
+      # Both sides should be reordered independently
+      assert hd(left_result) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      assert hd(right_result) == triple(iri("http://ex.org/Alice"), var("d"), var("e"))
+    end
+  end
+
+  describe "estimate_selectivity/3" do
+    test "bound subject is more selective than variable" do
+      bound = triple(iri("http://ex.org/Bob"), var("p"), var("o"))
+      unbound = triple(var("x"), var("p"), var("o"))
+
+      bound_score = Optimizer.estimate_selectivity(bound)
+      unbound_score = Optimizer.estimate_selectivity(unbound)
+
+      assert bound_score < unbound_score
+    end
+
+    test "bound predicate affects selectivity" do
+      bound_pred = triple(var("s"), iri("http://ex.org/knows"), var("o"))
+      unbound_pred = triple(var("s"), var("p"), var("o"))
+
+      bound_score = Optimizer.estimate_selectivity(bound_pred)
+      unbound_score = Optimizer.estimate_selectivity(unbound_pred)
+
+      assert bound_score < unbound_score
+    end
+
+    test "already-bound variable is selective" do
+      pattern = triple(var("x"), var("p"), var("o"))
+      bound_vars = MapSet.new(["x"])
+
+      with_bound = Optimizer.estimate_selectivity(pattern, bound_vars)
+      without_bound = Optimizer.estimate_selectivity(pattern)
+
+      assert with_bound < without_bound
+    end
+
+    test "uses predicate statistics" do
+      pattern = triple(var("s"), iri("http://ex.org/rare"), var("o"))
+
+      stats_rare = %{{:predicate_count, "http://ex.org/rare"} => 5}
+      stats_common = %{{:predicate_count, "http://ex.org/rare"} => 50000}
+
+      score_rare = Optimizer.estimate_selectivity(pattern, MapSet.new(), stats_rare)
+      score_common = Optimizer.estimate_selectivity(pattern, MapSet.new(), stats_common)
+
+      assert score_rare < score_common
+    end
+
+    test "fully bound is most selective" do
+      all_bound = triple(
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/knows"),
+        iri("http://ex.org/Bob")
+      )
+      all_vars = triple(var("s"), var("p"), var("o"))
+
+      bound_score = Optimizer.estimate_selectivity(all_bound)
+      var_score = Optimizer.estimate_selectivity(all_vars)
+
+      # Fully bound should be much more selective
+      assert bound_score < var_score / 100
+    end
+  end
+
+  describe "optimize/2 with BGP reordering" do
+    test "applies BGP reordering by default" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+
+      result = Optimizer.optimize({:bgp, patterns})
+
+      {:bgp, reordered} = result
+      # Bound subject should come first
+      assert hd(reordered) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+
+    test "can disable BGP reordering" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+
+      result = Optimizer.optimize({:bgp, patterns}, reorder_bgp: false)
+
+      # Should remain in original order
+      assert result == {:bgp, patterns}
+    end
+
+    test "BGP reordering works with filter push-down" do
+      patterns = [
+        triple(var("x"), var("p"), var("o")),
+        triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+      ]
+      algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
+
+      result = Optimizer.optimize(algebra)
+
+      # BGP should be reordered, filter should stay
+      {:filter, _, {:bgp, reordered}} = result
+      assert hd(reordered) == triple(iri("http://ex.org/Bob"), var("q"), var("z"))
+    end
+  end
+
+  describe "integration - BGP reordering with parser" do
+    test "reorders patterns in parsed query" do
+      query = """
+      SELECT ?x ?y WHERE {
+        ?x ?p ?o .
+        <http://example.org/Bob> <http://example.org/knows> ?y .
+        ?a ?b ?c .
+      }
+      """
+
+      {:ok, ast} = Parser.parse(query)
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      optimized = Optimizer.optimize(pattern)
+
+      # Find the BGP in the optimized result
+      bgp = find_bgp(unwrap_modifiers(optimized))
+      {:bgp, patterns} = bgp
+
+      # The bound pattern should come first
+      first_pattern = hd(patterns)
+      {:triple, s, p, _o} = first_pattern
+
+      # Should have bound subject and predicate
+      assert match?({:named_node, _}, s)
+      assert match?({:named_node, _}, p)
+    end
+  end
+
+  # Helper to find BGP in algebra tree
+  defp find_bgp({:bgp, _} = bgp), do: bgp
+  defp find_bgp({:filter, _, inner}), do: find_bgp(inner)
+  defp find_bgp({:join, left, _right}), do: find_bgp(left)
+  defp find_bgp({:left_join, left, _right, _}), do: find_bgp(left)
+  defp find_bgp({:project, inner, _}), do: find_bgp(inner)
+  defp find_bgp({:distinct, inner}), do: find_bgp(inner)
+  defp find_bgp(_), do: nil
 end

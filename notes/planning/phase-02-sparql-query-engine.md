@@ -210,14 +210,19 @@ Test coverage: 42 new tests (67 total in optimizer_test.exs).
 
 ### 2.3.3 BGP Reordering
 
-- [ ] **Task 2.3.3 Complete**
+- [x] **Task 2.3.3 Complete** (2025-12-23)
 
 Reorder BGP patterns based on selectivity estimates to reduce intermediate results.
 
-- [ ] 2.3.3.1 Implement `reorder_bgp_patterns(bgp, stats)` transformation
-- [ ] 2.3.3.2 Use predicate cardinalities from statistics
-- [ ] 2.3.3.3 Prefer patterns with bound subjects/objects
-- [ ] 2.3.3.4 Consider variable binding propagation between patterns
+- [x] 2.3.3.1 Implement `reorder_bgp_patterns(bgp, stats)` transformation
+- [x] 2.3.3.2 Use predicate cardinalities from statistics
+- [x] 2.3.3.3 Prefer patterns with bound subjects/objects
+- [x] 2.3.3.4 Consider variable binding propagation between patterns
+
+Extended `lib/triple_store/sparql/optimizer.ex` with BGP reordering optimization.
+Uses greedy algorithm to select most selective patterns first, considering bound
+positions and variable binding propagation. Supports predicate cardinality statistics.
+Test coverage: 24 new tests (91 total in optimizer_test.exs).
 
 ### 2.3.4 Optimizer Pipeline
 

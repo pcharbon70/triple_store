@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   - **Filter Push-Down**: Push filter expressions closer to data sources
   - **Constant Folding**: Evaluate constant expressions at compile time
-  - **BGP Reordering**: Reorder triple patterns based on selectivity (future)
+  - **BGP Reordering**: Reorder triple patterns based on selectivity estimates
 
   ## Filter Push-Down
 
@@ -53,11 +53,13 @@ defmodule TripleStore.SPARQL.Optimizer do
   @doc """
   Applies all optimizations to an algebra tree.
 
-  Currently applies filter push-down and constant folding.
+  Currently applies constant folding, filter push-down, and BGP reordering.
 
   ## Options
   - `:push_filters` - Enable filter push-down (default: true)
   - `:fold_constants` - Enable constant folding (default: true)
+  - `:reorder_bgp` - Enable BGP pattern reordering (default: true)
+  - `:stats` - Statistics map for selectivity estimation (optional)
 
   ## Examples
 
@@ -71,9 +73,12 @@ defmodule TripleStore.SPARQL.Optimizer do
   def optimize(algebra, opts \\ []) do
     push_filters? = Keyword.get(opts, :push_filters, true)
     fold_constants? = Keyword.get(opts, :fold_constants, true)
+    reorder_bgp? = Keyword.get(opts, :reorder_bgp, true)
+    stats = Keyword.get(opts, :stats, %{})
 
     algebra
     |> then(fn a -> if fold_constants?, do: fold_constants(a), else: a end)
+    |> then(fn a -> if reorder_bgp?, do: reorder_bgp_patterns(a, stats), else: a end)
     |> then(fn a -> if push_filters?, do: push_filters_down(a), else: a end)
   end
 
@@ -926,4 +931,287 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp analyze_filters_recursive(_, stats), do: stats
+
+  # ===========================================================================
+  # BGP Pattern Reordering
+  # ===========================================================================
+
+  @doc """
+  Reorders triple patterns within BGPs based on selectivity estimates.
+
+  This optimization places the most selective patterns first, reducing
+  intermediate result sizes during query execution.
+
+  ## Algorithm
+
+  1. Traverse the algebra tree looking for BGP nodes
+  2. For each BGP, estimate selectivity of each triple pattern
+  3. Sort patterns by selectivity (most selective first)
+  4. Consider variable binding propagation between patterns
+
+  ## Selectivity Estimation
+
+  Selectivity is estimated based on:
+  - **Bound positions**: Bound subjects/predicates/objects are more selective
+  - **Predicate cardinalities**: Known predicates have known frequencies
+  - **Variable binding**: Patterns using already-bound variables are more selective
+
+  ## Examples
+
+      # Before:
+      BGP([?x ?p ?o], [<Bob> <knows> ?y], [?a ?b ?c])
+
+      # After (bound pattern first):
+      BGP([<Bob> <knows> ?y], [?x ?p ?o], [?a ?b ?c])
+
+  """
+  @spec reorder_bgp_patterns(algebra(), map()) :: algebra()
+  def reorder_bgp_patterns(algebra, stats \\ %{}) do
+    reorder_bgp_recursive(algebra, stats)
+  end
+
+  # Recursive traversal for BGP reordering
+  defp reorder_bgp_recursive({:bgp, patterns}, stats) do
+    reordered = reorder_patterns(patterns, stats)
+    {:bgp, reordered}
+  end
+
+  defp reorder_bgp_recursive({:filter, expr, pattern}, stats) do
+    {:filter, expr, reorder_bgp_recursive(pattern, stats)}
+  end
+
+  defp reorder_bgp_recursive({:join, left, right}, stats) do
+    {:join, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  end
+
+  defp reorder_bgp_recursive({:left_join, left, right, filter}, stats) do
+    {:left_join,
+     reorder_bgp_recursive(left, stats),
+     reorder_bgp_recursive(right, stats),
+     filter}
+  end
+
+  defp reorder_bgp_recursive({:minus, left, right}, stats) do
+    {:minus, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  end
+
+  defp reorder_bgp_recursive({:union, left, right}, stats) do
+    {:union, reorder_bgp_recursive(left, stats), reorder_bgp_recursive(right, stats)}
+  end
+
+  defp reorder_bgp_recursive({:extend, pattern, var, expr}, stats) do
+    {:extend, reorder_bgp_recursive(pattern, stats), var, expr}
+  end
+
+  defp reorder_bgp_recursive({:group, pattern, vars, aggs}, stats) do
+    {:group, reorder_bgp_recursive(pattern, stats), vars, aggs}
+  end
+
+  defp reorder_bgp_recursive({:project, pattern, vars}, stats) do
+    {:project, reorder_bgp_recursive(pattern, stats), vars}
+  end
+
+  defp reorder_bgp_recursive({:distinct, pattern}, stats) do
+    {:distinct, reorder_bgp_recursive(pattern, stats)}
+  end
+
+  defp reorder_bgp_recursive({:reduced, pattern}, stats) do
+    {:reduced, reorder_bgp_recursive(pattern, stats)}
+  end
+
+  defp reorder_bgp_recursive({:order_by, pattern, conditions}, stats) do
+    {:order_by, reorder_bgp_recursive(pattern, stats), conditions}
+  end
+
+  defp reorder_bgp_recursive({:slice, pattern, offset, limit}, stats) do
+    {:slice, reorder_bgp_recursive(pattern, stats), offset, limit}
+  end
+
+  defp reorder_bgp_recursive({:graph, term, pattern}, stats) do
+    {:graph, term, reorder_bgp_recursive(pattern, stats)}
+  end
+
+  defp reorder_bgp_recursive({:service, endpoint, pattern, silent}, stats) do
+    {:service, endpoint, reorder_bgp_recursive(pattern, stats), silent}
+  end
+
+  # Leaf nodes and catch-all
+  defp reorder_bgp_recursive({:values, _, _} = node, _stats), do: node
+  defp reorder_bgp_recursive({:path, _, _, _} = node, _stats), do: node
+  defp reorder_bgp_recursive(node, _stats), do: node
+
+  # ===========================================================================
+  # Pattern Reordering Logic
+  # ===========================================================================
+
+  # Reorder patterns considering selectivity and variable binding propagation
+  @spec reorder_patterns(list(), map()) :: list()
+  defp reorder_patterns([], _stats), do: []
+  defp reorder_patterns([single], _stats), do: [single]
+
+  defp reorder_patterns(patterns, stats) do
+    # Use greedy algorithm: repeatedly select the most selective pattern
+    # given the variables already bound by previous patterns
+    greedy_reorder(patterns, MapSet.new(), stats, [])
+  end
+
+  # Greedy reordering: pick most selective pattern at each step
+  defp greedy_reorder([], _bound_vars, _stats, acc) do
+    Enum.reverse(acc)
+  end
+
+  defp greedy_reorder(remaining, bound_vars, stats, acc) do
+    # Score each remaining pattern considering bound variables
+    scored =
+      remaining
+      |> Enum.map(fn pattern ->
+        score = estimate_selectivity(pattern, bound_vars, stats)
+        {pattern, score}
+      end)
+      |> Enum.sort_by(fn {_pattern, score} -> score end)
+
+    # Pick the most selective (lowest score)
+    [{best_pattern, _score} | _rest] = scored
+    remaining_patterns = List.delete(remaining, best_pattern)
+
+    # Add variables from selected pattern to bound set
+    new_bound = pattern_variables(best_pattern) |> MapSet.union(bound_vars)
+
+    greedy_reorder(remaining_patterns, new_bound, stats, [best_pattern | acc])
+  end
+
+  # ===========================================================================
+  # Selectivity Estimation
+  # ===========================================================================
+
+  @doc """
+  Estimates the selectivity of a triple pattern.
+
+  Lower scores indicate more selective patterns (fewer expected results).
+  The estimation considers:
+  1. Number of bound positions (subject, predicate, object)
+  2. Predicate cardinality from statistics (if available)
+  3. Whether variables are already bound from previous patterns
+
+  ## Scoring System
+
+  Base scores for position binding:
+  - Bound subject: 1.0 (subjects are usually unique identifiers)
+  - Bound predicate: 10.0 (predicates have varying cardinalities)
+  - Bound object: 5.0 (objects can be unique or repeated)
+  - Variable: 1000.0 (completely unbound)
+
+  The final score is: product of position scores / binding bonus
+
+  ## Arguments
+
+  - `pattern` - A triple pattern tuple
+  - `bound_vars` - Set of already-bound variable names
+  - `stats` - Statistics map with predicate cardinalities
+
+  ## Returns
+
+  A numeric selectivity score (lower = more selective)
+  """
+  @spec estimate_selectivity(tuple(), MapSet.t(), map()) :: float()
+  def estimate_selectivity(pattern, bound_vars \\ MapSet.new(), stats \\ %{})
+
+  def estimate_selectivity({:triple, subject, predicate, object}, bound_vars, stats) do
+    # Score each position
+    s_score = position_score(subject, bound_vars, :subject, stats)
+    p_score = position_score(predicate, bound_vars, :predicate, stats)
+    o_score = position_score(object, bound_vars, :object, stats)
+
+    # Combine scores - multiplicative model
+    # Lower score = more selective
+    s_score * p_score * o_score
+  end
+
+  # Fallback for non-triple patterns
+  def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
+
+  # Score a single position in a triple pattern
+  defp position_score(term, bound_vars, position, stats) do
+    case term do
+      # Bound term (literal or IRI) - very selective
+      {:named_node, uri} ->
+        case position do
+          :predicate -> predicate_selectivity(uri, stats)
+          :subject -> 1.0
+          :object -> 5.0
+        end
+
+      {:literal, _, _} ->
+        # Literals are usually selective, especially in object position
+        2.0
+
+      {:literal, _, _, _} ->
+        # Typed literals
+        2.0
+
+      {:blank_node, _} ->
+        # Blank nodes are specific within a graph
+        3.0
+
+      # Variable - check if already bound
+      {:variable, name} ->
+        if MapSet.member?(bound_vars, name) do
+          # Variable is bound from previous pattern - very selective
+          1.0
+        else
+          # Unbound variable - not selective
+          case position do
+            :subject -> 100.0
+            :predicate -> 50.0
+            :object -> 100.0
+          end
+        end
+
+      # Unknown term type
+      _ ->
+        1000.0
+    end
+  end
+
+  # Get selectivity score for a predicate based on statistics
+  defp predicate_selectivity(predicate_uri, stats) do
+    # Check if we have cardinality info for this predicate
+    case Map.get(stats, {:predicate_count, predicate_uri}) do
+      nil ->
+        # No stats available - use default predicate score
+        10.0
+
+      count when count < 10 ->
+        # Very rare predicate - very selective
+        0.5
+
+      count when count < 100 ->
+        # Uncommon predicate
+        2.0
+
+      count when count < 1000 ->
+        # Moderately common predicate
+        10.0
+
+      count when count < 10000 ->
+        # Common predicate
+        50.0
+
+      _ ->
+        # Very common predicate (like rdf:type)
+        100.0
+    end
+  end
+
+  # Extract variable names from a triple pattern
+  defp pattern_variables({:triple, subject, predicate, object}) do
+    [subject, predicate, object]
+    |> Enum.flat_map(&term_variables/1)
+    |> MapSet.new()
+  end
+
+  defp pattern_variables(_), do: MapSet.new()
+
+  defp term_variables({:variable, name}), do: [name]
+  defp term_variables(_), do: []
 end
