@@ -791,6 +791,186 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # ===========================================================================
+  # Union Execution (Task 2.4.3)
+  # ===========================================================================
+
+  @doc """
+  Executes a UNION between two binding streams.
+
+  UNION in SPARQL concatenates the results of two graph patterns. Results from
+  the left branch appear before results from the right branch (preserving order
+  within each branch).
+
+  Variables that appear in one branch but not the other will be unbound in the
+  bindings from the other branch. This function does NOT add nil values for
+  missing variables - each binding contains only the variables that were
+  actually bound in that branch.
+
+  ## Arguments
+
+  - `left` - Left binding stream (results appear first)
+  - `right` - Right binding stream (results appear second)
+
+  ## Returns
+
+  Stream of bindings from both branches concatenated.
+
+  ## Examples
+
+      # UNION of two patterns with different variables
+      left = [%{"x" => 1, "y" => "a"}]
+      right = [%{"x" => 2, "z" => "b"}]
+      result = Executor.union(left, right) |> Enum.to_list()
+      # => [%{"x" => 1, "y" => "a"}, %{"x" => 2, "z" => "b"}]
+
+  ## SPARQL Semantics
+
+  In SPARQL, `{ P1 } UNION { P2 }` returns all solutions from P1 followed by
+  all solutions from P2. Variables not bound in a particular solution are
+  simply absent from that binding (not set to nil or null).
+
+  """
+  @spec union(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def union(left, right) do
+    Stream.concat(left, right)
+  end
+
+  @doc """
+  Executes a UNION with variable alignment.
+
+  Similar to `union/2`, but ensures all bindings have the same set of variables.
+  Variables that are missing in a binding are set to `:unbound`.
+
+  This is useful when you need to align variables across branches for further
+  processing, such as projection or serialization.
+
+  ## Arguments
+
+  - `left` - Left binding stream
+  - `right` - Right binding stream
+  - `opts` - Options:
+    - `:align_variables` - When true, adds `:unbound` for missing variables
+
+  ## Returns
+
+  Stream of bindings with aligned variables.
+
+  ## Examples
+
+      left = [%{"x" => 1, "y" => "a"}]
+      right = [%{"x" => 2, "z" => "b"}]
+      result = Executor.union_aligned(left, right) |> Enum.to_list()
+      # => [
+      #   %{"x" => 1, "y" => "a", "z" => :unbound},
+      #   %{"x" => 2, "y" => :unbound, "z" => "b"}
+      # ]
+
+  """
+  @spec union_aligned(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def union_aligned(left, right) do
+    # Materialize both sides to discover all variables
+    left_list = Enum.to_list(left)
+    right_list = Enum.to_list(right)
+
+    # Collect all variables from both sides
+    all_vars = collect_all_variables(left_list ++ right_list)
+
+    # Align and concatenate
+    aligned_left = Enum.map(left_list, &align_binding(&1, all_vars))
+    aligned_right = Enum.map(right_list, &align_binding(&1, all_vars))
+
+    Stream.concat(aligned_left, aligned_right)
+  end
+
+  @doc """
+  Executes multiple UNIONs, concatenating all branches.
+
+  Useful for SPARQL patterns with multiple UNION branches:
+  `{ P1 } UNION { P2 } UNION { P3 }`
+
+  ## Arguments
+
+  - `branches` - List of binding streams to concatenate
+
+  ## Returns
+
+  Stream of bindings from all branches concatenated in order.
+
+  ## Examples
+
+      branches = [
+        [%{"x" => 1}],
+        [%{"x" => 2}],
+        [%{"x" => 3}]
+      ]
+      result = Executor.union_all(branches) |> Enum.to_list()
+      # => [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+
+  """
+  @spec union_all([Enumerable.t()]) :: binding_stream()
+  def union_all([]), do: empty_stream()
+  def union_all([single]), do: single
+  def union_all(branches) do
+    Enum.reduce(branches, fn branch, acc ->
+      Stream.concat(acc, branch)
+    end)
+  end
+
+  @doc """
+  Returns the set of all variable names present in a collection of bindings.
+
+  ## Arguments
+
+  - `bindings` - List or stream of binding maps
+
+  ## Returns
+
+  MapSet of variable names (strings).
+
+  ## Examples
+
+      bindings = [%{"x" => 1, "y" => 2}, %{"x" => 3, "z" => 4}]
+      vars = Executor.collect_all_variables(bindings)
+      # => MapSet.new(["x", "y", "z"])
+
+  """
+  @spec collect_all_variables(Enumerable.t()) :: MapSet.t(String.t())
+  def collect_all_variables(bindings) do
+    bindings
+    |> Enum.flat_map(&Map.keys/1)
+    |> MapSet.new()
+  end
+
+  @doc """
+  Aligns a binding to include all specified variables.
+
+  Variables not present in the binding are set to `:unbound`.
+
+  ## Arguments
+
+  - `binding` - The binding map to align
+  - `all_vars` - MapSet of all variable names that should be present
+
+  ## Returns
+
+  Binding map with all variables present.
+
+  ## Examples
+
+      binding = %{"x" => 1}
+      all_vars = MapSet.new(["x", "y", "z"])
+      aligned = Executor.align_binding(binding, all_vars)
+      # => %{"x" => 1, "y" => :unbound, "z" => :unbound}
+
+  """
+  @spec align_binding(binding(), MapSet.t(String.t())) :: binding()
+  def align_binding(binding, all_vars) do
+    Enum.reduce(all_vars, binding, fn var, acc ->
+      Map.put_new(acc, var, :unbound)
+    end)
+  end
+
+  # ===========================================================================
   # Empty Result Handling
   # ===========================================================================
 

@@ -306,13 +306,21 @@ Test coverage: 30 new tests (43 total in executor_test.exs).
 
 ### 2.4.3 Union Execution
 
-- [ ] **Task 2.4.3 Complete**
+- [x] **Task 2.4.3 Complete** (2025-12-23)
 
 Execute UNION as concatenation of result streams.
 
-- [ ] 2.4.3.1 Implement `execute_union(db, left, right)` concatenating streams
-- [ ] 2.4.3.2 Handle variable alignment across branches
-- [ ] 2.4.3.3 Preserve ordering within branches
+- [x] 2.4.3.1 Implement `execute_union(db, left, right)` concatenating streams
+- [x] 2.4.3.2 Handle variable alignment across branches
+- [x] 2.4.3.3 Preserve ordering within branches
+
+Extended `lib/triple_store/sparql/executor.ex` with union execution functions:
+- `union/2` - Basic UNION concatenation with lazy evaluation
+- `union_aligned/2` - UNION with variable alignment (adds `:unbound` for missing vars)
+- `union_all/1` - Multi-branch UNION for `{ P1 } UNION { P2 } UNION { P3 }`
+- `collect_all_variables/1` - Variable discovery helper
+- `align_binding/2` - Binding alignment helper
+Test coverage: 27 new tests (70 total in executor_test.exs).
 
 ### 2.4.4 Filter Execution
 

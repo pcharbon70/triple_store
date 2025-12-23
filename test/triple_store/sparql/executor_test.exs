@@ -731,4 +731,330 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Union Execution Tests (Task 2.4.3)
+  # ===========================================================================
+
+  describe "union/2" do
+    test "concatenates two binding streams" do
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"x" => 3}, %{"x" => 4}]
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}]
+    end
+
+    test "preserves order within branches" do
+      left = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+      right = [%{"y" => "a"}, %{"y" => "b"}]
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      # Left branch comes first, then right branch
+      assert Enum.at(results, 0) == %{"x" => 1}
+      assert Enum.at(results, 1) == %{"x" => 2}
+      assert Enum.at(results, 2) == %{"x" => 3}
+      assert Enum.at(results, 3) == %{"y" => "a"}
+      assert Enum.at(results, 4) == %{"y" => "b"}
+    end
+
+    test "handles different variables in each branch" do
+      left = [%{"x" => 1, "y" => "a"}]
+      right = [%{"x" => 2, "z" => "b"}]
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert length(results) == 2
+      # Each binding retains only its own variables
+      assert Enum.at(results, 0) == %{"x" => 1, "y" => "a"}
+      assert Enum.at(results, 1) == %{"x" => 2, "z" => "b"}
+    end
+
+    test "handles empty left branch" do
+      left = []
+      right = [%{"x" => 1}]
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}]
+    end
+
+    test "handles empty right branch" do
+      left = [%{"x" => 1}]
+      right = []
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}]
+    end
+
+    test "handles both branches empty" do
+      results = Executor.union([], []) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "works with streams" do
+      left = Stream.map([1, 2], fn x -> %{"x" => x} end)
+      right = Stream.map([3, 4], fn x -> %{"x" => x} end)
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}, %{"x" => 4}]
+    end
+
+    test "handles RDF term values" do
+      left = [%{"s" => {:named_node, "http://ex.org/A"}, "name" => {:literal, :simple, "Alice"}}]
+      right = [%{"s" => {:named_node, "http://ex.org/B"}, "name" => {:literal, :simple, "Bob"}}]
+
+      results = Executor.union(left, right) |> Enum.to_list()
+
+      assert length(results) == 2
+      assert Enum.at(results, 0)["name"] == {:literal, :simple, "Alice"}
+      assert Enum.at(results, 1)["name"] == {:literal, :simple, "Bob"}
+    end
+  end
+
+  describe "union_aligned/2" do
+    test "aligns variables across branches" do
+      left = [%{"x" => 1, "y" => "a"}]
+      right = [%{"x" => 2, "z" => "b"}]
+
+      results = Executor.union_aligned(left, right) |> Enum.to_list()
+
+      assert length(results) == 2
+
+      # First binding should have z as :unbound
+      first = Enum.at(results, 0)
+      assert first["x"] == 1
+      assert first["y"] == "a"
+      assert first["z"] == :unbound
+
+      # Second binding should have y as :unbound
+      second = Enum.at(results, 1)
+      assert second["x"] == 2
+      assert second["y"] == :unbound
+      assert second["z"] == "b"
+    end
+
+    test "handles completely different variables" do
+      left = [%{"a" => 1}]
+      right = [%{"b" => 2}]
+
+      results = Executor.union_aligned(left, right) |> Enum.to_list()
+
+      assert Enum.at(results, 0) == %{"a" => 1, "b" => :unbound}
+      assert Enum.at(results, 1) == %{"a" => :unbound, "b" => 2}
+    end
+
+    test "handles identical variables" do
+      left = [%{"x" => 1}]
+      right = [%{"x" => 2}]
+
+      results = Executor.union_aligned(left, right) |> Enum.to_list()
+
+      # No alignment needed - same variables
+      assert results == [%{"x" => 1}, %{"x" => 2}]
+    end
+
+    test "handles empty branches" do
+      left = [%{"x" => 1}]
+      right = []
+
+      results = Executor.union_aligned(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}]
+    end
+
+    test "preserves order within branches" do
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"y" => "a"}, %{"y" => "b"}]
+
+      results = Executor.union_aligned(left, right) |> Enum.to_list()
+
+      assert length(results) == 4
+      # Left results come first
+      assert Enum.at(results, 0)["x"] == 1
+      assert Enum.at(results, 1)["x"] == 2
+      # Right results come second
+      assert Enum.at(results, 2)["y"] == "a"
+      assert Enum.at(results, 3)["y"] == "b"
+    end
+  end
+
+  describe "union_all/1" do
+    test "concatenates multiple branches" do
+      branches = [
+        [%{"x" => 1}],
+        [%{"x" => 2}],
+        [%{"x" => 3}]
+      ]
+
+      results = Executor.union_all(branches) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+    end
+
+    test "handles empty list" do
+      results = Executor.union_all([]) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles single branch" do
+      branches = [[%{"x" => 1}, %{"x" => 2}]]
+
+      results = Executor.union_all(branches) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}, %{"x" => 2}]
+    end
+
+    test "preserves order across all branches" do
+      branches = [
+        [%{"x" => 1}, %{"x" => 2}],
+        [%{"x" => 3}],
+        [%{"x" => 4}, %{"x" => 5}, %{"x" => 6}]
+      ]
+
+      results = Executor.union_all(branches) |> Enum.to_list()
+
+      assert results == [
+        %{"x" => 1}, %{"x" => 2},
+        %{"x" => 3},
+        %{"x" => 4}, %{"x" => 5}, %{"x" => 6}
+      ]
+    end
+
+    test "handles branches with different variables" do
+      branches = [
+        [%{"x" => 1}],
+        [%{"y" => 2}],
+        [%{"z" => 3}]
+      ]
+
+      results = Executor.union_all(branches) |> Enum.to_list()
+
+      assert length(results) == 3
+      assert Enum.at(results, 0) == %{"x" => 1}
+      assert Enum.at(results, 1) == %{"y" => 2}
+      assert Enum.at(results, 2) == %{"z" => 3}
+    end
+  end
+
+  describe "collect_all_variables/1" do
+    test "collects variables from multiple bindings" do
+      bindings = [
+        %{"x" => 1, "y" => 2},
+        %{"x" => 3, "z" => 4}
+      ]
+
+      vars = Executor.collect_all_variables(bindings)
+
+      assert MapSet.equal?(vars, MapSet.new(["x", "y", "z"]))
+    end
+
+    test "handles empty bindings list" do
+      vars = Executor.collect_all_variables([])
+
+      assert MapSet.equal?(vars, MapSet.new())
+    end
+
+    test "handles single binding" do
+      vars = Executor.collect_all_variables([%{"x" => 1, "y" => 2}])
+
+      assert MapSet.equal?(vars, MapSet.new(["x", "y"]))
+    end
+
+    test "handles empty binding maps" do
+      vars = Executor.collect_all_variables([%{}, %{"x" => 1}])
+
+      assert MapSet.equal?(vars, MapSet.new(["x"]))
+    end
+  end
+
+  describe "align_binding/2" do
+    test "adds missing variables as :unbound" do
+      binding = %{"x" => 1}
+      all_vars = MapSet.new(["x", "y", "z"])
+
+      aligned = Executor.align_binding(binding, all_vars)
+
+      assert aligned == %{"x" => 1, "y" => :unbound, "z" => :unbound}
+    end
+
+    test "preserves existing values" do
+      binding = %{"x" => 1, "y" => 2}
+      all_vars = MapSet.new(["x", "y"])
+
+      aligned = Executor.align_binding(binding, all_vars)
+
+      assert aligned == %{"x" => 1, "y" => 2}
+    end
+
+    test "handles empty binding" do
+      binding = %{}
+      all_vars = MapSet.new(["x", "y"])
+
+      aligned = Executor.align_binding(binding, all_vars)
+
+      assert aligned == %{"x" => :unbound, "y" => :unbound}
+    end
+
+    test "handles empty variable set" do
+      binding = %{"x" => 1}
+      all_vars = MapSet.new()
+
+      aligned = Executor.align_binding(binding, all_vars)
+
+      assert aligned == %{"x" => 1}
+    end
+  end
+
+  describe "union integration with BGP execution" do
+    test "union of two BGP results", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add test data for two different types of relationships
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/knows"),
+        iri("http://example.org/Bob")
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Carol"),
+        iri("http://example.org/likes"),
+        iri("http://example.org/Dave")
+      })
+
+      # Execute first BGP: ?s :knows ?o
+      {:ok, knows_stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/knows"), var("o"))
+      ])
+
+      # Execute second BGP: ?s :likes ?o
+      {:ok, likes_stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/likes"), var("o"))
+      ])
+
+      # UNION of both
+      results = Executor.union(knows_stream, likes_stream) |> Enum.to_list()
+
+      assert length(results) == 2
+
+      # First result from :knows
+      first = Enum.at(results, 0)
+      assert first["s"] == {:named_node, "http://example.org/Alice"}
+      assert first["o"] == {:named_node, "http://example.org/Bob"}
+
+      # Second result from :likes
+      second = Enum.at(results, 1)
+      assert second["s"] == {:named_node, "http://example.org/Carol"}
+      assert second["o"] == {:named_node, "http://example.org/Dave"}
+
+      cleanup({db, manager})
+    end
+  end
 end
