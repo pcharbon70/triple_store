@@ -105,6 +105,25 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @doc """
+  Gets the database reference from the manager.
+
+  This is useful when you need to perform read-only dictionary lookups
+  using the same database the manager was initialized with.
+
+  ## Arguments
+
+  - `manager` - Manager process reference
+
+  ## Returns
+
+  - `{:ok, db}` - Database reference
+  """
+  @spec get_db(manager()) :: {:ok, reference()}
+  def get_db(manager) do
+    GenServer.call(manager, :get_db)
+  end
+
+  @doc """
   Stops the manager, flushing the sequence counter.
   """
   @spec stop(manager()) :: :ok
@@ -158,6 +177,11 @@ defmodule TripleStore.Dictionary.Manager do
     )
 
     {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call(:get_db, _from, state) do
+    {:reply, {:ok, state.db}, state}
   end
 
   @impl true

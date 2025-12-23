@@ -271,15 +271,19 @@ This section implements the query executor using iterator-based lazy evaluation.
 
 ### 2.4.1 BGP Execution
 
-- [ ] **Task 2.4.1 Complete**
+- [x] **Task 2.4.1 Complete** (2025-12-23)
 
 Execute Basic Graph Patterns using index nested loop join.
 
-- [ ] 2.4.1.1 Implement `execute_bgp(db, patterns)` returning `Stream.t(bindings)`
-- [ ] 2.4.1.2 Order patterns by selectivity before execution
-- [ ] 2.4.1.3 Implement variable substitution for bound variables
-- [ ] 2.4.1.4 Implement binding extension for matched variables
-- [ ] 2.4.1.5 Handle empty pattern (returns single empty binding)
+- [x] 2.4.1.1 Implement `execute_bgp(db, patterns)` returning `Stream.t(bindings)`
+- [x] 2.4.1.2 Order patterns by selectivity before execution
+- [x] 2.4.1.3 Implement variable substitution for bound variables
+- [x] 2.4.1.4 Implement binding extension for matched variables
+- [x] 2.4.1.5 Handle empty pattern (returns single empty binding)
+
+Created `lib/triple_store/sparql/executor.ex` with BGP execution using nested loop join.
+Integrates with Index layer for triple lookup and Dictionary for term encoding/decoding.
+Test coverage: 13 tests in executor_test.exs.
 
 ### 2.4.2 Join Execution
 
