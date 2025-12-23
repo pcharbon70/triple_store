@@ -131,6 +131,8 @@ defmodule TripleStore.Section11Test do
       ]
 
       for module <- modules do
+        # Ensure the module is loaded before checking function exports
+        Code.ensure_loaded!(module)
         # Each module should have __info__ which indicates proper compilation
         assert function_exported?(module, :__info__, 1),
                "Module #{inspect(module)} should export __info__/1"
