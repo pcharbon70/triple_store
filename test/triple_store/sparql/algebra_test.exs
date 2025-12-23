@@ -887,4 +887,358 @@ defmodule TripleStore.SPARQL.AlgebraTest do
       assert :extend in types
     end
   end
+
+  # ===========================================================================
+  # AST Compilation (Task 2.2.2)
+  # ===========================================================================
+
+  describe "from_ast/1" do
+    test "compiles SELECT query" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, compiled} = Algebra.from_ast(ast)
+
+      assert compiled.type == :select
+      assert Algebra.node_type(compiled.pattern) == :project
+      assert is_nil(compiled.dataset)
+      assert is_nil(compiled.base_iri)
+      assert is_nil(compiled.template)
+    end
+
+    test "compiles CONSTRUCT query" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse(
+          "CONSTRUCT { ?s <http://new> ?o } WHERE { ?s <http://old> ?o }"
+        )
+
+      {:ok, compiled} = Algebra.from_ast(ast)
+
+      assert compiled.type == :construct
+      assert Algebra.node_type(compiled.pattern) == :bgp
+      assert is_list(compiled.template)
+      assert length(compiled.template) == 1
+    end
+
+    test "compiles ASK query" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("ASK WHERE { ?s ?p ?o }")
+      {:ok, compiled} = Algebra.from_ast(ast)
+
+      assert compiled.type == :ask
+      assert Algebra.node_type(compiled.pattern) == :bgp
+    end
+
+    test "compiles DESCRIBE query" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("DESCRIBE ?s WHERE { ?s ?p ?o }")
+      {:ok, compiled} = Algebra.from_ast(ast)
+
+      assert compiled.type == :describe
+      assert Algebra.node_type(compiled.pattern) == :project
+    end
+
+    test "compiles complex SELECT with modifiers" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT DISTINCT ?s ?name WHERE {
+          ?s <http://example.org/name> ?name .
+          OPTIONAL { ?s <http://example.org/age> ?age }
+          FILTER(?name != "test")
+        }
+        ORDER BY ?name
+        LIMIT 10
+        OFFSET 5
+        """)
+
+      {:ok, compiled} = Algebra.from_ast(ast)
+
+      assert compiled.type == :select
+      # Outermost should be slice (for OFFSET/LIMIT)
+      assert Algebra.node_type(compiled.pattern) == :slice
+    end
+
+    test "returns error for invalid AST" do
+      assert {:error, msg} = Algebra.from_ast({:invalid, []})
+      assert msg =~ "Invalid AST"
+    end
+
+    test "returns error for non-tuple" do
+      assert {:error, _} = Algebra.from_ast("not an ast")
+    end
+  end
+
+  describe "from_ast!/1" do
+    test "returns compiled query for valid AST" do
+      ast = TripleStore.SPARQL.Parser.parse!("SELECT ?s WHERE { ?s ?p ?o }")
+      compiled = Algebra.from_ast!(ast)
+
+      assert compiled.type == :select
+    end
+
+    test "raises for invalid AST" do
+      assert_raise ArgumentError, ~r/AST compilation failed/, fn ->
+        Algebra.from_ast!({:invalid, []})
+      end
+    end
+  end
+
+  describe "extract_pattern/1" do
+    test "extracts pattern from raw AST" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.node_type(pattern) == :project
+    end
+
+    test "extracts pattern from compiled query" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, compiled} = Algebra.from_ast(ast)
+      {:ok, pattern} = Algebra.extract_pattern(compiled)
+
+      assert Algebra.node_type(pattern) == :project
+    end
+
+    test "returns error for invalid structure" do
+      assert {:error, _} = Algebra.extract_pattern("not valid")
+    end
+  end
+
+  describe "result_variables/1" do
+    test "returns projected variables for SELECT" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s ?name WHERE { ?s ?p ?name }")
+      vars = Algebra.result_variables(ast)
+
+      assert vars == [{:variable, "s"}, {:variable, "name"}]
+    end
+
+    test "returns all variables for SELECT *" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT * WHERE { ?s ?p ?o }")
+      vars = Algebra.result_variables(ast)
+
+      # Parser expands SELECT * to all in-scope variables
+      assert length(vars) == 3
+      assert {:variable, "s"} in vars
+      assert {:variable, "p"} in vars
+      assert {:variable, "o"} in vars
+    end
+
+    test "handles DISTINCT modifier" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT DISTINCT ?s WHERE { ?s ?p ?o }")
+      vars = Algebra.result_variables(ast)
+
+      assert vars == [{:variable, "s"}]
+    end
+
+    test "handles ORDER BY and LIMIT" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o } ORDER BY ?s LIMIT 10")
+
+      vars = Algebra.result_variables(ast)
+
+      assert vars == [{:variable, "s"}]
+    end
+
+    test "returns empty list for non-SELECT queries" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("ASK WHERE { ?s ?p ?o }")
+      assert Algebra.result_variables(ast) == []
+    end
+
+    test "works with compiled query" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s ?p WHERE { ?s ?p ?o }")
+      {:ok, compiled} = Algebra.from_ast(ast)
+      vars = Algebra.result_variables(compiled)
+
+      assert vars == [{:variable, "s"}, {:variable, "p"}]
+    end
+  end
+
+  describe "collect_bgps/1" do
+    test "collects single BGP" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      bgps = Algebra.collect_bgps(pattern)
+
+      assert length(bgps) == 1
+      assert [{:bgp, triples}] = bgps
+      assert length(triples) == 1
+    end
+
+    test "collects multiple BGPs from OPTIONAL" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT ?s WHERE {
+          ?s <http://a> ?o .
+          OPTIONAL { ?s <http://b> ?o2 }
+        }
+        """)
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      bgps = Algebra.collect_bgps(pattern)
+
+      assert length(bgps) == 2
+    end
+
+    test "collects multiple BGPs from UNION" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT ?s WHERE {
+          { ?s <http://a> ?o }
+          UNION
+          { ?s <http://b> ?o }
+        }
+        """)
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      bgps = Algebra.collect_bgps(pattern)
+
+      assert length(bgps) == 2
+    end
+  end
+
+  describe "triple_count/1" do
+    test "counts single triple" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.triple_count(pattern) == 1
+    end
+
+    test "counts multiple triples in BGP" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT ?s WHERE {
+          ?s <http://a> ?o1 .
+          ?s <http://b> ?o2 .
+          ?s <http://c> ?o3
+        }
+        """)
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.triple_count(pattern) == 3
+    end
+
+    test "counts triples across OPTIONAL" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT ?s WHERE {
+          ?s <http://a> ?o .
+          OPTIONAL { ?s <http://b> ?o2 }
+        }
+        """)
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.triple_count(pattern) == 2
+    end
+  end
+
+  describe "has_optional?/1" do
+    test "returns true when OPTIONAL present" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o OPTIONAL { ?s ?p2 ?o2 } }")
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.has_optional?(pattern)
+    end
+
+    test "returns false when no OPTIONAL" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      refute Algebra.has_optional?(pattern)
+    end
+  end
+
+  describe "has_union?/1" do
+    test "returns true when UNION present" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { { ?s ?p ?o } UNION { ?s ?p2 ?o2 } }")
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.has_union?(pattern)
+    end
+
+    test "returns false when no UNION" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      refute Algebra.has_union?(pattern)
+    end
+  end
+
+  describe "has_filter?/1" do
+    test "returns true when FILTER present" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o FILTER(?o > 10) }")
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.has_filter?(pattern)
+    end
+
+    test "returns false when no FILTER" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      refute Algebra.has_filter?(pattern)
+    end
+  end
+
+  describe "has_aggregation?/1" do
+    test "returns true when GROUP BY present" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse(
+          "SELECT ?s (COUNT(?o) AS ?cnt) WHERE { ?s ?p ?o } GROUP BY ?s"
+        )
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      assert Algebra.has_aggregation?(pattern)
+    end
+
+    test "returns false when no GROUP BY" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      refute Algebra.has_aggregation?(pattern)
+    end
+  end
+
+  describe "collect_filters/1" do
+    test "collects single filter" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o FILTER(?o > 10) }")
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      filters = Algebra.collect_filters(pattern)
+
+      assert length(filters) == 1
+    end
+
+    test "collects combined filter (parser combines multiple FILTERs with AND)" do
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse("""
+        SELECT ?s WHERE {
+          ?s ?p ?o
+          FILTER(?o > 10)
+          FILTER(?s != ?o)
+        }
+        """)
+
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      filters = Algebra.collect_filters(pattern)
+
+      # Parser combines multiple FILTERs into a single AND expression
+      assert length(filters) == 1
+      [{:and, _, _}] = filters
+    end
+
+    test "returns empty list when no filters" do
+      {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+      filters = Algebra.collect_filters(pattern)
+
+      assert filters == []
+    end
+  end
 end

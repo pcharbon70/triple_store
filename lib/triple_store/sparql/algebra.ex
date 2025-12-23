@@ -125,6 +125,325 @@ defmodule TripleStore.SPARQL.Algebra do
           | {:zero_or_one, property_path()}
           | {:negated_property_set, [String.t()]}
 
+  @typedoc """
+  A compiled query with query type, algebra pattern, and metadata.
+  """
+  @type compiled_query :: %{
+          type: :select | :construct | :ask | :describe,
+          pattern: t(),
+          dataset: term() | nil,
+          base_iri: String.t() | nil,
+          template: [triple()] | nil
+        }
+
+  # ===========================================================================
+  # AST Compilation
+  # ===========================================================================
+
+  @doc """
+  Compiles a parsed AST into a compiled query structure.
+
+  The parser already produces algebra nodes, so this function primarily
+  extracts and normalizes the query structure, validates the algebra,
+  and returns a structured result.
+
+  ## Arguments
+  - `ast` - The parsed AST from `Parser.parse/1` or `Parser.parse!/1`
+
+  ## Returns
+  - `{:ok, compiled_query}` on success
+  - `{:error, reason}` on validation failure
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      iex> {:ok, compiled} = TripleStore.SPARQL.Algebra.from_ast(ast)
+      iex> compiled.type
+      :select
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("ASK WHERE { ?s ?p ?o }")
+      iex> {:ok, compiled} = TripleStore.SPARQL.Algebra.from_ast(ast)
+      iex> compiled.type
+      :ask
+
+  """
+  @spec from_ast(tuple()) :: {:ok, compiled_query()} | {:error, String.t()}
+  def from_ast({:select, props}) when is_list(props) do
+    compile_query(:select, props)
+  end
+
+  def from_ast({:construct, props}) when is_list(props) do
+    compile_query(:construct, props)
+  end
+
+  def from_ast({:ask, props}) when is_list(props) do
+    compile_query(:ask, props)
+  end
+
+  def from_ast({:describe, props}) when is_list(props) do
+    compile_query(:describe, props)
+  end
+
+  def from_ast(ast) do
+    {:error, "Invalid AST: expected {:select|:construct|:ask|:describe, props}, got: #{inspect(ast)}"}
+  end
+
+  @doc """
+  Compiles a parsed AST into a compiled query, raising on error.
+
+  ## Examples
+
+      iex> ast = TripleStore.SPARQL.Parser.parse!("SELECT ?s WHERE { ?s ?p ?o }")
+      iex> compiled = TripleStore.SPARQL.Algebra.from_ast!(ast)
+      iex> compiled.type
+      :select
+
+  """
+  @spec from_ast!(tuple()) :: compiled_query()
+  def from_ast!(ast) do
+    case from_ast(ast) do
+      {:ok, compiled} -> compiled
+      {:error, reason} -> raise ArgumentError, "AST compilation failed: #{reason}"
+    end
+  end
+
+  # Compiles a query from its properties
+  defp compile_query(type, props) do
+    pattern = get_prop(props, "pattern")
+    dataset = get_prop(props, "dataset")
+    base_iri = get_prop(props, "base_iri")
+    template = get_prop(props, "template")
+
+    if is_nil(pattern) do
+      {:error, "Missing pattern in #{type} query"}
+    else
+      case validate(pattern) do
+        :ok ->
+          {:ok,
+           %{
+             type: type,
+             pattern: pattern,
+             dataset: dataset,
+             base_iri: base_iri,
+             template: template
+           }}
+
+        {:error, reason} ->
+          {:error, "Invalid algebra pattern: #{reason}"}
+      end
+    end
+  end
+
+  defp get_prop(props, key) do
+    Enum.find_value(props, fn
+      {^key, value} -> value
+      _ -> nil
+    end)
+  end
+
+  @doc """
+  Extracts the algebra pattern from a compiled query or raw AST.
+
+  This is a convenience function for getting just the pattern without
+  the full compiled query structure.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> Algebra.node_type(pattern)
+      :project
+
+  """
+  @spec extract_pattern(tuple() | compiled_query()) :: {:ok, t()} | {:error, String.t()}
+  def extract_pattern(%{pattern: pattern}), do: {:ok, pattern}
+
+  def extract_pattern({type, props}) when type in [:select, :construct, :ask, :describe] do
+    case get_prop(props, "pattern") do
+      nil -> {:error, "No pattern found in query"}
+      pattern -> {:ok, pattern}
+    end
+  end
+
+  def extract_pattern(_), do: {:error, "Invalid query structure"}
+
+  @doc """
+  Extracts variables that will appear in the result of a SELECT query.
+
+  For SELECT queries, this returns the projected variables.
+  For other query types, returns an empty list.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s ?name WHERE { ?s ?p ?name }")
+      iex> TripleStore.SPARQL.Algebra.result_variables(ast)
+      [{:variable, "s"}, {:variable, "name"}]
+
+  """
+  @spec result_variables(tuple() | compiled_query()) :: [rdf_term()]
+  def result_variables(%{type: :select, pattern: pattern}) do
+    extract_projection_vars(pattern)
+  end
+
+  def result_variables({:select, props}) do
+    case get_prop(props, "pattern") do
+      nil -> []
+      pattern -> extract_projection_vars(pattern)
+    end
+  end
+
+  def result_variables(_), do: []
+
+  # Extracts projection variables from the outermost project/distinct/reduced/slice node
+  defp extract_projection_vars({:project, _inner, vars}) do
+    Enum.map(vars, fn {:variable, name} -> {:variable, name} end)
+  end
+
+  defp extract_projection_vars({:distinct, inner}), do: extract_projection_vars(inner)
+  defp extract_projection_vars({:reduced, inner}), do: extract_projection_vars(inner)
+  defp extract_projection_vars({:slice, inner, _, _}), do: extract_projection_vars(inner)
+  defp extract_projection_vars({:order_by, inner, _}), do: extract_projection_vars(inner)
+  defp extract_projection_vars(_), do: []
+
+  @doc """
+  Returns the innermost BGP patterns from an algebra tree.
+
+  Useful for analyzing query selectivity or extracting triple patterns
+  for index selection.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s <http://a> ?o OPTIONAL { ?s <http://b> ?o2 } }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> bgps = TripleStore.SPARQL.Algebra.collect_bgps(pattern)
+      iex> length(bgps)
+      2
+
+  """
+  @spec collect_bgps(t()) :: [t()]
+  def collect_bgps(pattern) do
+    fold(pattern, [], fn
+      {:bgp, _} = bgp, acc -> [bgp | acc]
+      _, acc -> acc
+    end)
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Counts the total number of triple patterns in an algebra tree.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s <http://a> ?o . ?s <http://b> ?o2 }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> TripleStore.SPARQL.Algebra.triple_count(pattern)
+      2
+
+  """
+  @spec triple_count(t()) :: non_neg_integer()
+  def triple_count(pattern) do
+    pattern
+    |> collect_bgps()
+    |> Enum.reduce(0, fn {:bgp, triples}, acc -> acc + length(triples) end)
+  end
+
+  @doc """
+  Checks if an algebra tree contains any OPTIONAL (left join) patterns.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o OPTIONAL { ?s ?p2 ?o2 } }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> TripleStore.SPARQL.Algebra.has_optional?(pattern)
+      true
+
+  """
+  @spec has_optional?(t()) :: boolean()
+  def has_optional?(pattern) do
+    fold(pattern, false, fn
+      {:left_join, _, _, _}, _acc -> true
+      _, acc -> acc
+    end)
+  end
+
+  @doc """
+  Checks if an algebra tree contains any UNION patterns.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { { ?s ?p ?o } UNION { ?s ?p2 ?o2 } }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> TripleStore.SPARQL.Algebra.has_union?(pattern)
+      true
+
+  """
+  @spec has_union?(t()) :: boolean()
+  def has_union?(pattern) do
+    fold(pattern, false, fn
+      {:union, _, _}, _acc -> true
+      _, acc -> acc
+    end)
+  end
+
+  @doc """
+  Checks if an algebra tree contains any FILTER expressions.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o FILTER(?o > 10) }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> TripleStore.SPARQL.Algebra.has_filter?(pattern)
+      true
+
+  """
+  @spec has_filter?(t()) :: boolean()
+  def has_filter?(pattern) do
+    fold(pattern, false, fn
+      {:filter, _, _}, _acc -> true
+      _, acc -> acc
+    end)
+  end
+
+  @doc """
+  Checks if an algebra tree contains aggregation (GROUP BY).
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s (COUNT(?o) AS ?cnt) WHERE { ?s ?p ?o } GROUP BY ?s")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> TripleStore.SPARQL.Algebra.has_aggregation?(pattern)
+      true
+
+  """
+  @spec has_aggregation?(t()) :: boolean()
+  def has_aggregation?(pattern) do
+    fold(pattern, false, fn
+      {:group, _, _, _}, _acc -> true
+      _, acc -> acc
+    end)
+  end
+
+  @doc """
+  Extracts all FILTER expressions from an algebra tree.
+
+  ## Examples
+
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.parse("SELECT ?s WHERE { ?s ?p ?o FILTER(?o > 10) FILTER(?s != ?o) }")
+      iex> {:ok, pattern} = TripleStore.SPARQL.Algebra.extract_pattern(ast)
+      iex> filters = TripleStore.SPARQL.Algebra.collect_filters(pattern)
+      iex> length(filters)
+      2
+
+  """
+  @spec collect_filters(t()) :: [expression()]
+  def collect_filters(pattern) do
+    fold(pattern, [], fn
+      {:filter, expr, _}, acc -> [expr | acc]
+      _, acc -> acc
+    end)
+    |> Enum.reverse()
+  end
+
   # ===========================================================================
   # Node Types - Basic Patterns
   # ===========================================================================

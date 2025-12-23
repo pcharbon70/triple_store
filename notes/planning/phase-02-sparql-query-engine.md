@@ -121,15 +121,23 @@ Test coverage: 72 tests in algebra_test.exs
 
 ### 2.2.2 AST to Algebra Compilation
 
-- [ ] **Task 2.2.2 Complete**
+- [x] **Task 2.2.2 Complete** (2025-12-23)
 
 Implement the compiler transforming parsed AST to algebra trees.
 
-- [ ] 2.2.2.1 Implement `Algebra.from_ast(ast)` main entry point
-- [ ] 2.2.2.2 Implement WHERE clause compilation to BGP/join tree
-- [ ] 2.2.2.3 Implement solution modifier wrapping (ORDER, LIMIT, OFFSET)
-- [ ] 2.2.2.4 Implement projection for SELECT variables
-- [ ] 2.2.2.5 Handle SELECT * expansion to all in-scope variables
+- [x] 2.2.2.1 Implement `Algebra.from_ast(ast)` main entry point
+- [x] 2.2.2.2 Implement WHERE clause compilation to BGP/join tree (handled by parser)
+- [x] 2.2.2.3 Implement solution modifier wrapping (ORDER, LIMIT, OFFSET) (handled by parser)
+- [x] 2.2.2.4 Implement projection for SELECT variables (handled by parser)
+- [x] 2.2.2.5 Handle SELECT * expansion to all in-scope variables (handled by parser)
+
+Note: The spargebra parser already produces algebra-like nodes, so compilation
+focuses on normalization, validation, and analysis functions. Added helper
+functions: `extract_pattern/1`, `result_variables/1`, `collect_bgps/1`,
+`triple_count/1`, `has_optional?/1`, `has_union?/1`, `has_filter?/1`,
+`has_aggregation?/1`, `collect_filters/1`.
+
+Test coverage: 107 tests in algebra_test.exs (35 new for 2.2.2)
 
 ### 2.2.3 Expression Compilation
 
