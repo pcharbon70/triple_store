@@ -6,6 +6,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
   alias TripleStore.SPARQL.Parser
 
   @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
+  @xsd_boolean "http://www.w3.org/2001/XMLSchema#boolean"
+  @xsd_decimal "http://www.w3.org/2001/XMLSchema#decimal"
 
   # Helper to create common patterns
   defp var(name), do: {:variable, name}
@@ -21,8 +23,18 @@ defmodule TripleStore.SPARQL.OptimizerTest do
   defp union(left, right), do: {:union, left, right}
 
   defp greater(left, right), do: {:greater, left, right}
+  defp less(left, right), do: {:less, left, right}
   defp equal(left, right), do: {:equal, left, right}
   defp and_expr(left, right), do: {:and, left, right}
+  defp or_expr(left, right), do: {:or, left, right}
+  defp not_expr(arg), do: {:not, arg}
+  defp add(left, right), do: {:add, left, right}
+  defp subtract(left, right), do: {:subtract, left, right}
+  defp multiply(left, right), do: {:multiply, left, right}
+  defp divide(left, right), do: {:divide, left, right}
+
+  defp bool(true), do: {:literal, :typed, "true", @xsd_boolean}
+  defp bool(false), do: {:literal, :typed, "false", @xsd_boolean}
 
   describe "push_filters_down/1" do
     test "filter on single BGP stays in place" do
@@ -419,4 +431,487 @@ defmodule TripleStore.SPARQL.OptimizerTest do
   defp unwrap_modifiers({:order_by, inner, _}), do: unwrap_modifiers(inner)
   defp unwrap_modifiers({:slice, inner, _, _}), do: unwrap_modifiers(inner)
   defp unwrap_modifiers(pattern), do: pattern
+
+  # ===========================================================================
+  # Constant Folding Tests
+  # ===========================================================================
+
+  describe "fold_constants/1 - arithmetic" do
+    test "folds constant addition" do
+      # 1 + 2 => 3
+      expr = add(int(1), int(2))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      # Should fold to 3
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "3", @xsd_integer}} = result
+    end
+
+    test "folds nested arithmetic" do
+      # (1 + 2) * 3 => 9
+      inner = add(int(1), int(2))
+      expr = multiply(inner, int(3))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      # Should fold to 9
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "9", @xsd_integer}} = result
+    end
+
+    test "folds subtraction" do
+      expr = subtract(int(10), int(3))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "7", @xsd_integer}} = result
+    end
+
+    test "folds division" do
+      expr = divide(int(10), int(2))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      # Division produces decimal
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "5.0", @xsd_decimal}} = result
+    end
+
+    test "preserves arithmetic with variables" do
+      # ?x + 2 cannot be folded
+      expr = add(var("x"), int(2))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:add, {:variable, "x"}, {:literal, :typed, "2", @xsd_integer}}} = result
+    end
+
+    test "folds unary minus on constant" do
+      expr = {:unary_minus, int(5)}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "-5", @xsd_integer}} = result
+    end
+  end
+
+  describe "fold_constants/1 - comparisons" do
+    test "folds constant greater-than to true" do
+      # 5 > 3 => true
+      expr = greater(int(5), int(3))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # Always-true filter is removed
+      assert result == pattern
+    end
+
+    test "folds constant greater-than to false" do
+      # 3 > 5 => false
+      expr = greater(int(3), int(5))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # Always-false filter produces empty result
+      assert result == {:bgp, []}
+    end
+
+    test "folds constant equality to true" do
+      # 5 = 5 => true
+      expr = equal(int(5), int(5))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      assert result == pattern
+    end
+
+    test "folds constant equality to false" do
+      # 5 = 6 => false
+      expr = equal(int(5), int(6))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      assert result == {:bgp, []}
+    end
+
+    test "folds constant less-than" do
+      # 3 < 5 => true
+      expr = less(int(3), int(5))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      assert result == pattern
+    end
+
+    test "preserves comparison with variables" do
+      # ?x > 5 cannot be folded
+      expr = greater(var("x"), int(5))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      assert result == filter(expr, pattern)
+    end
+  end
+
+  describe "fold_constants/1 - logical expressions" do
+    test "folds true AND true" do
+      expr = and_expr(bool(true), bool(true))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # true && true => true, filter removed
+      assert result == pattern
+    end
+
+    test "folds true AND false" do
+      expr = and_expr(bool(true), bool(false))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # true && false => false, empty result
+      assert result == {:bgp, []}
+    end
+
+    test "short-circuits false AND anything" do
+      # false && ?x should become false without evaluating ?x
+      expr = and_expr(bool(false), greater(var("x"), int(5)))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # Short-circuit: false && anything => false
+      assert result == {:bgp, []}
+    end
+
+    test "simplifies true AND variable expression" do
+      # true && (?x > 5) => ?x > 5
+      expr = and_expr(bool(true), greater(var("x"), int(5)))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      expected = filter(greater(var("x"), int(5)), pattern)
+      assert result == expected
+    end
+
+    test "folds true OR false" do
+      expr = or_expr(bool(true), bool(false))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # true || false => true, filter removed
+      assert result == pattern
+    end
+
+    test "short-circuits true OR anything" do
+      # true || ?x should become true without evaluating ?x
+      expr = or_expr(bool(true), greater(var("x"), int(5)))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # Short-circuit: true || anything => true
+      assert result == pattern
+    end
+
+    test "simplifies false OR variable expression" do
+      # false || (?x > 5) => ?x > 5
+      expr = or_expr(bool(false), greater(var("x"), int(5)))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      expected = filter(greater(var("x"), int(5)), pattern)
+      assert result == expected
+    end
+
+    test "folds NOT true" do
+      expr = not_expr(bool(true))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # !true => false, empty result
+      assert result == {:bgp, []}
+    end
+
+    test "folds NOT false" do
+      expr = not_expr(bool(false))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      # !false => true, filter removed
+      assert result == pattern
+    end
+
+    test "eliminates double negation" do
+      # NOT(NOT(?x > 5)) => ?x > 5
+      inner = greater(var("x"), int(5))
+      expr = not_expr(not_expr(inner))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(filter(expr, pattern))
+
+      expected = filter(inner, pattern)
+      assert result == expected
+    end
+  end
+
+  describe "fold_constants/1 - conditional expressions" do
+    test "folds IF with constant true condition" do
+      # IF(true, 1, 2) => 1
+      expr = {:if_expr, bool(true), int(1), int(2)}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "1", @xsd_integer}} = result
+    end
+
+    test "folds IF with constant false condition" do
+      # IF(false, 1, 2) => 2
+      expr = {:if_expr, bool(false), int(1), int(2)}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "2", @xsd_integer}} = result
+    end
+
+    test "preserves IF with variable condition" do
+      # IF(?x > 5, 1, 2) cannot be fully folded
+      cond_expr = greater(var("x"), int(5))
+      expr = {:if_expr, cond_expr, int(1), int(2)}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:if_expr, _, _, _}} = result
+    end
+
+    test "folds COALESCE with first constant value" do
+      # COALESCE(1, 2, 3) => 1
+      expr = {:coalesce, [int(1), int(2), int(3)]}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "1", @xsd_integer}} = result
+    end
+
+    test "preserves COALESCE with only variables" do
+      # COALESCE(?x, ?y) cannot be fully folded
+      expr = {:coalesce, [var("x"), var("y")]}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("z"), expr})
+
+      # Should remain as coalesce since all args are variables
+      assert {:extend, ^pattern, {:variable, "z"}, {:coalesce, [_, _]}} = result
+    end
+
+    test "preserves COALESCE when first arg is variable" do
+      # COALESCE(?x, 1) - cannot fold because ?x might evaluate to a value at runtime
+      expr = {:coalesce, [var("x"), int(1)]}
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      # Should remain as coalesce since first arg is a variable
+      assert {:extend, ^pattern, {:variable, "y"}, {:coalesce, [_, _]}} = result
+    end
+  end
+
+  describe "fold_constants/1 - algebra tree simplification" do
+    test "simplifies join with empty left side" do
+      left = {:bgp, []}
+      right = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(join(left, right))
+
+      # Empty join => empty
+      assert result == {:bgp, []}
+    end
+
+    test "simplifies join with empty right side" do
+      left = bgp([triple(var("x"), var("p"), var("o"))])
+      right = {:bgp, []}
+
+      result = Optimizer.fold_constants(join(left, right))
+
+      assert result == {:bgp, []}
+    end
+
+    test "simplifies union with empty left side" do
+      left = {:bgp, []}
+      right = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants(union(left, right))
+
+      # Empty union side is removed
+      assert result == right
+    end
+
+    test "simplifies union with empty right side" do
+      left = bgp([triple(var("x"), var("p"), var("o"))])
+      right = {:bgp, []}
+
+      result = Optimizer.fold_constants(union(left, right))
+
+      assert result == left
+    end
+
+    test "simplifies left_join with empty left side" do
+      left = {:bgp, []}
+      right = bgp([triple(var("y"), var("q"), var("z"))])
+
+      result = Optimizer.fold_constants(left_join(left, right))
+
+      # Empty left => empty result
+      assert result == {:bgp, []}
+    end
+
+    test "propagates empty through nested joins" do
+      # Join(Filter(false, BGP), BGP) => empty
+      inner = filter(bool(false), bgp([triple(var("x"), var("p"), var("o"))]))
+      right = bgp([triple(var("y"), var("q"), var("z"))])
+
+      result = Optimizer.fold_constants(join(inner, right))
+
+      # false filter => empty BGP => empty join
+      assert result == {:bgp, []}
+    end
+  end
+
+  describe "fold_constants/1 - extend and order_by" do
+    test "folds constants in EXTEND expression" do
+      # BIND(1 + 2 AS ?y)
+      expr = add(int(1), int(2))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+
+      result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
+
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "3", @xsd_integer}} = result
+    end
+
+    test "folds constants in ORDER BY expressions" do
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+      # Order by a constant expression that can be folded
+      order_expr = add(int(1), int(1))
+      algebra = {:order_by, pattern, [{:asc, order_expr}]}
+
+      result = Optimizer.fold_constants(algebra)
+
+      assert {:order_by, ^pattern, [{:asc, {:literal, :typed, "2", @xsd_integer}}]} = result
+    end
+
+    test "folds constants in left_join filter" do
+      left = bgp([triple(var("x"), var("p"), var("o"))])
+      right = bgp([triple(var("y"), var("q"), var("z"))])
+      # Filter with constant 5 > 3 => true
+      join_filter = greater(int(5), int(3))
+
+      result = Optimizer.fold_constants({:left_join, left, right, join_filter})
+
+      # Join filter should be folded to true boolean
+      assert {:left_join, ^left, ^right, {:literal, :typed, "true", @xsd_boolean}} = result
+    end
+  end
+
+  describe "optimize/2 with constant folding" do
+    test "applies constant folding by default" do
+      expr = greater(int(5), int(3))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+      algebra = filter(expr, pattern)
+
+      result = Optimizer.optimize(algebra)
+
+      # Constant folding removes the always-true filter
+      assert result == pattern
+    end
+
+    test "can disable constant folding" do
+      expr = greater(int(5), int(3))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+      algebra = filter(expr, pattern)
+
+      result = Optimizer.optimize(algebra, fold_constants: false)
+
+      # Should remain unchanged
+      assert result == algebra
+    end
+
+    test "applies both constant folding and filter push-down" do
+      # Filter with constant AND variable parts
+      left_bgp = bgp([triple(var("x"), iri("http://ex.org/p"), var("o"))])
+      right_bgp = bgp([triple(var("y"), iri("http://ex.org/q"), var("z"))])
+      joined = join(left_bgp, right_bgp)
+
+      # true AND (?x > 5) => ?x > 5, then push down
+      expr = and_expr(bool(true), greater(var("x"), int(5)))
+      algebra = filter(expr, joined)
+
+      result = Optimizer.optimize(algebra)
+
+      # Should fold true && to just ?x > 5, then push to left side
+      expected = join(
+        filter(greater(var("x"), int(5)), left_bgp),
+        right_bgp
+      )
+      assert result == expected
+    end
+  end
+
+  describe "integration - constant folding with parser" do
+    test "folds constants in parsed query" do
+      query = """
+      SELECT ?x WHERE {
+        ?x <http://example.org/p> ?o .
+        FILTER(1 + 1 = 2)
+      }
+      """
+
+      {:ok, ast} = Parser.parse(query)
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      optimized = Optimizer.optimize(pattern)
+
+      # 1 + 1 = 2 => true, filter removed
+      # Result should just be the BGP (possibly wrapped in modifiers)
+      unwrapped = unwrap_modifiers(optimized)
+      refute match?({:filter, _, _}, unwrapped)
+    end
+
+    test "removes always-false filter in parsed query" do
+      query = """
+      SELECT ?x WHERE {
+        ?x <http://example.org/p> ?o .
+        FILTER(5 < 3)
+      }
+      """
+
+      {:ok, ast} = Parser.parse(query)
+      {:ok, pattern} = Algebra.extract_pattern(ast)
+
+      optimized = Optimizer.optimize(pattern)
+
+      # 5 < 3 => false, result is empty
+      unwrapped = unwrap_modifiers(optimized)
+      assert unwrapped == {:bgp, []}
+    end
+  end
 end

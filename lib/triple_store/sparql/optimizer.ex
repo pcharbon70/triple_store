@@ -6,7 +6,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   to improve query execution performance. Optimizations include:
 
   - **Filter Push-Down**: Push filter expressions closer to data sources
-  - **Constant Folding**: Evaluate constant expressions at compile time (future)
+  - **Constant Folding**: Evaluate constant expressions at compile time
   - **BGP Reordering**: Reorder triple patterns based on selectivity (future)
 
   ## Filter Push-Down
@@ -53,11 +53,11 @@ defmodule TripleStore.SPARQL.Optimizer do
   @doc """
   Applies all optimizations to an algebra tree.
 
-  Currently applies filter push-down. Additional optimizations will be added
-  in future tasks.
+  Currently applies filter push-down and constant folding.
 
   ## Options
   - `:push_filters` - Enable filter push-down (default: true)
+  - `:fold_constants` - Enable constant folding (default: true)
 
   ## Examples
 
@@ -70,8 +70,10 @@ defmodule TripleStore.SPARQL.Optimizer do
   @spec optimize(algebra(), keyword()) :: algebra()
   def optimize(algebra, opts \\ []) do
     push_filters? = Keyword.get(opts, :push_filters, true)
+    fold_constants? = Keyword.get(opts, :fold_constants, true)
 
     algebra
+    |> then(fn a -> if fold_constants?, do: fold_constants(a), else: a end)
     |> then(fn a -> if push_filters?, do: push_filters_down(a), else: a end)
   end
 
@@ -404,6 +406,451 @@ defmodule TripleStore.SPARQL.Optimizer do
         {:pushed, {:left_join, {:filter, filter_expr, left}, right, join_filter}}
     end
   end
+
+  # ===========================================================================
+  # Constant Folding
+  # ===========================================================================
+
+  @doc """
+  Evaluates constant expressions at compile time.
+
+  This optimization reduces runtime computation by pre-evaluating expressions
+  that contain only literal values (no variables). It also simplifies filters
+  that are always true or always false.
+
+  ## Optimizations Applied
+
+  1. Evaluate arithmetic on constant operands (1 + 2 → 3)
+  2. Evaluate comparisons on constant operands (5 > 3 → true)
+  3. Evaluate logical expressions on constants (true && false → false)
+  4. Simplify always-true filters (remove the filter)
+  5. Simplify always-false filters (replace pattern with empty result)
+  6. Evaluate constant function calls where possible
+
+  ## Examples
+
+      # Before:
+      Filter(5 > 3, BGP([...]))
+
+      # After (filter removed since always true):
+      BGP([...])
+
+      # Before:
+      Filter(1 > 10, BGP([...]))
+
+      # After (pattern replaced with empty since always false):
+      {:bgp, []}
+
+  """
+  @spec fold_constants(algebra()) :: algebra()
+  def fold_constants(algebra) do
+    fold_constants_recursive(algebra)
+  end
+
+  # Recursive constant folding over algebra tree
+  defp fold_constants_recursive({:filter, expr, pattern}) do
+    folded_pattern = fold_constants_recursive(pattern)
+    folded_expr = fold_expression(expr)
+
+    case evaluate_constant_filter(folded_expr) do
+      :always_true ->
+        # Filter is always true - remove it
+        folded_pattern
+
+      :always_false ->
+        # Filter is always false - result is empty
+        {:bgp, []}
+
+      :not_constant ->
+        # Filter contains variables - keep it with folded expression
+        {:filter, folded_expr, folded_pattern}
+    end
+  end
+
+  defp fold_constants_recursive({:join, left, right}) do
+    folded_left = fold_constants_recursive(left)
+    folded_right = fold_constants_recursive(right)
+
+    # If either side is empty, the join is empty
+    case {folded_left, folded_right} do
+      {{:bgp, []}, _} -> {:bgp, []}
+      {_, {:bgp, []}} -> {:bgp, []}
+      _ -> {:join, folded_left, folded_right}
+    end
+  end
+
+  defp fold_constants_recursive({:left_join, left, right, filter}) do
+    folded_left = fold_constants_recursive(left)
+    folded_right = fold_constants_recursive(right)
+    folded_filter = if filter, do: fold_expression(filter), else: nil
+
+    # If left is empty, the result is empty
+    case folded_left do
+      {:bgp, []} -> {:bgp, []}
+      _ -> {:left_join, folded_left, folded_right, folded_filter}
+    end
+  end
+
+  defp fold_constants_recursive({:minus, left, right}) do
+    {:minus, fold_constants_recursive(left), fold_constants_recursive(right)}
+  end
+
+  defp fold_constants_recursive({:union, left, right}) do
+    folded_left = fold_constants_recursive(left)
+    folded_right = fold_constants_recursive(right)
+
+    # If one side is empty, return the other
+    case {folded_left, folded_right} do
+      {{:bgp, []}, r} -> r
+      {l, {:bgp, []}} -> l
+      _ -> {:union, folded_left, folded_right}
+    end
+  end
+
+  defp fold_constants_recursive({:extend, pattern, var, expr}) do
+    folded_pattern = fold_constants_recursive(pattern)
+    folded_expr = fold_expression(expr)
+    {:extend, folded_pattern, var, folded_expr}
+  end
+
+  defp fold_constants_recursive({:group, pattern, vars, aggs}) do
+    {:group, fold_constants_recursive(pattern), vars, aggs}
+  end
+
+  defp fold_constants_recursive({:project, pattern, vars}) do
+    {:project, fold_constants_recursive(pattern), vars}
+  end
+
+  defp fold_constants_recursive({:distinct, pattern}) do
+    {:distinct, fold_constants_recursive(pattern)}
+  end
+
+  defp fold_constants_recursive({:reduced, pattern}) do
+    {:reduced, fold_constants_recursive(pattern)}
+  end
+
+  defp fold_constants_recursive({:order_by, pattern, conditions}) do
+    folded_conds = Enum.map(conditions, fn {dir, expr} -> {dir, fold_expression(expr)} end)
+    {:order_by, fold_constants_recursive(pattern), folded_conds}
+  end
+
+  defp fold_constants_recursive({:slice, pattern, offset, limit}) do
+    {:slice, fold_constants_recursive(pattern), offset, limit}
+  end
+
+  defp fold_constants_recursive({:graph, term, pattern}) do
+    {:graph, term, fold_constants_recursive(pattern)}
+  end
+
+  defp fold_constants_recursive({:service, endpoint, pattern, silent}) do
+    {:service, endpoint, fold_constants_recursive(pattern), silent}
+  end
+
+  # Leaf nodes
+  defp fold_constants_recursive({:bgp, _} = node), do: node
+  defp fold_constants_recursive({:values, _, _} = node), do: node
+  defp fold_constants_recursive({:path, _, _, _} = node), do: node
+  defp fold_constants_recursive(node), do: node
+
+  # ===========================================================================
+  # Expression Folding
+  # ===========================================================================
+
+  # Fold constants in an expression, returning a simplified expression
+  defp fold_expression(expr) do
+    case expr do
+      # Literals and variables are already in simplest form
+      {:variable, _} -> expr
+      {:named_node, _} -> expr
+      {:blank_node, _} -> expr
+      {:literal, _, _} -> expr
+      {:literal, _, _, _} -> expr
+
+      # Arithmetic operations
+      {:add, left, right} -> fold_binary_arithmetic(:add, left, right)
+      {:subtract, left, right} -> fold_binary_arithmetic(:subtract, left, right)
+      {:multiply, left, right} -> fold_binary_arithmetic(:multiply, left, right)
+      {:divide, left, right} -> fold_binary_arithmetic(:divide, left, right)
+      {:unary_minus, arg} -> fold_unary_minus(arg)
+
+      # Comparison operations
+      {:equal, left, right} -> fold_comparison(:equal, left, right)
+      {:greater, left, right} -> fold_comparison(:greater, left, right)
+      {:less, left, right} -> fold_comparison(:less, left, right)
+      {:greater_or_equal, left, right} -> fold_comparison(:greater_or_equal, left, right)
+      {:less_or_equal, left, right} -> fold_comparison(:less_or_equal, left, right)
+
+      # Logical operations
+      {:and, left, right} -> fold_logical_and(left, right)
+      {:or, left, right} -> fold_logical_or(left, right)
+      {:not, arg} -> fold_logical_not(arg)
+
+      # Conditional expressions
+      {:if_expr, cond_expr, then_expr, else_expr} ->
+        fold_if_expr(cond_expr, then_expr, else_expr)
+
+      {:coalesce, args} when is_list(args) ->
+        fold_coalesce(args)
+
+      # Function calls - try to evaluate if all args are constant
+      {:function_call, name, args} ->
+        fold_function_call(name, args)
+
+      # Other expressions - just fold children
+      {:bound, arg} -> {:bound, fold_expression(arg)}
+      {:exists, pattern} -> {:exists, pattern}
+      {:in_expr, needle, haystack} ->
+        {:in_expr, fold_expression(needle), Enum.map(haystack, &fold_expression/1)}
+
+      # Unknown expressions - return as-is
+      _ -> expr
+    end
+  end
+
+  # Fold binary arithmetic operations
+  defp fold_binary_arithmetic(op, left, right) do
+    folded_left = fold_expression(left)
+    folded_right = fold_expression(right)
+
+    if Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) do
+      case Expression.evaluate({op, folded_left, folded_right}, %{}) do
+        {:ok, result} -> result
+        :error -> {op, folded_left, folded_right}
+      end
+    else
+      {op, folded_left, folded_right}
+    end
+  end
+
+  # Fold unary minus
+  defp fold_unary_minus(arg) do
+    folded = fold_expression(arg)
+
+    if Expression.is_constant?(folded) do
+      case Expression.evaluate({:unary_minus, folded}, %{}) do
+        {:ok, result} -> result
+        :error -> {:unary_minus, folded}
+      end
+    else
+      {:unary_minus, folded}
+    end
+  end
+
+  # Fold comparison operations
+  defp fold_comparison(op, left, right) do
+    folded_left = fold_expression(left)
+    folded_right = fold_expression(right)
+
+    if Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) do
+      case Expression.evaluate({op, folded_left, folded_right}, %{}) do
+        {:ok, result} -> result
+        :error -> {op, folded_left, folded_right}
+      end
+    else
+      {op, folded_left, folded_right}
+    end
+  end
+
+  # Fold logical AND with short-circuit optimization
+  defp fold_logical_and(left, right) do
+    folded_left = fold_expression(left)
+    folded_right = fold_expression(right)
+
+    cond do
+      # false && anything = false
+      is_false_literal?(folded_left) -> folded_left
+      # true && x = x
+      is_true_literal?(folded_left) -> folded_right
+      # x && false = false
+      is_false_literal?(folded_right) -> folded_right
+      # x && true = x
+      is_true_literal?(folded_right) -> folded_left
+      # Both constant - evaluate
+      Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
+        case Expression.evaluate({:and, folded_left, folded_right}, %{}) do
+          {:ok, result} -> result
+          :error -> {:and, folded_left, folded_right}
+        end
+      true ->
+        {:and, folded_left, folded_right}
+    end
+  end
+
+  # Fold logical OR with short-circuit optimization
+  defp fold_logical_or(left, right) do
+    folded_left = fold_expression(left)
+    folded_right = fold_expression(right)
+
+    cond do
+      # true || anything = true
+      is_true_literal?(folded_left) -> folded_left
+      # false || x = x
+      is_false_literal?(folded_left) -> folded_right
+      # x || true = true
+      is_true_literal?(folded_right) -> folded_right
+      # x || false = x
+      is_false_literal?(folded_right) -> folded_left
+      # Both constant - evaluate
+      Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
+        case Expression.evaluate({:or, folded_left, folded_right}, %{}) do
+          {:ok, result} -> result
+          :error -> {:or, folded_left, folded_right}
+        end
+      true ->
+        {:or, folded_left, folded_right}
+    end
+  end
+
+  # Fold logical NOT
+  defp fold_logical_not(arg) do
+    folded = fold_expression(arg)
+
+    cond do
+      is_true_literal?(folded) -> make_boolean(false)
+      is_false_literal?(folded) -> make_boolean(true)
+      # Double negation: NOT(NOT(x)) = x
+      match?({:not, _}, folded) ->
+        {:not, inner} = folded
+        inner
+      Expression.is_constant?(folded) ->
+        case Expression.evaluate({:not, folded}, %{}) do
+          {:ok, result} -> result
+          :error -> {:not, folded}
+        end
+      true ->
+        {:not, folded}
+    end
+  end
+
+  # Fold IF expression
+  defp fold_if_expr(cond_expr, then_expr, else_expr) do
+    folded_cond = fold_expression(cond_expr)
+    folded_then = fold_expression(then_expr)
+    folded_else = fold_expression(else_expr)
+
+    cond do
+      is_true_literal?(folded_cond) -> folded_then
+      is_false_literal?(folded_cond) -> folded_else
+      true -> {:if_expr, folded_cond, folded_then, folded_else}
+    end
+  end
+
+  # Fold COALESCE - return first non-error constant at the start, or simplified list
+  defp fold_coalesce(args) do
+    folded_args = Enum.map(args, &fold_expression/1)
+
+    # Check if first argument is a constant that evaluates successfully
+    case folded_args do
+      [first | _] when is_tuple(first) ->
+        if Expression.is_constant?(first) do
+          case Expression.evaluate(first, %{}) do
+            {:ok, _} ->
+              # First arg is a valid constant - return it
+              first
+
+            :error ->
+              # First arg is an error constant - skip it and recurse
+              case folded_args do
+                [_] -> {:coalesce, folded_args}
+                [_ | rest] -> fold_coalesce_remaining(rest)
+              end
+          end
+        else
+          # First arg is a variable - can't fold further, but filter out error constants
+          simplify_coalesce_args(folded_args)
+        end
+
+      _ ->
+        {:coalesce, folded_args}
+    end
+  end
+
+  # Helper to continue folding remaining COALESCE args
+  defp fold_coalesce_remaining(args) do
+    case args do
+      [] -> {:coalesce, []}
+      [single] -> single
+      _ -> fold_coalesce(args)
+    end
+  end
+
+  # Simplify COALESCE by removing error constants but preserving order
+  defp simplify_coalesce_args(args) do
+    # Filter out known-error constants but keep variables and valid constants
+    remaining =
+      Enum.filter(args, fn arg ->
+        not Expression.is_constant?(arg) or
+          match?({:ok, _}, Expression.evaluate(arg, %{}))
+      end)
+
+    case remaining do
+      [] -> {:coalesce, args}
+      [single] -> single
+      _ -> {:coalesce, remaining}
+    end
+  end
+
+  # Fold function calls with constant arguments
+  defp fold_function_call(name, args) do
+    folded_args = Enum.map(args, &fold_expression/1)
+
+    if Enum.all?(folded_args, &Expression.is_constant?/1) do
+      case Expression.evaluate({:function_call, name, folded_args}, %{}) do
+        {:ok, result} -> result
+        _ -> {:function_call, name, folded_args}
+      end
+    else
+      {:function_call, name, folded_args}
+    end
+  end
+
+  # ===========================================================================
+  # Filter Evaluation Helpers
+  # ===========================================================================
+
+  # Determine if a filter expression is always true, always false, or variable
+  defp evaluate_constant_filter(expr) do
+    if Expression.is_constant?(expr) do
+      case Expression.evaluate(expr, %{}) do
+        {:ok, result} ->
+          cond do
+            is_true_literal?(result) -> :always_true
+            is_false_literal?(result) -> :always_false
+            true -> :not_constant
+          end
+
+        :error ->
+          :not_constant
+      end
+    else
+      :not_constant
+    end
+  end
+
+  # Check if a term is the boolean true literal
+  defp is_true_literal?({:literal, :typed, "true", "http://www.w3.org/2001/XMLSchema#boolean"}),
+    do: true
+
+  defp is_true_literal?({:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#boolean"}),
+    do: true
+
+  defp is_true_literal?(_), do: false
+
+  # Check if a term is the boolean false literal
+  defp is_false_literal?({:literal, :typed, "false", "http://www.w3.org/2001/XMLSchema#boolean"}),
+    do: true
+
+  defp is_false_literal?({:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#boolean"}),
+    do: true
+
+  defp is_false_literal?(_), do: false
+
+  # Create a boolean literal
+  defp make_boolean(true),
+    do: {:literal, :typed, "true", "http://www.w3.org/2001/XMLSchema#boolean"}
+
+  defp make_boolean(false),
+    do: {:literal, :typed, "false", "http://www.w3.org/2001/XMLSchema#boolean"}
 
   # ===========================================================================
   # Analysis Utilities

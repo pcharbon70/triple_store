@@ -194,14 +194,19 @@ Test coverage: 25 tests in optimizer_test.exs.
 
 ### 2.3.2 Constant Folding
 
-- [ ] **Task 2.3.2 Complete**
+- [x] **Task 2.3.2 Complete** (2025-12-23)
 
 Evaluate constant expressions at compile time.
 
-- [ ] 2.3.2.1 Implement `fold_constants(algebra)` transformation
-- [ ] 2.3.2.2 Evaluate arithmetic on constant operands
-- [ ] 2.3.2.3 Evaluate comparisons on constant operands
-- [ ] 2.3.2.4 Simplify always-true/always-false filters
+- [x] 2.3.2.1 Implement `fold_constants(algebra)` transformation
+- [x] 2.3.2.2 Evaluate arithmetic on constant operands
+- [x] 2.3.2.3 Evaluate comparisons on constant operands
+- [x] 2.3.2.4 Simplify always-true/always-false filters
+
+Extended `lib/triple_store/sparql/optimizer.ex` with constant folding optimization.
+Also implements: logical expression folding with short-circuit, IF/COALESCE folding,
+double negation elimination, join/union empty side elimination.
+Test coverage: 42 new tests (67 total in optimizer_test.exs).
 
 ### 2.3.3 BGP Reordering
 
