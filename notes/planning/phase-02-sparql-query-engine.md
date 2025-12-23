@@ -100,20 +100,24 @@ This section implements the SPARQL algebra representation and compilation from p
 
 ### 2.2.1 Algebra Node Types
 
-- [ ] **Task 2.2.1 Complete**
+- [x] **Task 2.2.1 Complete** (2025-12-23)
 
 Define the algebra node types representing SPARQL operations.
 
-- [ ] 2.2.1.1 Define `%Algebra{type, children, metadata}` base struct
-- [ ] 2.2.1.2 Implement `:bgp` node for Basic Graph Patterns
-- [ ] 2.2.1.3 Implement `:join` node for inner joins
-- [ ] 2.2.1.4 Implement `:left_join` node for OPTIONAL
-- [ ] 2.2.1.5 Implement `:union` node for UNION
-- [ ] 2.2.1.6 Implement `:filter` node with expression metadata
-- [ ] 2.2.1.7 Implement `:extend` node for BIND
-- [ ] 2.2.1.8 Implement `:project` node for variable projection
-- [ ] 2.2.1.9 Implement `:distinct` and `:reduced` nodes
-- [ ] 2.2.1.10 Implement `:order`, `:slice` nodes for solution modifiers
+- [x] 2.2.1.1 Define tuple-based algebra nodes (using tagged tuples instead of struct)
+- [x] 2.2.1.2 Implement `:bgp` node for Basic Graph Patterns
+- [x] 2.2.1.3 Implement `:join` node for inner joins
+- [x] 2.2.1.4 Implement `:left_join` node for OPTIONAL
+- [x] 2.2.1.5 Implement `:union` node for UNION
+- [x] 2.2.1.6 Implement `:filter` node with expression metadata
+- [x] 2.2.1.7 Implement `:extend` node for BIND
+- [x] 2.2.1.8 Implement `:project` node for variable projection
+- [x] 2.2.1.9 Implement `:distinct` and `:reduced` nodes
+- [x] 2.2.1.10 Implement `:order_by`, `:slice` nodes for solution modifiers
+
+Additional nodes implemented: `:minus`, `:group`, `:values`, `:graph`, `:service`, `:path`
+
+Test coverage: 72 tests in algebra_test.exs
 
 ### 2.2.2 AST to Algebra Compilation
 
