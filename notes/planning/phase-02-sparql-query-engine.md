@@ -516,7 +516,7 @@ Total test coverage: 81 tests in query_test.exs
 
 ## 2.6 Aggregation
 
-- [ ] **Section 2.6 Complete**
+- [x] **Section 2.6 Complete** (2025-12-23)
 
 This section implements GROUP BY and aggregate functions following SPARQL 1.1 semantics.
 
@@ -555,17 +555,20 @@ Test coverage: 22 aggregate-related tests in expression_test.exs.
 
 ### 2.6.3 Unit Tests
 
-- [ ] **Task 2.6.3 Complete**
+- [x] **Task 2.6.3 Complete** (2025-12-23)
 
-- [ ] Test GROUP BY single variable
-- [ ] Test GROUP BY multiple variables
-- [ ] Test COUNT aggregate
-- [ ] Test SUM aggregate with numeric values
-- [ ] Test AVG aggregate
-- [ ] Test MIN/MAX aggregates
-- [ ] Test GROUP_CONCAT with separator
-- [ ] Test DISTINCT within aggregate
-- [ ] Test HAVING clause filtering
+- [x] Test GROUP BY single variable
+- [x] Test GROUP BY multiple variables
+- [x] Test COUNT aggregate
+- [x] Test SUM aggregate with numeric values
+- [x] Test AVG aggregate
+- [x] Test MIN/MAX aggregates
+- [x] Test GROUP_CONCAT with separator
+- [x] Test DISTINCT within aggregate
+- [x] Test HAVING clause filtering
+
+All requirements verified - tests were implemented in Tasks 2.6.1 and 2.6.2.
+Total test coverage: 38 tests (15 GROUP BY + 23 aggregate tests).
 
 ---
 
