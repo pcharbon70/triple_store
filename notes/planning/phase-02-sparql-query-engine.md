@@ -180,14 +180,17 @@ This section implements rule-based query optimization transforms on the algebra 
 
 ### 2.3.1 Filter Push-Down
 
-- [ ] **Task 2.3.1 Complete**
+- [x] **Task 2.3.1 Complete** (2025-12-23)
 
 Push filter expressions as close to their data sources as possible to reduce intermediate result sizes.
 
-- [ ] 2.3.1.1 Implement `push_filters_down(algebra)` transformation
-- [ ] 2.3.1.2 Push filters past joins when variables allow
-- [ ] 2.3.1.3 Split conjunctive filters and push independently
-- [ ] 2.3.1.4 Preserve filter semantics across OPTIONAL boundaries
+- [x] 2.3.1.1 Implement `push_filters_down(algebra)` transformation
+- [x] 2.3.1.2 Push filters past joins when variables allow
+- [x] 2.3.1.3 Split conjunctive filters and push independently
+- [x] 2.3.1.4 Preserve filter semantics across OPTIONAL boundaries
+
+Created `lib/triple_store/sparql/optimizer.ex` with filter push-down optimization.
+Test coverage: 25 tests in optimizer_test.exs.
 
 ### 2.3.2 Constant Folding
 
