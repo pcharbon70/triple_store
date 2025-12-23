@@ -511,7 +511,8 @@ defmodule TripleStore.Index do
 
   """
   @spec insert_triple(NIF.db_ref(), triple()) :: :ok | {:error, term()}
-  def insert_triple(db, {subject, predicate, object}) when valid_triple?(subject, predicate, object) do
+  def insert_triple(db, {subject, predicate, object})
+      when valid_triple?(subject, predicate, object) do
     operations =
       for {cf, key} <- encode_triple_keys(subject, predicate, object) do
         {cf, key, @empty_value}
@@ -586,7 +587,8 @@ defmodule TripleStore.Index do
 
   """
   @spec triple_exists?(NIF.db_ref(), triple()) :: {:ok, boolean()} | {:error, term()}
-  def triple_exists?(db, {subject, predicate, object}) when valid_triple?(subject, predicate, object) do
+  def triple_exists?(db, {subject, predicate, object})
+      when valid_triple?(subject, predicate, object) do
     key = spo_key(subject, predicate, object)
     NIF.exists(db, :spo, key)
   end
@@ -624,7 +626,8 @@ defmodule TripleStore.Index do
 
   """
   @spec delete_triple(NIF.db_ref(), triple()) :: :ok | {:error, term()}
-  def delete_triple(db, {subject, predicate, object}) when valid_triple?(subject, predicate, object) do
+  def delete_triple(db, {subject, predicate, object})
+      when valid_triple?(subject, predicate, object) do
     operations =
       for {cf, key} <- encode_triple_keys(subject, predicate, object) do
         {cf, key}

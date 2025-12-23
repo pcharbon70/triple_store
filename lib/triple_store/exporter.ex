@@ -169,9 +169,8 @@ defmodule TripleStore.Exporter do
 
   defp do_export_graph(db, pattern, opts) do
     with_telemetry(%{operation: :graph, path: nil}, fn ->
-      with {:ok, internal_triples} <- Index.lookup_all(db, pattern),
-           {:ok, graph} <- Adapter.to_rdf_graph(db, internal_triples, opts) do
-        {:ok, graph}
+      with {:ok, internal_triples} <- Index.lookup_all(db, pattern) do
+        Adapter.to_rdf_graph(db, internal_triples, opts)
       end
     end)
   end
@@ -239,9 +238,8 @@ defmodule TripleStore.Exporter do
 
   # Raw export without telemetry (for use by export_file to avoid double telemetry)
   defp do_export_graph_raw(db, pattern, opts) do
-    with {:ok, internal_triples} <- Index.lookup_all(db, pattern),
-         {:ok, graph} <- Adapter.to_rdf_graph(db, internal_triples, opts) do
-      {:ok, graph}
+    with {:ok, internal_triples} <- Index.lookup_all(db, pattern) do
+      Adapter.to_rdf_graph(db, internal_triples, opts)
     end
   end
 
@@ -546,17 +544,20 @@ defmodule TripleStore.Exporter do
     RDF.TriG.write_string(dataset)
   end
 
+  # apply/3 is intentional to avoid compile-time dependency on optional module
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp serialize_graph(graph, :rdfxml) do
     if Code.ensure_loaded?(RDF.XML) do
-      RDF.XML.write_string(graph)
+      apply(RDF.XML, :write_string, [graph])
     else
       {:error, :rdfxml_not_available}
     end
   end
 
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp serialize_graph(graph, :jsonld) do
     if Code.ensure_loaded?(JSON.LD) do
-      JSON.LD.write_string(graph)
+      apply(JSON.LD, :write_string, [graph])
     else
       {:error, :jsonld_not_available}
     end

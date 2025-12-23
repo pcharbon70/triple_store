@@ -59,8 +59,8 @@ defmodule TripleStore.Loader do
   """
 
   alias TripleStore.Adapter
-  alias TripleStore.Index
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
 
   require Logger
 
@@ -87,7 +87,8 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @default_batch_size 1000
-  @default_max_file_size 100_000_000  # 100MB
+  # 100MB
+  @default_max_file_size 100_000_000
 
   # Supported RDF file formats
   @supported_formats %{
@@ -463,18 +464,18 @@ defmodule TripleStore.Loader do
 
   @spec parse_file(Path.t(), atom()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_file(path, format) do
-    unless File.exists?(path) do
-      {:error, :file_not_found}
-    else
+    if File.exists?(path) do
       case format do
         :turtle -> RDF.Turtle.read_file(path)
         :ntriples -> RDF.NTriples.read_file(path)
         :nquads -> parse_nquads_file(path)
-        :rdfxml -> RDF.XML.read_file(path)
+        :rdfxml -> parse_rdfxml_file(path)
         :trig -> parse_trig_file(path)
         :jsonld -> parse_jsonld_file(path)
         _ -> {:error, :unsupported_format}
       end
+    else
+      {:error, :file_not_found}
     end
   end
 
@@ -484,7 +485,7 @@ defmodule TripleStore.Loader do
       :turtle -> RDF.Turtle.read_string(content, opts)
       :ntriples -> RDF.NTriples.read_string(content, opts)
       :nquads -> parse_nquads_string(content, opts)
-      :rdfxml -> RDF.XML.read_string(content, opts)
+      :rdfxml -> parse_rdfxml_string(content, opts)
       :trig -> parse_trig_string(content, opts)
       :jsonld -> parse_jsonld_string(content, opts)
       _ -> {:error, :unsupported_format}
@@ -524,20 +525,43 @@ defmodule TripleStore.Loader do
 
   defp extract_default_graph(error), do: error
 
-  # JSON-LD parsing
+  # RDF/XML parsing - apply/3 is intentional to avoid compile-time dependency on optional module
+  @spec parse_rdfxml_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
+  defp parse_rdfxml_file(path) do
+    if Code.ensure_loaded?(RDF.XML) do
+      apply(RDF.XML, :read_file, [path])
+    else
+      {:error, :rdfxml_not_available}
+    end
+  end
+
+  @spec parse_rdfxml_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
+  defp parse_rdfxml_string(content, opts) do
+    if Code.ensure_loaded?(RDF.XML) do
+      apply(RDF.XML, :read_string, [content, opts])
+    else
+      {:error, :rdfxml_not_available}
+    end
+  end
+
+  # JSON-LD parsing - apply/3 is intentional to avoid compile-time dependency on optional module
   @spec parse_jsonld_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_jsonld_file(path) do
     if Code.ensure_loaded?(JSON.LD) do
-      JSON.LD.read_file(path)
+      apply(JSON.LD, :read_file, [path])
     else
       {:error, :jsonld_not_available}
     end
   end
 
   @spec parse_jsonld_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_jsonld_string(content, opts) do
     if Code.ensure_loaded?(JSON.LD) do
-      JSON.LD.read_string(content, opts)
+      apply(JSON.LD, :read_string, [content, opts])
     else
       {:error, :jsonld_not_available}
     end

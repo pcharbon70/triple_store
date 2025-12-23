@@ -382,7 +382,7 @@ defmodule TripleStore.Dictionary do
   """
   @spec encode_id(non_neg_integer(), non_neg_integer()) :: term_id()
   def encode_id(type, value) when type >= 0 and type <= 15 and value >= 0 do
-    (type <<< 60) ||| value
+    type <<< 60 ||| value
   end
 
   @doc """
@@ -784,8 +784,8 @@ defmodule TripleStore.Dictionary do
         true ->
           # Pack: sign(1) + exponent(11) + mantissa(48) = 60 bits
           value =
-            (sign_bit <<< 59) |||
-              (biased_exp <<< @decimal_mantissa_bits) |||
+            sign_bit <<< 59 |||
+              biased_exp <<< @decimal_mantissa_bits |||
               coef
 
           {:ok, encode_id(@type_decimal, value)}
@@ -823,7 +823,7 @@ defmodule TripleStore.Dictionary do
   defp decode_decimal_value(value) do
     # Unpack: sign(1) + exponent(11) + mantissa(48)
     sign_bit = value >>> 59
-    biased_exp = (value >>> @decimal_mantissa_bits) &&& @max_decimal_exponent
+    biased_exp = value >>> @decimal_mantissa_bits &&& @max_decimal_exponent
     mantissa = value &&& @max_decimal_mantissa
 
     sign = if sign_bit == 0, do: 1, else: -1
@@ -879,7 +879,8 @@ defmodule TripleStore.Dictionary do
       iex> Decimal.eq?(value, Decimal.new("3.14"))
       true
   """
-  @spec decode_inline(term_id()) :: {:ok, integer() | Decimal.t() | DateTime.t()} | {:error, :not_inline_encoded}
+  @spec decode_inline(term_id()) ::
+          {:ok, integer() | Decimal.t() | DateTime.t()} | {:error, :not_inline_encoded}
   def decode_inline(id) when is_integer(id) and id >= 0 do
     case term_type(id) do
       :integer -> decode_integer(id)

@@ -49,7 +49,8 @@ defmodule TripleStore.SPARQL.Parser do
   # Configuration
   # ===========================================================================
 
-  @max_query_size 1_000_000  # 1MB limit to prevent DoS attacks
+  # 1MB limit to prevent DoS attacks
+  @max_query_size 1_000_000
 
   @doc """
   Returns the maximum allowed query size in bytes.
@@ -180,8 +181,11 @@ defmodule TripleStore.SPARQL.Parser do
   @spec parse_update!(String.t()) :: term()
   def parse_update!(sparql) when is_binary(sparql) do
     case parse_update(sparql) do
-      {:ok, ast} -> ast
-      {:error, {:parse_error, message}} -> raise ArgumentError, "SPARQL UPDATE parse error: #{message}"
+      {:ok, ast} ->
+        ast
+
+      {:error, {:parse_error, message}} ->
+        raise ArgumentError, "SPARQL UPDATE parse error: #{message}"
     end
   end
 
@@ -219,13 +223,14 @@ defmodule TripleStore.SPARQL.Parser do
   @spec parse_with_details(String.t()) :: {:ok, term()} | {:error, parse_error()}
   def parse_with_details(sparql) when is_binary(sparql) do
     if byte_size(sparql) > @max_query_size do
-      {:error, %{
-        message: "Query exceeds maximum size",
-        line: nil,
-        column: nil,
-        raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
-        hint: "The query is too large. Consider breaking it into smaller queries."
-      }}
+      {:error,
+       %{
+         message: "Query exceeds maximum size",
+         line: nil,
+         column: nil,
+         raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
+         hint: "The query is too large. Consider breaking it into smaller queries."
+       }}
     else
       case NIF.parse_query(sparql) do
         {:ok, ast} ->
@@ -267,13 +272,14 @@ defmodule TripleStore.SPARQL.Parser do
   @spec parse_update_with_details(String.t()) :: {:ok, term()} | {:error, parse_error()}
   def parse_update_with_details(sparql) when is_binary(sparql) do
     if byte_size(sparql) > @max_query_size do
-      {:error, %{
-        message: "Query exceeds maximum size",
-        line: nil,
-        column: nil,
-        raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
-        hint: "The query is too large. Consider breaking it into smaller queries."
-      }}
+      {:error,
+       %{
+         message: "Query exceeds maximum size",
+         line: nil,
+         column: nil,
+         raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
+         hint: "The query is too large. Consider breaking it into smaller queries."
+       }}
     else
       case NIF.parse_update(sparql) do
         {:ok, ast} ->
@@ -310,47 +316,45 @@ defmodule TripleStore.SPARQL.Parser do
   @spec format_error(parse_error(), String.t()) :: String.t()
   def format_error(error, sparql) when is_map(error) and is_binary(sparql) do
     lines = String.split(sparql, "\n")
-
-    position_str =
-      case {error.line, error.column} do
-        {line, col} when is_integer(line) and is_integer(col) ->
-          "at line #{line}, column #{col}"
-
-        {line, _} when is_integer(line) ->
-          "at line #{line}"
-
-        _ ->
-          "at unknown position"
-      end
-
-    context =
-      if error.line && error.line > 0 && error.line <= length(lines) do
-        line_content = Enum.at(lines, error.line - 1)
-        pointer =
-          if error.column && error.column > 0 do
-            String.duplicate(" ", error.column - 1) <> "^"
-          else
-            ""
-          end
-
-        """
-
-            #{line_content}
-            #{pointer}
-        """
-      else
-        ""
-      end
-
-    hint_str =
-      if error.hint do
-        "\n\nHint: #{error.hint}"
-      else
-        ""
-      end
+    position_str = format_position(error.line, error.column)
+    context = format_context(error, lines)
+    hint_str = format_hint(error.hint)
 
     "Parse error #{position_str}: #{error.message}#{context}#{hint_str}"
   end
+
+  defp format_position(line, col) when is_integer(line) and is_integer(col) do
+    "at line #{line}, column #{col}"
+  end
+
+  defp format_position(line, _col) when is_integer(line) do
+    "at line #{line}"
+  end
+
+  defp format_position(_line, _col), do: "at unknown position"
+
+  defp format_context(%{line: line, column: column}, lines)
+       when is_integer(line) and line > 0 and line <= length(lines) do
+    line_content = Enum.at(lines, line - 1)
+    pointer = format_pointer(column)
+
+    """
+
+        #{line_content}
+        #{pointer}
+    """
+  end
+
+  defp format_context(_error, _lines), do: ""
+
+  defp format_pointer(column) when is_integer(column) and column > 0 do
+    String.duplicate(" ", column - 1) <> "^"
+  end
+
+  defp format_pointer(_column), do: ""
+
+  defp format_hint(nil), do: ""
+  defp format_hint(hint), do: "\n\nHint: #{hint}"
 
   # Builds detailed error information from a raw error message
   @doc false
@@ -392,41 +396,78 @@ defmodule TripleStore.SPARQL.Parser do
   end
 
   # Builds a human-readable message from expected tokens
+  # Uses a list of message builders to reduce cyclomatic complexity
   defp build_message(nil, _raw_message, _query_type), do: "Syntax error in query"
 
   defp build_message(expected, raw_message, query_type) do
-    cond do
-      # Check for prefix not found first (can be inside "one of")
-      String.contains?(raw_message, "Prefix not found") ->
-        "Undefined prefix. The prefix used in this query has not been declared"
+    message_builders = [
+      &msg_for_prefix_not_found/3,
+      &msg_for_unbound_variable/3,
+      &msg_for_invalid_query_form/3,
+      &msg_for_invalid_update_form/3,
+      &msg_for_missing_where/3,
+      &msg_for_unclosed_brace/3,
+      &msg_for_invalid_triple/3,
+      &msg_for_incomplete_triple/3,
+      &msg_for_one_of/3
+    ]
 
-      # Check for unbound variable in SELECT (GROUP BY scoping error)
-      String.contains?(raw_message, "variable that is unbound") ->
-        "Variable scoping error. A variable in SELECT is not bound by the query pattern or GROUP BY"
+    Enum.find_value(message_builders, "Expected #{expected}", fn builder ->
+      builder.(expected, raw_message, query_type)
+    end)
+  end
 
-      String.contains?(expected, "CONSTRUCT") ->
-        "Invalid query form. Expected SELECT, CONSTRUCT, ASK, or DESCRIBE"
+  defp msg_for_prefix_not_found(_expected, raw_message, _query_type) do
+    if String.contains?(raw_message, "Prefix not found") do
+      "Undefined prefix. The prefix used in this query has not been declared"
+    end
+  end
 
-      String.contains?(expected, "INSERT") or String.contains?(expected, "DELETE") ->
-        "Invalid update form. Expected INSERT DATA, DELETE DATA, INSERT/DELETE WHERE, LOAD, CLEAR, CREATE, or DROP"
+  defp msg_for_unbound_variable(_expected, raw_message, _query_type) do
+    if String.contains?(raw_message, "variable that is unbound") do
+      "Variable scoping error. A variable in SELECT is not bound by the query pattern or GROUP BY"
+    end
+  end
 
-      String.contains?(expected, "\"{\"") and String.contains?(expected, "DISTINCT") ->
-        "Missing WHERE clause or opening brace '{'."
+  defp msg_for_invalid_query_form(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "CONSTRUCT") do
+      "Invalid query form. Expected SELECT, CONSTRUCT, ASK, or DESCRIBE"
+    end
+  end
 
-      String.contains?(expected, "\"}\"") ->
-        "Unclosed brace. Expected '}' to close the pattern block"
+  defp msg_for_invalid_update_form(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "INSERT") or String.contains?(expected, "DELETE") do
+      "Invalid update form. Expected INSERT DATA, DELETE DATA, INSERT/DELETE WHERE, LOAD, CLEAR, CREATE, or DROP"
+    end
+  end
 
-      String.contains?(expected, "\".\"") or String.contains?(expected, "\";\"") ->
-        "Invalid triple pattern. Expected '.' to separate triples or complete the pattern"
+  defp msg_for_missing_where(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "\"{\"") and String.contains?(expected, "DISTINCT") do
+      "Missing WHERE clause or opening brace '{'."
+    end
+  end
 
-      String.contains?(expected, "LATERAL") or String.contains?(expected, "SERVICE") ->
-        "Incomplete triple pattern. A triple requires subject, predicate, and object"
+  defp msg_for_unclosed_brace(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "\"}\"") do
+      "Unclosed brace. Expected '}' to close the pattern block"
+    end
+  end
 
-      String.contains?(expected, "one of") ->
-        simplify_expected(expected, query_type)
+  defp msg_for_invalid_triple(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "\".\"") or String.contains?(expected, "\";\"") do
+      "Invalid triple pattern. Expected '.' to separate triples or complete the pattern"
+    end
+  end
 
-      true ->
-        "Expected #{expected}"
+  defp msg_for_incomplete_triple(expected, _raw_message, _query_type) do
+    if String.contains?(expected, "LATERAL") or String.contains?(expected, "SERVICE") do
+      "Incomplete triple pattern. A triple requires subject, predicate, and object"
+    end
+  end
+
+  defp msg_for_one_of(expected, _raw_message, query_type) do
+    if String.contains?(expected, "one of") do
+      simplify_expected(expected, query_type)
     end
   end
 
@@ -452,65 +493,92 @@ defmodule TripleStore.SPARQL.Parser do
   end
 
   # Generates helpful hints based on common mistakes
+  # Uses a list of hint generators to reduce cyclomatic complexity
   defp generate_hint(raw_message, sparql, query_type) do
-    cond do
-      # Undefined prefix - extract the prefix name from the query
-      String.contains?(raw_message, "Prefix not found") ->
-        extract_undefined_prefix_hint(sparql)
+    hint_generators = [
+      &hint_for_undefined_prefix/3,
+      &hint_for_unbound_variable/3,
+      &hint_for_missing_where/3,
+      &hint_for_unclosed_brace/3,
+      &hint_for_incomplete_triple/3,
+      &hint_for_missing_separator/3,
+      &hint_for_invalid_iri/3,
+      &hint_for_missing_variable_sigil/3
+    ]
 
-      # Unbound variable scoping error (GROUP BY)
-      String.contains?(raw_message, "variable that is unbound") ->
-        if String.contains?(String.upcase(sparql), "GROUP BY") do
-          "When using GROUP BY, all SELECT variables must be either:\n" <>
-            "  1. Listed in the GROUP BY clause, or\n" <>
-            "  2. Used inside an aggregate function (COUNT, SUM, AVG, etc.)"
-        else
-          "When using aggregate functions, add a GROUP BY clause or wrap all other variables in aggregate functions"
-        end
+    Enum.find_value(hint_generators, fn generator ->
+      generator.(raw_message, sparql, query_type)
+    end)
+  end
 
-      # Missing WHERE keyword
-      String.contains?(raw_message, "expected") and
-          String.contains?(raw_message, "\"{\"") and
-          not String.contains?(String.upcase(sparql), "WHERE") and
-          query_type == :query ->
-        "Did you forget the WHERE keyword? Example: SELECT ?s WHERE { ?s ?p ?o }"
+  defp hint_for_undefined_prefix(raw_message, sparql, _query_type) do
+    if String.contains?(raw_message, "Prefix not found") do
+      extract_undefined_prefix_hint(sparql)
+    end
+  end
 
-      # Unclosed brace
-      String.contains?(raw_message, "\"}\"") ->
-        count_braces = fn s ->
-          opens = s |> String.graphemes() |> Enum.count(&(&1 == "{"))
-          closes = s |> String.graphemes() |> Enum.count(&(&1 == "}"))
-          {opens, closes}
-        end
+  defp hint_for_unbound_variable(raw_message, sparql, _query_type) do
+    if String.contains?(raw_message, "variable that is unbound") do
+      if String.contains?(String.upcase(sparql), "GROUP BY") do
+        "When using GROUP BY, all SELECT variables must be either:\n" <>
+          "  1. Listed in the GROUP BY clause, or\n" <>
+          "  2. Used inside an aggregate function (COUNT, SUM, AVG, etc.)"
+      else
+        "When using aggregate functions, add a GROUP BY clause or wrap all other variables in aggregate functions"
+      end
+    end
+  end
 
-        {opens, closes} = count_braces.(sparql)
+  defp hint_for_missing_where(raw_message, sparql, query_type) do
+    if String.contains?(raw_message, "expected") and
+         String.contains?(raw_message, "\"{\"") and
+         not String.contains?(String.upcase(sparql), "WHERE") and
+         query_type == :query do
+      "Did you forget the WHERE keyword? Example: SELECT ?s WHERE { ?s ?p ?o }"
+    end
+  end
 
-        if opens > closes do
-          "You have #{opens} opening braces but only #{closes} closing braces"
-        else
-          "Check that all braces are properly matched"
-        end
+  defp hint_for_unclosed_brace(raw_message, sparql, _query_type) do
+    if String.contains?(raw_message, "\"}\"") do
+      {opens, closes} = count_braces(sparql)
 
-      # Incomplete triple - missing object
-      String.contains?(raw_message, "LATERAL") or String.contains?(raw_message, "SERVICE") ->
-        "Triple patterns require exactly three parts: subject predicate object. Did you forget the object?"
+      if opens > closes do
+        "You have #{opens} opening braces but only #{closes} closing braces"
+      else
+        "Check that all braces are properly matched"
+      end
+    end
+  end
 
-      # Missing separator between triples
-      String.contains?(raw_message, "\".\"") ->
-        "Use '.' to separate triple patterns, or ';' for patterns sharing the same subject"
+  defp count_braces(s) do
+    opens = s |> String.graphemes() |> Enum.count(&(&1 == "{"))
+    closes = s |> String.graphemes() |> Enum.count(&(&1 == "}"))
+    {opens, closes}
+  end
 
-      # Invalid IRI
-      String.contains?(raw_message, "<") or String.contains?(raw_message, ">") ->
-        "IRIs must be enclosed in angle brackets: <http://example.org/resource>"
+  defp hint_for_incomplete_triple(raw_message, _sparql, _query_type) do
+    if String.contains?(raw_message, "LATERAL") or String.contains?(raw_message, "SERVICE") do
+      "Triple patterns require exactly three parts: subject predicate object. Did you forget the object?"
+    end
+  end
 
-      # Variables must start with ? or $
-      Regex.match?(~r/\b[a-z][a-z0-9]*\s+[a-z]/i, sparql) and
-          not String.contains?(sparql, "?") and
-          not String.contains?(sparql, "$") ->
-        "Variables must start with '?' or '$'. Example: ?name, $value"
+  defp hint_for_missing_separator(raw_message, _sparql, _query_type) do
+    if String.contains?(raw_message, "\".\"") do
+      "Use '.' to separate triple patterns, or ';' for patterns sharing the same subject"
+    end
+  end
 
-      true ->
-        nil
+  defp hint_for_invalid_iri(raw_message, _sparql, _query_type) do
+    if String.contains?(raw_message, "<") or String.contains?(raw_message, ">") do
+      "IRIs must be enclosed in angle brackets: <http://example.org/resource>"
+    end
+  end
+
+  defp hint_for_missing_variable_sigil(_raw_message, sparql, _query_type) do
+    if Regex.match?(~r/\b[a-z][a-z0-9]*\s+[a-z]/i, sparql) and
+         not String.contains?(sparql, "?") and
+         not String.contains?(sparql, "$") do
+      "Variables must start with '?' or '$'. Example: ?name, $value"
     end
   end
 
@@ -561,11 +629,9 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec nif_loaded?() :: boolean()
   def nif_loaded? do
-    try do
-      NIF.nif_loaded() == "sparql_parser_nif"
-    rescue
-      _ -> false
-    end
+    NIF.nif_loaded() == "sparql_parser_nif"
+  rescue
+    _ -> false
   end
 
   # ===========================================================================
@@ -717,39 +783,50 @@ defmodule TripleStore.SPARQL.Parser do
   end
 
   defp do_extract_variables({:variable, name}) when is_binary(name), do: [name]
+
   defp do_extract_variables({:bgp, triples}) when is_list(triples) do
     Enum.flat_map(triples, &do_extract_variables/1)
   end
+
   defp do_extract_variables({:triple, s, p, o}) do
     do_extract_variables(s) ++ do_extract_variables(p) ++ do_extract_variables(o)
   end
+
   defp do_extract_variables({:join, left, right}) do
     do_extract_variables(left) ++ do_extract_variables(right)
   end
+
   defp do_extract_variables({:left_join, left, right, _expr}) do
     do_extract_variables(left) ++ do_extract_variables(right)
   end
+
   defp do_extract_variables({:union, left, right}) do
     do_extract_variables(left) ++ do_extract_variables(right)
   end
+
   defp do_extract_variables({:filter, _expr, inner}) do
     do_extract_variables(inner)
   end
+
   defp do_extract_variables({:project, inner, vars}) when is_list(vars) do
     var_names = Enum.flat_map(vars, &do_extract_variables/1)
     inner_vars = do_extract_variables(inner)
     var_names ++ inner_vars
   end
+
   defp do_extract_variables({:distinct, inner}), do: do_extract_variables(inner)
   defp do_extract_variables({:reduced, inner}), do: do_extract_variables(inner)
   defp do_extract_variables({:slice, inner, _start, _length}), do: do_extract_variables(inner)
   defp do_extract_variables({:order_by, inner, _exprs}), do: do_extract_variables(inner)
+
   defp do_extract_variables({:extend, inner, var, _expr}) do
     do_extract_variables(inner) ++ do_extract_variables(var)
   end
+
   defp do_extract_variables({:group, inner, vars, _aggs}) do
     do_extract_variables(inner) ++ Enum.flat_map(vars, &do_extract_variables/1)
   end
+
   defp do_extract_variables(_), do: []
 
   @doc """
@@ -778,15 +855,19 @@ defmodule TripleStore.SPARQL.Parser do
   end
 
   defp do_extract_bgp_triples({:bgp, triples}) when is_list(triples), do: triples
+
   defp do_extract_bgp_triples({:join, left, right}) do
     [do_extract_bgp_triples(left), do_extract_bgp_triples(right)]
   end
+
   defp do_extract_bgp_triples({:left_join, left, right, _expr}) do
     [do_extract_bgp_triples(left), do_extract_bgp_triples(right)]
   end
+
   defp do_extract_bgp_triples({:union, left, right}) do
     [do_extract_bgp_triples(left), do_extract_bgp_triples(right)]
   end
+
   defp do_extract_bgp_triples({:filter, _expr, inner}), do: do_extract_bgp_triples(inner)
   defp do_extract_bgp_triples({:project, inner, _vars}), do: do_extract_bgp_triples(inner)
   defp do_extract_bgp_triples({:distinct, inner}), do: do_extract_bgp_triples(inner)

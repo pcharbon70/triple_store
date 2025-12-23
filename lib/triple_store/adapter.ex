@@ -563,12 +563,7 @@ defmodule TripleStore.Adapter do
         rdf_triples =
           all_results
           |> Enum.chunk_every(3)
-          |> Enum.map(fn results ->
-            case results do
-              [{:ok, s}, {:ok, p}, {:ok, o}] -> {s, p, o}
-              _ -> :not_found
-            end
-          end)
+          |> Enum.map(&results_to_triple/1)
 
         {:ok, rdf_triples}
 
@@ -576,6 +571,9 @@ defmodule TripleStore.Adapter do
         error
     end
   end
+
+  defp results_to_triple([{:ok, s}, {:ok, p}, {:ok, o}]), do: {s, p, o}
+  defp results_to_triple(_), do: :not_found
 
   # ===========================================================================
   # Graph Conversion

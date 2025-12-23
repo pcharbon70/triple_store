@@ -43,8 +43,8 @@ defmodule TripleStore.Statistics.Cache do
 
   use GenServer
 
-  alias TripleStore.Statistics
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Statistics
 
   require Logger
 
@@ -71,7 +71,8 @@ defmodule TripleStore.Statistics.Cache do
   # Constants
   # ===========================================================================
 
-  @default_refresh_interval 60_000  # 1 minute
+  # 1 minute
+  @default_refresh_interval 60_000
 
   # ===========================================================================
   # Client API

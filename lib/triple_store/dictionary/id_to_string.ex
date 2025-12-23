@@ -210,7 +210,10 @@ defmodule TripleStore.Dictionary.IdToString do
     end
   end
 
-  @spec decode_and_wrap((Dictionary.term_id() -> {:ok, term()} | {:error, term()}), Dictionary.term_id()) ::
+  @spec decode_and_wrap(
+          (Dictionary.term_id() -> {:ok, term()} | {:error, term()}),
+          Dictionary.term_id()
+        ) ::
           {:ok, rdf_term()} | {:error, term()}
   defp decode_and_wrap(decoder, id) do
     case decoder.(id) do
