@@ -1010,6 +1010,20 @@ defmodule TripleStore.SPARQL.Query do
           {:ok, extended}
         end
 
+      {:group, inner, group_vars, aggregates} ->
+        with {:ok, stream} <- execute_pattern(ctx, inner) do
+          grouped =
+            if Enum.empty?(group_vars) do
+              # Implicit grouping - all solutions form one group
+              Executor.implicit_group(stream, aggregates)
+            else
+              # Explicit GROUP BY
+              Executor.group_by(stream, group_vars, aggregates)
+            end
+
+          {:ok, grouped}
+        end
+
       nil ->
         # Empty pattern - return unit stream
         {:ok, Executor.unit_stream()}

@@ -2513,4 +2513,267 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       :telemetry.detach(handler_id)
     end
   end
+
+  # ===========================================================================
+  # Task 2.6.1: GROUP BY Execution Tests
+  # ===========================================================================
+
+  describe "group_by/3" do
+    test "groups bindings by single variable" do
+      bindings = [
+        %{"type" => {:named_node, "http://ex.org/Person"}, "name" => {:literal, :simple, "Alice"}},
+        %{"type" => {:named_node, "http://ex.org/Person"}, "name" => {:literal, :simple, "Bob"}},
+        %{"type" => {:named_node, "http://ex.org/Animal"}, "name" => {:literal, :simple, "Cat"}}
+      ]
+
+      group_vars = [{:variable, "type"}]
+      aggregates = [{{:variable, "count"}, {:count, :star, false}}]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      assert length(result) == 2
+
+      person_group = Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Person"} end)
+      animal_group = Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Animal"} end)
+
+      assert person_group["count"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert animal_group["count"] == {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "groups bindings by multiple variables" do
+      bindings = [
+        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "active"}, "val" => 1},
+        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "active"}, "val" => 2},
+        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "inactive"}, "val" => 3},
+        %{"type" => {:named_node, "http://ex.org/B"}, "status" => {:literal, :simple, "active"}, "val" => 4}
+      ]
+
+      group_vars = [{:variable, "type"}, {:variable, "status"}]
+      aggregates = [{{:variable, "cnt"}, {:count, :star, false}}]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      # Should have 3 groups: (A, active), (A, inactive), (B, active)
+      assert length(result) == 3
+
+      a_active = Enum.find(result, fn r ->
+        r["type"] == {:named_node, "http://ex.org/A"} and r["status"] == {:literal, :simple, "active"}
+      end)
+
+      assert a_active["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "COUNT(*) counts all solutions" do
+      bindings = [
+        %{"x" => {:literal, :simple, "a"}},
+        %{"x" => {:literal, :simple, "b"}},
+        %{"x" => {:literal, :simple, "c"}}
+      ]
+
+      aggregates = [{{:variable, "total"}, {:count, :star, false}}]
+
+      result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
+
+      assert length(result) == 1
+      assert hd(result)["total"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "COUNT(expr) counts non-null values" do
+      bindings = [
+        %{"x" => {:literal, :simple, "a"}, "y" => {:literal, :simple, "1"}},
+        %{"x" => {:literal, :simple, "b"}},  # y is missing
+        %{"x" => {:literal, :simple, "c"}, "y" => {:literal, :simple, "3"}}
+      ]
+
+      aggregates = [{{:variable, "cnt"}, {:count, {:variable, "y"}, false}}]
+
+      result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
+
+      assert length(result) == 1
+      # Only 2 bindings have y
+      assert hd(result)["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "SUM aggregates numeric values" do
+      bindings = [
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"type" => {:literal, :simple, "B"}, "val" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      group_vars = [{:variable, "type"}]
+      aggregates = [{{:variable, "sum"}, {:sum, {:variable, "val"}, false}}]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      a_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "A"} end)
+      b_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "B"} end)
+
+      assert a_group["sum"] == {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert b_group["sum"] == {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "AVG computes average" do
+      bindings = [
+        %{"val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      aggregates = [{{:variable, "avg"}, {:avg, {:variable, "val"}, false}}]
+
+      result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
+
+      # (10 + 20 + 30) / 3 = 20.0
+      assert hd(result)["avg"] == {:literal, :typed, "20.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+    end
+
+    test "MIN finds minimum value" do
+      bindings = [
+        %{"val" => {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      aggregates = [{{:variable, "min"}, {:min, {:variable, "val"}, false}}]
+
+      result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
+
+      assert hd(result)["min"] == {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "MAX finds maximum value" do
+      bindings = [
+        %{"val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      aggregates = [{{:variable, "max"}, {:max, {:variable, "val"}, false}}]
+
+      result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
+
+      assert hd(result)["max"] == {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "GROUP_CONCAT joins values with separator" do
+      bindings = [
+        %{"type" => {:literal, :simple, "A"}, "name" => {:literal, :simple, "Alice"}},
+        %{"type" => {:literal, :simple, "A"}, "name" => {:literal, :simple, "Bob"}},
+        %{"type" => {:literal, :simple, "B"}, "name" => {:literal, :simple, "Carol"}}
+      ]
+
+      group_vars = [{:variable, "type"}]
+      aggregates = [{{:variable, "names"}, {:group_concat, {:variable, "name"}, false, ", "}}]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      a_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "A"} end)
+      b_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "B"} end)
+
+      # Order within group is preserved
+      assert a_group["names"] == {:literal, :simple, "Alice, Bob"}
+      assert b_group["names"] == {:literal, :simple, "Carol"}
+    end
+
+    test "SAMPLE returns arbitrary value from group" do
+      bindings = [
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "y"}}
+      ]
+
+      group_vars = [{:variable, "type"}]
+      aggregates = [{{:variable, "sample"}, {:sample, {:variable, "val"}, false}}]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      # SAMPLE returns some value from the group
+      sample_val = hd(result)["sample"]
+      assert sample_val in [{:literal, :simple, "x"}, {:literal, :simple, "y"}]
+    end
+
+    test "DISTINCT in COUNT removes duplicates" do
+      bindings = [
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},  # duplicate
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "y"}}
+      ]
+
+      group_vars = [{:variable, "type"}]
+      agg_no_distinct = [{{:variable, "cnt"}, {:count, {:variable, "val"}, false}}]
+      agg_distinct = [{{:variable, "cnt"}, {:count, {:variable, "val"}, true}}]
+
+      result_no_distinct = Executor.group_by(bindings, group_vars, agg_no_distinct) |> Enum.to_list()
+      result_distinct = Executor.group_by(bindings, group_vars, agg_distinct) |> Enum.to_list()
+
+      assert hd(result_no_distinct)["cnt"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result_distinct)["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "handles empty group variables (single implicit group)" do
+      bindings = [
+        %{"val" => {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"val" => {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      group_vars = []
+      aggregates = [
+        {{:variable, "cnt"}, {:count, :star, false}},
+        {{:variable, "sum"}, {:sum, {:variable, "val"}, false}}
+      ]
+
+      result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
+
+      assert length(result) == 1
+      assert hd(result)["cnt"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result)["sum"] == {:literal, :typed, "6", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+  end
+
+  describe "implicit_group/2" do
+    test "creates single group from all bindings" do
+      bindings = [
+        %{"x" => 1},
+        %{"x" => 2},
+        %{"x" => 3}
+      ]
+
+      aggregates = [{{:variable, "total"}, {:count, :star, false}}]
+
+      result = Executor.implicit_group(bindings, aggregates) |> Enum.to_list()
+
+      assert length(result) == 1
+      assert hd(result)["total"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+
+    test "handles empty input" do
+      bindings = []
+      aggregates = [{{:variable, "total"}, {:count, :star, false}}]
+
+      result = Executor.implicit_group(bindings, aggregates) |> Enum.to_list()
+
+      assert length(result) == 1
+      assert hd(result)["total"] == {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
+  end
+
+  describe "having/2" do
+    test "filters groups by aggregate value" do
+      # Pre-grouped bindings with aggregate results
+      groups = [
+        %{"type" => {:literal, :simple, "A"}, "count" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"type" => {:literal, :simple, "B"}, "count" => {:literal, :typed, "15", "http://www.w3.org/2001/XMLSchema#integer"}},
+        %{"type" => {:literal, :simple, "C"}, "count" => {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}}
+      ]
+
+      # HAVING count > 10
+      having_expr = {:greater, {:variable, "count"}, {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}}
+
+      result = Executor.having(groups, having_expr) |> Enum.to_list()
+
+      assert length(result) == 1
+      assert hd(result)["type"] == {:literal, :simple, "B"}
+    end
+  end
 end

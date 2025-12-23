@@ -1588,6 +1588,8 @@ defmodule TripleStore.SPARQL.Executor do
   defp literal_sort_key({:literal, :simple, value}), do: value
   defp literal_sort_key({:literal, :typed, value, _}), do: value
   defp literal_sort_key({:literal, :lang, value, _}), do: value
+  defp literal_sort_key({:literal, {:typed, _}, value}), do: value
+  defp literal_sort_key({:literal, {:lang, _}, value}), do: value
 
   @doc """
   Applies offset and limit to a binding stream.
@@ -1668,6 +1670,441 @@ defmodule TripleStore.SPARQL.Executor do
   """
   @spec limit(Enumerable.t(), non_neg_integer()) :: binding_stream()
   def limit(stream, n) when is_integer(n) and n >= 0, do: Stream.take(stream, n)
+
+  # ===========================================================================
+  # GROUP BY Execution (Task 2.6.1)
+  # ===========================================================================
+
+  @typedoc """
+  Aggregate function specification.
+
+  Format: `{aggregate_type, expression, distinct?}`
+  - `:count` can have `:star` or an expression
+  - Other aggregates have an expression
+  - `distinct?` indicates if DISTINCT modifier is applied
+  """
+  @type aggregate_spec ::
+          {:count, :star | term(), boolean()}
+          | {:sum, term(), boolean()}
+          | {:avg, term(), boolean()}
+          | {:min, term(), boolean()}
+          | {:max, term(), boolean()}
+          | {:group_concat, term(), boolean(), String.t() | nil}
+          | {:sample, term(), boolean()}
+
+  @typedoc """
+  Group result containing key bindings and aggregated values.
+  """
+  @type group_result :: %{String.t() => term()}
+
+  @doc """
+  Groups bindings by key variables and computes aggregates for each group.
+
+  This implements SPARQL GROUP BY semantics. Solutions are partitioned by
+  the values of the grouping variables, then aggregates are computed for
+  each partition.
+
+  ## Arguments
+
+  - `stream` - Stream of bindings to group
+  - `group_vars` - List of variable specs to group by (e.g., `[{:variable, "type"}]`)
+  - `aggregates` - List of `{result_var, aggregate_spec}` tuples
+
+  ## Returns
+
+  Stream of bindings, one per group, containing:
+  - Values for each grouping variable
+  - Computed values for each aggregate
+
+  ## Examples
+
+      # Group by ?type and count
+      group_vars = [{:variable, "type"}]
+      aggregates = [{{:variable, "count"}, {:count, :star, false}}]
+      grouped = Executor.group_by(stream, group_vars, aggregates)
+
+  ## SPARQL Semantics
+
+  - Empty GROUP BY with aggregates creates a single implicit group
+  - Variables not in GROUP BY or aggregates are not accessible
+  - DISTINCT in aggregate affects value collection before aggregation
+
+  """
+  @spec group_by(Enumerable.t(), [term()], [{term(), aggregate_spec()}]) :: binding_stream()
+  def group_by(stream, group_vars, aggregates) do
+    # Extract variable names for grouping
+    group_var_names = extract_group_var_names(group_vars)
+
+    # Collect all bindings and partition by group key
+    groups = partition_by_group_key(stream, group_var_names)
+
+    # Stream over groups, computing aggregates for each
+    Stream.map(groups, fn {key_binding, group_bindings} ->
+      compute_group_result(key_binding, group_bindings, aggregates)
+    end)
+  end
+
+  @doc """
+  Creates a single implicit group for queries with aggregates but no GROUP BY.
+
+  When a query uses aggregate functions without a GROUP BY clause, all
+  solutions form a single group. This function handles that case.
+
+  ## Arguments
+
+  - `stream` - Stream of bindings to aggregate
+  - `aggregates` - List of `{result_var, aggregate_spec}` tuples
+
+  ## Returns
+
+  Stream containing a single binding with computed aggregate values.
+
+  ## Examples
+
+      # SELECT (COUNT(*) AS ?total) WHERE { ?s ?p ?o }
+      aggregates = [{{:variable, "total"}, {:count, :star, false}}]
+      result = Executor.implicit_group(stream, aggregates)
+
+  """
+  @spec implicit_group(Enumerable.t(), [{term(), aggregate_spec()}]) :: binding_stream()
+  def implicit_group(stream, aggregates) do
+    # All bindings form a single group
+    all_bindings = Enum.to_list(stream)
+
+    # Compute aggregates for the single group
+    result = compute_group_result(%{}, all_bindings, aggregates)
+
+    # Return as single-element stream
+    [result]
+  end
+
+  @doc """
+  Applies HAVING clause filtering to grouped results.
+
+  HAVING filters groups after aggregation, similar to WHERE filtering
+  individual solutions. The filter expression can reference both
+  grouping variables and aggregate results.
+
+  ## Arguments
+
+  - `grouped_stream` - Stream of group result bindings
+  - `having_expr` - Filter expression to apply
+
+  ## Returns
+
+  Stream of group bindings that satisfy the HAVING condition.
+
+  ## Examples
+
+      # HAVING COUNT(?s) > 10
+      having_expr = {:>, {:variable, "count"}, {:literal, {:typed, "xsd:integer"}, "10"}}
+      filtered = Executor.having(grouped_stream, having_expr)
+
+  """
+  @spec having(Enumerable.t(), term()) :: binding_stream()
+  def having(grouped_stream, having_expr) do
+    filter(grouped_stream, having_expr)
+  end
+
+  # ---------------------------------------------------------------------------
+  # GROUP BY Helpers
+  # ---------------------------------------------------------------------------
+
+  # Extract variable names from group variable specifications
+  defp extract_group_var_names(group_vars) do
+    Enum.map(group_vars, fn
+      {:variable, name} -> name
+      {_, name} when is_binary(name) -> name
+    end)
+  end
+
+  # Partition bindings by group key
+  # Returns list of {key_binding, [bindings]} tuples
+  defp partition_by_group_key(stream, group_var_names) do
+    stream
+    |> Enum.reduce(%{}, fn binding, groups ->
+      key = extract_group_key(binding, group_var_names)
+      key_binding = build_key_binding(binding, group_var_names)
+      Map.update(groups, key, {key_binding, [binding]}, fn {kb, bindings} ->
+        {kb, [binding | bindings]}
+      end)
+    end)
+    |> Map.values()
+    |> Enum.map(fn {key_binding, bindings} ->
+      # Reverse to maintain original order within groups
+      {key_binding, Enum.reverse(bindings)}
+    end)
+  end
+
+  # Extract a comparable key from a binding for grouping
+  # Returns a list of values for the group variables
+  defp extract_group_key(binding, group_var_names) do
+    Enum.map(group_var_names, fn var_name ->
+      Map.get(binding, var_name)
+    end)
+  end
+
+  # Build a binding containing just the group key variables
+  defp build_key_binding(binding, group_var_names) do
+    Map.take(binding, group_var_names)
+  end
+
+  # Compute aggregates for a single group
+  defp compute_group_result(key_binding, group_bindings, aggregates) do
+    # Start with the key binding (group variables)
+    # Add each aggregate result
+    Enum.reduce(aggregates, key_binding, fn {{:variable, result_var}, agg_spec}, acc ->
+      value = compute_aggregate(agg_spec, group_bindings)
+      Map.put(acc, result_var, value)
+    end)
+  end
+
+  # Compute a single aggregate over group bindings
+  # Returns the aggregated RDF term value
+  defp compute_aggregate({:count, :star, _distinct?}, bindings) do
+    # COUNT(*) counts all solutions
+    count = length(bindings)
+    {:literal, :typed, Integer.to_string(count), "http://www.w3.org/2001/XMLSchema#integer"}
+  end
+
+  defp compute_aggregate({:count, expr, distinct?}, bindings) do
+    # COUNT(expr) counts non-null values
+    values = collect_expression_values(bindings, expr, distinct?)
+    count = length(values)
+    {:literal, :typed, Integer.to_string(count), "http://www.w3.org/2001/XMLSchema#integer"}
+  end
+
+  defp compute_aggregate({:sum, expr, distinct?}, bindings) do
+    values = collect_expression_values(bindings, expr, distinct?)
+    sum_values(values)
+  end
+
+  defp compute_aggregate({:avg, expr, distinct?}, bindings) do
+    values = collect_expression_values(bindings, expr, distinct?)
+    avg_values(values)
+  end
+
+  defp compute_aggregate({:min, expr, _distinct?}, bindings) do
+    # DISTINCT doesn't affect MIN
+    values = collect_expression_values(bindings, expr, false)
+    min_value(values)
+  end
+
+  defp compute_aggregate({:max, expr, _distinct?}, bindings) do
+    # DISTINCT doesn't affect MAX
+    values = collect_expression_values(bindings, expr, false)
+    max_value(values)
+  end
+
+  defp compute_aggregate({:group_concat, expr, distinct?, separator}, bindings) do
+    values = collect_expression_values(bindings, expr, distinct?)
+    sep = separator || " "
+    group_concat_values(values, sep)
+  end
+
+  defp compute_aggregate({:sample, expr, _distinct?}, bindings) do
+    # SAMPLE returns an arbitrary value from the group
+    case bindings do
+      [] -> :unbound
+      [first | _] ->
+        case evaluate_expression(expr, first) do
+          {:ok, value} -> value
+          :error -> :unbound
+        end
+    end
+  end
+
+  # Collect expression values from all bindings, optionally applying DISTINCT
+  defp collect_expression_values(bindings, expr, distinct?) do
+    values =
+      bindings
+      |> Enum.map(fn binding -> evaluate_expression(expr, binding) end)
+      |> Enum.filter(fn
+        {:ok, _} -> true
+        :error -> false
+      end)
+      |> Enum.map(fn {:ok, value} -> value end)
+
+    if distinct? do
+      Enum.uniq(values)
+    else
+      values
+    end
+  end
+
+  # Evaluate an expression against a binding
+  defp evaluate_expression({:variable, name}, binding) do
+    case Map.get(binding, name) do
+      nil -> :error
+      :unbound -> :error
+      value -> {:ok, value}
+    end
+  end
+
+  defp evaluate_expression(expr, binding) do
+    TripleStore.SPARQL.Expression.evaluate(expr, binding)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Aggregate Computation Helpers
+  # ---------------------------------------------------------------------------
+
+  # Sum numeric values
+  defp sum_values([]), do: {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
+
+  defp sum_values(values) do
+    {sum, type} =
+      Enum.reduce(values, {0, :integer}, fn value, {acc, acc_type} ->
+        case extract_numeric(value) do
+          {:integer, n} -> {acc + n, acc_type}
+          {:decimal, n} -> {acc + n, promote_type(acc_type, :decimal)}
+          {:double, n} -> {acc + n, promote_type(acc_type, :double)}
+          :error -> {acc, acc_type}
+        end
+      end)
+
+    format_numeric(sum, type)
+  end
+
+  # Average numeric values
+  defp avg_values([]), do: {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
+
+  defp avg_values(values) do
+    {sum, count, type} =
+      Enum.reduce(values, {0, 0, :integer}, fn value, {acc, cnt, acc_type} ->
+        case extract_numeric(value) do
+          {:integer, n} -> {acc + n, cnt + 1, acc_type}
+          {:decimal, n} -> {acc + n, cnt + 1, promote_type(acc_type, :decimal)}
+          {:double, n} -> {acc + n, cnt + 1, promote_type(acc_type, :double)}
+          :error -> {acc, cnt, acc_type}
+        end
+      end)
+
+    if count == 0 do
+      {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
+    else
+      avg = sum / count
+      # AVG always produces decimal or double
+      format_numeric(avg, promote_type(type, :decimal))
+    end
+  end
+
+  # Find minimum value using SPARQL ordering rules
+  defp min_value([]), do: :unbound
+
+  defp min_value(values) do
+    Enum.min(values, fn a, b -> compare_terms(a, b) != :gt end)
+  end
+
+  # Find maximum value using SPARQL ordering rules
+  defp max_value([]), do: :unbound
+
+  defp max_value(values) do
+    Enum.max(values, fn a, b -> compare_terms(a, b) != :lt end)
+  end
+
+  # Concatenate string values with separator
+  defp group_concat_values([], _sep) do
+    {:literal, :simple, ""}
+  end
+
+  defp group_concat_values(values, sep) do
+    string_values =
+      Enum.map(values, fn
+        # 4-element format
+        {:literal, :simple, str} -> str
+        {:literal, :lang, str, _} -> str
+        {:literal, :typed, str, _} -> str
+        # 3-element format (legacy)
+        {:literal, {:lang, _}, str} -> str
+        {:literal, {:typed, _}, str} -> str
+        {:named_node, uri} -> uri
+        other -> inspect(other)
+      end)
+
+    result = Enum.join(string_values, sep)
+    {:literal, :simple, result}
+  end
+
+  # Extract numeric value from RDF literal
+  # Support both 4-element format {:literal, :typed, value, type} and 3-element format {:literal, {:typed, type}, value}
+  defp extract_numeric({:literal, :typed, str, type}) when is_binary(str) do
+    extract_numeric_from_type(str, type)
+  end
+
+  defp extract_numeric({:literal, {:typed, type}, str}) when is_binary(str) do
+    extract_numeric_from_type(str, type)
+  end
+
+  defp extract_numeric({:literal, :simple, str}) when is_binary(str) do
+    # Try to parse as number
+    case Integer.parse(str) do
+      {n, ""} -> {:integer, n}
+      _ ->
+        case Float.parse(str) do
+          {n, ""} -> {:double, n}
+          _ -> :error
+        end
+    end
+  end
+
+  defp extract_numeric(_), do: :error
+
+  defp extract_numeric_from_type(str, type) do
+    cond do
+      String.contains?(type, "integer") or String.contains?(type, "int") or
+          String.contains?(type, "long") or String.contains?(type, "short") or
+          String.contains?(type, "byte") ->
+        case Integer.parse(str) do
+          {n, ""} -> {:integer, n}
+          _ -> :error
+        end
+
+      String.contains?(type, "decimal") ->
+        case Float.parse(str) do
+          {n, ""} -> {:decimal, n}
+          _ -> :error
+        end
+
+      String.contains?(type, "double") or String.contains?(type, "float") ->
+        case Float.parse(str) do
+          {n, ""} -> {:double, n}
+          _ -> :error
+        end
+
+      true ->
+        :error
+    end
+  end
+
+  # Type promotion for numeric operations
+  # integer + integer stays integer (initial state)
+  # integer + decimal promotes to decimal
+  # anything + double promotes to double
+  defp promote_type(:integer, :decimal), do: :decimal
+  defp promote_type(:integer, :double), do: :double
+  defp promote_type(:decimal, :decimal), do: :decimal
+  defp promote_type(:decimal, :double), do: :double
+  defp promote_type(:double, _), do: :double
+  defp promote_type(_, :double), do: :double
+  defp promote_type(type, _), do: type
+
+  # Format a numeric value as an RDF literal (using 4-element format)
+  defp format_numeric(value, :integer) when is_integer(value) do
+    {:literal, :typed, Integer.to_string(value), "http://www.w3.org/2001/XMLSchema#integer"}
+  end
+
+  defp format_numeric(value, :integer) when is_float(value) do
+    {:literal, :typed, Integer.to_string(round(value)), "http://www.w3.org/2001/XMLSchema#integer"}
+  end
+
+  defp format_numeric(value, :decimal) do
+    {:literal, :typed, Float.to_string(value * 1.0), "http://www.w3.org/2001/XMLSchema#decimal"}
+  end
+
+  defp format_numeric(value, :double) do
+    {:literal, :typed, Float.to_string(value * 1.0), "http://www.w3.org/2001/XMLSchema#double"}
+  end
 
   # ===========================================================================
   # Result Serialization (Task 2.4.6)

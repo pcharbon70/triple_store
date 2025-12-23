@@ -522,13 +522,18 @@ This section implements GROUP BY and aggregate functions following SPARQL 1.1 se
 
 ### 2.6.1 Group By Execution
 
-- [ ] **Task 2.6.1 Complete**
+- [x] **Task 2.6.1 Complete** (2025-12-23)
 
 Implement grouping of solutions by key variables.
 
-- [ ] 2.6.1.1 Implement `execute_group(stream, group_vars)` partitioning by keys
-- [ ] 2.6.1.2 Handle implicit grouping (no GROUP BY with aggregates)
-- [ ] 2.6.1.3 Support HAVING clause filtering
+- [x] 2.6.1.1 Implement `execute_group(stream, group_vars)` partitioning by keys
+- [x] 2.6.1.2 Handle implicit grouping (no GROUP BY with aggregates)
+- [x] 2.6.1.3 Support HAVING clause filtering
+
+Implementation includes `group_by/3`, `implicit_group/2`, and `having/2` functions
+in executor.ex. Added `:group` pattern handling to query.ex. Aggregate computation
+supports COUNT, SUM, AVG, MIN, MAX, GROUP_CONCAT, and SAMPLE with DISTINCT modifier.
+Test coverage: 17 new tests in executor_test.exs.
 
 ### 2.6.2 Aggregate Functions
 
