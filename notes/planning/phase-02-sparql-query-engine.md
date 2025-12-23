@@ -422,14 +422,22 @@ This section implements the public query API providing a clean interface for exe
 
 ### 2.5.1 Query Function
 
-- [ ] **Task 2.5.1 Complete**
+- [x] **Task 2.5.1 Complete** (2025-12-23)
 
 Implement the main query entry point.
 
-- [ ] 2.5.1.1 Implement `TripleStore.query(db, sparql)` returning results
-- [ ] 2.5.1.2 Implement `TripleStore.query(db, sparql, opts)` with options
-- [ ] 2.5.1.3 Support timeout option for long-running queries
-- [ ] 2.5.1.4 Support explain option for query plan inspection
+- [x] 2.5.1.1 Implement `TripleStore.SPARQL.Query.query(ctx, sparql)` returning results
+- [x] 2.5.1.2 Implement `TripleStore.SPARQL.Query.query(ctx, sparql, opts)` with options
+- [x] 2.5.1.3 Support timeout option for long-running queries
+- [x] 2.5.1.4 Support explain option for query plan inspection
+
+Created `lib/triple_store/sparql/query.ex` with full query pipeline:
+- Integrates Parser, Optimizer, and Executor
+- Supports all query types (SELECT, ASK, CONSTRUCT, DESCRIBE)
+- Timeout protection via Task.async/yield
+- Explain mode for query plan inspection
+- Recursive pattern execution for all algebra nodes
+Test coverage: 23 tests in query_test.exs.
 
 ### 2.5.2 Streaming Results
 
