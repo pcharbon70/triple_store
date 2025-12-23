@@ -1950,4 +1950,423 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Result Serialization Tests (Task 2.4.6)
+  # ===========================================================================
+
+  describe "to_select_results/2" do
+    test "converts stream to list of bindings" do
+      bindings = [
+        %{"x" => 1, "y" => "a"},
+        %{"x" => 2, "y" => "b"}
+      ]
+
+      results = Executor.to_select_results(bindings)
+
+      assert results == bindings
+    end
+
+    test "projects specified variables" do
+      bindings = [
+        %{"x" => 1, "y" => "a", "z" => 100},
+        %{"x" => 2, "y" => "b", "z" => 200}
+      ]
+
+      results = Executor.to_select_results(bindings, ["x", "y"])
+
+      assert results == [
+        %{"x" => 1, "y" => "a"},
+        %{"x" => 2, "y" => "b"}
+      ]
+    end
+
+    test "handles empty stream" do
+      results = Executor.to_select_results([])
+
+      assert results == []
+    end
+
+    test "handles RDF term values" do
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/A"}, "name" => {:literal, :simple, "Alice"}}
+      ]
+
+      results = Executor.to_select_results(bindings, ["s", "name"])
+
+      assert length(results) == 1
+      [binding] = results
+      assert binding["s"] == {:named_node, "http://ex.org/A"}
+      assert binding["name"] == {:literal, :simple, "Alice"}
+    end
+
+    test "works with lazy streams" do
+      stream = Stream.map(1..3, fn x -> %{"x" => x} end)
+
+      results = Executor.to_select_results(stream)
+
+      assert results == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+    end
+  end
+
+  describe "to_ask_result/1" do
+    test "returns true when solutions exist" do
+      bindings = [%{"x" => 1}]
+
+      result = Executor.to_ask_result(bindings)
+
+      assert result == true
+    end
+
+    test "returns false when no solutions exist" do
+      result = Executor.to_ask_result([])
+
+      assert result == false
+    end
+
+    test "returns true with multiple solutions" do
+      bindings = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+
+      result = Executor.to_ask_result(bindings)
+
+      assert result == true
+    end
+
+    test "works with lazy streams" do
+      # Create a stream that would fail if fully evaluated
+      stream = Stream.map(1..1000, fn x -> %{"x" => x} end)
+
+      result = Executor.to_ask_result(stream)
+
+      assert result == true
+    end
+
+    test "handles empty binding (unit stream)" do
+      # Unit stream has one empty binding - this counts as a solution
+      result = Executor.to_ask_result([%{}])
+
+      assert result == true
+    end
+  end
+
+  describe "to_construct_result/4" do
+    test "builds graph from template with bindings", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}, "name" => {:literal, :simple, "Alice"}},
+        %{"s" => {:named_node, "http://ex.org/Bob"}, "name" => {:literal, :simple, "Bob"}}
+      ]
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
+
+      assert RDF.Graph.triple_count(graph) == 2
+
+      # Check triples exist
+      assert RDF.Graph.describes?(graph, RDF.iri("http://ex.org/Alice"))
+      assert RDF.Graph.describes?(graph, RDF.iri("http://ex.org/Bob"))
+
+      cleanup({db, manager})
+    end
+
+    test "skips triples with unbound variables", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}, "name" => {:literal, :simple, "Alice"}},
+        %{"s" => {:named_node, "http://ex.org/Bob"}}  # name is unbound
+      ]
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
+
+      # Only Alice's triple should be constructed
+      assert RDF.Graph.triple_count(graph) == 1
+      assert RDF.Graph.describes?(graph, RDF.iri("http://ex.org/Alice"))
+      refute RDF.Graph.describes?(graph, RDF.iri("http://ex.org/Bob"))
+
+      cleanup({db, manager})
+    end
+
+    test "handles concrete terms in template", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}}
+      ]
+
+      # Template with concrete predicate
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"}, {:named_node, "http://xmlns.com/foaf/0.1/Person"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
+
+      assert RDF.Graph.triple_count(graph) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "handles empty bindings", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://ex.org/p"}, {:variable, "o"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, [], template)
+
+      assert RDF.Graph.triple_count(graph) == 0
+
+      cleanup({db, manager})
+    end
+
+    test "handles typed literals", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}, "age" => {:literal, :typed, "30", @xsd_integer}}
+      ]
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://ex.org/age"}, {:variable, "age"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
+
+      assert RDF.Graph.triple_count(graph) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "handles language-tagged literals", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      bindings = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}, "label" => {:literal, :lang, "Alice", "en"}}
+      ]
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://www.w3.org/2000/01/rdf-schema#label"}, {:variable, "label"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
+
+      assert RDF.Graph.triple_count(graph) == 1
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "to_describe_result/4" do
+    test "describes resources from bindings", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add data about Alice
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/name"),
+        literal("Alice")
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/age"),
+        typed_literal("30", @xsd_integer)
+      })
+
+      # Add data about Bob (not to be described)
+      add_triple(db, manager, {
+        iri("http://example.org/Bob"),
+        iri("http://example.org/name"),
+        literal("Bob")
+      })
+
+      # Create bindings pointing to Alice
+      bindings = [
+        %{"person" => {:named_node, "http://example.org/Alice"}}
+      ]
+
+      {:ok, graph} = Executor.to_describe_result(ctx, bindings, ["person"], follow_bnodes: false)
+
+      # Should have Alice's triples
+      assert RDF.Graph.triple_count(graph) == 2
+      assert RDF.Graph.describes?(graph, RDF.iri("http://example.org/Alice"))
+      refute RDF.Graph.describes?(graph, RDF.iri("http://example.org/Bob"))
+
+      cleanup({db, manager})
+    end
+
+    test "describes multiple resources", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add data
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/name"),
+        literal("Alice")
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Bob"),
+        iri("http://example.org/name"),
+        literal("Bob")
+      })
+
+      bindings = [
+        %{"person" => {:named_node, "http://example.org/Alice"}},
+        %{"person" => {:named_node, "http://example.org/Bob"}}
+      ]
+
+      {:ok, graph} = Executor.to_describe_result(ctx, bindings, ["person"], follow_bnodes: false)
+
+      assert RDF.Graph.triple_count(graph) == 2
+      assert RDF.Graph.describes?(graph, RDF.iri("http://example.org/Alice"))
+      assert RDF.Graph.describes?(graph, RDF.iri("http://example.org/Bob"))
+
+      cleanup({db, manager})
+    end
+
+    test "handles empty bindings", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      {:ok, graph} = Executor.to_describe_result(ctx, [], ["person"])
+
+      assert RDF.Graph.triple_count(graph) == 0
+
+      cleanup({db, manager})
+    end
+
+    test "handles unbound variable", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Binding without the variable we want to describe
+      bindings = [
+        %{"other" => {:named_node, "http://example.org/Alice"}}
+      ]
+
+      {:ok, graph} = Executor.to_describe_result(ctx, bindings, ["person"])
+
+      assert RDF.Graph.triple_count(graph) == 0
+
+      cleanup({db, manager})
+    end
+
+    test "handles nonexistent resource", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Resource not in database
+      bindings = [
+        %{"person" => {:named_node, "http://example.org/Unknown"}}
+      ]
+
+      {:ok, graph} = Executor.to_describe_result(ctx, bindings, ["person"])
+
+      assert RDF.Graph.triple_count(graph) == 0
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "result serialization integration" do
+    test "SELECT with BGP execution", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/name"),
+        literal("Alice")
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Bob"),
+        iri("http://example.org/name"),
+        literal("Bob")
+      })
+
+      {:ok, stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/name"), var("name"))
+      ])
+
+      results = Executor.to_select_results(stream, ["name"])
+
+      assert length(results) == 2
+      names = Enum.map(results, fn b -> b["name"] end)
+      assert {:literal, :simple, "Alice"} in names
+      assert {:literal, :simple, "Bob"} in names
+
+      cleanup({db, manager})
+    end
+
+    test "ASK with BGP execution", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/knows"),
+        iri("http://example.org/Bob")
+      })
+
+      # ASK if Alice knows anyone
+      {:ok, stream} = Executor.execute_bgp(ctx, [
+        triple(iri("http://example.org/Alice"), iri("http://example.org/knows"), var("person"))
+      ])
+
+      assert Executor.to_ask_result(stream) == true
+
+      # ASK if Bob knows anyone (he doesn't)
+      {:ok, stream2} = Executor.execute_bgp(ctx, [
+        triple(iri("http://example.org/Bob"), iri("http://example.org/knows"), var("person"))
+      ])
+
+      assert Executor.to_ask_result(stream2) == false
+
+      cleanup({db, manager})
+    end
+
+    test "CONSTRUCT with BGP execution", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/name"),
+        literal("Alice")
+      })
+
+      {:ok, stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/name"), var("name"))
+      ])
+
+      # Construct with different predicate
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+      ]
+
+      {:ok, graph} = Executor.to_construct_result(ctx, stream, template)
+
+      assert RDF.Graph.triple_count(graph) == 1
+      # The constructed graph uses foaf:name instead of ex:name
+      assert RDF.Graph.describes?(graph, RDF.iri("http://example.org/Alice"))
+
+      cleanup({db, manager})
+    end
+  end
 end

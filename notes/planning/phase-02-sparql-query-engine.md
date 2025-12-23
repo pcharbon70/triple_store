@@ -365,33 +365,43 @@ Test coverage: 37 new tests (143 total in executor_test.exs).
 
 ### 2.4.6 Result Serialization
 
-- [ ] **Task 2.4.6 Complete**
+- [x] **Task 2.4.6 Complete** (2025-12-23)
 
 Serialize execution results to final output format.
 
-- [ ] 2.4.6.1 Implement SELECT result as list of binding maps
-- [ ] 2.4.6.2 Implement CONSTRUCT result as `RDF.Graph`
-- [ ] 2.4.6.3 Implement ASK result as boolean
-- [ ] 2.4.6.4 Implement DESCRIBE result as `RDF.Graph` with CBD
+- [x] 2.4.6.1 Implement SELECT result as list of binding maps
+- [x] 2.4.6.2 Implement CONSTRUCT result as `RDF.Graph`
+- [x] 2.4.6.3 Implement ASK result as boolean
+- [x] 2.4.6.4 Implement DESCRIBE result as `RDF.Graph` with CBD
+
+Extended `lib/triple_store/sparql/executor.ex` with result serialization:
+- `to_select_results/2` - Materialize bindings to list with optional projection
+- `to_ask_result/1` - Short-circuit boolean check for solutions
+- `to_construct_result/4` - Template instantiation to RDF.Graph
+- `to_describe_result/4` - CBD for resources to RDF.Graph
+Test coverage: 24 new tests (167 total in executor_test.exs).
 
 ### 2.4.7 Unit Tests
 
-- [ ] **Task 2.4.7 Complete**
+- [x] **Task 2.4.7 Complete** (2025-12-23)
 
-- [ ] Test BGP execution with single pattern
-- [ ] Test BGP execution with multiple patterns
-- [ ] Test BGP with bound variable substitution
-- [ ] Test nested loop join produces correct results
-- [ ] Test hash join produces same results as nested loop
-- [ ] Test left outer join preserves unmatched left rows
-- [ ] Test union concatenates both branches
-- [ ] Test filter with comparison expressions
-- [ ] Test filter with logical expressions
-- [ ] Test filter with built-in functions
-- [ ] Test projection selects correct variables
-- [ ] Test distinct removes duplicates
-- [ ] Test order by sorts correctly
-- [ ] Test slice applies offset and limit
+Unit tests were integrated into each implementation task. The executor module
+now has 167 tests covering all functionality:
+
+- [x] Test BGP execution with single pattern
+- [x] Test BGP execution with multiple patterns
+- [x] Test BGP with bound variable substitution
+- [x] Test nested loop join produces correct results
+- [x] Test hash join produces same results as nested loop
+- [x] Test left outer join preserves unmatched left rows
+- [x] Test union concatenates both branches
+- [x] Test filter with comparison expressions
+- [x] Test filter with logical expressions
+- [x] Test filter with built-in functions
+- [x] Test projection selects correct variables
+- [x] Test distinct removes duplicates
+- [x] Test order by sorts correctly
+- [x] Test slice applies offset and limit
 
 ---
 

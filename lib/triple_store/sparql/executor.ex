@@ -1643,4 +1643,334 @@ defmodule TripleStore.SPARQL.Executor do
   """
   @spec limit(Enumerable.t(), non_neg_integer()) :: binding_stream()
   def limit(stream, n) when is_integer(n) and n >= 0, do: Stream.take(stream, n)
+
+  # ===========================================================================
+  # Result Serialization (Task 2.4.6)
+  # ===========================================================================
+
+  @doc """
+  Serializes SELECT query results to a list of binding maps.
+
+  This is the standard result format for SELECT queries. Each binding
+  maps variable names (without the leading '?') to RDF terms represented
+  as internal tuples.
+
+  ## Arguments
+
+  - `stream` - Binding stream from query execution
+  - `vars` - List of projected variable names (optional, defaults to all)
+
+  ## Returns
+
+  List of binding maps.
+
+  ## Examples
+
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      results = Executor.to_select_results(stream, ["name", "age"])
+      # => [
+      #   %{"name" => {:literal, :simple, "Alice"}, "age" => {:literal, :typed, "30", "xsd:integer"}},
+      #   %{"name" => {:literal, :simple, "Bob"}, "age" => {:literal, :typed, "25", "xsd:integer"}}
+      # ]
+
+  """
+  @spec to_select_results(Enumerable.t(), [String.t()] | nil) :: [binding()]
+  def to_select_results(stream, vars \\ nil)
+
+  def to_select_results(stream, nil) do
+    Enum.to_list(stream)
+  end
+
+  def to_select_results(stream, vars) when is_list(vars) do
+    stream
+    |> project(vars)
+    |> Enum.to_list()
+  end
+
+  @doc """
+  Serializes ASK query results to a boolean.
+
+  ASK queries return true if any solutions exist, false otherwise.
+
+  ## Arguments
+
+  - `stream` - Binding stream from query execution
+
+  ## Returns
+
+  `true` if at least one solution exists, `false` otherwise.
+
+  ## Examples
+
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      result = Executor.to_ask_result(stream)
+      # => true
+
+  """
+  @spec to_ask_result(Enumerable.t()) :: boolean()
+  def to_ask_result(stream) do
+    case Enum.take(stream, 1) do
+      [_] -> true
+      [] -> false
+    end
+  end
+
+  @doc """
+  Serializes CONSTRUCT query results to an RDF.Graph.
+
+  Takes a template (list of triple patterns with variables) and instantiates
+  it with each binding to produce triples for the result graph.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` key
+  - `stream` - Binding stream from query execution
+  - `template` - List of triple patterns `{:triple, s, p, o}` where components
+                 can be variables or concrete terms
+  - `opts` - Options passed to `RDF.Graph.new/2` (optional)
+
+  ## Returns
+
+  - `{:ok, graph}` - RDF.Graph containing constructed triples
+  - `{:error, reason}` - On failure
+
+  ## Template Variable Substitution
+
+  Variables in the template are substituted with values from each binding:
+  - `{:variable, "x"}` -> value of `?x` from binding
+  - Concrete terms are passed through unchanged
+  - If a variable is unbound, that triple is skipped
+
+  ## Examples
+
+      template = [
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+      ]
+      {:ok, graph} = Executor.to_construct_result(ctx, stream, template)
+
+  """
+  @spec to_construct_result(context(), Enumerable.t(), [tuple()], keyword()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def to_construct_result(ctx, stream, template, opts \\ []) do
+    triples =
+      stream
+      |> Stream.flat_map(fn binding ->
+        instantiate_template(template, binding)
+      end)
+      |> Enum.to_list()
+
+    # Convert internal terms to RDF terms and build graph
+    build_graph_from_terms(ctx, triples, opts)
+  end
+
+  @doc """
+  Serializes DESCRIBE query results to an RDF.Graph using Concise Bounded Description.
+
+  For each resource in the bindings, retrieves all triples where that resource
+  appears as subject (and optionally follows blank nodes to their descriptions).
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `stream` - Binding stream from query execution
+  - `vars` - List of variable names whose values should be described
+  - `opts` - Options:
+    - `:follow_bnodes` - Whether to follow blank node references (default: true)
+    - Other options passed to `RDF.Graph.new/2`
+
+  ## Returns
+
+  - `{:ok, graph}` - RDF.Graph containing descriptions
+  - `{:error, reason}` - On failure
+
+  ## Concise Bounded Description (CBD)
+
+  CBD includes:
+  1. All triples where the resource is subject
+  2. Recursively, CBD of any blank nodes appearing as objects
+
+  ## Examples
+
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      {:ok, graph} = Executor.to_describe_result(ctx, stream, ["person"])
+
+  """
+  @spec to_describe_result(context(), Enumerable.t(), [String.t()], keyword()) ::
+          {:ok, RDF.Graph.t()} | {:error, term()}
+  def to_describe_result(ctx, stream, vars, opts \\ []) do
+    {follow_bnodes, graph_opts} = Keyword.pop(opts, :follow_bnodes, true)
+
+    # Collect all resources to describe
+    resources =
+      stream
+      |> Stream.flat_map(fn binding ->
+        Enum.flat_map(vars, fn var ->
+          case Map.get(binding, var) do
+            nil -> []
+            term -> [term]
+          end
+        end)
+      end)
+      |> Enum.uniq()
+
+    # Get descriptions for all resources
+    describe_resources(ctx, resources, follow_bnodes, graph_opts)
+  end
+
+  # ===========================================================================
+  # Result Serialization Helpers
+  # ===========================================================================
+
+  # Instantiate a template with binding values, returning list of triples
+  defp instantiate_template(template, binding) do
+    Enum.flat_map(template, fn {:triple, s, p, o} ->
+      with {:ok, s_val} <- substitute_term(s, binding),
+           {:ok, p_val} <- substitute_term(p, binding),
+           {:ok, o_val} <- substitute_term(o, binding) do
+        [{s_val, p_val, o_val}]
+      else
+        :unbound -> []
+      end
+    end)
+  end
+
+  # Substitute a term with its binding value if it's a variable
+  defp substitute_term({:variable, name}, binding) do
+    case Map.get(binding, name) do
+      nil -> :unbound
+      :unbound -> :unbound
+      value -> {:ok, value}
+    end
+  end
+
+  defp substitute_term(term, _binding), do: {:ok, term}
+
+  # Build RDF.Graph from internal term triples
+  defp build_graph_from_terms(_ctx, [], opts) do
+    {:ok, RDF.Graph.new(opts)}
+  end
+
+  defp build_graph_from_terms(_ctx, triples, opts) do
+    # Convert internal terms to RDF terms
+    rdf_triples =
+      Enum.flat_map(triples, fn {s, p, o} ->
+        with {:ok, s_term} <- internal_to_rdf(s),
+             {:ok, p_term} <- internal_to_rdf(p),
+             {:ok, o_term} <- internal_to_rdf(o) do
+          [{s_term, p_term, o_term}]
+        else
+          _ -> []
+        end
+      end)
+
+    {:ok, RDF.Graph.new(rdf_triples, opts)}
+  end
+
+  # Convert internal term representation to RDF.ex terms
+  defp internal_to_rdf({:named_node, uri}), do: {:ok, RDF.iri(uri)}
+  defp internal_to_rdf({:blank_node, id}), do: {:ok, RDF.bnode(id)}
+  defp internal_to_rdf({:literal, :simple, value}), do: {:ok, RDF.literal(value)}
+
+  defp internal_to_rdf({:literal, :typed, value, datatype}) do
+    {:ok, RDF.literal(value, datatype: datatype)}
+  end
+
+  defp internal_to_rdf({:literal, :lang, value, lang}) do
+    {:ok, RDF.literal(value, language: lang)}
+  end
+
+  defp internal_to_rdf(_), do: :error
+
+  # Describe resources by fetching their CBD from the database
+  defp describe_resources(ctx, resources, follow_bnodes, opts) do
+    %{db: db} = ctx
+
+    # Convert resources to IDs and fetch triples
+    all_triples =
+      resources
+      |> Enum.flat_map(fn resource ->
+        case resource_to_id(db, resource) do
+          {:ok, id} ->
+            # Use Index pattern format: {:bound, id} for bound, :var for variable
+            case Index.lookup_all(db, {{:bound, id}, :var, :var}) do
+              {:ok, triples} ->
+                triples
+
+              _ ->
+                []
+            end
+
+          _ ->
+            []
+        end
+      end)
+      |> Enum.uniq()
+
+    # If following blank nodes, recursively fetch their descriptions
+    all_triples =
+      if follow_bnodes do
+        follow_blank_nodes(ctx, all_triples, MapSet.new())
+      else
+        all_triples
+      end
+
+    # Convert to RDF graph
+    TripleStore.Adapter.to_rdf_graph(db, all_triples, opts)
+  end
+
+  # Convert resource term to dictionary ID
+  defp resource_to_id(db, {:named_node, uri}) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, RDF.iri(uri))
+  end
+
+  defp resource_to_id(db, {:blank_node, id}) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, RDF.bnode(id))
+  end
+
+  defp resource_to_id(_, _), do: :error
+
+  # Follow blank nodes recursively for CBD
+  defp follow_blank_nodes(ctx, triples, seen) do
+    %{db: db} = ctx
+
+    # Find blank node objects we haven't seen yet
+    new_bnodes =
+      triples
+      |> Enum.flat_map(fn {_s, _p, o} ->
+        if is_blank_node_id?(o) and not MapSet.member?(seen, o) do
+          [o]
+        else
+          []
+        end
+      end)
+      |> Enum.uniq()
+
+    if Enum.empty?(new_bnodes) do
+      triples
+    else
+      # Fetch triples for new blank nodes
+      new_seen = Enum.reduce(new_bnodes, seen, &MapSet.put(&2, &1))
+
+      new_triples =
+        Enum.flat_map(new_bnodes, fn bnode_id ->
+          case Index.lookup_all(db, {{:bound, bnode_id}, :var, :var}) do
+            {:ok, bnode_triples} -> bnode_triples
+            _ -> []
+          end
+        end)
+
+      # Recursively follow more blank nodes
+      all_triples = triples ++ new_triples
+      follow_blank_nodes(ctx, all_triples, new_seen)
+    end
+  end
+
+  # Check if an ID represents a blank node (type tag 1)
+  defp is_blank_node_id?(id) when is_integer(id) do
+    # Blank nodes have type tag 1 in high bits
+    import Bitwise
+    (id >>> 60) == 1
+  end
+
+  defp is_blank_node_id?(_), do: false
 end
