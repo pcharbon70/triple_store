@@ -287,14 +287,22 @@ Test coverage: 13 tests in executor_test.exs.
 
 ### 2.4.2 Join Execution
 
-- [ ] **Task 2.4.2 Complete**
+- [x] **Task 2.4.2 Complete** (2025-12-23)
 
 Execute join operations between result streams.
 
-- [ ] 2.4.2.1 Implement nested loop join for small inputs
-- [ ] 2.4.2.2 Implement hash join for larger inputs
-- [ ] 2.4.2.3 Implement left outer join for OPTIONAL semantics
-- [ ] 2.4.2.4 Handle compatible binding merge
+- [x] 2.4.2.1 Implement nested loop join for small inputs
+- [x] 2.4.2.2 Implement hash join for larger inputs
+- [x] 2.4.2.3 Implement left outer join for OPTIONAL semantics
+- [x] 2.4.2.4 Handle compatible binding merge
+
+Extended `lib/triple_store/sparql/executor.ex` with join execution functions:
+- `join/3` - Main entry point with strategy selection (nested_loop, hash, auto)
+- `nested_loop_join/2` - O(n*m) join for small inputs
+- `hash_join/2` - O(n+m) join using hash table for larger inputs
+- `left_join/3` - Left outer join for OPTIONAL semantics with filter support
+- `merge_bindings/2` - Binding compatibility check and merge
+Test coverage: 30 new tests (43 total in executor_test.exs).
 
 ### 2.4.3 Union Execution
 

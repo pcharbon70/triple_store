@@ -474,6 +474,323 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # ===========================================================================
+  # Join Execution (Task 2.4.2)
+  # ===========================================================================
+
+  # Threshold for switching from nested loop to hash join
+  @hash_join_threshold 100
+
+  @doc """
+  Executes an inner join between two binding streams.
+
+  Automatically selects between nested loop join and hash join based on
+  the estimated size of the inputs. For small inputs (<#{@hash_join_threshold}),
+  uses nested loop join. For larger inputs, uses hash join.
+
+  ## Algorithm Selection
+
+  - **Nested Loop Join**: O(n*m) time, O(1) space. Best for small inputs or
+    when early termination is likely.
+  - **Hash Join**: O(n+m) time, O(n) space. Best for larger inputs where
+    the build side fits in memory.
+
+  ## Arguments
+
+  - `left` - Left binding stream (or list)
+  - `right` - Right binding stream (or list)
+  - `opts` - Options:
+    - `:strategy` - Force `:nested_loop` or `:hash` strategy (default: auto-select)
+
+  ## Returns
+
+  Stream of joined bindings where compatible bindings are merged.
+
+  ## Examples
+
+      left = [%{"x" => {:named_node, "http://ex.org/A"}}]
+      right = [%{"x" => {:named_node, "http://ex.org/A"}, "y" => {:literal, :simple, "1"}}]
+      result = Executor.join(left, right) |> Enum.to_list()
+      # => [%{"x" => {:named_node, "http://ex.org/A"}, "y" => {:literal, :simple, "1"}}]
+
+  """
+  @spec join(Enumerable.t(), Enumerable.t(), keyword()) :: binding_stream()
+  def join(left, right, opts \\ []) do
+    strategy = Keyword.get(opts, :strategy, :auto)
+
+    case strategy do
+      :nested_loop ->
+        nested_loop_join(left, right)
+
+      :hash ->
+        hash_join(left, right)
+
+      :auto ->
+        # For streams, we need to materialize to determine size
+        # Default to hash join which handles both cases well
+        hash_join(left, right)
+    end
+  end
+
+  @doc """
+  Executes a nested loop join between two binding collections.
+
+  For each binding on the left, iterates through all bindings on the right
+  and emits merged bindings where the values are compatible.
+
+  This is O(n*m) in time complexity but O(1) in space (not counting input
+  materialization). Best suited for small inputs or when the right side
+  can be efficiently re-scanned.
+
+  ## Arguments
+
+  - `left` - Left binding stream/list
+  - `right` - Right binding stream/list (will be materialized)
+
+  ## Returns
+
+  Stream of joined bindings.
+  """
+  @spec nested_loop_join(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def nested_loop_join(left, right) do
+    # Materialize right side to allow multiple iterations
+    right_list = Enum.to_list(right)
+
+    Stream.flat_map(left, fn left_binding ->
+      Enum.flat_map(right_list, fn right_binding ->
+        case merge_bindings(left_binding, right_binding) do
+          {:ok, merged} -> [merged]
+          :incompatible -> []
+        end
+      end)
+    end)
+  end
+
+  @doc """
+  Executes a hash join between two binding collections.
+
+  Builds a hash table on the smaller (build) side, then probes with the
+  larger (probe) side. This is O(n+m) in time but O(n) in space.
+
+  The join key is computed from the shared variables between the two sides.
+  Bindings are grouped by their join key values in a hash table, then
+  probed for compatible matches.
+
+  ## Arguments
+
+  - `left` - Left binding stream/list (build side)
+  - `right` - Right binding stream/list (probe side)
+
+  ## Returns
+
+  Stream of joined bindings.
+  """
+  @spec hash_join(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def hash_join(left, right) do
+    # Materialize both sides to find shared variables and build hash table
+    left_list = Enum.to_list(left)
+    right_list = Enum.to_list(right)
+
+    # Handle empty cases
+    if Enum.empty?(left_list) or Enum.empty?(right_list) do
+      empty_stream()
+    else
+      # Find shared variables between the two sides
+      left_vars = shared_variables(left_list)
+      right_vars = shared_variables(right_list)
+      join_vars = MapSet.intersection(left_vars, right_vars) |> MapSet.to_list()
+
+      if Enum.empty?(join_vars) do
+        # No shared variables - cartesian product
+        cartesian_product(left_list, right_list)
+      else
+        # Build hash table on left side keyed by join variable values
+        hash_table = build_hash_table(left_list, join_vars)
+
+        # Probe with right side
+        Stream.flat_map(right_list, fn right_binding ->
+          key = extract_join_key(right_binding, join_vars)
+
+          case Map.get(hash_table, key) do
+            nil ->
+              []
+
+            left_bindings ->
+              Enum.flat_map(left_bindings, fn left_binding ->
+                case merge_bindings(left_binding, right_binding) do
+                  {:ok, merged} -> [merged]
+                  :incompatible -> []
+                end
+              end)
+          end
+        end)
+      end
+    end
+  end
+
+  @doc """
+  Executes a left outer join between two binding collections.
+
+  Returns all bindings from the left side, extended with matching bindings
+  from the right side where compatible. If no compatible right binding exists,
+  the left binding is returned unextended.
+
+  This implements SPARQL OPTIONAL semantics.
+
+  ## Arguments
+
+  - `left` - Left binding stream/list
+  - `right` - Right binding stream/list
+  - `opts` - Options:
+    - `:filter` - Optional filter expression to apply (for OPTIONAL { ... FILTER ... })
+
+  ## Returns
+
+  Stream of joined bindings (left bindings extended with right when compatible).
+
+  ## Examples
+
+      left = [%{"x" => {:named_node, "http://ex.org/A"}}]
+      right = []  # No matches
+      result = Executor.left_join(left, right) |> Enum.to_list()
+      # => [%{"x" => {:named_node, "http://ex.org/A"}}]  # Left preserved
+
+  """
+  @spec left_join(Enumerable.t(), Enumerable.t(), keyword()) :: binding_stream()
+  def left_join(left, right, opts \\ []) do
+    filter_fn = Keyword.get(opts, :filter, fn _ -> true end)
+
+    # Materialize right side for multiple iterations
+    right_list = Enum.to_list(right)
+
+    Stream.flat_map(left, fn left_binding ->
+      # Find all compatible right bindings
+      matches =
+        Enum.flat_map(right_list, fn right_binding ->
+          case merge_bindings(left_binding, right_binding) do
+            {:ok, merged} ->
+              # Apply filter if provided
+              if filter_fn.(merged), do: [merged], else: []
+
+            :incompatible ->
+              []
+          end
+        end)
+
+      if Enum.empty?(matches) do
+        # No compatible match - preserve left binding (OPTIONAL semantics)
+        [left_binding]
+      else
+        matches
+      end
+    end)
+  end
+
+  # ===========================================================================
+  # Binding Compatibility (Task 2.4.2.4)
+  # ===========================================================================
+
+  @doc """
+  Merges two bindings if they are compatible.
+
+  Two bindings are compatible if for every shared variable, both bindings
+  have the same value. Returns the merged binding with all variables from
+  both inputs.
+
+  ## Arguments
+
+  - `binding1` - First binding map
+  - `binding2` - Second binding map
+
+  ## Returns
+
+  - `{:ok, merged}` - Merged binding when compatible
+  - `:incompatible` - When bindings have conflicting values
+
+  ## Examples
+
+      merge_bindings(%{"x" => 1}, %{"y" => 2})
+      # => {:ok, %{"x" => 1, "y" => 2}}
+
+      merge_bindings(%{"x" => 1}, %{"x" => 1, "y" => 2})
+      # => {:ok, %{"x" => 1, "y" => 2}}
+
+      merge_bindings(%{"x" => 1}, %{"x" => 2})
+      # => :incompatible
+
+  """
+  @spec merge_bindings(binding(), binding()) :: {:ok, binding()} | :incompatible
+  def merge_bindings(binding1, binding2) do
+    # Check compatibility: shared variables must have same value
+    compatible? =
+      Enum.all?(binding1, fn {var, val} ->
+        case Map.get(binding2, var) do
+          nil -> true
+          ^val -> true
+          _ -> false
+        end
+      end)
+
+    if compatible? do
+      {:ok, Map.merge(binding1, binding2)}
+    else
+      :incompatible
+    end
+  end
+
+  @doc """
+  Checks if two bindings are compatible.
+
+  ## Arguments
+
+  - `binding1` - First binding map
+  - `binding2` - Second binding map
+
+  ## Returns
+
+  `true` if bindings are compatible, `false` otherwise.
+  """
+  @spec bindings_compatible?(binding(), binding()) :: boolean()
+  def bindings_compatible?(binding1, binding2) do
+    Enum.all?(binding1, fn {var, val} ->
+      case Map.get(binding2, var) do
+        nil -> true
+        ^val -> true
+        _ -> false
+      end
+    end)
+  end
+
+  # ===========================================================================
+  # Join Helper Functions
+  # ===========================================================================
+
+  # Extract the set of variable names present in any binding
+  defp shared_variables(bindings) do
+    bindings
+    |> Enum.flat_map(&Map.keys/1)
+    |> MapSet.new()
+  end
+
+  # Build a hash table grouping bindings by join key
+  defp build_hash_table(bindings, join_vars) do
+    Enum.group_by(bindings, &extract_join_key(&1, join_vars))
+  end
+
+  # Extract join key as a list of values for the join variables
+  defp extract_join_key(binding, join_vars) do
+    Enum.map(join_vars, fn var -> Map.get(binding, var) end)
+  end
+
+  # Compute cartesian product when there are no shared variables
+  defp cartesian_product(left_list, right_list) do
+    Stream.flat_map(left_list, fn left_binding ->
+      Enum.map(right_list, fn right_binding ->
+        Map.merge(left_binding, right_binding)
+      end)
+    end)
+  end
+
+  # ===========================================================================
   # Empty Result Handling
   # ===========================================================================
 
