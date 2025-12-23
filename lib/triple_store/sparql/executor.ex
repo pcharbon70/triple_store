@@ -38,6 +38,8 @@ defmodule TripleStore.SPARQL.Executor do
   """
 
   alias TripleStore.Dictionary
+  alias TripleStore.Dictionary.IdToString
+  alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.SPARQL.Optimizer
 
@@ -324,7 +326,7 @@ defmodule TripleStore.SPARQL.Executor do
     # Get the database reference from the manager
     case GenServer.call(dict_manager, :get_db) do
       {:ok, db} ->
-        case TripleStore.Dictionary.StringToId.lookup_id(db, rdf_term) do
+        case StringToId.lookup_id(db, rdf_term) do
           {:ok, id} -> {:ok, id}
           :not_found -> :not_found
           {:error, _} = error -> error
@@ -390,7 +392,7 @@ defmodule TripleStore.SPARQL.Executor do
       # Dictionary lookup required
       case GenServer.call(dict_manager, :get_db) do
         {:ok, db} ->
-          case TripleStore.Dictionary.IdToString.lookup_term(db, term_id) do
+          case IdToString.lookup_term(db, term_id) do
             {:ok, rdf_term} -> {:ok, rdf_term_to_algebra(rdf_term)}
             :not_found -> {:error, :term_not_found}
             {:error, _} = error -> error
@@ -589,6 +591,13 @@ defmodule TripleStore.SPARQL.Executor do
     # Materialize both sides to find shared variables and build hash table
     left_list = Enum.to_list(left)
     right_list = Enum.to_list(right)
+
+    # Emit telemetry for join materialization
+    :telemetry.execute(
+      [:triple_store, :sparql, :executor, :hash_join],
+      %{left_count: length(left_list), right_count: length(right_list)},
+      %{}
+    )
 
     # Handle empty cases
     if Enum.empty?(left_list) or Enum.empty?(right_list) do
@@ -1229,7 +1238,7 @@ defmodule TripleStore.SPARQL.Executor do
   def to_effective_boolean({:literal, :typed, value, type})
       when type in [@xsd_integer, @xsd_decimal, @xsd_float, @xsd_double] do
     case parse_numeric(value, type) do
-      {:ok, n} -> {:ok, n != 0 and not is_nan(n)}
+      {:ok, n} -> {:ok, n != 0 and not nan?(n)}
       :error -> :error
     end
   end
@@ -1252,8 +1261,9 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # Check for NaN (not a number)
-  defp is_nan(n) when is_float(n), do: n != n
-  defp is_nan(_), do: false
+  # Uses IEEE 754 property: NaN != NaN
+  defp nan?(n) when is_float(n), do: n != n
+  defp nan?(_), do: false
 
   # ===========================================================================
   # Empty Result Handling
@@ -1351,11 +1361,22 @@ defmodule TripleStore.SPARQL.Executor do
   """
   @spec distinct(Enumerable.t()) :: binding_stream()
   def distinct(stream) do
-    Stream.transform(stream, MapSet.new(), fn binding, seen ->
+    Stream.transform(stream, {MapSet.new(), 0}, fn binding, {seen, count} ->
       if MapSet.member?(seen, binding) do
-        {[], seen}
+        {[], {seen, count}}
       else
-        {[binding], MapSet.put(seen, binding)}
+        new_count = count + 1
+
+        # Emit telemetry at intervals to monitor memory growth
+        if rem(new_count, 10_000) == 0 do
+          :telemetry.execute(
+            [:triple_store, :sparql, :executor, :distinct],
+            %{unique_count: new_count, seen_size: MapSet.size(seen)},
+            %{}
+          )
+        end
+
+        {[binding], {MapSet.put(seen, binding), new_count}}
       end
     end)
   end
@@ -1427,6 +1448,13 @@ defmodule TripleStore.SPARQL.Executor do
   def order_by(stream, comparators) when is_list(comparators) do
     # Materialize for sorting
     bindings = Enum.to_list(stream)
+
+    # Emit telemetry for order_by materialization
+    :telemetry.execute(
+      [:triple_store, :sparql, :executor, :order_by],
+      %{binding_count: length(bindings), comparator_count: length(comparators)},
+      %{}
+    )
 
     sorted =
       Enum.sort(bindings, fn a, b ->
@@ -1917,24 +1945,34 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Convert resource term to dictionary ID
   defp resource_to_id(db, {:named_node, uri}) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, RDF.iri(uri))
+    StringToId.lookup_id(db, RDF.iri(uri))
   end
 
   defp resource_to_id(db, {:blank_node, id}) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, RDF.bnode(id))
+    StringToId.lookup_id(db, RDF.bnode(id))
   end
 
   defp resource_to_id(_, _), do: :error
 
-  # Follow blank nodes recursively for CBD
-  defp follow_blank_nodes(ctx, triples, seen) do
+  # Maximum depth for blank node following to prevent stack overflow
+  @max_bnode_depth 100
+
+  # Follow blank nodes recursively for CBD with depth limiting
+  defp follow_blank_nodes(ctx, triples, seen, depth \\ 0)
+
+  defp follow_blank_nodes(_ctx, triples, _seen, depth) when depth >= @max_bnode_depth do
+    # Depth limit reached - return what we have to prevent stack overflow
+    triples
+  end
+
+  defp follow_blank_nodes(ctx, triples, seen, depth) do
     %{db: db} = ctx
 
     # Find blank node objects we haven't seen yet
     new_bnodes =
       triples
       |> Enum.flat_map(fn {_s, _p, o} ->
-        if is_blank_node_id?(o) and not MapSet.member?(seen, o) do
+        if blank_node_id?(o) and not MapSet.member?(seen, o) do
           [o]
         else
           []
@@ -1956,18 +1994,18 @@ defmodule TripleStore.SPARQL.Executor do
           end
         end)
 
-      # Recursively follow more blank nodes
+      # Recursively follow more blank nodes with accumulator pattern
       all_triples = triples ++ new_triples
-      follow_blank_nodes(ctx, all_triples, new_seen)
+      follow_blank_nodes(ctx, all_triples, new_seen, depth + 1)
     end
   end
 
   # Check if an ID represents a blank node (type tag 1)
-  defp is_blank_node_id?(id) when is_integer(id) do
+  defp blank_node_id?(id) when is_integer(id) do
     # Blank nodes have type tag 1 in high bits
     import Bitwise
     (id >>> 60) == 1
   end
 
-  defp is_blank_node_id?(_), do: false
+  defp blank_node_id?(_), do: false
 end

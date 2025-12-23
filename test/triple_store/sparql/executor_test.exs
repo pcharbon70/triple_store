@@ -2369,4 +2369,148 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
   end
+
+  describe "stream laziness" do
+    test "project/2 is lazy - only consumes what's needed", %{tmp_dir: _tmp_dir} do
+      # Create a stream that tracks how many elements have been consumed
+      agent = start_supervised!({Agent, fn -> 0 end})
+
+      # Create a stream that increments counter when consumed
+      stream =
+        Stream.map(1..1000, fn n ->
+          Agent.update(agent, &(&1 + 1))
+          %{"x" => n, "y" => n * 2}
+        end)
+
+      # Project and take only 5
+      result =
+        stream
+        |> Executor.project(["x"])
+        |> Enum.take(5)
+
+      assert length(result) == 5
+      # Should have only consumed 5 elements, not all 1000
+      consumed = Agent.get(agent, & &1)
+      assert consumed == 5
+    end
+
+    test "limit/2 is lazy - only consumes what's needed", %{tmp_dir: _tmp_dir} do
+      agent = start_supervised!({Agent, fn -> 0 end})
+
+      stream =
+        Stream.map(1..1000, fn n ->
+          Agent.update(agent, &(&1 + 1))
+          %{"x" => n}
+        end)
+
+      result =
+        stream
+        |> Executor.limit(10)
+        |> Enum.to_list()
+
+      assert length(result) == 10
+      consumed = Agent.get(agent, & &1)
+      assert consumed == 10
+    end
+
+    test "filter/2 is lazy - stops when limit reached", %{tmp_dir: _tmp_dir} do
+      agent = start_supervised!({Agent, fn -> 0 end})
+
+      # Stream of values alternating bound/not bound
+      stream =
+        Stream.map(1..1000, fn n ->
+          Agent.update(agent, &(&1 + 1))
+          # Only even numbers have "y" bound, so BOUND(?y) filters 50%
+          if rem(n, 2) == 0 do
+            %{"x" => n, "y" => {:literal, :simple, "value"}}
+          else
+            %{"x" => n}
+          end
+        end)
+
+      # Filter expression: BOUND(?y) - only passes every other binding
+      filter_expr = {:bound, {:variable, "y"}}
+
+      result =
+        stream
+        |> Executor.filter(filter_expr)
+        |> Enum.take(5)
+
+      assert length(result) == 5
+      # Should stop early - consumed more than 5 but less than 1000
+      consumed = Agent.get(agent, & &1)
+      # Need to consume ~10 items to get 5 that pass BOUND(?y)
+      assert consumed >= 10
+      assert consumed < 1000
+    end
+
+    test "slice/3 is lazy - skips efficiently and takes only needed", %{tmp_dir: _tmp_dir} do
+      agent = start_supervised!({Agent, fn -> 0 end})
+
+      stream =
+        Stream.map(1..1000, fn n ->
+          Agent.update(agent, &(&1 + 1))
+          %{"x" => n}
+        end)
+
+      result =
+        stream
+        |> Executor.slice(100, 10)
+        |> Enum.to_list()
+
+      assert length(result) == 10
+      # Should consume exactly 110 elements (100 to skip + 10 to take)
+      consumed = Agent.get(agent, & &1)
+      assert consumed == 110
+    end
+  end
+
+  describe "telemetry events" do
+    test "hash_join emits telemetry", %{tmp_dir: _tmp_dir} do
+      test_pid = self()
+
+      # Attach telemetry handler
+      handler_id = "test-hash-join-handler"
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :sparql, :executor, :hash_join],
+        fn event, measurements, metadata, _ ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}]
+
+      Executor.hash_join(left, right) |> Enum.to_list()
+
+      assert_receive {:telemetry, [:triple_store, :sparql, :executor, :hash_join],
+                      %{left_count: 2, right_count: 2}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+
+    test "order_by emits telemetry", %{tmp_dir: _tmp_dir} do
+      test_pid = self()
+
+      handler_id = "test-order-by-handler"
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :sparql, :executor, :order_by],
+        fn event, measurements, metadata, _ ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      bindings = [%{"x" => 3}, %{"x" => 1}, %{"x" => 2}]
+      Executor.order_by(bindings, [{"x", :asc}]) |> Enum.to_list()
+
+      assert_receive {:telemetry, [:triple_store, :sparql, :executor, :order_by],
+                      %{binding_count: 3, comparator_count: 1}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+  end
 end
