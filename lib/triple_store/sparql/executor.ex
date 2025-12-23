@@ -67,6 +67,24 @@ defmodule TripleStore.SPARQL.Executor do
         }
 
   # ===========================================================================
+  # Security Limits
+  # ===========================================================================
+
+  # Maximum number of unique bindings to track for DISTINCT
+  # Exceeding this limit returns an error to prevent memory exhaustion
+  @max_distinct_size 100_000
+
+  # Maximum number of bindings to materialize for ORDER BY
+  # Exceeding this limit returns an error to prevent memory exhaustion
+  @max_order_by_size 1_000_000
+
+  # Maximum number of triples to collect in DESCRIBE (blank node following)
+  @max_describe_triples 10_000
+
+  # Hash join size limit to prevent hash collision DoS
+  @max_hash_table_size 1_000_000
+
+  # ===========================================================================
   # BGP Execution (Task 2.4.1)
   # ===========================================================================
 
@@ -1367,6 +1385,19 @@ defmodule TripleStore.SPARQL.Executor do
       else
         new_count = count + 1
 
+        # Check if we've exceeded the limit
+        if new_count > @max_distinct_size do
+          :telemetry.execute(
+            [:triple_store, :sparql, :executor, :distinct_limit_exceeded],
+            %{limit: @max_distinct_size},
+            %{}
+          )
+          raise TripleStore.SPARQL.LimitExceededError,
+            message: "DISTINCT limit exceeded: more than #{@max_distinct_size} unique bindings",
+            limit: @max_distinct_size,
+            operation: :distinct
+        end
+
         # Emit telemetry at intervals to monitor memory growth
         if rem(new_count, 10_000) == 0 do
           :telemetry.execute(
@@ -1446,8 +1477,8 @@ defmodule TripleStore.SPARQL.Executor do
   def order_by(stream, []), do: stream
 
   def order_by(stream, comparators) when is_list(comparators) do
-    # Materialize for sorting
-    bindings = Enum.to_list(stream)
+    # Materialize for sorting with limit check
+    bindings = materialize_with_limit(stream, @max_order_by_size, :order_by)
 
     # Emit telemetry for order_by materialization
     :telemetry.execute(
@@ -2403,6 +2434,21 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp follow_blank_nodes(ctx, triples, seen, depth) do
+    # Check triple count limit to prevent memory exhaustion
+    if length(triples) >= @max_describe_triples do
+      :telemetry.execute(
+        [:triple_store, :sparql, :executor, :describe_limit_reached],
+        %{limit: @max_describe_triples, triple_count: length(triples)},
+        %{}
+      )
+      # Return what we have - partial result
+      triples
+    else
+      do_follow_blank_nodes(ctx, triples, seen, depth)
+    end
+  end
+
+  defp do_follow_blank_nodes(ctx, triples, seen, depth) do
     %{db: db} = ctx
 
     # Find blank node objects we haven't seen yet
@@ -2445,4 +2491,30 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp blank_node_id?(_), do: false
+
+  # ===========================================================================
+  # Safety Helpers
+  # ===========================================================================
+
+  # Materializes a stream with a limit check to prevent memory exhaustion
+  defp materialize_with_limit(stream, limit, operation) do
+    stream
+    |> Stream.with_index(1)
+    |> Enum.reduce_while([], fn {binding, index}, acc ->
+      if index > limit do
+        :telemetry.execute(
+          [:triple_store, :sparql, :executor, :"#{operation}_limit_exceeded"],
+          %{limit: limit},
+          %{}
+        )
+        raise TripleStore.SPARQL.LimitExceededError,
+          message: "#{operation} limit exceeded: more than #{limit} bindings",
+          limit: limit,
+          operation: operation
+      else
+        {:cont, [binding | acc]}
+      end
+    end)
+    |> Enum.reverse()
+  end
 end

@@ -955,8 +955,8 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     end
 
     test "returns error for invalid AST" do
-      assert {:error, msg} = Algebra.from_ast({:invalid, []})
-      assert msg =~ "Invalid AST"
+      assert {:error, {:invalid_ast, msg}} = Algebra.from_ast({:invalid, []})
+      assert msg =~ "expected {:select|:construct|:ask|:describe, props}"
     end
 
     test "returns error for non-tuple" do

@@ -167,7 +167,7 @@ defmodule TripleStore.SPARQL.Algebra do
       :ask
 
   """
-  @spec from_ast(tuple()) :: {:ok, compiled_query()} | {:error, String.t()}
+  @spec from_ast(tuple()) :: {:ok, compiled_query()} | {:error, term()}
   def from_ast({:select, props}) when is_list(props) do
     compile_query(:select, props)
   end
@@ -185,7 +185,7 @@ defmodule TripleStore.SPARQL.Algebra do
   end
 
   def from_ast(ast) do
-    {:error, "Invalid AST: expected {:select|:construct|:ask|:describe, props}, got: #{inspect(ast)}"}
+    {:error, {:invalid_ast, "expected {:select|:construct|:ask|:describe, props}, got: #{inspect(ast)}"}}
   end
 
   @doc """
@@ -203,7 +203,10 @@ defmodule TripleStore.SPARQL.Algebra do
   def from_ast!(ast) do
     case from_ast(ast) do
       {:ok, compiled} -> compiled
-      {:error, reason} -> raise ArgumentError, "AST compilation failed: #{reason}"
+      {:error, {:invalid_ast, msg}} -> raise ArgumentError, "AST compilation failed: #{msg}"
+      {:error, {:missing_pattern, type}} -> raise ArgumentError, "AST compilation failed: missing pattern in #{type} query"
+      {:error, {:invalid_pattern, reason}} -> raise ArgumentError, "AST compilation failed: invalid pattern - #{inspect(reason)}"
+      {:error, reason} -> raise ArgumentError, "AST compilation failed: #{inspect(reason)}"
     end
   end
 
@@ -215,7 +218,7 @@ defmodule TripleStore.SPARQL.Algebra do
     template = get_prop(props, "template")
 
     if is_nil(pattern) do
-      {:error, "Missing pattern in #{type} query"}
+      {:error, {:missing_pattern, type}}
     else
       case validate(pattern) do
         :ok ->
@@ -229,7 +232,7 @@ defmodule TripleStore.SPARQL.Algebra do
            }}
 
         {:error, reason} ->
-          {:error, "Invalid algebra pattern: #{reason}"}
+          {:error, {:invalid_pattern, reason}}
       end
     end
   end

@@ -799,7 +799,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "unknown function returns error" do
       expr = {:function_call, "UNKNOWN_FUNC", [int(1)]}
       result = Expression.evaluate(expr, %{})
-      assert result == {:error, "Unknown function: UNKNOWN_FUNC"}
+      assert result == :error
     end
 
     test "unknown expression type returns error" do
@@ -817,6 +817,40 @@ defmodule TripleStore.SPARQL.ExpressionTest do
       {:ok, {:literal, :typed, val, @xsd_decimal}} = Expression.evaluate(expr, %{})
       {n, ""} = Float.parse(val)
       assert_in_delta n, 3.333, 0.001
+    end
+  end
+
+  describe "regex security (ReDoS protection)" do
+    test "REGEX rejects patterns with nested quantifiers" do
+      # Pattern like (a+)+ can cause catastrophic backtracking
+      pattern = {:literal, :simple, "(a+)+"}
+      str = {:literal, :simple, "aaaaaaaaaa"}
+      expr = {:function_call, "REGEX", [str, pattern]}
+      # Should return error due to dangerous pattern
+      assert Expression.evaluate(expr, %{}) == :error
+    end
+
+    test "REGEX rejects excessively long patterns" do
+      # Pattern longer than 1000 chars should be rejected
+      pattern = {:literal, :simple, String.duplicate("a", 1001)}
+      str = {:literal, :simple, "test"}
+      expr = {:function_call, "REGEX", [str, pattern]}
+      assert Expression.evaluate(expr, %{}) == :error
+    end
+
+    test "REGEX works with safe patterns" do
+      pattern = {:literal, :simple, "hello"}
+      str = {:literal, :simple, "hello world"}
+      expr = {:function_call, "REGEX", [str, pattern]}
+      {:ok, {:literal, :typed, "true", _}} = Expression.evaluate(expr, %{})
+    end
+
+    test "REPLACE rejects patterns with nested quantifiers" do
+      pattern = {:literal, :simple, "(a*)*"}
+      str = {:literal, :simple, "aaaa"}
+      replacement = {:literal, :simple, "b"}
+      expr = {:function_call, "REPLACE", [str, pattern, replacement]}
+      assert Expression.evaluate(expr, %{}) == :error
     end
   end
 end

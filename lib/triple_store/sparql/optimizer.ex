@@ -1423,17 +1423,13 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp greedy_reorder(remaining, bound_vars, stats, acc) do
-    # Score each remaining pattern considering bound variables
-    scored =
-      remaining
-      |> Enum.map(fn pattern ->
-        score = estimate_selectivity(pattern, bound_vars, stats)
-        {pattern, score}
+    # Find the most selective pattern (lowest score) using Enum.min_by
+    # This is more efficient than sorting when we only need the minimum
+    best_pattern =
+      Enum.min_by(remaining, fn pattern ->
+        estimate_selectivity(pattern, bound_vars, stats)
       end)
-      |> Enum.sort_by(fn {_pattern, score} -> score end)
 
-    # Pick the most selective (lowest score)
-    [{best_pattern, _score} | _rest] = scored
     remaining_patterns = List.delete(remaining, best_pattern)
 
     # Add variables from selected pattern to bound set

@@ -42,6 +42,11 @@ defmodule TripleStore.SPARQL.Expression do
   @xsd_string "http://www.w3.org/2001/XMLSchema#string"
   @xsd_date_time "http://www.w3.org/2001/XMLSchema#dateTime"
 
+  # Security limits
+  @regex_timeout_ms 1000
+  @max_regex_pattern_length 1000
+  @max_integer_digits 100
+
   @type rdf_term ::
           {:variable, String.t()}
           | {:named_node, String.t()}
@@ -530,10 +535,15 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, flags_val} <- evaluate(flags_arg, bindings),
          {:ok, str} <- to_string_value(str_val),
          {:ok, pattern} <- to_string_value(pattern_val),
-         {:ok, flags} <- to_string_value(flags_val) do
+         {:ok, flags} <- to_string_value(flags_val),
+         :ok <- validate_regex_pattern(pattern) do
       regex_opts = parse_regex_flags(flags)
       case Regex.compile(pattern, regex_opts) do
-        {:ok, regex} -> {:ok, make_boolean(Regex.match?(regex, str))}
+        {:ok, regex} ->
+          case safe_regex_match(regex, str) do
+            {:ok, result} -> {:ok, make_boolean(result)}
+            {:error, :timeout} -> :error
+          end
         {:error, _} -> :error
       end
     else
@@ -553,12 +563,15 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, str} <- to_string_value(str_val),
          {:ok, pattern} <- to_string_value(pattern_val),
          {:ok, replacement} <- to_string_value(replacement_val),
-         {:ok, flags} <- to_string_value(flags_val) do
+         {:ok, flags} <- to_string_value(flags_val),
+         :ok <- validate_regex_pattern(pattern) do
       regex_opts = parse_regex_flags(flags)
       case Regex.compile(pattern, regex_opts) do
         {:ok, regex} ->
-          result = Regex.replace(regex, str, replacement)
-          {:ok, make_string_result(result, str_val)}
+          case safe_regex_replace(regex, str, replacement) do
+            {:ok, result} -> {:ok, make_string_result(result, str_val)}
+            {:error, :timeout} -> :error
+          end
         {:error, _} -> :error
       end
     else
@@ -804,9 +817,9 @@ defmodule TripleStore.SPARQL.Expression do
   end
 
   # Fallback for unknown function calls
-  def evaluate({:function_call, name, _args}, _bindings) do
+  def evaluate({:function_call, _name, _args}, _bindings) do
     # Unknown function - could be a custom function
-    {:error, "Unknown function: #{name}"}
+    :error
   end
 
   # Fallback for unknown expressions
@@ -1158,5 +1171,74 @@ defmodule TripleStore.SPARQL.Expression do
   defp term_sort_key({:literal, :lang, s, l}), do: {3, s, l}
   defp term_sort_key({:literal, :typed, s, t}), do: {4, s, t}
   defp term_sort_key(_), do: {5, ""}
+
+  # ===========================================================================
+  # Regex Safety Functions (ReDoS Protection)
+  # ===========================================================================
+
+  # Validates regex pattern for potential ReDoS attacks
+  defp validate_regex_pattern(pattern) when byte_size(pattern) > @max_regex_pattern_length do
+    :error
+  end
+
+  defp validate_regex_pattern(pattern) do
+    # Check for catastrophic backtracking patterns like (a+)+, (a*)*
+    # These patterns can cause exponential time complexity
+    if has_catastrophic_backtracking?(pattern) do
+      :error
+    else
+      :ok
+    end
+  end
+
+  # Detect patterns known to cause catastrophic backtracking
+  # This is a heuristic check for common dangerous patterns
+  defp has_catastrophic_backtracking?(pattern) do
+    # Nested quantifiers: (a+)+, (a*)+, (a+)*, (a*)*, etc.
+    nested_quantifier = ~r/\([^)]*[+*][^)]*\)[+*]/
+
+    # Overlapping alternatives with quantifiers: (a|a)+
+    # This is harder to detect precisely, so we're conservative
+
+    Regex.match?(nested_quantifier, pattern)
+  end
+
+  # Execute regex match with timeout protection
+  defp safe_regex_match(regex, string) do
+    task = Task.async(fn -> Regex.match?(regex, string) end)
+
+    case Task.yield(task, @regex_timeout_ms) do
+      {:ok, result} ->
+        {:ok, result}
+
+      nil ->
+        Task.shutdown(task, :brutal_kill)
+        :telemetry.execute(
+          [:triple_store, :sparql, :expression, :regex_timeout],
+          %{pattern: regex.source, string_length: byte_size(string)},
+          %{}
+        )
+        {:error, :timeout}
+    end
+  end
+
+  # Execute regex replace with timeout protection
+  defp safe_regex_replace(regex, string, replacement) do
+    task = Task.async(fn -> Regex.replace(regex, string, replacement) end)
+
+    case Task.yield(task, @regex_timeout_ms) do
+      {:ok, result} ->
+        {:ok, result}
+
+      nil ->
+        Task.shutdown(task, :brutal_kill)
+        :telemetry.execute(
+          [:triple_store, :sparql, :expression, :regex_timeout],
+          %{pattern: regex.source, string_length: byte_size(string)},
+          %{}
+        )
+        {:error, :timeout}
+    end
+  end
 
 end

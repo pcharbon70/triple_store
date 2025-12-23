@@ -102,7 +102,17 @@ defmodule TripleStore.SPARQL.Parser do
     if byte_size(sparql) > @max_query_size do
       {:error, {:parse_error, "Query exceeds maximum size of #{@max_query_size} bytes"}}
     else
-      NIF.parse_query(sparql)
+      start_time = System.monotonic_time()
+      result = NIF.parse_query(sparql)
+      duration = System.monotonic_time() - start_time
+
+      :telemetry.execute(
+        [:triple_store, :sparql, :parser, :parse],
+        %{duration: duration, query_size: byte_size(sparql)},
+        %{success: match?({:ok, _}, result)}
+      )
+
+      result
     end
   end
 

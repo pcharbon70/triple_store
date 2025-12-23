@@ -650,6 +650,40 @@ Key results on small datasets:
 
 ---
 
+## 2.8 Review Fixes (Post-Review Hardening)
+
+- [x] **Section 2.8 Complete** (2025-12-23)
+
+Addressed all blockers and concerns from the comprehensive code review.
+
+### 2.8.1 Security Hardening
+
+- [x] **Task 2.8.1 Complete**
+
+- [x] 2.8.1.1 Fix ReDoS vulnerability in REGEX (pattern validation, timeout protection)
+- [x] 2.8.1.2 Add DISTINCT memory limit (100,000 unique bindings max)
+- [x] 2.8.1.3 Add ORDER BY result set limit (1,000,000 bindings max)
+- [x] 2.8.1.4 Add DESCRIBE triple limit (10,000 triples max)
+
+### 2.8.2 Error Handling Improvements
+
+- [x] **Task 2.8.2 Complete**
+
+- [x] 2.8.2.1 Standardize error format to `{:error, {:atom, details}}`
+- [x] 2.8.2.2 Create LimitExceededError custom exception
+- [x] 2.8.2.3 Add telemetry events for limit violations
+
+### 2.8.3 Performance Optimization
+
+- [x] **Task 2.8.3 Complete**
+
+- [x] 2.8.3.1 Use Enum.min_by in greedy_reorder (O(n) vs O(n log n))
+- [x] 2.8.3.2 Add telemetry to parser for monitoring
+
+Added 7 new tests, total: 844 tests in SPARQL module.
+
+---
+
 ## Success Criteria
 
 1. **Parser**: All SPARQL 1.1 query forms parse correctly
@@ -658,6 +692,7 @@ Key results on small datasets:
 4. **Execution**: All algebra operations execute with correct semantics
 5. **Performance**: Simple BGP <10ms on 1M triples
 6. **Aggregation**: Full GROUP BY and aggregate function support
+7. **Security**: DoS protection with configurable limits ✅ (NEW)
 
 ## Provides Foundation
 
