@@ -324,14 +324,24 @@ Test coverage: 27 new tests (70 total in executor_test.exs).
 
 ### 2.4.4 Filter Execution
 
-- [ ] **Task 2.4.4 Complete**
+- [x] **Task 2.4.4 Complete** (2025-12-23)
 
 Execute filter expressions against bindings.
 
-- [ ] 2.4.4.1 Implement `execute_filter(stream, expression)` filtering stream
-- [ ] 2.4.4.2 Implement expression evaluator for all operators
-- [ ] 2.4.4.3 Handle three-valued logic (true, false, error)
-- [ ] 2.4.4.4 Implement built-in function evaluation
+- [x] 2.4.4.1 Implement `execute_filter(stream, expression)` filtering stream
+- [x] 2.4.4.2 Implement expression evaluator for all operators
+- [x] 2.4.4.3 Handle three-valued logic (true, false, error)
+- [x] 2.4.4.4 Implement built-in function evaluation
+
+Extended `lib/triple_store/sparql/executor.ex` with filter execution functions:
+- `filter/2` - Main filter function with lazy evaluation
+- `evaluate_filter/2` - Two-valued evaluation (true/false, errors as false)
+- `evaluate_filter_3vl/2` - Three-valued evaluation (true/false/error)
+- `filter_all/2` - Conjunctive filters (AND)
+- `filter_any/2` - Disjunctive filters (OR)
+- `to_effective_boolean/1` - EBV computation per SPARQL spec
+Integrates with existing Expression module for full expression evaluation.
+Test coverage: 36 new tests (106 total in executor_test.exs).
 
 ### 2.4.5 Solution Modifiers
 

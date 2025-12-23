@@ -971,6 +971,294 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # ===========================================================================
+  # Filter Execution (Task 2.4.4)
+  # ===========================================================================
+
+  alias TripleStore.SPARQL.Expression
+
+  @doc """
+  Filters a binding stream based on a SPARQL expression.
+
+  Evaluates the filter expression against each binding in the stream.
+  Only bindings where the expression evaluates to true (effective boolean
+  value) are kept. Bindings where the expression evaluates to false or
+  error are removed.
+
+  ## Three-Valued Logic
+
+  SPARQL uses three-valued logic for filters:
+  - **true**: Binding passes the filter
+  - **false**: Binding is removed
+  - **error**: Binding is removed (errors propagate as false in filters)
+
+  This differs from SQL where errors might raise exceptions. In SPARQL,
+  a filter like `FILTER(?x > 5)` on an unbound `?x` simply removes the
+  binding rather than failing the query.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `expression` - SPARQL expression AST from parser
+
+  ## Returns
+
+  Filtered binding stream.
+
+  ## Examples
+
+      # Filter ?age > 18
+      bindings = [
+        %{"name" => {:literal, :simple, "Alice"}, "age" => {:literal, :typed, "25", xsd_integer}},
+        %{"name" => {:literal, :simple, "Bob"}, "age" => {:literal, :typed, "15", xsd_integer}}
+      ]
+      expr = {:greater, {:variable, "age"}, {:literal, :typed, "18", xsd_integer}}
+      result = Executor.filter(bindings, expr) |> Enum.to_list()
+      # => [%{"name" => ..., "age" => "25"}]
+
+  """
+  @spec filter(Enumerable.t(), tuple()) :: binding_stream()
+  def filter(stream, expression) do
+    Stream.filter(stream, fn binding ->
+      evaluate_filter(expression, binding)
+    end)
+  end
+
+  @doc """
+  Evaluates a filter expression against a single binding.
+
+  Returns `true` if the binding should pass the filter, `false` otherwise.
+  Implements SPARQL three-valued logic where errors are treated as false.
+
+  ## Arguments
+
+  - `expression` - SPARQL expression AST
+  - `binding` - Variable bindings map
+
+  ## Returns
+
+  `true` if expression evaluates to true, `false` if false or error.
+
+  ## Examples
+
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "5", xsd_integer}}
+      binding = %{"x" => {:literal, :typed, "10", xsd_integer}}
+      Executor.evaluate_filter(expr, binding)
+      # => true
+
+  """
+  @spec evaluate_filter(tuple(), binding()) :: boolean()
+  def evaluate_filter(expression, binding) do
+    case Expression.evaluate(expression, binding) do
+      {:ok, result} ->
+        effective_boolean_value(result)
+
+      :error ->
+        # Three-valued logic: errors evaluate to false in filter context
+        false
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  @doc """
+  Evaluates a filter expression and returns the three-valued result.
+
+  Unlike `evaluate_filter/2`, this function distinguishes between
+  false and error results.
+
+  ## Arguments
+
+  - `expression` - SPARQL expression AST
+  - `binding` - Variable bindings map
+
+  ## Returns
+
+  - `{:ok, true}` - Expression is true
+  - `{:ok, false}` - Expression is false
+  - `:error` - Expression evaluation failed
+
+  ## Examples
+
+      # True case
+      evaluate_filter_3vl({:bound, {:variable, "x"}}, %{"x" => 1})
+      # => {:ok, true}
+
+      # False case
+      evaluate_filter_3vl({:bound, {:variable, "x"}}, %{})
+      # => {:ok, false}
+
+      # Error case (type error)
+      evaluate_filter_3vl({:greater, {:variable, "x"}, {:literal, :typed, "5", xsd_integer}}, %{"x" => {:named_node, "http://ex.org"}})
+      # => :error
+
+  """
+  @spec evaluate_filter_3vl(tuple(), binding()) :: {:ok, boolean()} | :error
+  def evaluate_filter_3vl(expression, binding) do
+    case Expression.evaluate(expression, binding) do
+      {:ok, result} ->
+        case to_effective_boolean(result) do
+          {:ok, bool} -> {:ok, bool}
+          :error -> :error
+        end
+
+      :error ->
+        :error
+
+      {:error, _} ->
+        :error
+    end
+  end
+
+  @doc """
+  Filters bindings with multiple conjunctive filter expressions.
+
+  Equivalent to `FILTER(e1 && e2 && e3)`. A binding passes only if
+  ALL expressions evaluate to true.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `expressions` - List of SPARQL expression ASTs
+
+  ## Returns
+
+  Filtered binding stream.
+
+  ## Examples
+
+      # FILTER(?x > 0 && ?x < 10)
+      exprs = [
+        {:greater, {:variable, "x"}, {:literal, :typed, "0", xsd_integer}},
+        {:less, {:variable, "x"}, {:literal, :typed, "10", xsd_integer}}
+      ]
+      result = Executor.filter_all(bindings, exprs)
+
+  """
+  @spec filter_all(Enumerable.t(), [tuple()]) :: binding_stream()
+  def filter_all(stream, []), do: stream
+
+  def filter_all(stream, expressions) when is_list(expressions) do
+    Stream.filter(stream, fn binding ->
+      Enum.all?(expressions, fn expr ->
+        evaluate_filter(expr, binding)
+      end)
+    end)
+  end
+
+  @doc """
+  Filters bindings with disjunctive filter expressions.
+
+  Equivalent to `FILTER(e1 || e2 || e3)`. A binding passes if
+  ANY expression evaluates to true.
+
+  ## Arguments
+
+  - `stream` - Input binding stream
+  - `expressions` - List of SPARQL expression ASTs
+
+  ## Returns
+
+  Filtered binding stream.
+
+  ## Examples
+
+      # FILTER(?type = :Person || ?type = :Organization)
+      exprs = [
+        {:equal, {:variable, "type"}, {:named_node, "http://ex.org/Person"}},
+        {:equal, {:variable, "type"}, {:named_node, "http://ex.org/Organization"}}
+      ]
+      result = Executor.filter_any(bindings, exprs)
+
+  """
+  @spec filter_any(Enumerable.t(), [tuple()]) :: binding_stream()
+  def filter_any(_stream, []), do: empty_stream()
+
+  def filter_any(stream, expressions) when is_list(expressions) do
+    Stream.filter(stream, fn binding ->
+      Enum.any?(expressions, fn expr ->
+        evaluate_filter(expr, binding)
+      end)
+    end)
+  end
+
+  # ===========================================================================
+  # Effective Boolean Value (SPARQL Semantics)
+  # ===========================================================================
+
+  @xsd_boolean "http://www.w3.org/2001/XMLSchema#boolean"
+  @xsd_string "http://www.w3.org/2001/XMLSchema#string"
+  @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
+  @xsd_decimal "http://www.w3.org/2001/XMLSchema#decimal"
+  @xsd_float "http://www.w3.org/2001/XMLSchema#float"
+  @xsd_double "http://www.w3.org/2001/XMLSchema#double"
+
+  # Convert RDF term to effective boolean value (two-valued for filter context)
+  defp effective_boolean_value(term) do
+    case to_effective_boolean(term) do
+      {:ok, bool} -> bool
+      :error -> false
+    end
+  end
+
+  @doc """
+  Computes the effective boolean value of an RDF term.
+
+  SPARQL defines EBV (Effective Boolean Value) as:
+  - xsd:boolean: the boolean value
+  - xsd:string or simple literal: false if empty string, true otherwise
+  - Numeric types: false if zero or NaN, true otherwise
+  - Other types: error
+
+  ## Arguments
+
+  - `term` - RDF term tuple
+
+  ## Returns
+
+  - `{:ok, boolean}` - The effective boolean value
+  - `:error` - Cannot compute EBV for this term type
+
+  """
+  @spec to_effective_boolean(term()) :: {:ok, boolean()} | :error
+  def to_effective_boolean({:literal, :typed, "true", @xsd_boolean}), do: {:ok, true}
+  def to_effective_boolean({:literal, :typed, "false", @xsd_boolean}), do: {:ok, false}
+  def to_effective_boolean({:literal, :typed, "1", @xsd_boolean}), do: {:ok, true}
+  def to_effective_boolean({:literal, :typed, "0", @xsd_boolean}), do: {:ok, false}
+
+  def to_effective_boolean({:literal, :simple, s}), do: {:ok, s != ""}
+  def to_effective_boolean({:literal, :typed, s, @xsd_string}), do: {:ok, s != ""}
+
+  def to_effective_boolean({:literal, :typed, value, type})
+      when type in [@xsd_integer, @xsd_decimal, @xsd_float, @xsd_double] do
+    case parse_numeric(value, type) do
+      {:ok, n} -> {:ok, n != 0 and not is_nan(n)}
+      :error -> :error
+    end
+  end
+
+  def to_effective_boolean(_), do: :error
+
+  # Parse numeric value
+  defp parse_numeric(value, @xsd_integer) do
+    case Integer.parse(value) do
+      {n, ""} -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_numeric(value, _float_type) do
+    case Float.parse(value) do
+      {n, ""} -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  # Check for NaN (not a number)
+  defp is_nan(n) when is_float(n), do: n != n
+  defp is_nan(_), do: false
+
+  # ===========================================================================
   # Empty Result Handling
   # ===========================================================================
 

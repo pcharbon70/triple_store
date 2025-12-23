@@ -1057,4 +1057,428 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Filter Execution Tests (Task 2.4.4)
+  # ===========================================================================
+
+  # XSD type constants for tests
+  @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
+  @xsd_boolean "http://www.w3.org/2001/XMLSchema#boolean"
+  @xsd_string "http://www.w3.org/2001/XMLSchema#string"
+  @xsd_decimal "http://www.w3.org/2001/XMLSchema#decimal"
+
+  describe "filter/2" do
+    test "filters bindings where expression is true" do
+      bindings = [
+        %{"x" => {:literal, :typed, "10", @xsd_integer}},
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "20", @xsd_integer}}
+      ]
+
+      # Filter: ?x > 8
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "8", @xsd_integer}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 2
+      values = Enum.map(results, fn b -> b["x"] end)
+      assert {:literal, :typed, "10", @xsd_integer} in values
+      assert {:literal, :typed, "20", @xsd_integer} in values
+    end
+
+    test "removes bindings where expression is false" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}}
+      ]
+
+      # Filter: ?x > 10 (false)
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "removes bindings where expression errors (unbound variable)" do
+      bindings = [
+        %{"x" => {:literal, :typed, "10", @xsd_integer}},
+        %{"y" => {:literal, :typed, "5", @xsd_integer}}  # x is unbound
+      ]
+
+      # Filter: ?x > 5 (errors on second binding)
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "5", @xsd_integer}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      # Only first binding passes
+      assert length(results) == 1
+      assert hd(results)["x"] == {:literal, :typed, "10", @xsd_integer}
+    end
+
+    test "removes bindings where expression errors (type mismatch)" do
+      bindings = [
+        %{"x" => {:named_node, "http://example.org/A"}}  # Can't compare IRI with integer
+      ]
+
+      # Filter: ?x > 5 (type error)
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "5", @xsd_integer}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles equality filter" do
+      bindings = [
+        %{"name" => {:literal, :simple, "Alice"}},
+        %{"name" => {:literal, :simple, "Bob"}}
+      ]
+
+      expr = {:equal, {:variable, "name"}, {:literal, :simple, "Alice"}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["name"] == {:literal, :simple, "Alice"}
+    end
+
+    test "handles logical AND filter" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "15", @xsd_integer}},
+        %{"x" => {:literal, :typed, "25", @xsd_integer}}
+      ]
+
+      # Filter: ?x > 0 && ?x < 20
+      expr = {:and,
+        {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
+        {:less, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
+      }
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 2
+      values = Enum.map(results, fn b -> b["x"] end)
+      assert {:literal, :typed, "5", @xsd_integer} in values
+      assert {:literal, :typed, "15", @xsd_integer} in values
+    end
+
+    test "handles logical OR filter" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "15", @xsd_integer}},
+        %{"x" => {:literal, :typed, "25", @xsd_integer}}
+      ]
+
+      # Filter: ?x < 10 || ?x > 20
+      expr = {:or,
+        {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
+        {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
+      }
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 2
+      values = Enum.map(results, fn b -> b["x"] end)
+      assert {:literal, :typed, "5", @xsd_integer} in values
+      assert {:literal, :typed, "25", @xsd_integer} in values
+    end
+
+    test "handles NOT filter" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "15", @xsd_integer}}
+      ]
+
+      # Filter: !(?x > 10)
+      expr = {:not, {:greater, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["x"] == {:literal, :typed, "5", @xsd_integer}
+    end
+
+    test "handles BOUND filter" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}, "y" => {:literal, :simple, "a"}},
+        %{"x" => {:literal, :typed, "10", @xsd_integer}}  # y is unbound
+      ]
+
+      # Filter: BOUND(?y)
+      expr = {:bound, {:variable, "y"}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["y"] == {:literal, :simple, "a"}
+    end
+
+    test "handles string function filter (CONTAINS)" do
+      bindings = [
+        %{"name" => {:literal, :simple, "Alice Smith"}},
+        %{"name" => {:literal, :simple, "Bob Jones"}}
+      ]
+
+      # Filter: CONTAINS(?name, "Smith")
+      expr = {:function_call, "CONTAINS", [{:variable, "name"}, {:literal, :simple, "Smith"}]}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["name"] == {:literal, :simple, "Alice Smith"}
+    end
+
+    test "handles REGEX filter" do
+      bindings = [
+        %{"email" => {:literal, :simple, "alice@example.com"}},
+        %{"email" => {:literal, :simple, "bob@test.org"}},
+        %{"email" => {:literal, :simple, "invalid-email"}}
+      ]
+
+      # Filter: REGEX(?email, "@.*\\.com$")
+      expr = {:function_call, "REGEX", [{:variable, "email"}, {:literal, :simple, "@.*\\.com$"}]}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["email"] == {:literal, :simple, "alice@example.com"}
+    end
+
+    test "handles ISIRI filter" do
+      bindings = [
+        %{"x" => {:named_node, "http://example.org/A"}},
+        %{"x" => {:literal, :simple, "not an IRI"}}
+      ]
+
+      expr = {:function_call, "ISIRI", [{:variable, "x"}]}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      assert length(results) == 1
+      assert hd(results)["x"] == {:named_node, "http://example.org/A"}
+    end
+
+    test "preserves binding order" do
+      bindings = [
+        %{"x" => {:literal, :typed, "1", @xsd_integer}},
+        %{"x" => {:literal, :typed, "3", @xsd_integer}},
+        %{"x" => {:literal, :typed, "5", @xsd_integer}}
+      ]
+
+      # Filter: ?x > 0 (all pass)
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}}
+      results = Executor.filter(bindings, expr) |> Enum.to_list()
+
+      # Order should be preserved
+      assert Enum.at(results, 0)["x"] == {:literal, :typed, "1", @xsd_integer}
+      assert Enum.at(results, 1)["x"] == {:literal, :typed, "3", @xsd_integer}
+      assert Enum.at(results, 2)["x"] == {:literal, :typed, "5", @xsd_integer}
+    end
+  end
+
+  describe "evaluate_filter/2" do
+    test "returns true for true expression" do
+      expr = {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter(expr, %{}) == true
+    end
+
+    test "returns false for false expression" do
+      expr = {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter(expr, %{}) == false
+    end
+
+    test "returns false for error expression" do
+      # Unbound variable
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter(expr, %{}) == false
+    end
+
+    test "handles boolean literal result" do
+      expr = {:literal, :typed, "true", @xsd_boolean}
+      assert Executor.evaluate_filter(expr, %{}) == true
+
+      expr = {:literal, :typed, "false", @xsd_boolean}
+      assert Executor.evaluate_filter(expr, %{}) == false
+    end
+  end
+
+  describe "evaluate_filter_3vl/2" do
+    test "returns {:ok, true} for true expression" do
+      expr = {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter_3vl(expr, %{}) == {:ok, true}
+    end
+
+    test "returns {:ok, false} for false expression" do
+      expr = {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter_3vl(expr, %{}) == {:ok, false}
+    end
+
+    test "returns :error for error expression" do
+      # Unbound variable
+      expr = {:greater, {:variable, "x"}, {:literal, :typed, "5", @xsd_integer}}
+      assert Executor.evaluate_filter_3vl(expr, %{}) == :error
+    end
+
+    test "returns :error for EBV error (IRI has no EBV)" do
+      # IRI cannot have effective boolean value
+      expr = {:variable, "x"}
+      binding = %{"x" => {:named_node, "http://example.org/A"}}
+      assert Executor.evaluate_filter_3vl(expr, binding) == :error
+    end
+  end
+
+  describe "filter_all/2" do
+    test "passes bindings that satisfy all expressions" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "15", @xsd_integer}},
+        %{"x" => {:literal, :typed, "25", @xsd_integer}}
+      ]
+
+      # Filters: ?x > 0 AND ?x < 20
+      exprs = [
+        {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
+        {:less, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
+      ]
+      results = Executor.filter_all(bindings, exprs) |> Enum.to_list()
+
+      assert length(results) == 2
+    end
+
+    test "empty expression list passes all bindings" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+      results = Executor.filter_all(bindings, []) |> Enum.to_list()
+
+      assert results == bindings
+    end
+
+    test "removes bindings that fail any expression" do
+      bindings = [%{"x" => {:literal, :typed, "5", @xsd_integer}}]
+
+      # ?x > 0 passes, but ?x > 10 fails
+      exprs = [
+        {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
+        {:greater, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}}
+      ]
+      results = Executor.filter_all(bindings, exprs) |> Enum.to_list()
+
+      assert results == []
+    end
+  end
+
+  describe "filter_any/2" do
+    test "passes bindings that satisfy any expression" do
+      bindings = [
+        %{"x" => {:literal, :typed, "5", @xsd_integer}},
+        %{"x" => {:literal, :typed, "15", @xsd_integer}},
+        %{"x" => {:literal, :typed, "25", @xsd_integer}}
+      ]
+
+      # Filters: ?x < 10 OR ?x > 20
+      exprs = [
+        {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
+        {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
+      ]
+      results = Executor.filter_any(bindings, exprs) |> Enum.to_list()
+
+      assert length(results) == 2
+      values = Enum.map(results, fn b -> b["x"] end)
+      assert {:literal, :typed, "5", @xsd_integer} in values
+      assert {:literal, :typed, "25", @xsd_integer} in values
+    end
+
+    test "empty expression list returns empty stream" do
+      bindings = [%{"x" => 1}, %{"x" => 2}]
+      results = Executor.filter_any(bindings, []) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "removes bindings that fail all expressions" do
+      bindings = [%{"x" => {:literal, :typed, "15", @xsd_integer}}]
+
+      # Both fail: ?x < 10 and ?x > 20
+      exprs = [
+        {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
+        {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
+      ]
+      results = Executor.filter_any(bindings, exprs) |> Enum.to_list()
+
+      assert results == []
+    end
+  end
+
+  describe "to_effective_boolean/1" do
+    test "handles xsd:boolean true values" do
+      assert Executor.to_effective_boolean({:literal, :typed, "true", @xsd_boolean}) == {:ok, true}
+      assert Executor.to_effective_boolean({:literal, :typed, "1", @xsd_boolean}) == {:ok, true}
+    end
+
+    test "handles xsd:boolean false values" do
+      assert Executor.to_effective_boolean({:literal, :typed, "false", @xsd_boolean}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :typed, "0", @xsd_boolean}) == {:ok, false}
+    end
+
+    test "handles simple literals (empty string = false)" do
+      assert Executor.to_effective_boolean({:literal, :simple, ""}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :simple, "hello"}) == {:ok, true}
+    end
+
+    test "handles xsd:string (empty = false)" do
+      assert Executor.to_effective_boolean({:literal, :typed, "", @xsd_string}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :typed, "hello", @xsd_string}) == {:ok, true}
+    end
+
+    test "handles numeric types (0 = false, non-zero = true)" do
+      assert Executor.to_effective_boolean({:literal, :typed, "0", @xsd_integer}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :typed, "42", @xsd_integer}) == {:ok, true}
+      assert Executor.to_effective_boolean({:literal, :typed, "-5", @xsd_integer}) == {:ok, true}
+
+      assert Executor.to_effective_boolean({:literal, :typed, "0.0", @xsd_decimal}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :typed, "3.14", @xsd_decimal}) == {:ok, true}
+    end
+
+    test "returns error for IRIs" do
+      assert Executor.to_effective_boolean({:named_node, "http://example.org"}) == :error
+    end
+
+    test "returns error for blank nodes" do
+      assert Executor.to_effective_boolean({:blank_node, "b1"}) == :error
+    end
+
+    test "returns error for language-tagged literals" do
+      assert Executor.to_effective_boolean({:literal, :lang, "hello", "en"}) == :error
+    end
+  end
+
+  describe "filter integration with BGP execution" do
+    test "filter applied to BGP results", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add test data with different ages
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://example.org/age"),
+        typed_literal("25", @xsd_integer)
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Bob"),
+        iri("http://example.org/age"),
+        typed_literal("17", @xsd_integer)
+      })
+      add_triple(db, manager, {
+        iri("http://example.org/Carol"),
+        iri("http://example.org/age"),
+        typed_literal("30", @xsd_integer)
+      })
+
+      # Execute BGP: ?s :age ?age
+      {:ok, bgp_stream} = Executor.execute_bgp(ctx, [
+        triple(var("s"), iri("http://example.org/age"), var("age"))
+      ])
+
+      # Apply filter: ?age >= 18
+      expr = {:greater_or_equal, {:variable, "age"}, {:literal, :typed, "18", @xsd_integer}}
+      results = Executor.filter(bgp_stream, expr) |> Enum.to_list()
+
+      # Only Alice (25) and Carol (30) should pass
+      assert length(results) == 2
+      subjects = Enum.map(results, fn b -> b["s"] end)
+      assert {:named_node, "http://example.org/Alice"} in subjects
+      assert {:named_node, "http://example.org/Carol"} in subjects
+
+      cleanup({db, manager})
+    end
+  end
 end
