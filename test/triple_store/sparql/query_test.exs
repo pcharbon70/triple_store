@@ -1426,4 +1426,221 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Task 2.7.1: Query Pipeline Integration Tests
+  # ===========================================================================
+
+  describe "Task 2.7.1 - Query Pipeline Integration" do
+    @describetag :integration
+
+    test "2.7.1.1 - simple SELECT with single pattern", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Add a simple triple
+      add_triple(db, manager, {
+        iri("http://example.org/Alice"),
+        iri("http://xmlns.com/foaf/0.1/name"),
+        literal("Alice")
+      })
+
+      # Execute simple single-pattern query
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?name
+          WHERE { <http://example.org/Alice> <http://xmlns.com/foaf/0.1/name> ?name }
+        """)
+
+      assert length(results) == 1
+      assert hd(results)["name"] == {:literal, :simple, "Alice"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.1.2 - SELECT with star query (multiple patterns on same subject)", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Add multiple properties for same subject
+      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/age"), literal("30")})
+      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/email"), literal("alice@ex.org")})
+      add_triple(db, manager, {iri("http://ex.org/person2"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(db, manager, {iri("http://ex.org/person2"), iri("http://ex.org/age"), literal("25")})
+
+      # Star query: get all properties for subjects that have both name and age
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?s ?name ?age
+          WHERE {
+            ?s <http://ex.org/name> ?name .
+            ?s <http://ex.org/age> ?age
+          }
+        """)
+
+      assert length(results) == 2
+
+      # Both should have name and age
+      for result <- results do
+        assert Map.has_key?(result, "name")
+        assert Map.has_key?(result, "age")
+      end
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.1.3 - SELECT with OPTIONAL producing nulls", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Alice has email, Bob doesn't
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?name ?email
+          WHERE {
+            ?s <http://ex.org/name> ?name
+            OPTIONAL { ?s <http://ex.org/email> ?email }
+          }
+        """)
+
+      assert length(results) == 2
+
+      # Find Alice's result - should have email
+      alice_result = Enum.find(results, fn r -> r["name"] == {:literal, :simple, "Alice"} end)
+      assert alice_result["email"] == {:literal, :simple, "alice@ex.org"}
+
+      # Find Bob's result - should NOT have email key or have nil/unbound
+      bob_result = Enum.find(results, fn r -> r["name"] == {:literal, :simple, "Bob"} end)
+      assert bob_result["email"] == nil or not Map.has_key?(bob_result, "email")
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.1.4 - SELECT with UNION combining branches", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Different predicates for different types
+      add_triple(db, manager, {iri("http://ex.org/e1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(db, manager, {iri("http://ex.org/e2"), iri("http://ex.org/rdf_type"), iri("http://ex.org/Animal")})
+      add_triple(db, manager, {iri("http://ex.org/e3"), iri("http://ex.org/type"), iri("http://ex.org/Place")})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?entity ?type
+          WHERE {
+            { ?entity <http://ex.org/type> ?type }
+            UNION
+            { ?entity <http://ex.org/rdf_type> ?type }
+          }
+        """)
+
+      assert length(results) == 3
+
+      # All entities should be in results
+      entities = Enum.map(results, fn r -> r["entity"] end)
+      assert iri("http://ex.org/e1") in entities
+      assert iri("http://ex.org/e2") in entities
+      assert iri("http://ex.org/e3") in entities
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.1.5 - SELECT with complex FILTER expressions", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Products with prices
+      add_typed_triple(db, manager, {
+        iri("http://ex.org/product1"),
+        iri("http://ex.org/price"),
+        {:literal, :typed, "50", "http://www.w3.org/2001/XMLSchema#integer"}
+      })
+      add_typed_triple(db, manager, {
+        iri("http://ex.org/product2"),
+        iri("http://ex.org/price"),
+        {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
+      })
+      add_typed_triple(db, manager, {
+        iri("http://ex.org/product3"),
+        iri("http://ex.org/price"),
+        {:literal, :typed, "75", "http://www.w3.org/2001/XMLSchema#integer"}
+      })
+
+      # Filter for products with price between 40 and 100
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?product ?price
+          WHERE {
+            ?product <http://ex.org/price> ?price
+            FILTER(?price >= 40 && ?price <= 100)
+          }
+        """)
+
+      assert length(results) == 2
+
+      # Should include product1 (50) and product3 (75), not product2 (150)
+      products = Enum.map(results, fn r -> r["product"] end)
+      assert iri("http://ex.org/product1") in products
+      assert iri("http://ex.org/product3") in products
+      refute iri("http://ex.org/product2") in products
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.1.6 - SELECT with ORDER BY, LIMIT, OFFSET combined", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Items with numeric values for ordering
+      for i <- 1..10 do
+        add_typed_triple(db, manager, {
+          iri("http://ex.org/item#{i}"),
+          iri("http://ex.org/value"),
+          {:literal, :typed, Integer.to_string(i * 10), "http://www.w3.org/2001/XMLSchema#integer"}
+        })
+      end
+
+      # Get items 3-5 when ordered by value descending (100, 90, 80... so skip first 2, take 3)
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?item ?value
+          WHERE {
+            ?item <http://ex.org/value> ?value
+          }
+          ORDER BY DESC(?value)
+          LIMIT 3
+          OFFSET 2
+        """)
+
+      assert length(results) == 3
+
+      # Should be 80, 70, 60 (items 8, 7, 6)
+      values = Enum.map(results, fn r ->
+        {:literal, :typed, v, _} = r["value"]
+        String.to_integer(v)
+      end)
+
+      # Verify they're in descending order
+      assert values == Enum.sort(values, :desc)
+
+      # Verify these are the 3rd, 4th, 5th highest values (80, 70, 60)
+      assert hd(values) == 80
+
+      cleanup({db, manager})
+    end
+  end
+
+  # Helper for typed triples
+  defp add_typed_triple(db, manager, {s_term, p_term, {:literal, :typed, value, type}}) do
+    {:ok, s_id} = Manager.get_or_create_id(manager, term_to_rdf(s_term))
+    {:ok, p_id} = Manager.get_or_create_id(manager, term_to_rdf(p_term))
+    {:ok, o_id} = Manager.get_or_create_id(manager, RDF.literal(value, datatype: type))
+    :ok = Index.insert_triple(db, {s_id, p_id, o_id})
+  end
 end

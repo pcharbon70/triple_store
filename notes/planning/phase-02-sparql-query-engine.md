@@ -580,16 +580,19 @@ Integration tests validate the complete query pipeline from SPARQL string throug
 
 ### 2.7.1 Query Pipeline Testing
 
-- [ ] **Task 2.7.1 Complete**
+- [x] **Task 2.7.1 Complete** (2025-12-23)
 
 Test complete query pipelines for various query shapes.
 
-- [ ] 2.7.1.1 Test simple SELECT with single pattern
-- [ ] 2.7.1.2 Test SELECT with multiple joined patterns (star query)
-- [ ] 2.7.1.3 Test SELECT with OPTIONAL producing nulls
-- [ ] 2.7.1.4 Test SELECT with UNION combining branches
-- [ ] 2.7.1.5 Test SELECT with complex FILTER expressions
-- [ ] 2.7.1.6 Test SELECT with ORDER BY, LIMIT, OFFSET
+- [x] 2.7.1.1 Test simple SELECT with single pattern
+- [x] 2.7.1.2 Test SELECT with multiple joined patterns (star query)
+- [x] 2.7.1.3 Test SELECT with OPTIONAL producing nulls
+- [x] 2.7.1.4 Test SELECT with UNION combining branches
+- [x] 2.7.1.5 Test SELECT with complex FILTER expressions
+- [x] 2.7.1.6 Test SELECT with ORDER BY, LIMIT, OFFSET
+
+Added 6 comprehensive integration tests in query_test.exs covering the complete
+query pipeline from SPARQL parsing through execution to results.
 
 ### 2.7.2 Construct/Ask/Describe Testing
 
