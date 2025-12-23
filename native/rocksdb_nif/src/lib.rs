@@ -1319,3 +1319,111 @@ fn release_snapshot<'a>(
 }
 
 rustler::init!("Elixir.TripleStore.Backend.RocksDB.NIF");
+
+#[cfg(test)]
+mod tests {
+    use super::CF_NAMES;
+    use rocksdb::{ColumnFamilyDescriptor, Direction, IteratorMode, Options, ReadOptions, WriteBatch, DB};
+    use tempfile::TempDir;
+
+    fn setup_db() -> (TempDir, DB) {
+        let tmp = TempDir::new().expect("temp dir");
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+
+        let cf_descriptors: Vec<ColumnFamilyDescriptor> = CF_NAMES
+            .iter()
+            .map(|name| ColumnFamilyDescriptor::new(*name, Options::default()))
+            .collect();
+
+        let db = DB::open_cf_descriptors(&opts, tmp.path(), cf_descriptors).expect("open db");
+
+        (tmp, db)
+    }
+
+    #[test]
+    fn cf_names_unique_and_non_empty() {
+        let mut unique = std::collections::HashSet::new();
+        for name in CF_NAMES.iter() {
+            assert!(!name.is_empty());
+            assert!(unique.insert(name));
+        }
+    }
+
+    #[test]
+    fn basic_put_get() {
+        let (_tmp, db) = setup_db();
+        let cf = db.cf_handle("spo").expect("cf handle");
+
+        db.put_cf(&cf, b"key1", b"value1").expect("put");
+        let result = db.get_cf(&cf, b"key1").expect("get");
+        assert_eq!(result, Some(b"value1".to_vec()));
+    }
+
+    #[test]
+    fn iterator_prefix_bounds() {
+        let (_tmp, db) = setup_db();
+        let cf = db.cf_handle("spo").expect("cf handle");
+
+        db.put_cf(&cf, b"aaa1", b"").expect("put");
+        db.put_cf(&cf, b"aaa2", b"").expect("put");
+        db.put_cf(&cf, b"bbb1", b"").expect("put");
+
+        let prefix = b"aaa";
+        let iter = db.iterator_cf(&cf, IteratorMode::From(prefix, Direction::Forward));
+
+        let keys: Vec<Vec<u8>> = iter
+            .take_while(|result| {
+                result
+                    .as_ref()
+                    .map(|(key, _)| key.starts_with(prefix))
+                    .unwrap_or(false)
+            })
+            .filter_map(|result| result.ok())
+            .map(|(key, _)| key.to_vec())
+            .collect();
+
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().all(|key| key.starts_with(prefix)));
+    }
+
+    #[test]
+    fn snapshot_isolation() {
+        let (_tmp, db) = setup_db();
+        let cf = db.cf_handle("spo").expect("cf handle");
+
+        db.put_cf(&cf, b"key1", b"v1").expect("put");
+
+        let snap = db.snapshot();
+
+        db.put_cf(&cf, b"key1", b"v2").expect("put");
+        db.put_cf(&cf, b"key2", b"v3").expect("put");
+
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_snapshot(&snap);
+
+        let result = db.get_cf_opt(&cf, b"key1", &read_opts).expect("get snapshot");
+        assert_eq!(result, Some(b"v1".to_vec()));
+
+        let result = db.get_cf_opt(&cf, b"key2", &read_opts).expect("get snapshot");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn write_batch_atomicity() {
+        let (_tmp, db) = setup_db();
+        let cf = db.cf_handle("spo").expect("cf handle");
+
+        let mut batch = WriteBatch::default();
+        batch.put_cf(&cf, b"k1", b"v1");
+        batch.put_cf(&cf, b"k2", b"v2");
+        batch.put_cf(&cf, b"k3", b"v3");
+
+        db.write(batch).expect("write batch");
+
+        assert!(db.get_cf(&cf, b"k1").expect("get").is_some());
+        assert!(db.get_cf(&cf, b"k2").expect("get").is_some());
+        assert!(db.get_cf(&cf, b"k3").expect("get").is_some());
+    }
+}

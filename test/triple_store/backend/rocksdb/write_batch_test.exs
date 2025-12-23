@@ -54,12 +54,16 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
+      NIF.put(db, :id2str, "existing", "value")
+
       operations = [
         {:id2str, "key1", "value1"},
         {:nonexistent, "key2", "value2"}
       ]
 
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.write_batch(db, operations)
+      assert :not_found = NIF.get(db, :id2str, "key1")
+      assert {:ok, "value"} = NIF.get(db, :id2str, "existing")
     end
 
     test "returns error for closed database", %{db_path: path} do
@@ -144,12 +148,17 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
+      NIF.write_batch(db, [
+        {:id2str, "key1", "value1"}
+      ])
+
       operations = [
         {:id2str, "key1"},
         {:nonexistent, "key2"}
       ]
 
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.delete_batch(db, operations)
+      assert {:ok, "value1"} = NIF.get(db, :id2str, "key1")
     end
 
     test "returns error for closed database", %{db_path: path} do
@@ -257,12 +266,17 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
     end
 
     test "returns error for invalid operation type", %{db: db} do
+      NIF.put(db, :id2str, "to_delete", "value")
+
       operations = [
         {:put, :id2str, "key1", "value1"},
+        {:delete, :id2str, "to_delete"},
         {:invalid_op, :id2str, "key2"}
       ]
 
       assert {:error, {:invalid_operation, :invalid_op}} = NIF.mixed_batch(db, operations)
+      assert :not_found = NIF.get(db, :id2str, "key1")
+      assert {:ok, "value"} = NIF.get(db, :id2str, "to_delete")
     end
 
     test "returns error for invalid column family in put", %{db: db} do

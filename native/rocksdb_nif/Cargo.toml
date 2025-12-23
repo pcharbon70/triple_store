@@ -12,3 +12,6 @@ crate-type = ["cdylib"]
 [dependencies]
 rustler = "0.35"
 rocksdb = "0.22"
+
+[dev-dependencies]
+tempfile = "3.10"
