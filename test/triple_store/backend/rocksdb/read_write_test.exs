@@ -2,23 +2,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
   @moduledoc """
   Tests for RocksDB basic read/write operations (Task 1.2.2).
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Backend.RocksDB.NIF
-
-  @test_db_base "/tmp/triple_store_rw_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
+  use TripleStore.PooledDbCase
 
   describe "put/4" do
     test "writes a key-value pair successfully", %{db: db} do
@@ -55,7 +39,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.put(db, :nonexistent, "key", "value")
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
       assert {:error, :already_closed} = NIF.put(db2, :id2str, "key", "value")
@@ -93,7 +77,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.get(db, :nonexistent, "key")
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
       assert {:error, :already_closed} = NIF.get(db2, :id2str, "key")
@@ -125,7 +109,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.delete(db, :nonexistent, "key")
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
       assert {:error, :already_closed} = NIF.delete(db2, :id2str, "key")
@@ -161,7 +145,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
       assert {:error, {:invalid_cf, :nonexistent}} = NIF.exists(db, :nonexistent, "key")
     end
 
-    test "returns error for closed database", %{path: path} do
+    test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = NIF.open("#{path}_closed")
       NIF.close(db2)
       assert {:error, :already_closed} = NIF.exists(db2, :id2str, "key")
@@ -170,7 +154,7 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
   end
 
   describe "data persistence" do
-    test "data persists after close and reopen", %{path: path} do
+    test "data persists after close and reopen", %{db_path: path} do
       {:ok, db1} = NIF.open("#{path}_persist")
       NIF.put(db1, :id2str, "persist_key", "persist_value")
       NIF.close(db1)

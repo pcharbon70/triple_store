@@ -11,11 +11,21 @@ use std::sync::{Arc, Mutex, RwLock};
 /// Column family names used by TripleStore
 const CF_NAMES: [&str; 6] = ["id2str", "str2id", "spo", "pos", "osp", "derived"];
 
-/// Database reference wrapper for safe cross-NIF-boundary passing.
-/// Uses RwLock to allow concurrent reads with exclusive writes.
-pub struct DbRef {
-    db: RwLock<Option<DB>>,
+/// Shared database handle that stays alive as long as any iterator/snapshot references it.
+/// This is the core fix for the use-after-free issue: iterators hold an Arc<SharedDb>,
+/// so the DB cannot be dropped while any iterator is alive.
+struct SharedDb {
+    db: DB,
     path: String,
+}
+
+/// Database reference wrapper for safe cross-NIF-boundary passing.
+/// Uses RwLock<Option<Arc<SharedDb>>> so that:
+/// - close() sets the Option to None (marking as closed for new operations)
+/// - But the Arc<SharedDb> may still exist in iterators/snapshots
+/// - The actual DB is only dropped when the last Arc is dropped
+pub struct DbRef {
+    inner: RwLock<Option<Arc<SharedDb>>>,
 }
 
 #[rustler::resource_impl]
@@ -24,13 +34,14 @@ impl Resource for DbRef {}
 /// Iterator reference wrapper for safe cross-NIF-boundary passing.
 /// Stores the iterator along with its prefix for bounds checking.
 /// The iterator is wrapped in a Mutex because it needs mutable access for next().
-/// We also store an Arc to the DbRef to keep the database alive.
 pub struct IteratorRef {
     /// The RocksDB iterator. Uses 'static lifetime with raw pointer internally.
-    /// Safety: The DbRef Arc keeps the database alive for the iterator's lifetime.
+    /// SAFETY: The Arc<SharedDb> keeps the actual database alive for the iterator's lifetime.
+    /// This is safe because SharedDb is only dropped when all Arc references are dropped,
+    /// and we hold one here.
     iterator: Mutex<Option<DBIteratorWithThreadMode<'static, DB>>>,
-    /// Reference to the database to keep it alive
-    _db_ref: Arc<ResourceArc<DbRef>>,
+    /// Direct reference to the shared database - keeps the DB alive even after close()
+    db: Arc<SharedDb>,
     /// The prefix used for this iterator (for bounds checking)
     prefix: Vec<u8>,
     /// Column family name for this iterator
@@ -44,10 +55,12 @@ impl Resource for IteratorRef {}
 /// Stores the snapshot along with a reference to the database to keep it alive.
 pub struct SnapshotRef {
     /// The RocksDB snapshot. Uses 'static lifetime with raw pointer internally.
-    /// Safety: The DbRef Arc keeps the database alive for the snapshot's lifetime.
+    /// SAFETY: The Arc<SharedDb> keeps the actual database alive for the snapshot's lifetime.
+    /// This is safe because SharedDb is only dropped when all Arc references are dropped,
+    /// and we hold one here.
     snapshot: Mutex<Option<SnapshotWithThreadMode<'static, DB>>>,
-    /// Reference to the database to keep it alive
-    db_ref: Arc<ResourceArc<DbRef>>,
+    /// Direct reference to the shared database - keeps the DB alive even after close()
+    db: Arc<SharedDb>,
 }
 
 #[rustler::resource_impl]
@@ -56,13 +69,15 @@ impl Resource for SnapshotRef {}
 /// Snapshot iterator reference for iterating over a snapshot.
 pub struct SnapshotIteratorRef {
     /// The RocksDB iterator over snapshot.
+    /// SAFETY: The Arc<SharedDb> keeps the actual database alive for the iterator's lifetime.
     iterator: Mutex<Option<DBIteratorWithThreadMode<'static, DB>>>,
-    /// Reference to snapshot to keep it alive
-    _snapshot_ref: Arc<ResourceArc<SnapshotRef>>,
+    /// Direct reference to the shared database - keeps the DB alive even after close()
+    /// Prefixed with _ because it's used for Drop semantics, not directly read.
+    _db: Arc<SharedDb>,
     /// The prefix used for this iterator (for bounds checking)
     prefix: Vec<u8>,
-    /// Column family name for this iterator
-    cf_name: String,
+    /// Column family name for this iterator (kept for potential future debugging)
+    _cf_name: String,
 }
 
 #[rustler::resource_impl]
@@ -71,8 +86,7 @@ impl Resource for SnapshotIteratorRef {}
 impl DbRef {
     fn new(db: DB, path: String) -> Self {
         DbRef {
-            db: RwLock::new(Some(db)),
-            path,
+            inner: RwLock::new(Some(Arc::new(SharedDb { db, path }))),
         }
     }
 }
@@ -174,10 +188,15 @@ fn open(env: Env, path: String) -> NifResult<Term> {
     }
 }
 
-/// Closes the database and releases all resources.
+/// Closes the database and releases the main reference.
 ///
-/// After calling close, the database handle is no longer valid.
-/// Subsequent operations will return `{:error, :already_closed}`.
+/// After calling close, the database handle is no longer valid for new operations.
+/// Subsequent operations on DbRef will return `{:error, :already_closed}`.
+///
+/// IMPORTANT: Existing iterators and snapshots will continue to work after close()
+/// because they hold their own Arc<SharedDb> reference. The actual database is only
+/// dropped when the last reference (including any active iterators/snapshots) is dropped.
+/// This prevents use-after-free bugs.
 ///
 /// # Arguments
 /// * `db_ref` - The database reference to close
@@ -187,17 +206,18 @@ fn open(env: Env, path: String) -> NifResult<Term> {
 /// * `{:error, :already_closed}` if already closed
 #[rustler::nif(schedule = "DirtyCpu")]
 fn close(env: Env, db_ref: ResourceArc<DbRef>) -> NifResult<Term> {
-    let mut db_guard = db_ref
-        .db
+    let mut guard = db_ref
+        .inner
         .write()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    if db_guard.is_none() {
+    if guard.is_none() {
         return Ok((atoms::error(), atoms::already_closed()).encode(env));
     }
 
-    // Drop the database to close it
-    *db_guard = None;
+    // Remove our reference. The actual DB may still be alive if iterators/snapshots
+    // hold Arc<SharedDb> references. The DB is only dropped when the last Arc is dropped.
+    *guard = None;
     Ok(atoms::ok().encode(env))
 }
 
@@ -208,9 +228,18 @@ fn close(env: Env, db_ref: ResourceArc<DbRef>) -> NifResult<Term> {
 ///
 /// # Returns
 /// * `{:ok, path}` with the database path
+/// * `{:error, :already_closed}` if database is closed
 #[rustler::nif]
 fn get_path(env: Env, db_ref: ResourceArc<DbRef>) -> NifResult<Term> {
-    Ok((atoms::ok(), db_ref.path.clone()).encode(env))
+    let guard = db_ref
+        .inner
+        .read()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    match guard.as_ref() {
+        Some(shared_db) => Ok((atoms::ok(), shared_db.path.clone()).encode(env)),
+        None => Ok((atoms::error(), atoms::already_closed()).encode(env)),
+    }
 }
 
 /// Lists all column families in the database.
@@ -239,11 +268,11 @@ fn list_column_families(env: Env) -> NifResult<Term> {
 /// * `true` if open, `false` if closed
 #[rustler::nif]
 fn is_open(db_ref: ResourceArc<DbRef>) -> NifResult<bool> {
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
-    Ok(db_guard.is_some())
+    Ok(guard.is_some())
 }
 
 /// Gets a value from a column family.
@@ -271,22 +300,22 @@ fn get<'a>(
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let cf_handle = match db.cf_handle(cf_name) {
+    let cf_handle = match shared_db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    match db.get_cf(&cf_handle, key.as_slice()) {
+    match shared_db.db.get_cf(&cf_handle, key.as_slice()) {
         Ok(Some(value)) => {
             let mut binary = NewBinary::new(env, value.len());
             binary.as_mut_slice().copy_from_slice(&value);
@@ -323,22 +352,22 @@ fn put<'a>(
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let cf_handle = match db.cf_handle(cf_name) {
+    let cf_handle = match shared_db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    match db.put_cf(&cf_handle, key.as_slice(), value.as_slice()) {
+    match shared_db.db.put_cf(&cf_handle, key.as_slice(), value.as_slice()) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::put_failed(), e.to_string())).encode(env)),
     }
@@ -368,22 +397,22 @@ fn delete<'a>(
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let cf_handle = match db.cf_handle(cf_name) {
+    let cf_handle = match shared_db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    match db.delete_cf(&cf_handle, key.as_slice()) {
+    match shared_db.db.delete_cf(&cf_handle, key.as_slice()) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::delete_failed(), e.to_string())).encode(env)),
     }
@@ -414,23 +443,23 @@ fn exists<'a>(
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let cf_handle = match db.cf_handle(cf_name) {
+    let cf_handle = match shared_db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
     // Check if key exists by attempting to get it
-    match db.get_cf(&cf_handle, key.as_slice()) {
+    match shared_db.db.get_cf(&cf_handle, key.as_slice()) {
         Ok(Some(_)) => Ok((atoms::ok(), true).encode(env)),
         Ok(None) => Ok((atoms::ok(), false).encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::get_failed(), e.to_string())).encode(env)),
@@ -454,12 +483,12 @@ fn write_batch<'a>(
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
@@ -493,7 +522,7 @@ fn write_batch<'a>(
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
 
-            let cf_handle = match db.cf_handle(cf_name) {
+            let cf_handle = match shared_db.db.cf_handle(cf_name) {
                 Some(cf) => cf,
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
@@ -523,7 +552,7 @@ fn write_batch<'a>(
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
 
-            let cf_handle = match db.cf_handle(cf_name) {
+            let cf_handle = match shared_db.db.cf_handle(cf_name) {
                 Some(cf) => cf,
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
@@ -534,7 +563,7 @@ fn write_batch<'a>(
         }
     }
 
-    match db.write(batch) {
+    match shared_db.db.write(batch) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
@@ -557,12 +586,12 @@ fn delete_batch<'a>(
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
@@ -595,7 +624,7 @@ fn delete_batch<'a>(
             None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
         };
 
-        let cf_handle = match db.cf_handle(cf_name) {
+        let cf_handle = match shared_db.db.cf_handle(cf_name) {
             Some(cf) => cf,
             None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
         };
@@ -603,7 +632,7 @@ fn delete_batch<'a>(
         batch.delete_cf(&cf_handle, key.as_slice());
     }
 
-    match db.write(batch) {
+    match shared_db.db.write(batch) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
@@ -629,12 +658,12 @@ fn mixed_batch<'a>(
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
+    let shared_db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
@@ -679,7 +708,7 @@ fn mixed_batch<'a>(
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
 
-            let cf_handle = match db.cf_handle(cf_name) {
+            let cf_handle = match shared_db.db.cf_handle(cf_name) {
                 Some(cf) => cf,
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
@@ -703,7 +732,7 @@ fn mixed_batch<'a>(
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
 
-            let cf_handle = match db.cf_handle(cf_name) {
+            let cf_handle = match shared_db.db.cf_handle(cf_name) {
                 Some(cf) => cf,
                 None => return Ok((atoms::error(), (atoms::invalid_cf(), cf_atom)).encode(env)),
             };
@@ -714,7 +743,7 @@ fn mixed_batch<'a>(
         }
     }
 
-    match db.write(batch) {
+    match shared_db.db.write(batch) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
@@ -750,36 +779,36 @@ fn prefix_iterator<'a>(
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
+    let shared_db = match guard.as_ref() {
+        Some(db) => Arc::clone(db),
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let cf_handle = match db.cf_handle(cf_name) {
+    let cf_handle = match shared_db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
 
     let prefix_bytes = prefix.as_slice().to_vec();
 
-    // Create the iterator with prefix mode
-    // Safety: We use unsafe to extend the lifetime because we're storing
-    // the db_ref Arc which keeps the database alive
-    let iterator = db.iterator_cf(&cf_handle, IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward));
+    // Create the iterator
+    let iterator = shared_db.db.iterator_cf(&cf_handle, IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward));
 
-    // SAFETY: We keep the DbRef alive via Arc, so the iterator remains valid
+    // SAFETY: We keep the SharedDb alive via Arc, so the iterator remains valid.
+    // The Arc<SharedDb> is stored in IteratorRef and will keep the DB alive
+    // even if DbRef.close() is called, preventing use-after-free.
     let static_iterator: DBIteratorWithThreadMode<'static, DB> = unsafe {
         std::mem::transmute(iterator)
     };
 
     let iter_ref = ResourceArc::new(IteratorRef {
         iterator: Mutex::new(Some(static_iterator)),
-        _db_ref: Arc::new(db_ref.clone()),
+        db: shared_db,
         prefix: prefix_bytes,
         cf_name: cf_name.to_string(),
     });
@@ -859,28 +888,18 @@ fn iterator_seek<'a>(
         None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
     };
 
-    // Get the database reference to create a new iterator at the seek position
-    let db_ref = &iter_ref._db_ref;
-    let db_guard = db_ref
-        .db
-        .read()
-        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
-
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
-    };
-
-    let cf_handle = match db.cf_handle(&iter_ref.cf_name) {
+    // Access the database directly from our Arc<SharedDb>
+    let cf_handle = match iter_ref.db.db.cf_handle(&iter_ref.cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
     };
 
     // Create new iterator at the seek position
     let target_bytes = target.as_slice();
-    let new_iterator = db.iterator_cf(&cf_handle, IteratorMode::From(target_bytes, rocksdb::Direction::Forward));
+    let new_iterator = iter_ref.db.db.iterator_cf(&cf_handle, IteratorMode::From(target_bytes, rocksdb::Direction::Forward));
 
-    // SAFETY: We keep the DbRef alive via Arc, so the iterator remains valid
+    // SAFETY: We keep the SharedDb alive via Arc, so the iterator remains valid.
+    // The Arc<SharedDb> is stored in IteratorRef and keeps the DB alive.
     let static_iterator: DBIteratorWithThreadMode<'static, DB> = unsafe {
         std::mem::transmute(new_iterator)
     };
@@ -985,26 +1004,28 @@ fn iterator_collect<'a>(env: Env<'a>, iter_ref: ResourceArc<IteratorRef>) -> Nif
 /// * `{:error, :already_closed}` if database is closed
 #[rustler::nif(schedule = "DirtyCpu")]
 fn snapshot<'a>(env: Env<'a>, db_ref: ResourceArc<DbRef>) -> NifResult<Term<'a>> {
-    let db_guard = db_ref
-        .db
+    let guard = db_ref
+        .inner
         .read()
         .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
 
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
+    let shared_db = match guard.as_ref() {
+        Some(db) => Arc::clone(db),
         None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
     };
 
-    let snap = db.snapshot();
+    let snap = shared_db.db.snapshot();
 
-    // SAFETY: We keep the DbRef alive via Arc, so the snapshot remains valid
+    // SAFETY: We keep the SharedDb alive via Arc, so the snapshot remains valid.
+    // The Arc<SharedDb> is stored in SnapshotRef and will keep the DB alive
+    // even if DbRef.close() is called, preventing use-after-free.
     let static_snapshot: SnapshotWithThreadMode<'static, DB> = unsafe {
         std::mem::transmute(snap)
     };
 
     let snap_ref = ResourceArc::new(SnapshotRef {
         snapshot: Mutex::new(Some(static_snapshot)),
-        db_ref: Arc::new(db_ref.clone()),
+        db: shared_db,
     });
 
     Ok((atoms::ok(), snap_ref).encode(env))
@@ -1048,18 +1069,8 @@ fn snapshot_get<'a>(
         None => return Ok((atoms::error(), atoms::snapshot_released()).encode(env)),
     };
 
-    // Get the database to access column family handles
-    let db_guard = snapshot_ref.db_ref
-        .db
-        .read()
-        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
-
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
-    };
-
-    let cf_handle = match db.cf_handle(cf_name) {
+    // Access the database directly from our Arc<SharedDb>
+    let cf_handle = match snapshot_ref.db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
@@ -1068,7 +1079,7 @@ fn snapshot_get<'a>(
     let mut read_opts = ReadOptions::default();
     read_opts.set_snapshot(snapshot);
 
-    match db.get_cf_opt(&cf_handle, key.as_slice(), &read_opts) {
+    match snapshot_ref.db.db.get_cf_opt(&cf_handle, key.as_slice(), &read_opts) {
         Ok(Some(value)) => {
             let mut binary = NewBinary::new(env, value.len());
             binary.as_mut_slice().copy_from_slice(&value);
@@ -1115,18 +1126,8 @@ fn snapshot_prefix_iterator<'a>(
         None => return Ok((atoms::error(), atoms::snapshot_released()).encode(env)),
     };
 
-    // Get the database to access column family handles
-    let db_guard = snapshot_ref.db_ref
-        .db
-        .read()
-        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
-
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
-    };
-
-    let cf_handle = match db.cf_handle(cf_name) {
+    // Access the database directly from our Arc<SharedDb>
+    let cf_handle = match snapshot_ref.db.db.cf_handle(cf_name) {
         Some(cf) => cf,
         None => return Ok((atoms::error(), (atoms::invalid_cf(), cf)).encode(env)),
     };
@@ -1138,22 +1139,24 @@ fn snapshot_prefix_iterator<'a>(
     read_opts.set_snapshot(snapshot);
 
     // Create the iterator with snapshot
-    let iterator = db.iterator_cf_opt(
+    let iterator = snapshot_ref.db.db.iterator_cf_opt(
         &cf_handle,
         read_opts,
         IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward),
     );
 
-    // SAFETY: We keep the SnapshotRef alive via Arc, so the iterator remains valid
+    // SAFETY: We keep the SharedDb alive via Arc, so the iterator remains valid.
+    // The Arc<SharedDb> is stored in SnapshotIteratorRef and will keep the DB alive
+    // even if DbRef.close() is called, preventing use-after-free.
     let static_iterator: DBIteratorWithThreadMode<'static, DB> = unsafe {
         std::mem::transmute(iterator)
     };
 
     let iter_ref = ResourceArc::new(SnapshotIteratorRef {
         iterator: Mutex::new(Some(static_iterator)),
-        _snapshot_ref: Arc::new(snapshot_ref.clone()),
+        _db: Arc::clone(&snapshot_ref.db),
         prefix: prefix_bytes,
-        cf_name: cf_name.to_string(),
+        _cf_name: cf_name.to_string(),
     });
 
     Ok((atoms::ok(), iter_ref).encode(env))

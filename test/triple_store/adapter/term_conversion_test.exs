@@ -10,30 +10,23 @@ defmodule TripleStore.Adapter.TermConversionTest do
   - Type validation in reverse lookups is enforced
   """
 
-  use ExUnit.Case, async: false
+  use TripleStore.PooledDbCase
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
 
-  @test_db_base "/tmp/triple_store_adapter_term_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+  setup %{db: db} do
+    assert NIF.is_open(db)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager) do
         Manager.stop(manager)
       end
-
-      NIF.close(db)
-      File.rm_rf(test_path)
     end)
 
-    {:ok, db: db, manager: manager, path: test_path}
+    {:ok, manager: manager}
   end
 
   # ===========================================================================
@@ -452,7 +445,11 @@ defmodule TripleStore.Adapter.TermConversionTest do
       {:ok, results} = Adapter.ids_to_terms(db, ids)
 
       assert length(results) == 3
-      assert Enum.all?(results, fn {:ok, _} -> true; _ -> false end)
+
+      assert Enum.all?(results, fn
+               {:ok, _} -> true
+               _ -> false
+             end)
     end
 
     test "includes :not_found for missing IDs", %{db: db, manager: manager} do
@@ -500,7 +497,9 @@ defmodule TripleStore.Adapter.TermConversionTest do
     end
 
     test "typed literal roundtrip preserves value", %{db: db, manager: manager} do
-      original = RDF.literal("2024-01-15", datatype: RDF.iri("http://www.w3.org/2001/XMLSchema#date"))
+      original =
+        RDF.literal("2024-01-15", datatype: RDF.iri("http://www.w3.org/2001/XMLSchema#date"))
+
       {:ok, id} = Adapter.term_to_id(manager, original)
       {:ok, result} = Adapter.id_to_term(db, id)
 

@@ -9,27 +9,23 @@ defmodule TripleStore.Dictionary.StringToIdTest do
   - Batch operations
   - Concurrent access
   """
-  use ExUnit.Case, async: false
+  use TripleStore.PooledDbCase
+
+  alias RDF.NS.XSD
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.StringToId
 
-  @test_db_base "/tmp/triple_store_str2id_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+  setup %{db: db} do
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
-      File.rm_rf(test_path)
     end)
 
-    {:ok, db: db, manager: manager, path: test_path}
+    {:ok, manager: manager}
   end
 
   # ===========================================================================
@@ -95,7 +91,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
     end
 
     test "encodes typed literal with explicit xsd:string" do
-      literal = RDF.literal("hello", datatype: RDF.NS.XSD.string())
+      literal = RDF.literal("hello", datatype: XSD.string())
       {:ok, key} = StringToId.encode_term(literal)
       # Typed literals use subtype 1 with datatype URI
       assert <<3, 1, rest::binary>> = key
@@ -225,35 +221,35 @@ defmodule TripleStore.Dictionary.StringToIdTest do
   # ===========================================================================
 
   describe "get_or_create_id/3" do
-    test "creates new ID for unknown URI", %{db: db, manager: manager} do
+    test "creates new ID for unknown URI", %{db: _db, manager: manager} do
       uri = RDF.iri("http://example.org/new")
       {:ok, id} = Manager.get_or_create_id(manager, uri)
       assert is_integer(id)
       assert Dictionary.term_type(id) == :uri
     end
 
-    test "creates new ID for unknown BNode", %{db: db, manager: manager} do
+    test "creates new ID for unknown BNode", %{db: _db, manager: manager} do
       bnode = RDF.bnode("new_bnode")
       {:ok, id} = Manager.get_or_create_id(manager, bnode)
       assert is_integer(id)
       assert Dictionary.term_type(id) == :bnode
     end
 
-    test "creates new ID for unknown literal", %{db: db, manager: manager} do
+    test "creates new ID for unknown literal", %{db: _db, manager: manager} do
       literal = RDF.literal("new value")
       {:ok, id} = Manager.get_or_create_id(manager, literal)
       assert is_integer(id)
       assert Dictionary.term_type(id) == :literal
     end
 
-    test "returns same ID for same term", %{db: db, manager: manager} do
+    test "returns same ID for same term", %{db: _db, manager: manager} do
       uri = RDF.iri("http://example.org/same")
       {:ok, id1} = Manager.get_or_create_id(manager, uri)
       {:ok, id2} = Manager.get_or_create_id(manager, uri)
       assert id1 == id2
     end
 
-    test "returns different IDs for different terms", %{db: db, manager: manager} do
+    test "returns different IDs for different terms", %{db: _db, manager: manager} do
       uri1 = RDF.iri("http://example.org/one")
       uri2 = RDF.iri("http://example.org/two")
       {:ok, id1} = Manager.get_or_create_id(manager, uri1)
@@ -261,7 +257,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert id1 != id2
     end
 
-    test "different term types get different IDs", %{db: db, manager: manager} do
+    test "different term types get different IDs", %{db: _db, manager: manager} do
       # Same string value but different term types
       uri = RDF.iri("http://example.org/test")
       literal = RDF.literal("http://example.org/test")
@@ -313,7 +309,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
   end
 
   describe "get_or_create_ids/3" do
-    test "creates IDs for multiple terms", %{db: db, manager: manager} do
+    test "creates IDs for multiple terms", %{db: _db, manager: manager} do
       terms = [
         RDF.iri("http://example.org/multi1"),
         RDF.iri("http://example.org/multi2"),
@@ -328,7 +324,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert length(Enum.uniq(ids)) == 4
     end
 
-    test "returns same IDs on repeated call", %{db: db, manager: manager} do
+    test "returns same IDs on repeated call", %{db: _db, manager: manager} do
       terms = [
         RDF.iri("http://example.org/repeat1"),
         RDF.iri("http://example.org/repeat2")
@@ -340,7 +336,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert ids1 == ids2
     end
 
-    test "handles empty list", %{db: db, manager: manager} do
+    test "handles empty list", %{db: _db, manager: manager} do
       {:ok, ids} = Manager.get_or_create_ids(manager, [])
       assert ids == []
     end
@@ -351,7 +347,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
   # ===========================================================================
 
   describe "concurrent access" do
-    test "handles concurrent get_or_create for same term", %{db: db, manager: manager} do
+    test "handles concurrent get_or_create for same term", %{db: _db, manager: manager} do
       uri = RDF.iri("http://example.org/concurrent")
 
       # Spawn many tasks trying to create the same term
@@ -372,7 +368,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert length(Enum.uniq(ids)) == 1
     end
 
-    test "handles concurrent get_or_create for different terms", %{db: db, manager: manager} do
+    test "handles concurrent get_or_create for different terms", %{db: _db, manager: manager} do
       # Spawn tasks for different terms
       tasks =
         for i <- 1..100 do
@@ -448,7 +444,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert {:error, :term_too_large} = StringToId.encode_term(uri)
     end
 
-    test "handles unicode normalization", %{db: db, manager: manager} do
+    test "handles unicode normalization", %{db: _db, manager: manager} do
       # café in NFC vs NFD (composed vs decomposed)
       # The dictionary should normalize both to the same form
       uri1 = RDF.iri("http://example.org/caf\u00E9")
@@ -461,7 +457,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
       assert id1 == id2
     end
 
-    test "language tags with different cases map to same ID", %{db: db, manager: manager} do
+    test "language tags with different cases map to same ID", %{db: _db, manager: manager} do
       lit1 = RDF.literal("hello", language: "EN")
       lit2 = RDF.literal("hello", language: "en")
 

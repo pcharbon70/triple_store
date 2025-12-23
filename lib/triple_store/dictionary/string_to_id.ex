@@ -115,7 +115,12 @@ defmodule TripleStore.Dictionary.StringToId do
       :ok ->
         normalized_value = Dictionary.normalize_unicode(value)
         lang_tag = String.downcase(lang)
-        {:ok, <<Dictionary.prefix_literal(), Dictionary.literal_lang(), lang_tag::binary, 0, normalized_value::binary>>}
+
+        encoded =
+          <<Dictionary.prefix_literal(), Dictionary.literal_lang(), lang_tag::binary, 0,
+            normalized_value::binary>>
+
+        {:ok, encoded}
 
       {:error, _} = error ->
         error
@@ -129,7 +134,12 @@ defmodule TripleStore.Dictionary.StringToId do
       :ok ->
         normalized_value = Dictionary.normalize_unicode(value_string)
         datatype_uri = datatype_mod.id() |> to_string()
-        {:ok, <<Dictionary.prefix_literal(), Dictionary.literal_typed(), datatype_uri::binary, 0, normalized_value::binary>>}
+
+        encoded =
+          <<Dictionary.prefix_literal(), Dictionary.literal_typed(), datatype_uri::binary, 0,
+            normalized_value::binary>>
+
+        {:ok, encoded}
 
       {:error, _} = error ->
         error
@@ -141,7 +151,9 @@ defmodule TripleStore.Dictionary.StringToId do
     case Dictionary.validate_term(value, :literal) do
       :ok ->
         normalized_value = Dictionary.normalize_unicode(value)
-        {:ok, <<Dictionary.prefix_literal(), Dictionary.literal_plain(), normalized_value::binary>>}
+
+        {:ok,
+         <<Dictionary.prefix_literal(), Dictionary.literal_plain(), normalized_value::binary>>}
 
       {:error, _} = error ->
         error
@@ -175,7 +187,8 @@ defmodule TripleStore.Dictionary.StringToId do
       iex> StringToId.lookup_id(db, %RDF.IRI{value: "http://unknown.org"})
       :not_found
   """
-  @spec lookup_id(db_ref(), rdf_term()) :: {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  @spec lookup_id(db_ref(), rdf_term()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   def lookup_id(db, term) do
     case encode_term(term) do
       {:ok, key} ->

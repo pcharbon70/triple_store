@@ -8,27 +8,22 @@ defmodule TripleStore.Dictionary.IdToStringTest do
   - lookup_terms/2 for batch operations
   - Roundtrip encoding/decoding
   """
-  use ExUnit.Case, async: false
+  use TripleStore.PooledDbCase
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.Manager
 
-  @test_db_base "/tmp/triple_store_id2str_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+  setup %{db: db} do
+    assert NIF.is_open(db)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
-      File.rm_rf(test_path)
     end)
 
-    {:ok, db: db, manager: manager, path: test_path}
+    {:ok, manager: manager}
   end
 
   # ===========================================================================
@@ -299,10 +294,11 @@ defmodule TripleStore.Dictionary.IdToStringTest do
       {:ok, results} = IdToString.lookup_terms(db, ids)
 
       assert length(results) == 100
+
       assert Enum.all?(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+               {:ok, _} -> true
+               _ -> false
+             end)
     end
   end
 

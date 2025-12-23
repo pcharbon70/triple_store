@@ -40,8 +40,8 @@ defmodule TripleStore.Index.KeyEncodingTest do
       key = Index.spo_key(s, p, o)
 
       assert key ==
-               <<0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54,
-                 0x32, 0x10, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08>>
+               <<0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0xFE, 0xDC, 0xBA, 0x98, 0x76,
+                 0x54, 0x32, 0x10, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08>>
     end
 
     test "encodes zero values" do
@@ -52,7 +52,10 @@ defmodule TripleStore.Index.KeyEncodingTest do
     test "encodes max 64-bit values" do
       max = (1 <<< 64) - 1
       key = Index.spo_key(max, max, max)
-      assert key == <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255>>
+
+      assert key ==
+               <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                 255, 255, 255, 255, 255, 255, 255, 255>>
     end
   end
 

@@ -11,24 +11,9 @@ defmodule TripleStore.Index.TripleInsertTest do
   - Edge cases are handled properly
   """
 
-  use ExUnit.Case, async: false
+  use TripleStore.PooledDbCase
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
-
-  @test_db_base "/tmp/triple_store_index_insert_test"
-
-  setup do
-    test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
-
-    on_exit(fn ->
-      NIF.close(db)
-      File.rm_rf(test_path)
-    end)
-
-    {:ok, db: db, path: test_path}
-  end
 
   # ===========================================================================
   # insert_triple/2
@@ -99,7 +84,8 @@ defmodule TripleStore.Index.TripleInsertTest do
 
     test "handles large IDs", %{db: db} do
       import Bitwise
-      max = (1 <<< 62) - 1  # Large 62-bit value (within 64-bit range)
+      # Large 62-bit value (within 64-bit range)
+      max = (1 <<< 62) - 1
 
       assert :ok = Index.insert_triple(db, {max, max, max})
       assert {:ok, true} = Index.triple_exists?(db, {max, max, max})
