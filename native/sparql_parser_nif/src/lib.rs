@@ -120,7 +120,54 @@ mod atoms {
 
         // Quad/graph-related
         quad,
+
+        // Property path types
+        reverse,
+        sequence,
+        alternative,
+        zero_or_more,
+        one_or_more,
+        zero_or_one,
+        negated_property_set,
     }
+}
+
+// ===========================================================================
+// Helper Macros for Reducing Code Duplication
+// ===========================================================================
+
+/// Macro for converting binary expressions (operators with two operands)
+macro_rules! binary_expr {
+    ($env:expr, $atom:expr, $left:expr, $right:expr) => {{
+        let left_term = expression_to_term($env, $left);
+        let right_term = expression_to_term($env, $right);
+        ($atom, left_term, right_term).encode($env)
+    }};
+}
+
+/// Macro for converting unary expressions (operators with one operand)
+macro_rules! unary_expr {
+    ($env:expr, $atom:expr, $inner:expr) => {{
+        let inner_term = expression_to_term($env, $inner);
+        ($atom, inner_term).encode($env)
+    }};
+}
+
+/// Macro for converting binary property paths
+macro_rules! binary_path {
+    ($env:expr, $atom:expr, $left:expr, $right:expr) => {{
+        let left_term = property_path_to_term($env, $left);
+        let right_term = property_path_to_term($env, $right);
+        ($atom, left_term, right_term).encode($env)
+    }};
+}
+
+/// Macro for converting unary property paths
+macro_rules! unary_path {
+    ($env:expr, $atom:expr, $inner:expr) => {{
+        let inner_term = property_path_to_term($env, $inner);
+        ($atom, inner_term).encode($env)
+    }};
 }
 
 /// Placeholder function to verify NIF loads correctly.
@@ -137,7 +184,9 @@ fn nif_loaded() -> &'static str {
 /// # Returns
 /// * `{:ok, ast}` on success where ast is the Elixir representation
 /// * `{:error, {:parse_error, message}}` on parse failure
-#[rustler::nif]
+///
+/// Uses DirtyCpu scheduler as parsing complex queries can take >1ms.
+#[rustler::nif(schedule = "DirtyCpu")]
 fn parse_query<'a>(env: Env<'a>, sparql: &str) -> NifResult<Term<'a>> {
     match Query::parse(sparql, None) {
         Ok(query) => {
@@ -159,7 +208,9 @@ fn parse_query<'a>(env: Env<'a>, sparql: &str) -> NifResult<Term<'a>> {
 /// # Returns
 /// * `{:ok, ast}` on success where ast is the Elixir representation
 /// * `{:error, {:parse_error, message}}` on parse failure
-#[rustler::nif]
+///
+/// Uses DirtyCpu scheduler as parsing complex updates can take >1ms.
+#[rustler::nif(schedule = "DirtyCpu")]
 fn parse_update<'a>(env: Env<'a>, sparql: &str) -> NifResult<Term<'a>> {
     match Update::parse(sparql, None) {
         Ok(update) => {
@@ -485,78 +536,23 @@ fn expression_to_term<'a>(env: Env<'a>, expr: &Expression) -> Term<'a> {
         Expression::NamedNode(nn) => named_node_to_term(env, nn),
         Expression::Literal(lit) => literal_to_term(env, lit),
         Expression::Variable(var) => variable_to_term(env, var),
-        Expression::Or(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::or(), left_term, right_term).encode(env)
-        }
-        Expression::And(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::and(), left_term, right_term).encode(env)
-        }
-        Expression::Equal(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::equal(), left_term, right_term).encode(env)
-        }
-        Expression::SameTerm(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::same_term(), left_term, right_term).encode(env)
-        }
-        Expression::Greater(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::greater(), left_term, right_term).encode(env)
-        }
-        Expression::GreaterOrEqual(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::greater_or_equal(), left_term, right_term).encode(env)
-        }
-        Expression::Less(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::less(), left_term, right_term).encode(env)
-        }
-        Expression::LessOrEqual(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::less_or_equal(), left_term, right_term).encode(env)
-        }
-        Expression::Add(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::add(), left_term, right_term).encode(env)
-        }
-        Expression::Subtract(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::subtract(), left_term, right_term).encode(env)
-        }
-        Expression::Multiply(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::multiply(), left_term, right_term).encode(env)
-        }
-        Expression::Divide(left, right) => {
-            let left_term = expression_to_term(env, left);
-            let right_term = expression_to_term(env, right);
-            (atoms::divide(), left_term, right_term).encode(env)
-        }
-        Expression::UnaryPlus(inner) => {
-            let inner_term = expression_to_term(env, inner);
-            (atoms::unary_plus(), inner_term).encode(env)
-        }
-        Expression::UnaryMinus(inner) => {
-            let inner_term = expression_to_term(env, inner);
-            (atoms::unary_minus(), inner_term).encode(env)
-        }
-        Expression::Not(inner) => {
-            let inner_term = expression_to_term(env, inner);
-            (atoms::not(), inner_term).encode(env)
-        }
+        // Binary expressions (using macro for consistency)
+        Expression::Or(left, right) => binary_expr!(env, atoms::or(), left, right),
+        Expression::And(left, right) => binary_expr!(env, atoms::and(), left, right),
+        Expression::Equal(left, right) => binary_expr!(env, atoms::equal(), left, right),
+        Expression::SameTerm(left, right) => binary_expr!(env, atoms::same_term(), left, right),
+        Expression::Greater(left, right) => binary_expr!(env, atoms::greater(), left, right),
+        Expression::GreaterOrEqual(left, right) => binary_expr!(env, atoms::greater_or_equal(), left, right),
+        Expression::Less(left, right) => binary_expr!(env, atoms::less(), left, right),
+        Expression::LessOrEqual(left, right) => binary_expr!(env, atoms::less_or_equal(), left, right),
+        Expression::Add(left, right) => binary_expr!(env, atoms::add(), left, right),
+        Expression::Subtract(left, right) => binary_expr!(env, atoms::subtract(), left, right),
+        Expression::Multiply(left, right) => binary_expr!(env, atoms::multiply(), left, right),
+        Expression::Divide(left, right) => binary_expr!(env, atoms::divide(), left, right),
+        // Unary expressions (using macro for consistency)
+        Expression::UnaryPlus(inner) => unary_expr!(env, atoms::unary_plus(), inner),
+        Expression::UnaryMinus(inner) => unary_expr!(env, atoms::unary_minus(), inner),
+        Expression::Not(inner) => unary_expr!(env, atoms::not(), inner),
         Expression::Bound(var) => {
             let var_term = variable_to_term(env, var);
             (atoms::bound(), var_term).encode(env)
@@ -705,41 +701,25 @@ fn order_expression_to_term<'a>(env: Env<'a>, oe: &OrderExpression) -> Term<'a> 
 }
 
 /// Converts a PropertyPath to an Elixir term.
+/// Uses atoms instead of strings for consistent pattern matching in Elixir.
 fn property_path_to_term<'a>(env: Env<'a>, path: &PropertyPathExpression) -> Term<'a> {
     match path {
         PropertyPathExpression::NamedNode(nn) => named_node_to_term(env, nn),
-        PropertyPathExpression::Reverse(inner) => {
-            let inner_term = property_path_to_term(env, inner);
-            ("reverse", inner_term).encode(env)
-        }
-        PropertyPathExpression::Sequence(left, right) => {
-            let left_term = property_path_to_term(env, left);
-            let right_term = property_path_to_term(env, right);
-            ("sequence", left_term, right_term).encode(env)
-        }
-        PropertyPathExpression::Alternative(left, right) => {
-            let left_term = property_path_to_term(env, left);
-            let right_term = property_path_to_term(env, right);
-            ("alternative", left_term, right_term).encode(env)
-        }
-        PropertyPathExpression::ZeroOrMore(inner) => {
-            let inner_term = property_path_to_term(env, inner);
-            ("zero_or_more", inner_term).encode(env)
-        }
-        PropertyPathExpression::OneOrMore(inner) => {
-            let inner_term = property_path_to_term(env, inner);
-            ("one_or_more", inner_term).encode(env)
-        }
-        PropertyPathExpression::ZeroOrOne(inner) => {
-            let inner_term = property_path_to_term(env, inner);
-            ("zero_or_one", inner_term).encode(env)
-        }
+        // Unary path operations (using macro)
+        PropertyPathExpression::Reverse(inner) => unary_path!(env, atoms::reverse(), inner),
+        PropertyPathExpression::ZeroOrMore(inner) => unary_path!(env, atoms::zero_or_more(), inner),
+        PropertyPathExpression::OneOrMore(inner) => unary_path!(env, atoms::one_or_more(), inner),
+        PropertyPathExpression::ZeroOrOne(inner) => unary_path!(env, atoms::zero_or_one(), inner),
+        // Binary path operations (using macro)
+        PropertyPathExpression::Sequence(left, right) => binary_path!(env, atoms::sequence(), left, right),
+        PropertyPathExpression::Alternative(left, right) => binary_path!(env, atoms::alternative(), left, right),
+        // Negated property set (list of named nodes to exclude)
         PropertyPathExpression::NegatedPropertySet(nodes) => {
             let node_terms: Vec<Term<'a>> = nodes
                 .iter()
                 .map(|nn| named_node_to_term(env, nn))
                 .collect();
-            ("negated_property_set", node_terms).encode(env)
+            (atoms::negated_property_set(), node_terms).encode(env)
         }
     }
 }
@@ -1011,4 +991,4 @@ fn graph_target_to_term<'a>(env: Env<'a>, target: &GraphTarget) -> Term<'a> {
     }
 }
 
-rustler::init!("Elixir.TripleStore.SPARQL.Parser.NIF", [nif_loaded, parse_query, parse_update]);
+rustler::init!("Elixir.TripleStore.SPARQL.Parser.NIF");

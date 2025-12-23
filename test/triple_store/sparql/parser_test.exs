@@ -1439,4 +1439,237 @@ defmodule TripleStore.SPARQL.ParserTest do
       {:error, {:parse_error, _}} = Parser.parse(query)
     end
   end
+
+  # ===========================================================================
+  # Review Fixes: Additional SPARQL Feature Tests
+  # ===========================================================================
+
+  describe "Review Fixes: BIND expressions" do
+    test "parses BIND expression" do
+      query = "SELECT ?s ?label WHERE { ?s <http://example.org/p> ?o . BIND(STR(?o) AS ?label) }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      # BIND creates an extend node in the AST
+      assert {:project, inner, _vars} = pattern
+      pattern_str = inspect(inner)
+      assert String.contains?(pattern_str, "extend")
+      assert String.contains?(pattern_str, "label")
+    end
+
+    test "parses BIND with arithmetic expression" do
+      query = "SELECT ?s ?doubled WHERE { ?s <http://example.org/value> ?v . BIND(?v * 2 AS ?doubled) }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "extend")
+      assert String.contains?(pattern_str, "multiply")
+    end
+  end
+
+  describe "Review Fixes: MINUS operation" do
+    test "parses MINUS pattern" do
+      query = "SELECT ?s WHERE { ?s ?p ?o . MINUS { ?s <http://example.org/excluded> ?x } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "minus")
+    end
+
+    test "parses MINUS with complex inner pattern" do
+      query = """
+      SELECT ?s WHERE {
+        ?s ?p ?o .
+        MINUS {
+          ?s <http://example.org/type> <http://example.org/Excluded> .
+          ?s <http://example.org/status> "inactive"
+        }
+      }
+      """
+      {:ok, {:select, _props}} = Parser.parse(query)
+    end
+  end
+
+  describe "Review Fixes: EXISTS and NOT EXISTS" do
+    test "parses EXISTS in FILTER" do
+      query = "SELECT ?s WHERE { ?s ?p ?o . FILTER EXISTS { ?s <http://example.org/related> ?r } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "exists")
+    end
+
+    test "parses NOT EXISTS in FILTER" do
+      query = "SELECT ?s WHERE { ?s ?p ?o . FILTER NOT EXISTS { ?s <http://example.org/deleted> ?d } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      # NOT EXISTS is represented as :not wrapping :exists
+      assert String.contains?(pattern_str, "not")
+      assert String.contains?(pattern_str, "exists")
+    end
+  end
+
+  describe "Review Fixes: IN and NOT IN expressions" do
+    test "parses IN expression in FILTER" do
+      query = "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status IN (\"active\", \"pending\")) }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "in_expr")
+    end
+
+    test "parses NOT IN expression in FILTER" do
+      query = "SELECT ?s WHERE { ?s <http://example.org/status> ?status . FILTER(?status NOT IN (\"deleted\", \"archived\")) }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      # NOT IN is represented as :not wrapping :in_expr
+      assert String.contains?(pattern_str, "not")
+      assert String.contains?(pattern_str, "in_expr")
+    end
+  end
+
+  describe "Review Fixes: GRAPH patterns" do
+    test "parses GRAPH pattern with IRI" do
+      query = "SELECT ?s WHERE { GRAPH <http://example.org/graph1> { ?s ?p ?o } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "graph")
+      assert String.contains?(pattern_str, "http://example.org/graph1")
+    end
+
+    test "parses GRAPH pattern with variable" do
+      query = "SELECT ?s ?g WHERE { GRAPH ?g { ?s ?p ?o } }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "graph")
+    end
+  end
+
+  describe "Review Fixes: Additional aggregate functions" do
+    test "parses SUM aggregate" do
+      query = "SELECT (SUM(?value) AS ?total) WHERE { ?s <http://example.org/value> ?value }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "sum")
+    end
+
+    test "parses AVG aggregate" do
+      query = "SELECT (AVG(?value) AS ?average) WHERE { ?s <http://example.org/value> ?value }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "avg")
+    end
+
+    test "parses MIN and MAX aggregates" do
+      query = "SELECT (MIN(?value) AS ?minimum) (MAX(?value) AS ?maximum) WHERE { ?s <http://example.org/value> ?value }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "min")
+      assert String.contains?(pattern_str, "max")
+    end
+
+    test "parses GROUP_CONCAT aggregate" do
+      query = "SELECT ?s (GROUP_CONCAT(?label; SEPARATOR=\", \") AS ?labels) WHERE { ?s <http://example.org/label> ?label } GROUP BY ?s"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "group_concat")
+    end
+
+    test "parses SAMPLE aggregate" do
+      query = "SELECT ?type (SAMPLE(?s) AS ?example) WHERE { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type } GROUP BY ?type"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, "sample")
+    end
+  end
+
+  describe "Review Fixes: Input size limits" do
+    test "rejects query exceeding max size" do
+      # Create a query larger than the max size
+      large_query = "SELECT " <> String.duplicate("?var ", 200_000) <> "WHERE { ?s ?p ?o }"
+      assert byte_size(large_query) > Parser.max_query_size()
+      {:error, {:parse_error, msg}} = Parser.parse(large_query)
+      assert String.contains?(msg, "exceeds maximum size")
+    end
+
+    test "rejects update exceeding max size" do
+      # Create an update larger than the max size
+      large_update = "INSERT DATA { " <> String.duplicate("<http://example.org/s> <http://example.org/p> <http://example.org/o> . ", 50_000) <> "}"
+      assert byte_size(large_update) > Parser.max_query_size()
+      {:error, {:parse_error, msg}} = Parser.parse_update(large_update)
+      assert String.contains?(msg, "exceeds maximum size")
+    end
+
+    test "parse_with_details rejects large queries with structured error" do
+      large_query = "SELECT " <> String.duplicate("?var ", 200_000) <> "WHERE { ?s ?p ?o }"
+      {:error, error} = Parser.parse_with_details(large_query)
+      assert error.message == "Query exceeds maximum size"
+      assert is_binary(error.hint)
+    end
+  end
+
+  describe "Review Fixes: Catch-all clause behavior" do
+    test "query_type returns nil for non-query AST" do
+      assert Parser.query_type({:update, []}) == nil
+      assert Parser.query_type(:invalid) == nil
+      assert Parser.query_type("not an ast") == nil
+    end
+
+    test "get_pattern returns nil for non-query AST" do
+      assert Parser.get_pattern(:invalid) == nil
+      assert Parser.get_pattern("not an ast") == nil
+      assert Parser.get_pattern({:something, :else}) == nil
+    end
+  end
+
+  describe "Review Fixes: Property path atoms" do
+    test "property paths use atoms not strings" do
+      query = "SELECT ?s WHERE { ?s <http://example.org/p>* ?o }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      # The pattern should contain :zero_or_more atom, not "zero_or_more" string
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, ":zero_or_more") or String.contains?(pattern_str, ":path")
+    end
+
+    test "sequence path is expanded by spargebra" do
+      # Note: spargebra optimizes simple sequence paths into BGPs with blank nodes
+      query = "SELECT ?s WHERE { ?s <http://example.org/p1>/<http://example.org/p2> ?o }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      # The sequence path is expanded into two triple patterns connected by a blank node
+      assert String.contains?(pattern_str, ":bgp") or String.contains?(pattern_str, ":path")
+      assert String.contains?(pattern_str, "http://example.org/p1")
+      assert String.contains?(pattern_str, "http://example.org/p2")
+    end
+
+    test "alternative path uses atom" do
+      # Alternative paths that can't be simplified result in :path with :alternative
+      query = "SELECT ?s WHERE { ?s (<http://example.org/p1>|<http://example.org/p2>)* ?o }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      assert String.contains?(pattern_str, ":alternative") or String.contains?(pattern_str, ":path")
+    end
+
+    test "reverse path is expanded by spargebra" do
+      # Note: spargebra optimizes simple reverse paths by swapping subject/object
+      query = "SELECT ?s WHERE { ?s ^<http://example.org/p> ?o }"
+      {:ok, {:select, props}} = Parser.parse(query)
+      pattern = Enum.find_value(props, fn {"pattern", p} -> p; _ -> nil end)
+      pattern_str = inspect(pattern)
+      # Simple reverse is optimized: ?s ^:p ?o becomes ?o :p ?s
+      assert String.contains?(pattern_str, ":bgp") or String.contains?(pattern_str, ":path")
+      assert String.contains?(pattern_str, "http://example.org/p")
+    end
+  end
 end

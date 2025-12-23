@@ -46,6 +46,18 @@ defmodule TripleStore.SPARQL.Parser do
   alias TripleStore.SPARQL.Parser.NIF
 
   # ===========================================================================
+  # Configuration
+  # ===========================================================================
+
+  @max_query_size 1_000_000  # 1MB limit to prevent DoS attacks
+
+  @doc """
+  Returns the maximum allowed query size in bytes.
+  """
+  @spec max_query_size() :: pos_integer()
+  def max_query_size, do: @max_query_size
+
+  # ===========================================================================
   # Error Types
   # ===========================================================================
 
@@ -86,7 +98,11 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec parse(String.t()) :: {:ok, term()} | {:error, {:parse_error, String.t()}}
   def parse(sparql) when is_binary(sparql) do
-    NIF.parse_query(sparql)
+    if byte_size(sparql) > @max_query_size do
+      {:error, {:parse_error, "Query exceeds maximum size of #{@max_query_size} bytes"}}
+    else
+      NIF.parse_query(sparql)
+    end
   end
 
   @doc """
@@ -135,7 +151,11 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec parse_update(String.t()) :: {:ok, term()} | {:error, {:parse_error, String.t()}}
   def parse_update(sparql) when is_binary(sparql) do
-    NIF.parse_update(sparql)
+    if byte_size(sparql) > @max_query_size do
+      {:error, {:parse_error, "Query exceeds maximum size of #{@max_query_size} bytes"}}
+    else
+      NIF.parse_update(sparql)
+    end
   end
 
   @doc """
@@ -198,12 +218,22 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec parse_with_details(String.t()) :: {:ok, term()} | {:error, parse_error()}
   def parse_with_details(sparql) when is_binary(sparql) do
-    case NIF.parse_query(sparql) do
-      {:ok, ast} ->
-        {:ok, ast}
+    if byte_size(sparql) > @max_query_size do
+      {:error, %{
+        message: "Query exceeds maximum size",
+        line: nil,
+        column: nil,
+        raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
+        hint: "The query is too large. Consider breaking it into smaller queries."
+      }}
+    else
+      case NIF.parse_query(sparql) do
+        {:ok, ast} ->
+          {:ok, ast}
 
-      {:error, {:parse_error, raw_message}} ->
-        {:error, build_error_details(raw_message, sparql, :query)}
+        {:error, {:parse_error, raw_message}} ->
+          {:error, build_error_details(raw_message, sparql, :query)}
+      end
     end
   end
 
@@ -236,12 +266,22 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec parse_update_with_details(String.t()) :: {:ok, term()} | {:error, parse_error()}
   def parse_update_with_details(sparql) when is_binary(sparql) do
-    case NIF.parse_update(sparql) do
-      {:ok, ast} ->
-        {:ok, ast}
+    if byte_size(sparql) > @max_query_size do
+      {:error, %{
+        message: "Query exceeds maximum size",
+        line: nil,
+        column: nil,
+        raw_message: "Query exceeds maximum size of #{@max_query_size} bytes",
+        hint: "The query is too large. Consider breaking it into smaller queries."
+      }}
+    else
+      case NIF.parse_update(sparql) do
+        {:ok, ast} ->
+          {:ok, ast}
 
-      {:error, {:parse_error, raw_message}} ->
-        {:error, build_error_details(raw_message, sparql, :update)}
+        {:error, {:parse_error, raw_message}} ->
+          {:error, build_error_details(raw_message, sparql, :update)}
+      end
     end
   end
 
@@ -548,8 +588,9 @@ defmodule TripleStore.SPARQL.Parser do
       :select
 
   """
-  @spec query_type(term()) :: :select | :construct | :ask | :describe
+  @spec query_type(term()) :: :select | :construct | :ask | :describe | nil
   def query_type({type, _props}) when type in [:select, :construct, :ask, :describe], do: type
+  def query_type(_), do: nil
 
   @doc """
   Checks if the AST represents a SELECT query.
@@ -636,7 +677,7 @@ defmodule TripleStore.SPARQL.Parser do
       true
 
   """
-  @spec get_pattern(term()) :: term()
+  @spec get_pattern(term()) :: term() | nil
   def get_pattern({_type, props}) when is_list(props) do
     props
     |> Enum.find(fn {key, _} -> key == "pattern" end)
@@ -645,6 +686,8 @@ defmodule TripleStore.SPARQL.Parser do
       nil -> nil
     end
   end
+
+  def get_pattern(_), do: nil
 
   @doc """
   Extracts variables from a pattern.

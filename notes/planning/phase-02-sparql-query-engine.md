@@ -12,9 +12,18 @@ Query execution uses iterator-based lazy evaluation with Elixir Streams, providi
 
 ## 2.1 SPARQL Parser NIF
 
-- [x] **Section 2.1 Complete**
+- [x] **Section 2.1 Complete** (including review fixes)
 
 This section implements the SPARQL parser as a Rustler NIF using the spargebra crate. The parser returns an Elixir-native AST representation that the algebra compiler can process.
+
+**Review fixes applied (2025-12-23):**
+- Added DirtyCpu scheduler annotations for NIF functions
+- Fixed property path atoms (use Elixir atoms instead of strings)
+- Added refactoring macros to reduce Rust code duplication
+- Added input size limits (1MB) to prevent DoS attacks
+- Added catch-all clauses to helper functions
+- Added 24 new tests for BIND, MINUS, EXISTS, IN/NOT IN, GRAPH, aggregates
+- Total tests: 191 (up from 167)
 
 ### 2.1.1 Parser Crate Setup
 
