@@ -537,17 +537,21 @@ Test coverage: 17 new tests in executor_test.exs.
 
 ### 2.6.2 Aggregate Functions
 
-- [ ] **Task 2.6.2 Complete**
+- [x] **Task 2.6.2 Complete** (2025-12-23)
 
 Implement standard aggregate functions.
 
-- [ ] 2.6.2.1 Implement `COUNT(*)` and `COUNT(expr)`
-- [ ] 2.6.2.2 Implement `SUM(expr)` with type coercion
-- [ ] 2.6.2.3 Implement `AVG(expr)` with type coercion
-- [ ] 2.6.2.4 Implement `MIN(expr)` and `MAX(expr)`
-- [ ] 2.6.2.5 Implement `GROUP_CONCAT(expr; separator=...)`
-- [ ] 2.6.2.6 Implement `SAMPLE(expr)` returning arbitrary value
-- [ ] 2.6.2.7 Support DISTINCT modifier for aggregates
+- [x] 2.6.2.1 Implement `COUNT(*)` and `COUNT(expr)`
+- [x] 2.6.2.2 Implement `SUM(expr)` with type coercion
+- [x] 2.6.2.3 Implement `AVG(expr)` with type coercion
+- [x] 2.6.2.4 Implement `MIN(expr)` and `MAX(expr)`
+- [x] 2.6.2.5 Implement `GROUP_CONCAT(expr; separator=...)`
+- [x] 2.6.2.6 Implement `SAMPLE(expr)` returning arbitrary value
+- [x] 2.6.2.7 Support DISTINCT modifier for aggregates
+
+All aggregate functions implemented in Expression.evaluate_aggregate/2. Added 10
+comprehensive tests for type coercion, DISTINCT modifiers, and edge cases.
+Test coverage: 22 aggregate-related tests in expression_test.exs.
 
 ### 2.6.3 Unit Tests
 

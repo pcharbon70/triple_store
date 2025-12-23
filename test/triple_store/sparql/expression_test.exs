@@ -597,6 +597,93 @@ defmodule TripleStore.SPARQL.ExpressionTest do
       result = Expression.evaluate_aggregate({:sample, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(42)}
     end
+
+    test "SAMPLE returns error for empty solutions" do
+      result = Expression.evaluate_aggregate({:sample, {:variable, "x"}, false}, [])
+      assert result == :error
+    end
+
+    test "SUM with mixed numeric types promotes to decimal" do
+      solutions = [
+        %{"x" => int(10)},
+        %{"x" => dec(20.5)},
+        %{"x" => int(30)}
+      ]
+      {:ok, {:literal, :typed, val, type}} =
+        Expression.evaluate_aggregate({:sum, {:variable, "x"}, false}, solutions)
+      assert type == @xsd_decimal
+      {n, ""} = Float.parse(val)
+      assert_in_delta n, 60.5, 0.001
+    end
+
+    test "SUM with DISTINCT removes duplicates" do
+      solutions = [
+        %{"x" => int(10)},
+        %{"x" => int(10)},
+        %{"x" => int(20)}
+      ]
+      result = Expression.evaluate_aggregate({:sum, {:variable, "x"}, true}, solutions)
+      assert result == {:ok, int(30)}
+    end
+
+    test "AVG with DISTINCT removes duplicates" do
+      solutions = [
+        %{"x" => int(10)},
+        %{"x" => int(10)},
+        %{"x" => int(20)}
+      ]
+      {:ok, {:literal, :typed, val, @xsd_decimal}} =
+        Expression.evaluate_aggregate({:avg, {:variable, "x"}, true}, solutions)
+      {n, ""} = Float.parse(val)
+      # AVG(DISTINCT 10, 20) = 15
+      assert_in_delta n, 15.0, 0.001
+    end
+
+    test "AVG of empty returns 0" do
+      {:ok, {:literal, :typed, val, @xsd_decimal}} =
+        Expression.evaluate_aggregate({:avg, {:variable, "x"}, false}, [])
+      assert val == "0"
+    end
+
+    test "MIN returns error for empty solutions" do
+      result = Expression.evaluate_aggregate({:min, {:variable, "x"}, false}, [])
+      assert result == :error
+    end
+
+    test "MAX returns error for empty solutions" do
+      result = Expression.evaluate_aggregate({:max, {:variable, "x"}, false}, [])
+      assert result == :error
+    end
+
+    test "GROUP_CONCAT with DISTINCT removes duplicates" do
+      solutions = [
+        %{"x" => str("a")},
+        %{"x" => str("a")},
+        %{"x" => str("b")}
+      ]
+      result = Expression.evaluate_aggregate({{:group_concat, ","}, {:variable, "x"}, true}, solutions)
+      assert result == {:ok, str("a,b")}
+    end
+
+    test "COUNT skips unbound variables" do
+      solutions = [
+        %{"x" => int(1)},
+        %{},  # x is unbound
+        %{"x" => int(3)}
+      ]
+      result = Expression.evaluate_aggregate({:count, {:variable, "x"}, false}, solutions)
+      assert result == {:ok, int(2)}
+    end
+
+    test "SUM skips non-numeric values" do
+      solutions = [
+        %{"x" => int(10)},
+        %{"x" => str("not a number")},
+        %{"x" => int(20)}
+      ]
+      result = Expression.evaluate_aggregate({:sum, {:variable, "x"}, false}, solutions)
+      assert result == {:ok, int(30)}
+    end
   end
 
   describe "expression_variables/1" do
