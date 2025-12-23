@@ -1643,4 +1643,224 @@ defmodule TripleStore.SPARQL.QueryTest do
     {:ok, o_id} = Manager.get_or_create_id(manager, RDF.literal(value, datatype: type))
     :ok = Index.insert_triple(db, {s_id, p_id, o_id})
   end
+
+  # ===========================================================================
+  # Task 2.7.2: Construct/Ask/Describe Integration Tests
+  # ===========================================================================
+
+  describe "Task 2.7.2 - Construct/Ask/Describe Integration" do
+    @describetag :integration
+
+    test "2.7.2.1 - CONSTRUCT produces valid RDF graph with multiple triples", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Create a small social network
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/knows"), iri("http://ex.org/Carol")})
+
+      # CONSTRUCT a new graph transforming the data
+      {:ok, graph} =
+        Query.query(ctx, """
+          CONSTRUCT {
+            ?person <http://xmlns.com/foaf/0.1/name> ?name .
+            ?person <http://xmlns.com/foaf/0.1/knows> ?friend
+          }
+          WHERE {
+            ?person <http://ex.org/name> ?name .
+            ?person <http://ex.org/knows> ?friend
+          }
+        """)
+
+      # Verify it's a valid RDF.Graph
+      assert %RDF.Graph{} = graph
+
+      # Should have 4 triples (2 name triples + 2 knows triples)
+      assert RDF.Graph.triple_count(graph) == 4
+
+      # Verify specific triples exist with transformed predicates
+      alice = RDF.iri("http://ex.org/Alice")
+      bob = RDF.iri("http://ex.org/Bob")
+      foaf_name = RDF.iri("http://xmlns.com/foaf/0.1/name")
+      foaf_knows = RDF.iri("http://xmlns.com/foaf/0.1/knows")
+
+      assert RDF.Graph.include?(graph, {alice, foaf_name, RDF.literal("Alice")})
+      assert RDF.Graph.include?(graph, {alice, foaf_knows, bob})
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.1 - CONSTRUCT with template creates new structure", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Simple data
+      add_triple(db, manager, {iri("http://ex.org/item1"), iri("http://ex.org/value"), literal("100")})
+      add_triple(db, manager, {iri("http://ex.org/item2"), iri("http://ex.org/value"), literal("200")})
+
+      # CONSTRUCT with a fixed predicate transformation
+      {:ok, graph} =
+        Query.query(ctx, """
+          CONSTRUCT {
+            ?item <http://schema.org/price> ?val
+          }
+          WHERE {
+            ?item <http://ex.org/value> ?val
+          }
+        """)
+
+      assert %RDF.Graph{} = graph
+      assert RDF.Graph.triple_count(graph) == 2
+
+      # Verify new predicate is used
+      price_pred = RDF.iri("http://schema.org/price")
+      triples = RDF.Graph.triples(graph)
+      assert Enum.all?(triples, fn {_s, p, _o} -> p == price_pred end)
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.2 - ASK returns true when matches exist", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Add some data
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
+
+      # ASK with a pattern that matches
+      {:ok, result} =
+        Query.query(ctx, """
+          ASK {
+            ?person <http://ex.org/type> <http://ex.org/Person> .
+            ?person <http://ex.org/age> ?age
+          }
+        """)
+
+      assert result == true
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.2 - ASK with complex pattern returns true", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Create a chain of relationships
+      add_triple(db, manager, {iri("http://ex.org/A"), iri("http://ex.org/knows"), iri("http://ex.org/B")})
+      add_triple(db, manager, {iri("http://ex.org/B"), iri("http://ex.org/knows"), iri("http://ex.org/C")})
+
+      # ASK for a 2-hop path
+      {:ok, result} =
+        Query.query(ctx, """
+          ASK {
+            ?x <http://ex.org/knows> ?y .
+            ?y <http://ex.org/knows> ?z
+          }
+        """)
+
+      assert result == true
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.3 - ASK returns false when no matches exist", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Add data that won't match the query
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+
+      # ASK for something that doesn't exist
+      {:ok, result} =
+        Query.query(ctx, """
+          ASK {
+            ?person <http://ex.org/type> <http://ex.org/Animal>
+          }
+        """)
+
+      assert result == false
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.3 - ASK returns false for empty database", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # No data added - empty database
+
+      {:ok, result} =
+        Query.query(ctx, """
+          ASK { ?s ?p ?o }
+        """)
+
+      assert result == false
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.4 - DESCRIBE produces CBD for resource", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Create a resource with multiple properties
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")})
+      # Bob's data (should NOT be included in Alice's CBD)
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+
+      {:ok, graph} =
+        Query.query(ctx, "DESCRIBE <http://ex.org/Alice>")
+
+      assert %RDF.Graph{} = graph
+
+      # Should include all of Alice's properties (CBD = Concise Bounded Description)
+      assert RDF.Graph.triple_count(graph) >= 4
+
+      # Verify Alice's triples are included
+      alice = RDF.iri("http://ex.org/Alice")
+
+      # All subjects should be Alice (in a strict CBD)
+      subjects = graph |> RDF.Graph.triples() |> Enum.map(fn {s, _p, _o} -> s end) |> Enum.uniq()
+      assert alice in subjects
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.2.4 - DESCRIBE with WHERE clause", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Multiple people
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(db, manager, {iri("http://ex.org/Cat"), iri("http://ex.org/type"), iri("http://ex.org/Animal")})
+      add_triple(db, manager, {iri("http://ex.org/Cat"), iri("http://ex.org/name"), literal("Whiskers")})
+
+      # DESCRIBE only persons
+      {:ok, graph} =
+        Query.query(ctx, """
+          DESCRIBE ?person
+          WHERE { ?person <http://ex.org/type> <http://ex.org/Person> }
+        """)
+
+      assert %RDF.Graph{} = graph
+
+      # Should describe Alice and Bob, not Cat
+      subjects = graph |> RDF.Graph.triples() |> Enum.map(fn {s, _p, _o} -> s end) |> Enum.uniq()
+
+      assert RDF.iri("http://ex.org/Alice") in subjects or RDF.iri("http://ex.org/Bob") in subjects
+      # Cat should not be described (it's an Animal, not a Person)
+      refute RDF.iri("http://ex.org/Cat") in subjects
+
+      cleanup({db, manager})
+    end
+  end
 end

@@ -596,14 +596,19 @@ query pipeline from SPARQL parsing through execution to results.
 
 ### 2.7.2 Construct/Ask/Describe Testing
 
-- [ ] **Task 2.7.2 Complete**
+- [x] **Task 2.7.2 Complete** (2025-12-23)
 
 Test non-SELECT query forms.
 
-- [ ] 2.7.2.1 Test CONSTRUCT produces valid RDF graph
-- [ ] 2.7.2.2 Test ASK returns true when matches exist
-- [ ] 2.7.2.3 Test ASK returns false when no matches
-- [ ] 2.7.2.4 Test DESCRIBE produces CBD for resource
+- [x] 2.7.2.1 Test CONSTRUCT produces valid RDF graph
+- [x] 2.7.2.2 Test ASK returns true when matches exist
+- [x] 2.7.2.3 Test ASK returns false when no matches
+- [x] 2.7.2.4 Test DESCRIBE produces CBD for resource
+
+Added 8 integration tests in query_test.exs covering all non-SELECT query forms.
+CONSTRUCT tests validate RDF.Graph output with template transformation.
+ASK tests cover both true (matches exist) and false (no matches) cases.
+DESCRIBE tests validate CBD semantics with and without WHERE clauses.
 
 ### 2.7.3 Aggregation Testing
 
