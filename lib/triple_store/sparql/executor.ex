@@ -37,8 +37,8 @@ defmodule TripleStore.SPARQL.Executor do
 
   """
 
-  alias TripleStore.Index
   alias TripleStore.Dictionary
+  alias TripleStore.Index
   alias TripleStore.SPARQL.Optimizer
 
 
@@ -1054,9 +1054,6 @@ defmodule TripleStore.SPARQL.Executor do
 
       :error ->
         # Three-valued logic: errors evaluate to false in filter context
-        false
-
-      {:error, _} ->
         false
     end
   end
