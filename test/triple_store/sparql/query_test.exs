@@ -1863,4 +1863,301 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  describe "Task 2.7.3 - Aggregation Integration" do
+    @describetag :integration
+
+    test "2.7.3.1 - GROUP BY with COUNT", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Products in different categories
+      add_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
+      add_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
+      add_triple(db, manager, {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?category (COUNT(?product) AS ?count)
+          WHERE {
+            ?product <http://ex.org/category> ?category
+          }
+          GROUP BY ?category
+        """)
+
+      assert length(results) == 3
+
+      # Convert to map for easier assertion
+      counts = Map.new(results, fn binding ->
+        category = Map.get(binding, "category")
+        count = Map.get(binding, "count")
+        {category, count}
+      end)
+
+      electronics = {:named_node, "http://ex.org/Electronics"}
+      books = {:named_node, "http://ex.org/Books"}
+      clothing = {:named_node, "http://ex.org/Clothing"}
+
+      # Aggregate values are returned as typed literals
+      assert Map.get(counts, electronics) == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(counts, books) == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(counts, clothing) == {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.1 - GROUP BY with COUNT and multiple grouping variables", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Orders with year and status
+      add_triple(db, manager, {iri("http://ex.org/order1"), iri("http://ex.org/year"), literal("2023")})
+      add_triple(db, manager, {iri("http://ex.org/order1"), iri("http://ex.org/status"), literal("completed")})
+      add_triple(db, manager, {iri("http://ex.org/order2"), iri("http://ex.org/year"), literal("2023")})
+      add_triple(db, manager, {iri("http://ex.org/order2"), iri("http://ex.org/status"), literal("completed")})
+      add_triple(db, manager, {iri("http://ex.org/order3"), iri("http://ex.org/year"), literal("2023")})
+      add_triple(db, manager, {iri("http://ex.org/order3"), iri("http://ex.org/status"), literal("pending")})
+      add_triple(db, manager, {iri("http://ex.org/order4"), iri("http://ex.org/year"), literal("2024")})
+      add_triple(db, manager, {iri("http://ex.org/order4"), iri("http://ex.org/status"), literal("completed")})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?year ?status (COUNT(?order) AS ?count)
+          WHERE {
+            ?order <http://ex.org/year> ?year .
+            ?order <http://ex.org/status> ?status
+          }
+          GROUP BY ?year ?status
+        """)
+
+      # Should have 3 groups: (2023, completed), (2023, pending), (2024, completed)
+      assert length(results) == 3
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.2 - GROUP BY with SUM", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Sales by region
+      add_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/amount"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/amount"), {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/amount"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?region (SUM(?amount) AS ?total)
+          WHERE {
+            ?sale <http://ex.org/region> ?region .
+            ?sale <http://ex.org/amount> ?amount
+          }
+          GROUP BY ?region
+        """)
+
+      assert length(results) == 2
+
+      # Convert to map for easier assertion
+      totals = Map.new(results, fn binding ->
+        region = Map.get(binding, "region")
+        total = Map.get(binding, "total")
+        {region, total}
+      end)
+
+      north = {:literal, :simple, "North"}
+      south = {:literal, :simple, "South"}
+
+      # Aggregate values are returned as typed literals
+      assert Map.get(totals, north) == {:literal, :typed, "250", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(totals, south) == {:literal, :typed, "200", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.2 - GROUP BY with AVG", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Student scores by subject
+      add_triple(db, manager, {iri("http://ex.org/score1"), iri("http://ex.org/subject"), literal("Math")})
+      add_typed_triple(db, manager, {iri("http://ex.org/score1"), iri("http://ex.org/score"), {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/score2"), iri("http://ex.org/subject"), literal("Math")})
+      add_typed_triple(db, manager, {iri("http://ex.org/score2"), iri("http://ex.org/score"), {:literal, :typed, 90, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/score3"), iri("http://ex.org/subject"), literal("Math")})
+      add_typed_triple(db, manager, {iri("http://ex.org/score3"), iri("http://ex.org/score"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/score4"), iri("http://ex.org/subject"), literal("Science")})
+      add_typed_triple(db, manager, {iri("http://ex.org/score4"), iri("http://ex.org/score"), {:literal, :typed, 70, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/score5"), iri("http://ex.org/subject"), literal("Science")})
+      add_typed_triple(db, manager, {iri("http://ex.org/score5"), iri("http://ex.org/score"), {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?subject (AVG(?score) AS ?avg_score)
+          WHERE {
+            ?entry <http://ex.org/subject> ?subject .
+            ?entry <http://ex.org/score> ?score
+          }
+          GROUP BY ?subject
+        """)
+
+      assert length(results) == 2
+
+      # Convert to map for easier assertion
+      averages = Map.new(results, fn binding ->
+        subject = Map.get(binding, "subject")
+        avg = Map.get(binding, "avg_score")
+        {subject, avg}
+      end)
+
+      math = {:literal, :simple, "Math"}
+      science = {:literal, :simple, "Science"}
+
+      # Math: (80 + 90 + 100) / 3 = 90
+      # Science: (70 + 80) / 2 = 75
+      # AVG returns decimal type per SPARQL spec
+      assert Map.get(averages, math) == {:literal, :typed, "90.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+      assert Map.get(averages, science) == {:literal, :typed, "75.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.3 - GROUP BY with HAVING filter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Products by category (same as COUNT test)
+      add_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
+      add_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
+      add_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
+      add_triple(db, manager, {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")})
+
+      # Only return categories with more than 2 products
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?category (COUNT(?product) AS ?count)
+          WHERE {
+            ?product <http://ex.org/category> ?category
+          }
+          GROUP BY ?category
+          HAVING (COUNT(?product) > 2)
+        """)
+
+      # Only Electronics has 3 products (> 2)
+      assert length(results) == 1
+
+      [result] = results
+      assert Map.get(result, "category") == {:named_node, "http://ex.org/Electronics"}
+      assert Map.get(result, "count") == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.3 - GROUP BY with complex HAVING filter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Sales by region
+      add_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/amount"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/amount"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/amount"), {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(db, manager, {iri("http://ex.org/sale4"), iri("http://ex.org/region"), literal("East")})
+      add_typed_triple(db, manager, {iri("http://ex.org/sale4"), iri("http://ex.org/amount"), {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}})
+
+      # Only return regions with total sales >= 100 AND at least 1 sale
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?region (SUM(?amount) AS ?total)
+          WHERE {
+            ?sale <http://ex.org/region> ?region .
+            ?sale <http://ex.org/amount> ?amount
+          }
+          GROUP BY ?region
+          HAVING (SUM(?amount) >= 100)
+        """)
+
+      # North: 300 (>= 100), South: 50 (< 100), East: 300 (>= 100)
+      assert length(results) == 2
+
+      regions = Enum.map(results, fn binding -> Map.get(binding, "region") end)
+      north = {:literal, :simple, "North"}
+      east = {:literal, :simple, "East"}
+      south = {:literal, :simple, "South"}
+      assert north in regions
+      assert east in regions
+      refute south in regions
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.4 - implicit grouping with single aggregate", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Multiple products with prices
+      add_typed_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/price"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/price"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/price"), {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/price"), {:literal, :typed, 400, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/price"), {:literal, :typed, 500, "http://www.w3.org/2001/XMLSchema#integer"}})
+
+      # Aggregate without GROUP BY = implicit grouping
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT (COUNT(?product) AS ?total_products) (SUM(?price) AS ?total_value) (AVG(?price) AS ?avg_price)
+          WHERE {
+            ?product <http://ex.org/price> ?price
+          }
+        """)
+
+      # Should return exactly 1 result (implicit single group)
+      assert length(results) == 1
+
+      [result] = results
+      # Aggregate values are returned as typed literals
+      # AVG returns decimal type per SPARQL spec
+      assert Map.get(result, "total_products") == {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(result, "total_value") == {:literal, :typed, "1500", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(result, "avg_price") == {:literal, :typed, "300.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+
+      cleanup({db, manager})
+    end
+
+    test "2.7.3.4 - implicit grouping with MIN and MAX", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Setup: Products with prices
+      add_typed_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/price"), {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/price"), {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/price"), {:literal, :typed, 75, "http://www.w3.org/2001/XMLSchema#integer"}})
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT (MIN(?price) AS ?min_price) (MAX(?price) AS ?max_price)
+          WHERE {
+            ?product <http://ex.org/price> ?price
+          }
+        """)
+
+      assert length(results) == 1
+
+      [result] = results
+      # Aggregate values are returned as typed literals
+      assert Map.get(result, "min_price") == {:literal, :typed, "50", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(result, "max_price") == {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      cleanup({db, manager})
+    end
+  end
 end

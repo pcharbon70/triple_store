@@ -612,14 +612,18 @@ DESCRIBE tests validate CBD semantics with and without WHERE clauses.
 
 ### 2.7.3 Aggregation Testing
 
-- [ ] **Task 2.7.3 Complete**
+- [x] **Task 2.7.3 Complete** (2025-12-23)
 
 Test aggregate queries with grouping.
 
-- [ ] 2.7.3.1 Test GROUP BY with COUNT
-- [ ] 2.7.3.2 Test GROUP BY with SUM/AVG
-- [ ] 2.7.3.3 Test GROUP BY with HAVING filter
-- [ ] 2.7.3.4 Test implicit grouping with single aggregate
+- [x] 2.7.3.1 Test GROUP BY with COUNT
+- [x] 2.7.3.2 Test GROUP BY with SUM/AVG
+- [x] 2.7.3.3 Test GROUP BY with HAVING filter
+- [x] 2.7.3.4 Test implicit grouping with single aggregate
+
+Added 8 integration tests in query_test.exs covering GROUP BY, aggregates (COUNT, SUM, AVG,
+MIN, MAX), HAVING clause filtering, and implicit grouping. Tests validate SPARQL-compliant
+result types (AVG returns decimal, others return integer).
 
 ### 2.7.4 Performance Benchmarking
 
