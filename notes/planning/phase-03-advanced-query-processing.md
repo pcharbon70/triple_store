@@ -18,16 +18,16 @@ This section implements the Leapfrog Triejoin algorithm for worst-case optimal m
 
 ### 3.1.1 Trie Iterator
 
-- [ ] **Task 3.1.1 Complete**
+- [x] **Task 3.1.1 Complete**
 
 Implement the trie iterator abstraction over RocksDB prefix scans.
 
-- [ ] 3.1.1.1 Define `%TrieIterator{db, cf, prefix, current, exhausted}` struct
-- [ ] 3.1.1.2 Implement `TrieIterator.new(db, cf, prefix)` initialization
-- [ ] 3.1.1.3 Implement `TrieIterator.seek(iter, target)` positioning to target
-- [ ] 3.1.1.4 Implement `TrieIterator.next(iter)` advancing to next value
-- [ ] 3.1.1.5 Implement `TrieIterator.current(iter)` returning current value
-- [ ] 3.1.1.6 Implement `TrieIterator.exhausted?(iter)` predicate
+- [x] 3.1.1.1 Define `%TrieIterator{db, cf, prefix, current, exhausted}` struct
+- [x] 3.1.1.2 Implement `TrieIterator.new(db, cf, prefix)` initialization
+- [x] 3.1.1.3 Implement `TrieIterator.seek(iter, target)` positioning to target
+- [x] 3.1.1.4 Implement `TrieIterator.next(iter)` advancing to next value
+- [x] 3.1.1.5 Implement `TrieIterator.current(iter)` returning current value
+- [x] 3.1.1.6 Implement `TrieIterator.exhausted?(iter)` predicate
 
 ### 3.1.2 Leapfrog Algorithm
 
