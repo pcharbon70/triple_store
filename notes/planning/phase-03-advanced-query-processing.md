@@ -104,14 +104,14 @@ Define cost model for different join strategies.
 
 ### 3.2.3 Join Enumeration
 
-- [ ] **Task 3.2.3 Complete**
+- [x] **Task 3.2.3 Complete**
 
 Enumerate join orderings to find optimal plan.
 
-- [ ] 3.2.3.1 Implement exhaustive enumeration for small queries (n <= 3)
-- [ ] 3.2.3.2 Implement DPccp algorithm for larger queries
-- [ ] 3.2.3.3 Prune invalid orderings (Cartesian products unless necessary)
-- [ ] 3.2.3.4 Select between nested loop, hash, and Leapfrog
+- [x] 3.2.3.1 Implement exhaustive enumeration for small queries (n <= 3)
+- [x] 3.2.3.2 Implement DPccp algorithm for larger queries
+- [x] 3.2.3.3 Prune invalid orderings (Cartesian products unless necessary)
+- [x] 3.2.3.4 Select between nested loop, hash, and Leapfrog
 
 ### 3.2.4 Plan Cache
 
