@@ -170,14 +170,14 @@ Implement transaction coordination for serialized writes.
 
 ### 3.3.3 Update API
 
-- [ ] **Task 3.3.3 Complete**
+- [x] **Task 3.3.3 Complete**
 
 Implement the public UPDATE API.
 
-- [ ] 3.3.3.1 Implement `TripleStore.update(db, sparql)` for SPARQL UPDATE
-- [ ] 3.3.3.2 Implement `TripleStore.insert(db, triples)` for direct insert
-- [ ] 3.3.3.3 Implement `TripleStore.delete(db, triples)` for direct delete
-- [ ] 3.3.3.4 Return affected triple count
+- [x] 3.3.3.1 Implement `TripleStore.update(db, sparql)` for SPARQL UPDATE
+- [x] 3.3.3.2 Implement `TripleStore.insert(db, triples)` for direct insert
+- [x] 3.3.3.3 Implement `TripleStore.delete(db, triples)` for direct delete
+- [x] 3.3.3.4 Return affected triple count
 
 ### 3.3.4 Unit Tests
 
