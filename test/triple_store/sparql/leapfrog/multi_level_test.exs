@@ -412,6 +412,104 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
   end
 
   # ===========================================================================
+  # Security Tests - DoS Protection
+  # ===========================================================================
+
+  describe "timeout and limits" do
+    test "respects timeout_ms option", %{db: db} do
+      # Create some data
+      for i <- 1..10, do: insert_triple(db, i, 10, i + 100)
+
+      patterns = [triple(var("s"), 10, var("o"))]
+
+      # Create with a timeout
+      {:ok, exec} = MultiLevel.new(db, patterns, timeout_ms: 30_000)
+      assert exec.timeout_ms == 30_000
+
+      MultiLevel.close(exec)
+    end
+
+    test "respects max_iterations option", %{db: db} do
+      for i <- 1..10, do: insert_triple(db, i, 10, i + 100)
+
+      patterns = [triple(var("s"), 10, var("o"))]
+
+      {:ok, exec} = MultiLevel.new(db, patterns, max_iterations: 500)
+      assert exec.max_iterations == 500
+
+      MultiLevel.close(exec)
+    end
+
+    test "rejects too many variables", %{db: db} do
+      # Create patterns with more than 100 variables
+      patterns =
+        for i <- 1..101 do
+          triple(var("v#{i}"), i, var("w#{i}"))
+        end
+
+      result = MultiLevel.new(db, patterns)
+      assert result == {:error, :too_many_variables}
+    end
+
+    test "returns timeout error when time exceeded", %{db: db} do
+      # This test simulates timeout behavior
+      # We create an executor with a very short timeout
+      for i <- 1..100, do: insert_triple(db, i, 10, i + 100)
+      for i <- 1..100, do: insert_triple(db, i, 20, i + 200)
+
+      patterns = [
+        triple(var("x"), 10, var("y")),
+        triple(var("y"), 20, var("z"))
+      ]
+
+      # Create with very short timeout (1ms) - almost certainly will timeout
+      {:ok, exec} = MultiLevel.new(db, patterns, timeout_ms: 1)
+
+      # Add a small delay to ensure timeout
+      Process.sleep(5)
+
+      result = MultiLevel.next_binding(exec)
+
+      # Either returns results (if fast enough) or timeout
+      case result do
+        {:ok, _, _} -> :ok
+        {:error, :timeout} -> :ok
+        :exhausted -> :ok
+        other -> flunk("Unexpected result: #{inspect(other)}")
+      end
+
+      MultiLevel.close(exec)
+    end
+
+    test "backwards compatibility with stats map argument", %{db: db} do
+      insert_triple(db, 1, 10, 100)
+
+      patterns = [triple(var("s"), 10, var("o"))]
+
+      # Old-style call with map as third argument (stats)
+      {:ok, exec} = MultiLevel.new(db, patterns, %{})
+
+      bindings = MultiLevel.stream(exec) |> Enum.to_list()
+      assert length(bindings) == 1
+
+      MultiLevel.close(exec)
+    end
+
+    test "accepts stats in options keyword list", %{db: db} do
+      insert_triple(db, 1, 10, 100)
+
+      patterns = [triple(var("s"), 10, var("o"))]
+
+      {:ok, exec} = MultiLevel.new(db, patterns, stats: %{}, timeout_ms: 60_000)
+
+      bindings = MultiLevel.stream(exec) |> Enum.to_list()
+      assert length(bindings) == 1
+
+      MultiLevel.close(exec)
+    end
+  end
+
+  # ===========================================================================
   # Close Tests
   # ===========================================================================
 

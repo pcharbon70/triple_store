@@ -41,6 +41,8 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   - Abo Khamis, M., et al. (2016). Joins via Geometric Resolutions
   """
 
+  alias TripleStore.SPARQL.Leapfrog.PatternUtils
+
   # ===========================================================================
   # Types
   # ===========================================================================
@@ -177,13 +179,13 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
           {:spo | :pos | :osp, [variable()]}
   def best_index_for(variable, {:triple, subject, predicate, object}, bound_vars) do
     # Determine positions in the pattern
-    s_var = extract_var_name(subject)
-    p_var = extract_var_name(predicate)
-    o_var = extract_var_name(object)
+    s_var = PatternUtils.extract_var_name(subject)
+    p_var = PatternUtils.extract_var_name(predicate)
+    o_var = PatternUtils.extract_var_name(object)
 
-    s_bound = is_bound_or_const?(subject, bound_vars)
-    p_bound = is_bound_or_const?(predicate, bound_vars)
-    o_bound = is_bound_or_const?(object, bound_vars)
+    s_bound = PatternUtils.is_bound_or_const?(subject, bound_vars)
+    p_bound = PatternUtils.is_bound_or_const?(predicate, bound_vars)
+    o_bound = PatternUtils.is_bound_or_const?(object, bound_vars)
 
     # Find where our target variable is
     var_position =
@@ -238,7 +240,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   @spec estimate_selectivity(variable(), [triple_pattern()], stats()) :: float()
   def estimate_selectivity(variable, patterns, stats \\ %{}) do
     patterns
-    |> Enum.filter(&pattern_contains_variable?(&1, variable))
+    |> Enum.filter(&PatternUtils.pattern_contains_variable?(&1, variable))
     |> Enum.map(&pattern_selectivity_for_variable(&1, variable, stats))
     |> combine_selectivities()
   end
@@ -275,44 +277,36 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   # Extract all unique variable names from patterns
   defp extract_all_variables(patterns) do
     patterns
-    |> Enum.flat_map(&pattern_variables/1)
+    |> Enum.flat_map(&PatternUtils.pattern_variables/1)
     |> Enum.uniq()
   end
 
-  # Get variable names from a pattern
-  defp pattern_variables({:triple, subject, predicate, object}) do
-    [extract_var_name(subject), extract_var_name(predicate), extract_var_name(object)]
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp pattern_variables(_), do: []
-
-  # Extract variable name from a term
-  defp extract_var_name({:variable, name}), do: name
-  defp extract_var_name(_), do: nil
-
   # Find patterns containing a specific variable
   defp patterns_containing_variable(patterns, var_name) do
-    Enum.filter(patterns, &pattern_contains_variable?(&1, var_name))
+    Enum.filter(patterns, &PatternUtils.pattern_contains_variable?(&1, var_name))
   end
-
-  # Check if a pattern contains a variable
-  defp pattern_contains_variable?({:triple, s, p, o}, var_name) do
-    extract_var_name(s) == var_name or
-      extract_var_name(p) == var_name or
-      extract_var_name(o) == var_name
-  end
-
-  defp pattern_contains_variable?(_, _), do: false
 
   # Get positions where a variable appears
   defp variable_positions(patterns, var_name) do
     patterns
     |> Enum.flat_map(fn {:triple, s, p, o} ->
       positions = []
-      positions = if extract_var_name(s) == var_name, do: [:subject | positions], else: positions
-      positions = if extract_var_name(p) == var_name, do: [:predicate | positions], else: positions
-      positions = if extract_var_name(o) == var_name, do: [:object | positions], else: positions
+
+      positions =
+        if PatternUtils.extract_var_name(s) == var_name,
+          do: [:subject | positions],
+          else: positions
+
+      positions =
+        if PatternUtils.extract_var_name(p) == var_name,
+          do: [:predicate | positions],
+          else: positions
+
+      positions =
+        if PatternUtils.extract_var_name(o) == var_name,
+          do: [:object | positions],
+          else: positions
+
       positions
     end)
     |> Enum.uniq()
@@ -339,16 +333,19 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
     # Base selectivity from position
     position_sel =
       cond do
-        extract_var_name(s) == var_name -> 100.0  # Subjects have high cardinality
-        extract_var_name(p) == var_name -> 20.0   # Predicates usually low cardinality
-        extract_var_name(o) == var_name -> 100.0  # Objects have high cardinality
+        # Subjects have high cardinality
+        PatternUtils.extract_var_name(s) == var_name -> 100.0
+        # Predicates usually low cardinality
+        PatternUtils.extract_var_name(p) == var_name -> 20.0
+        # Objects have high cardinality
+        PatternUtils.extract_var_name(o) == var_name -> 100.0
         true -> 1000.0
       end
 
     # Adjust based on other bound terms in the pattern
     bound_adjustment =
       [s, p, o]
-      |> Enum.count(&is_constant?/1)
+      |> Enum.count(&PatternUtils.is_constant?/1)
       |> case do
         0 -> 1.0      # No constants - least selective
         1 -> 0.1      # One constant - moderately selective
@@ -392,10 +389,6 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
     min_sel * pattern_bonus
   end
 
-  # Check if a term is a constant (not a variable)
-  defp is_constant?({:variable, _}), do: false
-  defp is_constant?(_), do: true
-
   # ===========================================================================
   # Private: Greedy Ordering
   # ===========================================================================
@@ -413,14 +406,6 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   # ===========================================================================
   # Private: Index Selection Helpers
   # ===========================================================================
-
-  # Check if a term is bound (constant or in bound_vars set)
-  defp is_bound_or_const?({:variable, name}, bound_vars), do: MapSet.member?(bound_vars, name)
-  defp is_bound_or_const?({:named_node, _}, _), do: true
-  defp is_bound_or_const?({:literal, _, _}, _), do: true
-  defp is_bound_or_const?({:literal, _, _, _}, _), do: true
-  defp is_bound_or_const?({:blank_node, _}, _), do: true
-  defp is_bound_or_const?(_, _), do: false
 
   # Build prefix variable list for index
   defp prefix_vars(var1, var2, bound_vars) do

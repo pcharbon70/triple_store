@@ -96,6 +96,9 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
   # Size of each ID in bytes
   @id_size 8
 
+  # Maximum 64-bit unsigned integer value
+  @max_uint64 0xFFFFFFFFFFFFFFFF
+
   # ===========================================================================
   # Public API
   # ===========================================================================
@@ -239,6 +242,11 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
 
   def next(%__MODULE__{current_value: nil} = iter) do
     {:exhausted, %{iter | exhausted: true}}
+  end
+
+  def next(%__MODULE__{current_value: @max_uint64} = iter) do
+    # At maximum 64-bit value, cannot advance further (overflow protection)
+    {:exhausted, %{iter | current_key: nil, current_value: nil, exhausted: true}}
   end
 
   def next(%__MODULE__{} = iter) do

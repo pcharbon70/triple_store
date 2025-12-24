@@ -38,7 +38,7 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   This enables efficient backtracking without recreating iterators.
   """
 
-  alias TripleStore.SPARQL.Leapfrog.{TrieIterator, Leapfrog, VariableOrdering}
+  alias TripleStore.SPARQL.Leapfrog.{TrieIterator, Leapfrog, VariableOrdering, PatternUtils}
 
   # ===========================================================================
   # Types
@@ -65,6 +65,15 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
           level_idx: non_neg_integer()
         }
 
+  # Default timeout for query execution (30 seconds)
+  @default_timeout_ms 30_000
+
+  # Default maximum iterations for Leapfrog (DoS protection)
+  @default_max_iterations 1_000_000
+
+  # Maximum number of variables allowed (memory protection)
+  @max_variables 100
+
   @typedoc """
   The MultiLevel executor struct.
 
@@ -75,6 +84,9 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   - `:current_bindings` - Current variable bindings
   - `:exhausted` - Whether all solutions have been enumerated
   - `:initialized` - Whether we've started iteration
+  - `:timeout_ms` - Maximum execution time in milliseconds
+  - `:start_time` - Monotonic time when execution started
+  - `:max_iterations` - Maximum iterations per Leapfrog
   """
   @type t :: %__MODULE__{
           db: reference(),
@@ -83,7 +95,10 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
           levels: [level()],
           current_bindings: bindings(),
           exhausted: boolean(),
-          initialized: boolean()
+          initialized: boolean(),
+          timeout_ms: non_neg_integer(),
+          start_time: integer() | nil,
+          max_iterations: non_neg_integer()
         }
 
   @enforce_keys [:db, :patterns, :var_order]
@@ -91,10 +106,13 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
     :db,
     :patterns,
     :var_order,
+    :start_time,
     levels: [],
     current_bindings: %{},
     exhausted: false,
-    initialized: false
+    initialized: false,
+    timeout_ms: @default_timeout_ms,
+    max_iterations: @default_max_iterations
   ]
 
   # ===========================================================================
@@ -108,26 +126,46 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
 
   - `db` - Database reference
   - `patterns` - List of triple patterns
-  - `stats` - Statistics for variable ordering (optional)
+  - `opts` - Options keyword list:
+    - `:stats` - Statistics for variable ordering (default: %{})
+    - `:timeout_ms` - Maximum execution time in milliseconds (default: 30,000)
+    - `:max_iterations` - Maximum iterations per Leapfrog (default: 1,000,000)
 
   ## Returns
 
   - `{:ok, executor}` on success
-  - `{:error, reason}` on failure
+  - `{:error, :too_many_variables}` if pattern has more than 100 variables
+  - `{:error, reason}` on other failures
 
   """
-  @spec new(reference(), [triple_pattern()], map()) :: {:ok, t()} | {:error, term()}
-  def new(db, patterns, stats \\ %{}) do
+  @spec new(reference(), [triple_pattern()], keyword() | map()) :: {:ok, t()} | {:error, term()}
+  def new(db, patterns, opts \\ [])
+
+  # Support legacy map-based stats argument for backwards compatibility
+  def new(db, patterns, stats) when is_map(stats) do
+    new(db, patterns, stats: stats)
+  end
+
+  def new(db, patterns, opts) when is_list(opts) do
+    stats = Keyword.get(opts, :stats, %{})
+    timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+    max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
+
     case VariableOrdering.compute(patterns, stats) do
       {:ok, []} ->
         # No variables - this is a ground pattern check
         {:ok, %__MODULE__{db: db, patterns: patterns, var_order: [], exhausted: true}}
 
+      {:ok, var_order} when length(var_order) > @max_variables ->
+        {:error, :too_many_variables}
+
       {:ok, var_order} ->
         executor = %__MODULE__{
           db: db,
           patterns: patterns,
-          var_order: var_order
+          var_order: var_order,
+          timeout_ms: timeout_ms,
+          max_iterations: max_iterations
         }
 
         {:ok, executor}
@@ -173,14 +211,16 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
 
   - `{:ok, bindings, new_executor}` if a binding was found
   - `:exhausted` if no more bindings exist
+  - `{:error, :timeout}` if execution time exceeded
+  - `{:error, :max_iterations_exceeded}` if iteration limit reached
 
   """
-  @spec next_binding(t()) :: {:ok, bindings(), t()} | :exhausted
+  @spec next_binding(t()) :: {:ok, bindings(), t()} | :exhausted | {:error, term()}
   def next_binding(%__MODULE__{exhausted: true}), do: :exhausted
 
   def next_binding(%__MODULE__{initialized: false} = exec) do
-    # First call - start descending from level 0
-    exec = %{exec | initialized: true}
+    # First call - start descending from level 0 and record start time
+    exec = %{exec | initialized: true, start_time: System.monotonic_time(:millisecond)}
     find_next_solution(exec, :descend, 0)
   end
 
@@ -189,9 +229,17 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
     :exhausted
   end
 
-  def next_binding(%__MODULE__{levels: [top | _]} = exec) do
-    # We have a previous solution - advance from the deepest level
-    find_next_solution(exec, :advance, top.level_idx)
+  def next_binding(%__MODULE__{} = exec) do
+    # Check for timeout
+    case check_timeout(exec) do
+      :ok ->
+        [top | _] = exec.levels
+        # We have a previous solution - advance from the deepest level
+        find_next_solution(exec, :advance, top.level_idx)
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   @doc """
@@ -221,6 +269,19 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   # Private: Core Algorithm
   # ===========================================================================
 
+  # Check if execution has exceeded timeout
+  defp check_timeout(%__MODULE__{start_time: nil}), do: :ok
+
+  defp check_timeout(%__MODULE__{start_time: start_time, timeout_ms: timeout_ms}) do
+    elapsed = System.monotonic_time(:millisecond) - start_time
+
+    if elapsed >= timeout_ms do
+      {:error, :timeout}
+    else
+      :ok
+    end
+  end
+
   # Main loop: find the next complete solution
   defp find_next_solution(%__MODULE__{var_order: var_order} = exec, :descend, level_idx)
        when level_idx >= length(var_order) do
@@ -229,15 +290,25 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   end
 
   defp find_next_solution(exec, :descend, level_idx) do
-    # Try to descend to level_idx
-    case enter_level(exec, level_idx) do
-      {:ok, new_exec} ->
-        # Successfully entered this level, continue to next
-        find_next_solution(new_exec, :descend, level_idx + 1)
+    # Check timeout before descending
+    case check_timeout(exec) do
+      :ok ->
+        # Try to descend to level_idx
+        case enter_level(exec, level_idx) do
+          {:ok, new_exec} ->
+            # Successfully entered this level, continue to next
+            find_next_solution(new_exec, :descend, level_idx + 1)
 
-      :no_match ->
-        # No values at this level - backtrack
-        find_next_solution(exec, :backtrack, level_idx - 1)
+          :no_match ->
+            # No values at this level - backtrack
+            find_next_solution(exec, :backtrack, level_idx - 1)
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -247,30 +318,50 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   end
 
   defp find_next_solution(exec, :backtrack, level_idx) do
-    # Try to advance at this level
-    case advance_at_level(exec, level_idx) do
-      {:ok, new_exec} ->
-        # Successfully advanced, continue descending
-        find_next_solution(new_exec, :descend, level_idx + 1)
+    # Check timeout before backtracking
+    case check_timeout(exec) do
+      :ok ->
+        # Try to advance at this level
+        case advance_at_level(exec, level_idx) do
+          {:ok, new_exec} ->
+            # Successfully advanced, continue descending
+            find_next_solution(new_exec, :descend, level_idx + 1)
 
-      :exhausted ->
-        # No more values at this level, backtrack further
-        new_exec = pop_level(exec, level_idx)
-        find_next_solution(new_exec, :backtrack, level_idx - 1)
+          :exhausted ->
+            # No more values at this level, backtrack further
+            new_exec = pop_level(exec, level_idx)
+            find_next_solution(new_exec, :backtrack, level_idx - 1)
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
   defp find_next_solution(exec, :advance, level_idx) do
-    # Advance at the current level (after returning a solution)
-    case advance_at_level(exec, level_idx) do
-      {:ok, new_exec} ->
-        # Advanced successfully, continue descending
-        find_next_solution(new_exec, :descend, level_idx + 1)
+    # Check timeout before advancing
+    case check_timeout(exec) do
+      :ok ->
+        # Advance at the current level (after returning a solution)
+        case advance_at_level(exec, level_idx) do
+          {:ok, new_exec} ->
+            # Advanced successfully, continue descending
+            find_next_solution(new_exec, :descend, level_idx + 1)
 
-      :exhausted ->
-        # No more values, backtrack
-        new_exec = pop_level(exec, level_idx)
-        find_next_solution(new_exec, :backtrack, level_idx - 1)
+          :exhausted ->
+            # No more values, backtrack
+            new_exec = pop_level(exec, level_idx)
+            find_next_solution(new_exec, :backtrack, level_idx - 1)
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -285,12 +376,12 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
     # Find patterns containing this variable
     containing_patterns =
       exec.patterns
-      |> Enum.filter(&pattern_contains_variable?(&1, variable))
+      |> Enum.filter(&PatternUtils.pattern_contains_variable?(&1, variable))
 
     # Create iterators
     case create_iterators_for_variable(exec.db, containing_patterns, variable, exec.current_bindings) do
       {:ok, iterators} when iterators != [] ->
-        case Leapfrog.new(iterators) do
+        case Leapfrog.new(iterators, max_iterations: exec.max_iterations) do
           {:ok, lf} ->
             case Leapfrog.search(lf) do
               {:ok, lf} ->
@@ -311,18 +402,25 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
               {:exhausted, lf} ->
                 Leapfrog.close(lf)
                 :no_match
+
+              {:error, reason} ->
+                Leapfrog.close(lf)
+                {:error, reason}
             end
 
           {:exhausted, lf} ->
             Leapfrog.close(lf)
             :no_match
+
+          {:error, reason} ->
+            {:error, reason}
         end
 
       {:ok, []} ->
         :no_match
 
-      {:error, _} ->
-        :no_match
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -358,6 +456,9 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
 
           {:exhausted, _lf} ->
             :exhausted
+
+          {:error, reason} ->
+            {:error, reason}
         end
     end
   end
@@ -499,21 +600,9 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
     end
   end
 
-  # Get the value of a term (constant or from bindings)
-  defp get_term_value({:variable, name}, bindings), do: Map.get(bindings, name)
-  defp get_term_value(id, _bindings) when is_integer(id), do: id
-  defp get_term_value(_, _), do: nil
+  # Delegate to PatternUtils for term value extraction
+  defp get_term_value(term, bindings), do: PatternUtils.get_term_value(term, bindings)
 
-  # ===========================================================================
-  # Private: Pattern Helpers
-  # ===========================================================================
-
-  defp pattern_contains_variable?({:triple, s, p, o}, var_name) do
-    extract_var_name(s) == var_name or
-      extract_var_name(p) == var_name or
-      extract_var_name(o) == var_name
-  end
-
-  defp extract_var_name({:variable, name}), do: name
-  defp extract_var_name(_), do: nil
+  # Delegate to PatternUtils for variable extraction
+  defp extract_var_name(term), do: PatternUtils.extract_var_name(term)
 end

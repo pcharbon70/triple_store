@@ -50,6 +50,9 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   # Types
   # ===========================================================================
 
+  # Default maximum iterations to prevent DoS attacks
+  @default_max_iterations 1_000_000
+
   @typedoc """
   The Leapfrog struct.
 
@@ -57,12 +60,16 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   - `:current_value` - The common value all iterators are at, or nil
   - `:exhausted` - Whether any iterator is exhausted (no more common values)
   - `:at_match` - Whether currently positioned at a match
+  - `:iteration_count` - Number of search iterations performed
+  - `:max_iterations` - Maximum allowed iterations (DoS protection)
   """
   @type t :: %__MODULE__{
           iterators: [TrieIterator.t()],
           current_value: non_neg_integer() | nil,
           exhausted: boolean(),
-          at_match: boolean()
+          at_match: boolean(),
+          iteration_count: non_neg_integer(),
+          max_iterations: non_neg_integer()
         }
 
   @enforce_keys [:iterators]
@@ -70,7 +77,9 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
     :iterators,
     :current_value,
     exhausted: false,
-    at_match: false
+    at_match: false,
+    iteration_count: 0,
+    max_iterations: @default_max_iterations
   ]
 
   # ===========================================================================
@@ -87,6 +96,8 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   ## Arguments
 
   - `iterators` - List of TrieIterator structs (must have at least 1)
+  - `opts` - Options keyword list:
+    - `:max_iterations` - Maximum search iterations (default: 1,000,000)
 
   ## Returns
 
@@ -99,20 +110,27 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
       {:ok, lf} = Leapfrog.new([iter1, iter2, iter3])
       {:ok, lf} = Leapfrog.search(lf)
 
+      # With custom iteration limit
+      {:ok, lf} = Leapfrog.new([iter1, iter2], max_iterations: 10_000)
+
   """
-  @spec new([TrieIterator.t()]) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def new([]) do
+  @spec new([TrieIterator.t()], keyword()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
+  def new(iterators, opts \\ [])
+
+  def new([], _opts) do
     {:error, :empty_iterator_list}
   end
 
-  def new(iterators) when is_list(iterators) do
+  def new(iterators, opts) when is_list(iterators) do
+    max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
+
     # Check if any iterator is exhausted
     if Enum.any?(iterators, &TrieIterator.exhausted?/1) do
-      {:exhausted, %__MODULE__{iterators: iterators, exhausted: true}}
+      {:exhausted, %__MODULE__{iterators: iterators, exhausted: true, max_iterations: max_iterations}}
     else
       # Sort iterators by current value
       sorted = sort_iterators(iterators)
-      {:ok, %__MODULE__{iterators: sorted}}
+      {:ok, %__MODULE__{iterators: sorted, max_iterations: max_iterations}}
     end
   end
 
@@ -130,7 +148,8 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   - `{:ok, leapfrog}` if a common value was found
   - `{:exhausted, leapfrog}` if no more common values exist
-  - `{:error, reason}` on failure
+  - `{:error, :max_iterations_exceeded}` if iteration limit reached (DoS protection)
+  - `{:error, reason}` on other failures
 
   ## Examples
 
@@ -141,6 +160,11 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   @spec search(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   def search(%__MODULE__{exhausted: true} = lf) do
     {:exhausted, lf}
+  end
+
+  def search(%__MODULE__{iteration_count: count, max_iterations: max})
+      when count >= max do
+    {:error, :max_iterations_exceeded}
   end
 
   def search(%__MODULE__{iterators: [single]} = lf) do
@@ -342,36 +366,44 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   # Core leapfrog search algorithm
   defp do_search(iterators, lf) do
-    # Get min and max values
-    [first | _] = iterators
-    last = List.last(iterators)
+    # Check iteration limit
+    if lf.iteration_count >= lf.max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      # Increment iteration count
+      lf = %{lf | iteration_count: lf.iteration_count + 1}
 
-    min_val = get_value(first)
-    max_val = get_value(last)
+      # Get min and max values
+      [first | _] = iterators
+      last = List.last(iterators)
 
-    cond do
-      min_val == :infinity or max_val == :infinity ->
-        # Some iterator exhausted
-        {:exhausted, %{lf | exhausted: true}}
+      min_val = get_value(first)
+      max_val = get_value(last)
 
-      min_val == max_val ->
-        # All iterators at same value - found a match!
-        {:ok, %{lf | iterators: iterators, current_value: min_val, at_match: true}}
+      cond do
+        min_val == :infinity or max_val == :infinity ->
+          # Some iterator exhausted
+          {:exhausted, %{lf | exhausted: true}}
 
-      true ->
-        # min < max: seek min iterator to max value
-        case TrieIterator.seek(first, max_val) do
-          {:ok, advanced} ->
-            # Re-sort and continue searching
-            new_iterators = sort_iterators([advanced | tl(iterators)])
-            do_search(new_iterators, lf)
+        min_val == max_val ->
+          # All iterators at same value - found a match!
+          {:ok, %{lf | iterators: iterators, current_value: min_val, at_match: true}}
 
-          {:exhausted, _} ->
-            {:exhausted, %{lf | exhausted: true}}
+        true ->
+          # min < max: seek min iterator to max value
+          case TrieIterator.seek(first, max_val) do
+            {:ok, advanced} ->
+              # Re-sort and continue searching
+              new_iterators = sort_iterators([advanced | tl(iterators)])
+              do_search(new_iterators, lf)
 
-          {:error, reason} ->
-            {:error, reason}
-        end
+            {:exhausted, _} ->
+              {:exhausted, %{lf | exhausted: true}}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+      end
     end
   end
 

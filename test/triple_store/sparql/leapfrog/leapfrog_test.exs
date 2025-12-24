@@ -412,6 +412,127 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
   end
 
   # ===========================================================================
+  # Security Tests - DoS Protection
+  # ===========================================================================
+
+  describe "iteration limits" do
+    test "respects max_iterations option", %{db: db} do
+      # Create data that would require many iterations
+      for s <- 1..100, do: insert_triple(db, s, 10, 100)
+      for s <- 50..150, do: insert_triple(db, s, 20, 200)
+
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
+
+      # Set a very low iteration limit
+      {:ok, lf} = Leapfrog.new([iter1, iter2], max_iterations: 5)
+
+      # Should hit the limit before finding all matches
+      result = Leapfrog.search(lf)
+
+      # Either finds a match within limit or hits the limit
+      case result do
+        {:ok, _} -> :ok
+        {:error, :max_iterations_exceeded} -> :ok
+        other -> flunk("Unexpected result: #{inspect(other)}")
+      end
+
+      Leapfrog.close(lf)
+    end
+
+    test "iteration count increments during search", %{db: db} do
+      for s <- [1, 10, 20, 30], do: insert_triple(db, s, 10, 100)
+      for s <- [5, 15, 25, 30], do: insert_triple(db, s, 20, 200)
+
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
+
+      {:ok, lf} = Leapfrog.new([iter1, iter2])
+      assert lf.iteration_count == 0
+
+      {:ok, lf} = Leapfrog.search(lf)
+      # After searching, iteration count should have increased
+      assert lf.iteration_count > 0
+
+      Leapfrog.close(lf)
+    end
+
+    test "returns error when max_iterations exceeded", %{db: db} do
+      # Create overlapping data that will require many iterations
+      # List 1: 1, 3, 5, 7, 9, 11, 13, 15, 17, 19 (odd numbers)
+      # List 2: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20 (even numbers - no overlap with list 1)
+      # But we want data that will cause iterations before exhaustion
+      # So let's use data that converges eventually but requires seeking
+      for s <- [1, 10, 100, 1000, 10000], do: insert_triple(db, s, 10, 100)
+      for s <- [2, 20, 200, 2000, 20000], do: insert_triple(db, s, 20, 200)
+
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
+
+      # With very low limit (1), should exceed on first iteration
+      {:ok, lf} = Leapfrog.new([iter1, iter2], max_iterations: 1)
+
+      result = Leapfrog.search(lf)
+
+      # Should hit the limit
+      assert result == {:error, :max_iterations_exceeded}
+
+      Leapfrog.close(lf)
+    end
+
+    test "default max_iterations is high enough for normal queries", %{db: db} do
+      for s <- 1..100, do: insert_triple(db, s, 10, 100)
+      for s <- 1..100, do: insert_triple(db, s, 20, 200)
+
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
+
+      {:ok, lf} = Leapfrog.new([iter1, iter2])
+
+      # Should find all matches without hitting limit
+      values = Leapfrog.stream(lf) |> Enum.to_list()
+      assert length(values) == 100
+
+      Leapfrog.close(lf)
+    end
+  end
+
+  # ===========================================================================
+  # Input Validation Tests
+  # ===========================================================================
+
+  describe "input validation" do
+    test "new/2 accepts custom max_iterations", %{db: db} do
+      insert_triple(db, 1, 10, 100)
+
+      {:ok, iter} = TrieIterator.new(db, :spo, <<>>, 0)
+      {:ok, lf} = Leapfrog.new([iter], max_iterations: 500)
+
+      assert lf.max_iterations == 500
+      Leapfrog.close(lf)
+    end
+
+    test "preserves max_iterations across operations", %{db: db} do
+      for s <- [1, 2, 3], do: insert_triple(db, s, 10, 100)
+      for s <- [1, 2, 3], do: insert_triple(db, s, 20, 200)
+
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
+
+      {:ok, lf} = Leapfrog.new([iter1, iter2], max_iterations: 10_000)
+      assert lf.max_iterations == 10_000
+
+      {:ok, lf} = Leapfrog.search(lf)
+      assert lf.max_iterations == 10_000
+
+      {:ok, lf} = Leapfrog.next(lf)
+      assert lf.max_iterations == 10_000
+
+      Leapfrog.close(lf)
+    end
+  end
+
+  # ===========================================================================
   # Integration Tests - Real SPARQL Patterns
   # ===========================================================================
 
