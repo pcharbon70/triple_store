@@ -202,14 +202,14 @@ This section implements SPARQL property path evaluation with support for sequenc
 
 ### 3.4.1 Non-Recursive Paths
 
-- [ ] **Task 3.4.1 Complete**
+- [x] **Task 3.4.1 Complete**
 
 Implement non-recursive property path operators.
 
-- [ ] 3.4.1.1 Implement sequence path (p1/p2)
-- [ ] 3.4.1.2 Implement alternative path (p1|p2)
-- [ ] 3.4.1.3 Implement inverse path (^p)
-- [ ] 3.4.1.4 Implement negated property set (!(p1|p2))
+- [x] 3.4.1.1 Implement sequence path (p1/p2)
+- [x] 3.4.1.2 Implement alternative path (p1|p2)
+- [x] 3.4.1.3 Implement inverse path (^p)
+- [x] 3.4.1.4 Implement negated property set (!(p1|p2))
 
 ### 3.4.2 Recursive Paths
 

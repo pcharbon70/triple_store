@@ -42,6 +42,7 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.SPARQL.Optimizer
+  alias TripleStore.SPARQL.PropertyPath
 
 
   # ===========================================================================
@@ -189,6 +190,19 @@ defmodule TripleStore.SPARQL.Executor do
     {:ok, result_stream}
   end
 
+  # Property path pattern - delegates to PropertyPath module
+  defp extend_bindings(ctx, binding_stream, {:path, s, path_expr, o}) do
+    result_stream =
+      Stream.flat_map(binding_stream, fn binding ->
+        case PropertyPath.evaluate(ctx, binding, s, path_expr, o) do
+          {:ok, matches} -> matches
+          {:error, _} -> []
+        end
+      end)
+
+    {:ok, result_stream}
+  end
+
   # Execute a single triple pattern with a specific binding
   defp execute_single_pattern(ctx, binding, s, p, o) do
     %{db: db, dict_manager: dict_manager} = ctx
@@ -249,6 +263,21 @@ defmodule TripleStore.SPARQL.Executor do
       term ->
         # Variable is bound - encode the term
         term_to_bound_pattern(term, dict_manager)
+    end
+  end
+
+  # Blank nodes from spargebra act as intermediate variables (e.g., in sequence paths)
+  # They need to be tracked in bindings just like regular variables
+  defp term_to_index_pattern({:blank_node, name}, binding, _dict_manager) do
+    case Map.get(binding, {:blank_node, name}) do
+      nil ->
+        # Unbound blank node - treat as variable
+        {:ok, :var}
+
+      _term ->
+        # Blank node is bound - but we need to match the ID from previous binding
+        # The binding stores the ID directly for blank nodes
+        {:ok, {:bound, Map.get(binding, {:blank_node, name})}}
     end
   end
 
@@ -393,6 +422,26 @@ defmodule TripleStore.SPARQL.Executor do
           {:error, _} = error ->
             error
         end
+    end
+  end
+
+  # Blank nodes from spargebra act as intermediate variables (e.g., in sequence paths)
+  # We store the ID directly so it can be matched in subsequent patterns
+  defp maybe_bind(binding, {:blank_node, name}, term_id, _dict_manager) do
+    bnode_key = {:blank_node, name}
+
+    case Map.get(binding, bnode_key) do
+      nil ->
+        # Blank node not bound - store the ID directly
+        {:ok, Map.put(binding, bnode_key, term_id)}
+
+      existing_id when existing_id == term_id ->
+        # Same blank node with same ID - OK
+        {:ok, binding}
+
+      _different_id ->
+        # Blank node already bound to different ID - mismatch
+        {:error, :binding_mismatch}
     end
   end
 

@@ -67,7 +67,7 @@ defmodule TripleStore.SPARQL.Query do
 
   """
 
-  alias TripleStore.SPARQL.{Parser, Optimizer, Executor}
+  alias TripleStore.SPARQL.{Parser, Optimizer, Executor, PropertyPath}
   require Logger
 
   # ===========================================================================
@@ -1023,6 +1023,10 @@ defmodule TripleStore.SPARQL.Query do
 
           {:ok, grouped}
         end
+
+      # Property path pattern
+      {:path, subject, path_expr, object} ->
+        PropertyPath.evaluate(%{db: ctx.db, dict_manager: ctx.dict_manager}, %{}, subject, path_expr, object)
 
       nil ->
         # Empty pattern - return unit stream
