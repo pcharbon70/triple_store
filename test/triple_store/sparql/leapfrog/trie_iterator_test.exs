@@ -494,5 +494,58 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
       assert {:ok, 1_000_000} = TrieIterator.current(iter)
       TrieIterator.close(iter)
     end
+
+    test "level should equal prefix_ids for correct iteration", %{db: db} do
+      # TrieIterator is designed to work when level == byte_size(prefix) / 8
+      # When level > prefix_ids, the iterator may return duplicate values
+      # because the prefix doesn't fully constrain intermediate levels.
+      #
+      # This is why MultiLevel.choose_index_and_prefix ensures level == prefix_ids.
+      # Here we verify the correct usage pattern.
+
+      # POS index: predicate (0) | object (1) | subject (2)
+      # With prefix <<p::64, o::64>> (16 bytes), level should be 2
+      insert_triple(db, 5, 10, 100)
+      insert_triple(db, 7, 10, 100)  # Same predicate and object
+      insert_triple(db, 9, 10, 100)
+
+      # Correct usage: 2-level prefix with level 2
+      {:ok, iter} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+
+      # Should find subjects 5, 7, 9 correctly
+      assert {:ok, 5} = TrieIterator.current(iter)
+
+      {:ok, iter} = TrieIterator.next(iter)
+      assert {:ok, 7} = TrieIterator.current(iter)
+
+      {:ok, iter} = TrieIterator.next(iter)
+      assert {:ok, 9} = TrieIterator.current(iter)
+
+      {:exhausted, iter} = TrieIterator.next(iter)
+      assert TrieIterator.exhausted?(iter)
+
+      TrieIterator.close(iter)
+    end
+
+    test "seek works correctly with matching prefix and level", %{db: db} do
+      # Verify seek works when level == prefix_ids
+      insert_triple(db, 3, 10, 100)
+      insert_triple(db, 5, 10, 100)
+      insert_triple(db, 8, 10, 100)
+      insert_triple(db, 12, 10, 100)
+
+      {:ok, iter} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
+      assert {:ok, 3} = TrieIterator.current(iter)
+
+      # Seek to 6 - should land on 8 (next available)
+      {:ok, iter} = TrieIterator.seek(iter, 6)
+      assert {:ok, 8} = TrieIterator.current(iter)
+
+      # Seek to exact value 12
+      {:ok, iter} = TrieIterator.seek(iter, 12)
+      assert {:ok, 12} = TrieIterator.current(iter)
+
+      TrieIterator.close(iter)
+    end
   end
 end

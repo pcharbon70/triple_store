@@ -12,7 +12,7 @@ SPARQL UPDATE support enables INSERT/DELETE operations with transactional semant
 
 ## 3.1 Leapfrog Triejoin
 
-- [ ] **Section 3.1 Complete**
+- [x] **Section 3.1 Complete**
 
 This section implements the Leapfrog Triejoin algorithm for worst-case optimal multi-way joins. The algorithm processes queries variable-by-variable using sorted iterators that "leapfrog" to find common values.
 
@@ -62,15 +62,15 @@ Extend Leapfrog to handle multiple variables through nested iteration.
 
 ### 3.1.5 Unit Tests
 
-- [ ] **Task 3.1.5 Complete**
+- [x] **Task 3.1.5 Complete**
 
-- [ ] Test trie iterator seek positions correctly
-- [ ] Test trie iterator next advances correctly
-- [ ] Test leapfrog finds common values across two iterators
-- [ ] Test leapfrog finds common values across three iterators
-- [ ] Test leapfrog handles exhausted iterator
-- [ ] Test multi-level iteration produces all matches
-- [ ] Test variable ordering prefers selective variables
+- [x] Test trie iterator seek positions correctly
+- [x] Test trie iterator next advances correctly
+- [x] Test leapfrog finds common values across two iterators
+- [x] Test leapfrog finds common values across three iterators
+- [x] Test leapfrog handles exhausted iterator
+- [x] Test multi-level iteration produces all matches
+- [x] Test variable ordering prefers selective variables
 
 ---
 
