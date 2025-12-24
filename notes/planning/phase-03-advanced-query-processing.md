@@ -31,14 +31,14 @@ Implement the trie iterator abstraction over RocksDB prefix scans.
 
 ### 3.1.2 Leapfrog Algorithm
 
-- [ ] **Task 3.1.2 Complete**
+- [x] **Task 3.1.2 Complete**
 
 Implement the core leapfrog join algorithm.
 
-- [ ] 3.1.2.1 Implement `leapfrog_init(iterators)` initializing sorted iterator list
-- [ ] 3.1.2.2 Implement `leapfrog_search(iterators)` finding next common value
-- [ ] 3.1.2.3 Implement `leapfrog_next(iterators)` advancing past current match
-- [ ] 3.1.2.4 Return Stream of matching tuples
+- [x] 3.1.2.1 Implement `leapfrog_init(iterators)` initializing sorted iterator list
+- [x] 3.1.2.2 Implement `leapfrog_search(iterators)` finding next common value
+- [x] 3.1.2.3 Implement `leapfrog_next(iterators)` advancing past current match
+- [x] 3.1.2.4 Return Stream of matching tuples
 
 ### 3.1.3 Variable Ordering
 
