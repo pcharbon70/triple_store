@@ -146,15 +146,15 @@ This section implements SPARQL UPDATE operations with transactional semantics. U
 
 ### 3.3.1 Update Execution
 
-- [ ] **Task 3.3.1 Complete**
+- [x] **Task 3.3.1 Complete**
 
 Implement execution of parsed UPDATE operations.
 
-- [ ] 3.3.1.1 Implement `execute_insert_data(db, triples)` for direct insert
-- [ ] 3.3.1.2 Implement `execute_delete_data(db, triples)` for direct delete
-- [ ] 3.3.1.3 Implement `execute_delete_where(db, pattern)` for pattern delete
-- [ ] 3.3.1.4 Implement `execute_insert_where(db, template, pattern)` for templated insert
-- [ ] 3.3.1.5 Implement `execute_modify(db, delete_tmpl, insert_tmpl, pattern)` for combined
+- [x] 3.3.1.1 Implement `execute_insert_data(db, triples)` for direct insert
+- [x] 3.3.1.2 Implement `execute_delete_data(db, triples)` for direct delete
+- [x] 3.3.1.3 Implement `execute_delete_where(db, pattern)` for pattern delete
+- [x] 3.3.1.4 Implement `execute_insert_where(db, template, pattern)` for templated insert
+- [x] 3.3.1.5 Implement `execute_modify(db, delete_tmpl, insert_tmpl, pattern)` for combined
 
 ### 3.3.2 Transaction Coordinator
 
