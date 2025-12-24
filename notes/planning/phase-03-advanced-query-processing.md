@@ -93,14 +93,14 @@ Estimate result cardinality for patterns and joins.
 
 ### 3.2.2 Cost Model
 
-- [ ] **Task 3.2.2 Complete**
+- [x] **Task 3.2.2 Complete**
 
 Define cost model for different join strategies.
 
-- [ ] 3.2.2.1 Model nested loop join cost: O(left_card * right_card)
-- [ ] 3.2.2.2 Model hash join cost: O(left_card + right_card)
-- [ ] 3.2.2.3 Model Leapfrog cost: based on AGM bound
-- [ ] 3.2.2.4 Model I/O cost for index scans
+- [x] 3.2.2.1 Model nested loop join cost: O(left_card * right_card)
+- [x] 3.2.2.2 Model hash join cost: O(left_card + right_card)
+- [x] 3.2.2.3 Model Leapfrog cost: based on AGM bound
+- [x] 3.2.2.4 Model I/O cost for index scans
 
 ### 3.2.3 Join Enumeration
 
