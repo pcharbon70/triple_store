@@ -213,15 +213,15 @@ Implement non-recursive property path operators.
 
 ### 3.4.2 Recursive Paths
 
-- [ ] **Task 3.4.2 Complete**
+- [x] **Task 3.4.2 Complete**
 
 Implement recursive path evaluation with cycle detection.
 
-- [ ] 3.4.2.1 Implement zero-or-more path (p*)
-- [ ] 3.4.2.2 Implement one-or-more path (p+)
-- [ ] 3.4.2.3 Implement optional path (p?)
-- [ ] 3.4.2.4 Implement cycle detection via visited set
-- [ ] 3.4.2.5 Handle arbitrary-length paths efficiently
+- [x] 3.4.2.1 Implement zero-or-more path (p*)
+- [x] 3.4.2.2 Implement one-or-more path (p+)
+- [x] 3.4.2.3 Implement optional path (p?)
+- [x] 3.4.2.4 Implement cycle detection via visited set
+- [x] 3.4.2.5 Handle arbitrary-length paths efficiently
 
 ### 3.4.3 Path Optimization
 

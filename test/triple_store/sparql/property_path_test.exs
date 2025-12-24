@@ -507,15 +507,6 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       assert hd(results)["o"] == {:named_node, "http://ex.org/bob"}
     end
 
-    test "recursive paths return error", %{ctx: ctx} do
-      subject = {:variable, "s"}
-      path = {:zero_or_more, {:link, "http://ex.org/knows"}}
-      object = {:variable, "o"}
-
-      assert {:error, :recursive_paths_not_implemented} =
-               PropertyPath.evaluate(ctx, %{}, subject, path, object)
-    end
-
     test "unsupported path returns error", %{ctx: ctx} do
       subject = {:variable, "s"}
       path = {:unknown_path_type, "test"}
@@ -523,6 +514,448 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
 
       assert {:error, {:unsupported_path, {:unknown_path_type, "test"}}} =
                PropertyPath.evaluate(ctx, %{}, subject, path, object)
+    end
+  end
+
+  # ===========================================================================
+  # Recursive Paths (Task 3.4.2)
+  # ===========================================================================
+
+  describe "zero-or-more path (p*)" do
+    test "identity - zero steps (subject = object)", %{ctx: ctx} do
+      # ?s knows* ?o with alice, should include alice -> alice (0 steps)
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Should include alice (0 steps) and bob (1 step)
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+    end
+
+    test "transitive closure - multiple steps", %{ctx: ctx} do
+      # alice -> bob -> charlie -> dave
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+      insert_triple(ctx, {"http://ex.org/charlie", "http://ex.org/knows", "http://ex.org/dave"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/dave"})
+      assert MapSet.size(objects) == 4
+    end
+
+    test "handles cycles", %{ctx: ctx} do
+      # alice -> bob -> alice (cycle)
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/alice"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Should find alice and bob, without infinite loop
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.size(objects) == 2
+    end
+
+    test "both variables unbound", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:variable, "s"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Should include: alice->alice, alice->bob, bob->bob
+      assert length(results) >= 3
+    end
+
+    test "reverse - object bound, subject unbound", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      subject = {:variable, "s"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/charlie"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # charlie, bob, alice can all reach charlie
+      subjects = Enum.map(results, & &1["s"]) |> MapSet.new()
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/alice"})
+    end
+
+    test "both bound - path exists", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/bob"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+
+    test "both bound - identity (zero steps)", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/alice"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # alice knows* alice is true (0 steps)
+      assert length(results) == 1
+    end
+  end
+
+  describe "one-or-more path (p+)" do
+    test "excludes identity - requires at least one step", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      # Should NOT include alice (requires at least one step)
+      refute MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+    end
+
+    test "transitive closure - multiple steps", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.size(objects) == 2
+    end
+
+    test "handles cycles", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/alice"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # With cycle, alice can reach both alice (2 steps) and bob (1 step)
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+    end
+
+    test "both bound - path exists", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/bob"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+
+    test "both bound - same node without cycle, no result", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/alice"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # alice knows+ alice requires at least one step and path back
+      assert length(results) == 0
+    end
+
+    test "reverse - object bound, subject unbound", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      subject = {:variable, "s"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/charlie"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      subjects = Enum.map(results, & &1["s"]) |> MapSet.new()
+      # charlie itself should NOT be included (one or more)
+      refute MapSet.member?(subjects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/alice"})
+    end
+  end
+
+  describe "zero-or-one path (p?)" do
+    test "identity - zero steps", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      # Should include alice (0 steps) and bob (1 step)
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+    end
+
+    test "does NOT follow transitive paths - only 0 or 1 step", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      # Should include alice and bob, but NOT charlie (that's 2 steps)
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      refute MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+    end
+
+    test "both bound - identity match", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/alice"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+
+    test "both bound - one step match", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/bob"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+
+    test "both bound - no match (2 steps)", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/charlie"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Charlie is 2 steps from alice, so no match
+      assert length(results) == 0
+    end
+
+    test "reverse - object bound, subject unbound", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+
+      subject = {:variable, "s"}
+      path = {:zero_or_one, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/bob"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      subjects = Enum.map(results, & &1["s"]) |> MapSet.new()
+      # bob itself (0 steps) and alice (1 step)
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/alice"})
+    end
+  end
+
+  describe "recursive path integration with SPARQL" do
+    test "zero-or-more path via SPARQL query", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      sparql = """
+      SELECT ?o WHERE {
+        <http://ex.org/alice> <http://ex.org/knows>* ?o
+      }
+      """
+
+      {:ok, results} = Query.query(ctx, sparql)
+
+      objects =
+        results
+        |> Enum.map(& &1["o"])
+        |> MapSet.new()
+
+      # alice (0 steps), bob (1 step), charlie (2 steps)
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+    end
+
+    test "one-or-more path via SPARQL query", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      sparql = """
+      SELECT ?o WHERE {
+        <http://ex.org/alice> <http://ex.org/knows>+ ?o
+      }
+      """
+
+      {:ok, results} = Query.query(ctx, sparql)
+
+      objects =
+        results
+        |> Enum.map(& &1["o"])
+        |> MapSet.new()
+
+      # bob (1 step), charlie (2 steps) - NOT alice
+      refute MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+    end
+
+    test "optional path via SPARQL query", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      sparql = """
+      SELECT ?o WHERE {
+        <http://ex.org/alice> <http://ex.org/knows>? ?o
+      }
+      """
+
+      {:ok, results} = Query.query(ctx, sparql)
+
+      objects =
+        results
+        |> Enum.map(& &1["o"])
+        |> MapSet.new()
+
+      # alice (0 steps), bob (1 step) - NOT charlie (2 steps)
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      refute MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+    end
+  end
+
+  describe "complex recursive paths" do
+    test "find nodes that can reach target via knows path", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      # Find all nodes that can reach charlie via knows (uses knows*, NOT ^knows*)
+      subject = {:variable, "s"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/charlie"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      subjects = Enum.map(results, & &1["s"]) |> MapSet.new()
+      # charlie (0 steps), bob (1 step), alice (2 steps)
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(subjects, {:named_node, "http://ex.org/alice"})
+    end
+
+    test "inverse path with zero-or-more from bound subject", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/knows", "http://ex.org/bob"})
+      insert_triple(ctx, {"http://ex.org/bob", "http://ex.org/knows", "http://ex.org/charlie"})
+
+      # From charlie, follow ^knows* (inverse knows) to find who charlie "is known by" transitively
+      # ^knows from charlie means: find X where X knows charlie = bob
+      # ^knows from bob means: find X where X knows bob = alice
+      subject = {:named_node, "http://ex.org/charlie"}
+      path = {:zero_or_more, {:reverse, {:named_node, "http://ex.org/knows"}}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      # charlie (0 steps), bob (1 step - bob knows charlie), alice (2 steps)
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/charlie"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/bob"})
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+    end
+
+    test "self-loop with zero-or-more", %{ctx: ctx} do
+      # Node with self-loop
+      insert_triple(ctx, {"http://ex.org/alice", "http://ex.org/likes", "http://ex.org/alice"})
+
+      subject = {:named_node, "http://ex.org/alice"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/likes"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Should just have alice (identity and via loop both lead to alice)
+      objects = Enum.map(results, & &1["o"]) |> MapSet.new()
+      assert MapSet.member?(objects, {:named_node, "http://ex.org/alice"})
+      assert MapSet.size(objects) == 1
     end
   end
 end

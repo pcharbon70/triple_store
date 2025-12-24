@@ -13,8 +13,8 @@ defmodule TripleStore.SPARQL.PropertyPath do
   - **Inverse** (`^p`): Match p in reverse direction
   - **Negated Property Set** (`!(p1|p2)`): Match any predicate except those listed
 
-  ### Recursive Paths (Task 3.4.2 - Not yet implemented)
-  - **Zero or More** (`p*`): Match zero or more occurrences
+  ### Recursive Paths (Task 3.4.2)
+  - **Zero or More** (`p*`): Match zero or more occurrences (includes identity)
   - **One or More** (`p+`): Match one or more occurrences
   - **Optional** (`p?`): Match zero or one occurrence
 
@@ -149,17 +149,22 @@ defmodule TripleStore.SPARQL.PropertyPath do
     evaluate_negated_property_set(ctx, binding, subject, excluded, object)
   end
 
-  # Recursive paths - not yet implemented (Task 3.4.2)
-  defp do_evaluate(_ctx, _binding, _subject, {:zero_or_more, _path}, _object) do
-    {:error, :recursive_paths_not_implemented}
+  # Zero-or-more path: p*
+  # Match zero or more occurrences (includes identity: subject = object)
+  defp do_evaluate(ctx, binding, subject, {:zero_or_more, inner_path}, object) do
+    evaluate_zero_or_more(ctx, binding, subject, inner_path, object)
   end
 
-  defp do_evaluate(_ctx, _binding, _subject, {:one_or_more, _path}, _object) do
-    {:error, :recursive_paths_not_implemented}
+  # One-or-more path: p+
+  # Match one or more occurrences
+  defp do_evaluate(ctx, binding, subject, {:one_or_more, inner_path}, object) do
+    evaluate_one_or_more(ctx, binding, subject, inner_path, object)
   end
 
-  defp do_evaluate(_ctx, _binding, _subject, {:zero_or_one, _path}, _object) do
-    {:error, :recursive_paths_not_implemented}
+  # Zero-or-one path: p?
+  # Match zero or one occurrence (optional)
+  defp do_evaluate(ctx, binding, subject, {:zero_or_one, inner_path}, object) do
+    evaluate_zero_or_one(ctx, binding, subject, inner_path, object)
   end
 
   defp do_evaluate(_ctx, _binding, _subject, path, _object) do
@@ -331,6 +336,577 @@ defmodule TripleStore.SPARQL.PropertyPath do
       end
     end
   end
+
+  # ===========================================================================
+  # Zero-or-More Path (p*)
+  # ===========================================================================
+
+  # Zero-or-more matches identity (subject = object) OR one-or-more matches
+  # Uses breadth-first search with cycle detection
+  defp evaluate_zero_or_more(ctx, binding, subject, inner_path, object) do
+    %{dict_manager: dict_manager} = ctx
+
+    # Resolve subject and object from binding
+    s_resolved = resolve_term(subject, binding)
+    o_resolved = resolve_term(object, binding)
+
+    case {s_resolved, o_resolved} do
+      # Both bound: check if there's a path between them (including identity)
+      {{:variable, _}, {:variable, _}} ->
+        # Both unbound: enumerate all reachable pairs
+        evaluate_zero_or_more_both_unbound(ctx, binding, subject, inner_path, object)
+
+      {{:variable, _}, _} ->
+        # Object bound, subject unbound: find all nodes that can reach object
+        evaluate_zero_or_more_reverse(ctx, binding, subject, inner_path, object, o_resolved)
+
+      {_, {:variable, _}} ->
+        # Subject bound, object unbound: find all reachable nodes
+        evaluate_zero_or_more_forward(ctx, binding, subject, inner_path, object, s_resolved)
+
+      {_, _} ->
+        # Both bound: check if there's a path (including identity)
+        evaluate_zero_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+    end
+  end
+
+  # Both subject and object are bound - check for path existence (including identity)
+  defp evaluate_zero_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager) do
+    # Check identity first (zero steps)
+    if terms_equal?(s_resolved, o_resolved, dict_manager) do
+      {:ok, Stream.map([binding], & &1)}
+    else
+      # Check for one-or-more path
+      case evaluate_one_or_more(ctx, binding, subject, inner_path, object) do
+        {:ok, stream} ->
+          # If any result exists, return the binding
+          if Enum.any?(stream) do
+            {:ok, Stream.map([binding], & &1)}
+          else
+            {:ok, empty_stream()}
+          end
+
+        {:error, _} = error ->
+          error
+      end
+    end
+  end
+
+  # Subject bound, object unbound - forward BFS
+  defp evaluate_zero_or_more_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    # Get subject ID for identity result
+    case term_to_id(s_resolved, dict_manager) do
+      {:ok, s_id} when s_id != :not_found ->
+        # BFS to find all reachable nodes
+        reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new([s_id]))
+
+        # Convert reachable IDs to bindings
+        binding_stream =
+          reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, object, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Object bound, subject unbound - find nodes that can reach object via path
+  # This is equivalent to finding nodes reachable from object via reversed path
+  defp evaluate_zero_or_more_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    case term_to_id(o_resolved, dict_manager) do
+      {:ok, o_id} when o_id != :not_found ->
+        # BFS forward from object using the REVERSED path to find all sources
+        reversed_path = reverse_path(inner_path)
+        reachable = bfs_forward(ctx, reversed_path, MapSet.new([o_id]), MapSet.new([o_id]))
+
+        # Convert reachable IDs to bindings
+        binding_stream =
+          reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, subject, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Both subject and object unbound - enumerate all reachable pairs
+  defp evaluate_zero_or_more_both_unbound(ctx, binding, subject, inner_path, object) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    # Get all nodes in the graph (subjects and objects of any triple)
+    all_nodes = get_all_nodes(db)
+
+    # For each starting node, find all reachable nodes and emit pairs
+    binding_stream =
+      all_nodes
+      |> Stream.flat_map(fn start_id ->
+        reachable = bfs_forward(ctx, inner_path, MapSet.new([start_id]), MapSet.new([start_id]))
+
+        reachable
+        |> Enum.flat_map(fn end_id ->
+          with {:ok, binding1} <- maybe_bind(binding, subject, start_id, dict_manager),
+               {:ok, binding2} <- maybe_bind(binding1, object, end_id, dict_manager) do
+            [binding2]
+          else
+            _ -> []
+          end
+        end)
+      end)
+
+    {:ok, binding_stream}
+  end
+
+  # ===========================================================================
+  # One-or-More Path (p+)
+  # ===========================================================================
+
+  # One-or-more: at least one step, then zero-or-more
+  defp evaluate_one_or_more(ctx, binding, subject, inner_path, object) do
+    %{dict_manager: dict_manager} = ctx
+
+    s_resolved = resolve_term(subject, binding)
+    o_resolved = resolve_term(object, binding)
+
+    case {s_resolved, o_resolved} do
+      {{:variable, _}, {:variable, _}} ->
+        # Both unbound: enumerate all pairs with at least one path step
+        evaluate_one_or_more_both_unbound(ctx, binding, subject, inner_path, object)
+
+      {{:variable, _}, _} ->
+        # Object bound, subject unbound
+        evaluate_one_or_more_reverse(ctx, binding, subject, inner_path, object, o_resolved)
+
+      {_, {:variable, _}} ->
+        # Subject bound, object unbound
+        evaluate_one_or_more_forward(ctx, binding, subject, inner_path, object, s_resolved)
+
+      {_, _} ->
+        # Both bound: check if there's a path of length >= 1
+        evaluate_one_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+    end
+  end
+
+  # Both bound - check for path of length >= 1
+  defp evaluate_one_or_more_both_bound(ctx, binding, _subject, inner_path, _object, s_resolved, o_resolved, dict_manager) do
+    case term_to_id(s_resolved, dict_manager) do
+      {:ok, s_id} when s_id != :not_found ->
+        case term_to_id(o_resolved, dict_manager) do
+          {:ok, o_id} when o_id != :not_found ->
+            # BFS from subject, excluding the start itself
+            reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new())
+
+            if MapSet.member?(reachable, o_id) do
+              {:ok, Stream.map([binding], & &1)}
+            else
+              {:ok, empty_stream()}
+            end
+
+          {:ok, :not_found} ->
+            {:ok, empty_stream()}
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Subject bound, object unbound - forward BFS excluding start
+  defp evaluate_one_or_more_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    case term_to_id(s_resolved, dict_manager) do
+      {:ok, s_id} when s_id != :not_found ->
+        # BFS to find all reachable nodes, excluding the start itself
+        reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new())
+
+        binding_stream =
+          reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, object, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Object bound, subject unbound - find nodes that can reach object via path (at least one step)
+  defp evaluate_one_or_more_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    case term_to_id(o_resolved, dict_manager) do
+      {:ok, o_id} when o_id != :not_found ->
+        # BFS forward from object using REVERSED path, excluding the start itself
+        reversed_path = reverse_path(inner_path)
+        reachable = bfs_forward(ctx, reversed_path, MapSet.new([o_id]), MapSet.new())
+
+        binding_stream =
+          reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, subject, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Both unbound - enumerate all pairs
+  defp evaluate_one_or_more_both_unbound(ctx, binding, subject, inner_path, object) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    all_nodes = get_all_nodes(db)
+
+    binding_stream =
+      all_nodes
+      |> Stream.flat_map(fn start_id ->
+        # Exclude start from results (one-or-more, not zero-or-more)
+        reachable = bfs_forward(ctx, inner_path, MapSet.new([start_id]), MapSet.new())
+
+        reachable
+        |> Enum.flat_map(fn end_id ->
+          with {:ok, binding1} <- maybe_bind(binding, subject, start_id, dict_manager),
+               {:ok, binding2} <- maybe_bind(binding1, object, end_id, dict_manager) do
+            [binding2]
+          else
+            _ -> []
+          end
+        end)
+      end)
+
+    {:ok, binding_stream}
+  end
+
+  # ===========================================================================
+  # Zero-or-One Path (p?)
+  # ===========================================================================
+
+  # Zero-or-one: identity OR exactly one step
+  defp evaluate_zero_or_one(ctx, binding, subject, inner_path, object) do
+    %{dict_manager: dict_manager} = ctx
+
+    s_resolved = resolve_term(subject, binding)
+    o_resolved = resolve_term(object, binding)
+
+    case {s_resolved, o_resolved} do
+      {{:variable, _}, {:variable, _}} ->
+        # Both unbound: enumerate identity + one-step pairs
+        evaluate_zero_or_one_both_unbound(ctx, binding, subject, inner_path, object)
+
+      {{:variable, _}, _} ->
+        # Object bound, subject unbound
+        evaluate_zero_or_one_reverse(ctx, binding, subject, inner_path, object, o_resolved)
+
+      {_, {:variable, _}} ->
+        # Subject bound, object unbound
+        evaluate_zero_or_one_forward(ctx, binding, subject, inner_path, object, s_resolved)
+
+      {_, _} ->
+        # Both bound: identity or one-step path
+        evaluate_zero_or_one_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+    end
+  end
+
+  # Both bound - check identity or one-step path
+  defp evaluate_zero_or_one_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager) do
+    # Check identity first
+    if terms_equal?(s_resolved, o_resolved, dict_manager) do
+      {:ok, Stream.map([binding], & &1)}
+    else
+      # Check for exactly one step
+      case do_evaluate(ctx, binding, subject, inner_path, object) do
+        {:ok, stream} ->
+          if Enum.any?(stream) do
+            {:ok, Stream.map([binding], & &1)}
+          else
+            {:ok, empty_stream()}
+          end
+
+        {:error, _} = error ->
+          error
+      end
+    end
+  end
+
+  # Subject bound, object unbound - identity + one step
+  defp evaluate_zero_or_one_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    case term_to_id(s_resolved, dict_manager) do
+      {:ok, s_id} when s_id != :not_found ->
+        # Get one-step reachable nodes
+        one_step = get_one_step_forward(ctx, inner_path, s_id)
+
+        # Include identity (s_id itself) and one-step nodes
+        all_reachable = MapSet.put(one_step, s_id)
+
+        binding_stream =
+          all_reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, object, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Object bound, subject unbound - identity + one step via reversed path
+  defp evaluate_zero_or_one_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    case term_to_id(o_resolved, dict_manager) do
+      {:ok, o_id} when o_id != :not_found ->
+        # Get one-step reachable nodes using REVERSED path
+        reversed_path = reverse_path(inner_path)
+        one_step = get_one_step_forward(ctx, reversed_path, o_id)
+
+        # Include identity and one-step nodes
+        all_reachable = MapSet.put(one_step, o_id)
+
+        binding_stream =
+          all_reachable
+          |> Stream.flat_map(fn node_id ->
+            case maybe_bind(binding, subject, node_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:ok, :not_found} ->
+        {:ok, empty_stream()}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Both unbound - enumerate all identity + one-step pairs
+  defp evaluate_zero_or_one_both_unbound(ctx, binding, subject, inner_path, object) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    all_nodes = get_all_nodes(db)
+
+    binding_stream =
+      all_nodes
+      |> Stream.flat_map(fn node_id ->
+        # Identity: node -> node
+        one_step = get_one_step_forward(ctx, inner_path, node_id)
+
+        # Include identity and one-step results
+        all_targets = MapSet.put(one_step, node_id)
+
+        all_targets
+        |> Enum.flat_map(fn target_id ->
+          with {:ok, binding1} <- maybe_bind(binding, subject, node_id, dict_manager),
+               {:ok, binding2} <- maybe_bind(binding1, object, target_id, dict_manager) do
+            [binding2]
+          else
+            _ -> []
+          end
+        end)
+      end)
+
+    {:ok, binding_stream}
+  end
+
+  # ===========================================================================
+  # BFS Traversal with Cycle Detection
+  # ===========================================================================
+
+  # Maximum path length to prevent runaway evaluation
+  @max_path_depth 100
+
+  # BFS forward: find all nodes reachable via the inner path
+  # frontier: nodes to explore next
+  # visited: nodes already found (for cycle detection)
+  defp bfs_forward(ctx, inner_path, frontier, visited, depth \\ 0)
+
+  defp bfs_forward(_ctx, _inner_path, _frontier, visited, depth) when depth > @max_path_depth do
+    visited
+  end
+
+  defp bfs_forward(_ctx, _inner_path, frontier, visited, _depth) when map_size(frontier) == 0 do
+    visited
+  end
+
+  defp bfs_forward(ctx, inner_path, frontier, visited, depth) do
+    # Get all nodes reachable in one step from the frontier
+    next_nodes =
+      frontier
+      |> Enum.flat_map(fn node_id ->
+        get_one_step_forward(ctx, inner_path, node_id)
+        |> MapSet.to_list()
+      end)
+      |> MapSet.new()
+
+    # Filter out already visited nodes
+    new_frontier = MapSet.difference(next_nodes, visited)
+    new_visited = MapSet.union(visited, new_frontier)
+
+    # Continue BFS if there are new nodes to explore
+    if MapSet.size(new_frontier) > 0 do
+      bfs_forward(ctx, inner_path, new_frontier, new_visited, depth + 1)
+    else
+      new_visited
+    end
+  end
+
+  # Get nodes reachable in exactly one step via the inner path (forward)
+  defp get_one_step_forward(ctx, inner_path, node_id) do
+    %{dict_manager: dict_manager} = ctx
+
+    # Decode the node ID to an algebra term
+    case decode_term(node_id, dict_manager) do
+      {:ok, node_term} ->
+        # Create a variable for the target
+        target_var = {:variable, "_step_#{:erlang.unique_integer([:positive])}"}
+
+        # Evaluate the inner path
+        case do_evaluate(ctx, %{}, node_term, inner_path, target_var) do
+          {:ok, stream} ->
+            stream
+            |> Enum.flat_map(fn binding ->
+              case Map.get(binding, elem(target_var, 1)) do
+                nil -> []
+                term ->
+                  case term_to_id(term, dict_manager) do
+                    {:ok, id} when id != :not_found -> [id]
+                    _ -> []
+                  end
+              end
+            end)
+            |> MapSet.new()
+
+          {:error, _} ->
+            MapSet.new()
+        end
+
+      {:error, _} ->
+        MapSet.new()
+    end
+  end
+
+  # Get all nodes (subjects and objects) in the graph
+  defp get_all_nodes(db) do
+    # Query all triples with all variables
+    case Index.lookup(db, {:var, :var, :var}) do
+      {:ok, stream} ->
+        stream
+        |> Enum.flat_map(fn {s, _p, o} -> [s, o] end)
+        |> MapSet.new()
+
+      {:error, _} ->
+        MapSet.new()
+    end
+  end
+
+  # Check if two terms are equal
+  defp terms_equal?(term1, term2, dict_manager) do
+    case {term_to_id(term1, dict_manager), term_to_id(term2, dict_manager)} do
+      {{:ok, id1}, {:ok, id2}} when id1 != :not_found and id2 != :not_found ->
+        id1 == id2
+
+      _ ->
+        false
+    end
+  end
+
+  # Convert term to ID
+  defp term_to_id({:named_node, iri}, dict_manager) do
+    lookup_term_id(dict_manager, RDF.iri(iri))
+  end
+
+  defp term_to_id({:blank_node, id}, dict_manager) do
+    lookup_term_id(dict_manager, RDF.bnode(id))
+  end
+
+  defp term_to_id({:literal, :simple, value}, dict_manager) do
+    lookup_term_id(dict_manager, RDF.literal(value))
+  end
+
+  defp term_to_id({:literal, :typed, value, datatype}, dict_manager) do
+    lookup_term_id(dict_manager, RDF.literal(value, datatype: datatype))
+  end
+
+  defp term_to_id({:literal, :lang, value, lang}, dict_manager) do
+    lookup_term_id(dict_manager, RDF.literal(value, language: lang))
+  end
+
+  defp term_to_id(id, _dict_manager) when is_integer(id), do: {:ok, id}
+
+  defp term_to_id(_term, _dict_manager), do: {:ok, :not_found}
+
+  # ===========================================================================
+  # Path Reversal
+  # ===========================================================================
+
+  # Reverse a path expression (for computing backwards reachability)
+  defp reverse_path({:link, iri}), do: {:reverse, {:link, iri}}
+  defp reverse_path({:named_node, iri}), do: {:reverse, {:named_node, iri}}
+  defp reverse_path({:reverse, inner}), do: inner
+  defp reverse_path({:sequence, left, right}), do: {:sequence, reverse_path(right), reverse_path(left)}
+  defp reverse_path({:alternative, left, right}), do: {:alternative, reverse_path(left), reverse_path(right)}
+  defp reverse_path({:zero_or_more, inner}), do: {:zero_or_more, reverse_path(inner)}
+  defp reverse_path({:one_or_more, inner}), do: {:one_or_more, reverse_path(inner)}
+  defp reverse_path({:zero_or_one, inner}), do: {:zero_or_one, reverse_path(inner)}
+  defp reverse_path({:negated_property_set, iris}), do: {:negated_property_set, iris}
 
   # ===========================================================================
   # Helper Functions
