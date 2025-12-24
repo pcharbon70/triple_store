@@ -140,7 +140,7 @@ Cache optimized plans for repeated queries.
 
 ## 3.3 SPARQL UPDATE
 
-- [ ] **Section 3.3 Complete**
+- [x] **Section 3.3 Complete**
 
 This section implements SPARQL UPDATE operations with transactional semantics. Updates are serialized through a coordinator process and use RocksDB snapshots for isolation.
 
@@ -181,16 +181,16 @@ Implement the public UPDATE API.
 
 ### 3.3.4 Unit Tests
 
-- [ ] **Task 3.3.4 Complete**
+- [x] **Task 3.3.4 Complete**
 
-- [ ] Test INSERT DATA adds triples
-- [ ] Test DELETE DATA removes triples
-- [ ] Test DELETE WHERE removes matching triples
-- [ ] Test INSERT WHERE adds templated triples
-- [ ] Test MODIFY combines delete and insert
-- [ ] Test concurrent reads see consistent snapshot during update
-- [ ] Test plan cache invalidated after update
-- [ ] Test update failure leaves database unchanged
+- [x] Test INSERT DATA adds triples
+- [x] Test DELETE DATA removes triples
+- [x] Test DELETE WHERE removes matching triples
+- [x] Test INSERT WHERE adds templated triples
+- [x] Test MODIFY combines delete and insert
+- [x] Test concurrent reads see consistent snapshot during update
+- [x] Test plan cache invalidated after update
+- [x] Test update failure leaves database unchanged
 
 ---
 

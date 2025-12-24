@@ -57,6 +57,7 @@ defmodule TripleStore.Update do
   """
 
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.Term
   alias TripleStore.SPARQL.UpdateExecutor
   alias TripleStore.Transaction
 
@@ -275,7 +276,7 @@ defmodule TripleStore.Update do
   end
 
   def clear(%{db: _db, dict_manager: _manager} = ctx, _opts) do
-    UpdateExecutor.execute_clear(ctx, scope: :default)
+    UpdateExecutor.execute_clear(ctx, target: :default)
   end
 
   # ===========================================================================
@@ -285,41 +286,7 @@ defmodule TripleStore.Update do
   # Convert RDF.ex triples to parser AST format for UpdateExecutor
   defp convert_triples_to_quads(triples) do
     Enum.map(triples, fn {s, p, o} ->
-      {:triple, term_to_ast(s), term_to_ast(p), term_to_ast(o)}
+      {:triple, Term.to_ast(s), Term.to_ast(p), Term.to_ast(o)}
     end)
-  end
-
-  # Convert RDF.ex terms to parser AST format
-  defp term_to_ast(%RDF.IRI{value: value}), do: {:named_node, value}
-  defp term_to_ast(%RDF.BlankNode{value: value}), do: {:blank_node, to_string(value)}
-
-  defp term_to_ast(%RDF.Literal{literal: %RDF.LangString{value: value, language: lang}}) do
-    {:literal, :lang, value, lang}
-  end
-
-  defp term_to_ast(%RDF.Literal{literal: %{value: value, datatype: datatype}}) do
-    datatype_iri = to_string(datatype)
-
-    cond do
-      datatype_iri == "http://www.w3.org/2001/XMLSchema#string" ->
-        {:literal, :simple, to_string(value)}
-
-      true ->
-        {:literal, :typed, to_string(value), datatype_iri}
-    end
-  end
-
-  defp term_to_ast(%RDF.Literal{literal: literal}) when is_binary(literal) do
-    {:literal, :simple, literal}
-  end
-
-  defp term_to_ast(term) when is_binary(term) do
-    # Assume it's a string literal
-    {:literal, :simple, term}
-  end
-
-  defp term_to_ast(term) do
-    # Pass through - might already be in AST format
-    term
   end
 end

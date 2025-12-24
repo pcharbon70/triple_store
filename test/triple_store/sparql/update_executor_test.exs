@@ -402,6 +402,34 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
     test "returns 0 for empty templates", %{ctx: ctx} do
       assert {:ok, 0} = UpdateExecutor.execute_modify(ctx, [], [], nil)
     end
+
+    test "rejects delete template exceeding max_template_size", %{ctx: ctx} do
+      # Generate a template with 1001 triples (exceeds @max_template_size of 1000)
+      large_template =
+        for i <- 1..1001 do
+          {:triple, {:named_node, "http://example.org/s#{i}"},
+           {:named_node, "http://example.org/p"}, {:literal, :simple, "v"}}
+        end
+
+      pattern = {:bgp, []}
+
+      assert {:error, :template_too_large} =
+               UpdateExecutor.execute_modify(ctx, large_template, [], pattern)
+    end
+
+    test "rejects insert template exceeding max_template_size", %{ctx: ctx} do
+      # Generate a template with 1001 triples (exceeds @max_template_size of 1000)
+      large_template =
+        for i <- 1..1001 do
+          {:triple, {:named_node, "http://example.org/s#{i}"},
+           {:named_node, "http://example.org/p"}, {:literal, :simple, "v"}}
+        end
+
+      pattern = {:bgp, []}
+
+      assert {:error, :template_too_large} =
+               UpdateExecutor.execute_modify(ctx, [], large_template, pattern)
+    end
   end
 
   # ===========================================================================

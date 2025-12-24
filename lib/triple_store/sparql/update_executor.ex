@@ -113,17 +113,41 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   """
   @spec execute(context(), term()) :: update_result()
   def execute(ctx, {:update, props}) when is_list(props) do
+    start_time = System.monotonic_time()
     operations = Parser.get_operations({:update, props})
+    operation_count = length(operations)
 
-    Enum.reduce_while(operations, {:ok, 0}, fn op, {:ok, total} ->
-      case execute_operation(ctx, op) do
-        {:ok, count} -> {:cont, {:ok, total + count}}
-        {:error, _} = error -> {:halt, error}
-      end
-    end)
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :start],
+      %{system_time: System.system_time()},
+      %{operation_count: operation_count}
+    )
+
+    result =
+      Enum.reduce_while(operations, {:ok, 0}, fn op, {:ok, total} ->
+        case execute_operation(ctx, op) do
+          {:ok, count} -> {:cont, {:ok, total + count}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+
+    duration = System.monotonic_time() - start_time
+    {status, triple_count} = telemetry_result(result)
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :stop],
+      %{duration: duration, triple_count: triple_count},
+      %{operation_count: operation_count, status: status}
+    )
+
+    result
   end
 
   def execute(_ctx, _ast), do: {:error, :invalid_update_ast}
+
+  # Extract status and triple count for telemetry
+  defp telemetry_result({:ok, count}), do: {:ok, count}
+  defp telemetry_result({:error, _}), do: {:error, 0}
 
   # ===========================================================================
   # Operation Dispatch
@@ -480,17 +504,21 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     end
   end
 
+  # Batch size for chunked clear operations to prevent OOM
+  @clear_batch_size 10_000
+
   defp clear_all_triples(ctx) do
-    # Get all triples and delete them
+    # Stream triples and delete in batches to prevent OOM on large databases
     case Index.lookup(ctx.db, {:var, :var, :var}) do
       {:ok, stream} ->
-        triples = Enum.to_list(stream)
-        count = length(triples)
-
-        case Index.delete_triples(ctx.db, triples) do
-          :ok -> {:ok, count}
-          {:error, _} = error -> error
-        end
+        stream
+        |> Stream.chunk_every(@clear_batch_size)
+        |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, count} ->
+          case Index.delete_triples(ctx.db, chunk) do
+            :ok -> {:cont, {:ok, count + length(chunk)}}
+            {:error, _} = error -> {:halt, error}
+          end
+        end)
 
       {:error, _} = error ->
         error
