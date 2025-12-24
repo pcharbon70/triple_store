@@ -82,14 +82,14 @@ This section implements cost-based optimization using cardinality estimation and
 
 ### 3.2.1 Cardinality Estimation
 
-- [ ] **Task 3.2.1 Complete**
+- [x] **Task 3.2.1 Complete**
 
 Estimate result cardinality for patterns and joins.
 
-- [ ] 3.2.1.1 Implement `estimate_pattern_cardinality(pattern, stats)`
-- [ ] 3.2.1.2 Apply predicate selectivity from histogram
-- [ ] 3.2.1.3 Apply bound variable selectivity
-- [ ] 3.2.1.4 Implement `estimate_join_cardinality(left_card, right_card, join_vars)`
+- [x] 3.2.1.1 Implement `estimate_pattern_cardinality(pattern, stats)`
+- [x] 3.2.1.2 Apply predicate selectivity from histogram
+- [x] 3.2.1.3 Apply bound variable selectivity
+- [x] 3.2.1.4 Implement `estimate_join_cardinality(left_card, right_card, join_vars)`
 
 ### 3.2.2 Cost Model
 
