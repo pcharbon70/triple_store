@@ -398,13 +398,23 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
     # The prefix length tells us how many complete IDs are already bound
     prefix_ids = div(byte_size(prefix), @id_size)
 
-    if level == prefix_ids do
-      # Target is the next position after prefix
-      prefix <> <<target::64-big>>
-    else
-      # Level is beyond what we can directly seek to from prefix
-      # This shouldn't happen in normal usage, but handle gracefully
-      prefix <> <<target::64-big>>
+    cond do
+      level == prefix_ids ->
+        # Target is the next position after prefix - simple append
+        prefix <> <<target::64-big>>
+
+      level > prefix_ids ->
+        # Level is beyond prefix - need to pad intermediate levels with 0
+        # This happens when we want to iterate at level 2 but only have level 0 prefix
+        # E.g., POS index with P-only prefix, seeking subject at level 2
+        # Pad with zeros for skipped levels, then add target
+        padding_levels = level - prefix_ids
+        padding = :binary.copy(<<0::64-big>>, padding_levels)
+        prefix <> padding <> <<target::64-big>>
+
+      true ->
+        # level < prefix_ids - shouldn't happen, but handle gracefully
+        prefix <> <<target::64-big>>
     end
   end
 end

@@ -52,13 +52,13 @@ Determine optimal variable ordering for Leapfrog execution.
 
 ### 3.1.4 Multi-Level Iteration
 
-- [ ] **Task 3.1.4 Complete**
+- [x] **Task 3.1.4 Complete**
 
 Extend Leapfrog to handle multiple variables through nested iteration.
 
-- [ ] 3.1.4.1 Implement descent to next variable level after match
-- [ ] 3.1.4.2 Implement ascent on exhaustion of lower level
-- [ ] 3.1.4.3 Produce complete bindings for all variables
+- [x] 3.1.4.1 Implement descent to next variable level after match
+- [x] 3.1.4.2 Implement ascent on exhaustion of lower level
+- [x] 3.1.4.3 Produce complete bindings for all variables
 
 ### 3.1.5 Unit Tests
 
