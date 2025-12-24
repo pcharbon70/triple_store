@@ -76,7 +76,7 @@ Extend Leapfrog to handle multiple variables through nested iteration.
 
 ## 3.2 Cost-Based Optimizer
 
-- [ ] **Section 3.2 Complete**
+- [x] **Section 3.2 Complete**
 
 This section implements cost-based optimization using cardinality estimation and the DPccp algorithm for join enumeration on complex queries.
 
@@ -126,15 +126,15 @@ Cache optimized plans for repeated queries.
 
 ### 3.2.5 Unit Tests
 
-- [ ] **Task 3.2.5 Complete**
+- [x] **Task 3.2.5 Complete**
 
-- [ ] Test cardinality estimation for single pattern
-- [ ] Test cardinality estimation for join
-- [ ] Test cost model ranks plans correctly
-- [ ] Test exhaustive enumeration finds optimal plan
-- [ ] Test DPccp produces same plan as exhaustive for small queries
-- [ ] Test plan cache stores and retrieves plans
-- [ ] Test plan cache invalidates on update
+- [x] Test cardinality estimation for single pattern
+- [x] Test cardinality estimation for join
+- [x] Test cost model ranks plans correctly
+- [x] Test exhaustive enumeration finds optimal plan
+- [x] Test DPccp produces same plan as exhaustive for small queries
+- [x] Test plan cache stores and retrieves plans
+- [x] Test plan cache invalidates on update
 
 ---
 
