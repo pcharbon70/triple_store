@@ -158,15 +158,15 @@ Implement execution of parsed UPDATE operations.
 
 ### 3.3.2 Transaction Coordinator
 
-- [ ] **Task 3.3.2 Complete**
+- [x] **Task 3.3.2 Complete**
 
 Implement transaction coordination for serialized writes.
 
-- [ ] 3.3.2.1 Create `TripleStore.Transaction` GenServer
-- [ ] 3.3.2.2 Serialize all writes through coordinator
-- [ ] 3.3.2.3 Use RocksDB snapshots for read consistency during update
-- [ ] 3.3.2.4 Invalidate plan cache after successful update
-- [ ] 3.3.2.5 Handle update failure with rollback semantics
+- [x] 3.3.2.1 Create `TripleStore.Transaction` GenServer
+- [x] 3.3.2.2 Serialize all writes through coordinator
+- [x] 3.3.2.3 Use RocksDB snapshots for read consistency during update
+- [x] 3.3.2.4 Invalidate plan cache after successful update
+- [x] 3.3.2.5 Handle update failure with rollback semantics
 
 ### 3.3.3 Update API
 
