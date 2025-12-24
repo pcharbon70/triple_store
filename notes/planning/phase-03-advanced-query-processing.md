@@ -115,14 +115,14 @@ Enumerate join orderings to find optimal plan.
 
 ### 3.2.4 Plan Cache
 
-- [ ] **Task 3.2.4 Complete**
+- [x] **Task 3.2.4 Complete**
 
 Cache optimized plans for repeated queries.
 
-- [ ] 3.2.4.1 Implement `PlanCache` GenServer with ETS storage
-- [ ] 3.2.4.2 Key by query hash (parameterized queries share cache)
-- [ ] 3.2.4.3 Invalidate on statistics change or schema modification
-- [ ] 3.2.4.4 Implement LRU eviction policy
+- [x] 3.2.4.1 Implement `PlanCache` GenServer with ETS storage
+- [x] 3.2.4.2 Key by query hash (parameterized queries share cache)
+- [x] 3.2.4.3 Invalidate on statistics change or schema modification
+- [x] 3.2.4.4 Implement LRU eviction policy
 
 ### 3.2.5 Unit Tests
 
