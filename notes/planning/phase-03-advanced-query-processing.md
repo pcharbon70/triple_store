@@ -42,13 +42,13 @@ Implement the core leapfrog join algorithm.
 
 ### 3.1.3 Variable Ordering
 
-- [ ] **Task 3.1.3 Complete**
+- [x] **Task 3.1.3 Complete**
 
 Determine optimal variable ordering for Leapfrog execution.
 
-- [ ] 3.1.3.1 Implement `variable_ordering(patterns, stats)` selecting order
-- [ ] 3.1.3.2 Use cardinality estimates to prefer selective variables first
-- [ ] 3.1.3.3 Consider index availability for each variable position
+- [x] 3.1.3.1 Implement `variable_ordering(patterns, stats)` selecting order
+- [x] 3.1.3.2 Use cardinality estimates to prefer selective variables first
+- [x] 3.1.3.3 Consider index availability for each variable position
 
 ### 3.1.4 Multi-Level Iteration
 
