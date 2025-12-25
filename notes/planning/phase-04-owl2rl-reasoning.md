@@ -60,13 +60,13 @@ Compile ontology axioms to applicable rules.
 
 ### 4.1.4 Rule Optimization
 
-- [ ] **Task 4.1.4 Complete**
+- [x] **Task 4.1.4 Complete** (2025-12-25)
 
 Optimize rules for efficient evaluation.
 
-- [ ] 4.1.4.1 Reorder body patterns by selectivity
-- [ ] 4.1.4.2 Identify rules that can be batched together
-- [ ] 4.1.4.3 Detect rules that cannot fire given current schema
+- [x] 4.1.4.1 Reorder body patterns by selectivity
+- [x] 4.1.4.2 Identify rules that can be batched together
+- [x] 4.1.4.3 Detect rules that cannot fire given current schema
 
 ### 4.1.5 Unit Tests
 
