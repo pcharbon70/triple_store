@@ -128,15 +128,15 @@ Implement delta-based rule application.
 
 ### 4.2.2 Fixpoint Loop
 
-- [ ] **Task 4.2.2 Complete**
+- [x] **Task 4.2.2 Complete** (2025-12-25)
 
 Implement the fixpoint iteration loop.
 
-- [ ] 4.2.2.1 Implement `materialize(db, rules)` main entry point
-- [ ] 4.2.2.2 Initialize delta with all explicit facts
-- [ ] 4.2.2.3 Loop applying rules to delta until delta is empty
-- [ ] 4.2.2.4 Track iteration count and derivation statistics
-- [ ] 4.2.2.5 Handle stratification for negation (if needed)
+- [x] 4.2.2.1 Implement `materialize(db, rules)` main entry point
+- [x] 4.2.2.2 Initialize delta with all explicit facts
+- [x] 4.2.2.3 Loop applying rules to delta until delta is empty
+- [x] 4.2.2.4 Track iteration count and derivation statistics
+- [x] 4.2.2.5 Handle stratification for negation (if needed)
 
 ### 4.2.3 Parallel Rule Evaluation
 
