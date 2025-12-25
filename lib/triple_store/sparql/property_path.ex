@@ -1322,6 +1322,16 @@ defmodule TripleStore.SPARQL.PropertyPath do
     end
   end
 
+  # Handle blank nodes - they can be bound in a join context
+  # The binding may have the blank node tuple as a key with an integer ID as value
+  defp resolve_term({:blank_node, _id} = bnode, binding) do
+    case Map.get(binding, bnode) do
+      nil -> bnode
+      id when is_integer(id) -> id
+      value -> value
+    end
+  end
+
   defp resolve_term(term, _binding), do: term
 
   # Convert a term to an index pattern
@@ -1409,6 +1419,28 @@ defmodule TripleStore.SPARQL.PropertyPath do
           :not_found -> {:error, :binding_mismatch}
           {:error, _} -> {:error, :binding_mismatch}
         end
+    end
+  end
+
+  # Bind a blank node to a value, for join context support
+  # Blank nodes act like variables in joins - they need to be in the binding
+  defp maybe_bind(binding, {:blank_node, _id} = bnode, id, _dict_manager) do
+    case Map.get(binding, bnode) do
+      nil ->
+        # Unbound blank node - bind to the ID for join matching
+        {:ok, Map.put(binding, bnode, id)}
+
+      existing_id when is_integer(existing_id) ->
+        # Already bound - check consistency
+        if existing_id == id do
+          {:ok, binding}
+        else
+          {:error, :binding_mismatch}
+        end
+
+      _other ->
+        # Bound to something else - should not happen for blank nodes
+        {:error, :binding_mismatch}
     end
   end
 

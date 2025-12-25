@@ -941,9 +941,15 @@ defmodule TripleStore.SPARQL.Query do
         Executor.execute_bgp(ctx, triples)
 
       {:join, left, right} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left),
-             {:ok, right_stream} <- execute_pattern(ctx, right) do
-          {:ok, Executor.hash_join(left_stream, right_stream)}
+        # Check if right side is a path with a blank node subject
+        # In that case, we need a bind-join where left bindings are passed to right
+        if path_with_blank_node_subject?(right) do
+          execute_bind_join_with_path(ctx, left, right)
+        else
+          with {:ok, left_stream} <- execute_pattern(ctx, left),
+               {:ok, right_stream} <- execute_pattern(ctx, right) do
+            {:ok, Executor.hash_join(left_stream, right_stream)}
+          end
         end
 
       {:left_join, left, right, expr} ->
@@ -1034,6 +1040,34 @@ defmodule TripleStore.SPARQL.Query do
 
       other ->
         {:error, {:unsupported_pattern, other}}
+    end
+  end
+
+  # Check if a pattern is a path with a blank node as subject
+  # These require bind-join to pass bindings from the left side
+  defp path_with_blank_node_subject?({:path, {:blank_node, _}, _path_expr, _object}), do: true
+  defp path_with_blank_node_subject?(_), do: false
+
+  # Execute a bind-join where left bindings are passed to the path evaluation
+  # This is necessary when the path's subject is a blank node that gets bound by the left side
+  defp execute_bind_join_with_path(ctx, left, {:path, subject, path_expr, object}) do
+    with {:ok, left_stream} <- execute_pattern(ctx, left) do
+      path_ctx = %{db: ctx.db, dict_manager: ctx.dict_manager}
+
+      # For each left binding, evaluate the path with that binding
+      result_stream =
+        Stream.flat_map(left_stream, fn left_binding ->
+          case PropertyPath.evaluate(path_ctx, left_binding, subject, path_expr, object) do
+            {:ok, path_stream} ->
+              # The path stream already has left_binding merged in
+              Enum.to_list(path_stream)
+
+            {:error, _} ->
+              []
+          end
+        end)
+
+      {:ok, result_stream}
     end
   end
 

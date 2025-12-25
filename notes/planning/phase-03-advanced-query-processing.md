@@ -278,14 +278,14 @@ Test SPARQL UPDATE with complex scenarios.
 
 ### 3.5.3 Property Path Integration Testing
 
-- [ ] **Task 3.5.3 Complete**
+- [x] **Task 3.5.3 Complete**
 
 Test property paths on real-world patterns.
 
-- [ ] 3.5.3.1 Test rdfs:subClassOf* for class hierarchy traversal
-- [ ] 3.5.3.2 Test foaf:knows+ for social network paths
-- [ ] 3.5.3.3 Test combined sequence and alternative paths
-- [ ] 3.5.3.4 Benchmark recursive paths on deep hierarchies
+- [x] 3.5.3.1 Test rdfs:subClassOf* for class hierarchy traversal
+- [x] 3.5.3.2 Test foaf:knows+ for social network paths
+- [x] 3.5.3.3 Test combined sequence and alternative paths
+- [x] 3.5.3.4 Benchmark recursive paths on deep hierarchies
 
 ### 3.5.4 Optimizer Integration Testing
 
