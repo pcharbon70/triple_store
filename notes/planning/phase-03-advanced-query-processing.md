@@ -256,14 +256,14 @@ Integration tests validate advanced query processing features working together.
 
 ### 3.5.1 Leapfrog Integration Testing
 
-- [ ] **Task 3.5.1 Complete**
+- [x] **Task 3.5.1 Complete**
 
 Test Leapfrog Triejoin on complex queries.
 
-- [ ] 3.5.1.1 Test star query with 5+ patterns via Leapfrog
-- [ ] 3.5.1.2 Compare Leapfrog results to nested loop baseline
-- [ ] 3.5.1.3 Benchmark Leapfrog vs nested loop on star queries
-- [ ] 3.5.1.4 Test optimizer selects Leapfrog for appropriate queries
+- [x] 3.5.1.1 Test star query with 5+ patterns via Leapfrog
+- [x] 3.5.1.2 Compare Leapfrog results to nested loop baseline
+- [x] 3.5.1.3 Benchmark Leapfrog vs nested loop on star queries
+- [x] 3.5.1.4 Test optimizer selects Leapfrog for appropriate queries
 
 ### 3.5.2 Update Integration Testing
 
