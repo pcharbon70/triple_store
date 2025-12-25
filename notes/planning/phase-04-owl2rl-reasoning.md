@@ -117,14 +117,14 @@ This section implements semi-naive evaluation for forward-chaining materializati
 
 ### 4.2.1 Delta Computation
 
-- [ ] **Task 4.2.1 Complete**
+- [x] **Task 4.2.1 Complete** (2025-12-25)
 
 Implement delta-based rule application.
 
-- [ ] 4.2.1.1 Implement `apply_rule_delta(db, rule, delta)` using delta for at least one body pattern
-- [ ] 4.2.1.2 Generate all rule instantiations with delta facts
-- [ ] 4.2.1.3 Filter instantiations already in database
-- [ ] 4.2.1.4 Return new facts derived in this iteration
+- [x] 4.2.1.1 Implement `apply_rule_delta(db, rule, delta)` using delta for at least one body pattern
+- [x] 4.2.1.2 Generate all rule instantiations with delta facts
+- [x] 4.2.1.3 Filter instantiations already in database
+- [x] 4.2.1.4 Return new facts derived in this iteration
 
 ### 4.2.2 Fixpoint Loop
 
