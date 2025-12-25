@@ -196,7 +196,7 @@ Implement the public UPDATE API.
 
 ## 3.4 Property Paths
 
-- [ ] **Section 3.4 Complete**
+- [x] **Section 3.4 Complete**
 
 This section implements SPARQL property path evaluation with support for sequence, alternative, and recursive paths.
 
@@ -235,16 +235,16 @@ Optimize common property path patterns.
 
 ### 3.4.4 Unit Tests
 
-- [ ] **Task 3.4.4 Complete**
+- [x] **Task 3.4.4 Complete**
 
-- [ ] Test sequence path traversal
-- [ ] Test alternative path branches correctly
-- [ ] Test inverse path reverses direction
-- [ ] Test negated property set excludes correctly
-- [ ] Test zero-or-more includes start node
-- [ ] Test one-or-more excludes start node
-- [ ] Test cycle detection prevents infinite loops
-- [ ] Test path with both endpoints bound
+- [x] Test sequence path traversal
+- [x] Test alternative path branches correctly
+- [x] Test inverse path reverses direction
+- [x] Test negated property set excludes correctly
+- [x] Test zero-or-more includes start node
+- [x] Test one-or-more excludes start node
+- [x] Test cycle detection prevents infinite loops
+- [x] Test path with both endpoints bound
 
 ---
 
