@@ -37,10 +37,8 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   """
 
-  alias TripleStore.Dictionary
-  alias TripleStore.Dictionary.IdToString
-  alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
+  alias TripleStore.SPARQL.Term
 
   # ===========================================================================
   # Types
@@ -68,6 +66,59 @@ defmodule TripleStore.SPARQL.PropertyPath do
           | {:zero_or_more, path_expr()}
           | {:one_or_more, path_expr()}
           | {:zero_or_one, path_expr()}
+
+  # ===========================================================================
+  # Configuration and Limits
+  # ===========================================================================
+
+  # Default limits - can be overridden via application config or context
+  @default_max_path_depth 100
+  @default_max_bidirectional_depth 50
+  @default_max_frontier_size 100_000
+  @default_max_visited_size 1_000_000
+  @default_max_unbounded_results 100_000
+  @default_max_all_nodes 50_000
+
+  # Get configurable limit from context or application config
+  defp get_limit(ctx, key, default) do
+    cond do
+      is_map(ctx) and Map.has_key?(ctx, key) ->
+        Map.get(ctx, key)
+
+      true ->
+        Application.get_env(:triple_store, :property_path, [])
+        |> Keyword.get(key, default)
+    end
+  end
+
+  defp max_path_depth(ctx), do: get_limit(ctx, :max_path_depth, @default_max_path_depth)
+  defp max_bidirectional_depth(ctx), do: get_limit(ctx, :max_bidirectional_depth, @default_max_bidirectional_depth)
+  defp max_frontier_size(ctx), do: get_limit(ctx, :max_frontier_size, @default_max_frontier_size)
+  defp max_visited_size(ctx), do: get_limit(ctx, :max_visited_size, @default_max_visited_size)
+  defp max_unbounded_results(ctx), do: get_limit(ctx, :max_unbounded_results, @default_max_unbounded_results)
+  defp max_all_nodes(ctx), do: get_limit(ctx, :max_all_nodes, @default_max_all_nodes)
+
+  # Helper to check if a MapSet is empty (avoids map_size anti-pattern)
+  defp mapset_empty?(set), do: MapSet.size(set) == 0
+
+  # Helper to check if MapSets have any intersection
+  defp mapsets_intersect?(set1, set2) do
+    not Enum.empty?(MapSet.intersection(set1, set2))
+  end
+
+  # Helper to generate unique intermediate variable names
+  defp gen_intermediate_var(prefix) do
+    {:variable, "_#{prefix}_#{:erlang.unique_integer([:positive])}"}
+  end
+
+  # Emit telemetry event for resource monitoring
+  defp emit_telemetry(event, measurements) do
+    :telemetry.execute(
+      [:triple_store, :sparql, :property_path, event],
+      measurements,
+      %{timestamp: System.monotonic_time()}
+    )
+  end
 
   # ===========================================================================
   # Public API
@@ -215,7 +266,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       _ ->
         # Intermediate predicate - use a generated variable
-        intermediate = {:variable, "_chain_#{:erlang.unique_integer([:positive])}"}
+        {:variable, var_name} = intermediate = gen_intermediate_var("chain")
 
         case evaluate_link_predicate(ctx, binding, subject, pred, intermediate) do
           {:ok, stream} ->
@@ -225,11 +276,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
                 case evaluate_predicate_chain(ctx, intermediate_binding, intermediate, rest, object) do
                   {:ok, rest_stream} ->
                     # Remove intermediate variable from final bindings
-                    {_, var_name} = intermediate
-
-                    Stream.map(rest_stream, fn b ->
-                      Map.delete(b, var_name)
-                    end)
+                    Stream.map(rest_stream, &Map.delete(&1, var_name))
 
                   {:error, _} ->
                     []
@@ -321,24 +368,74 @@ defmodule TripleStore.SPARQL.PropertyPath do
     end
   end
 
-  @max_bidirectional_depth 50
-
   defp do_bidirectional_bfs(
-         _ctx,
-         _inner_path,
-         _reversed_path,
+         ctx,
+         inner_path,
+         reversed_path,
          forward_frontier,
          backward_frontier,
-         _forward_visited,
-         _backward_visited,
+         forward_visited,
+         backward_visited,
          depth
        )
-       when depth > @max_bidirectional_depth or
-              (map_size(forward_frontier) == 0 and map_size(backward_frontier) == 0) do
-    false
+       when depth > 0 do
+    # Check termination conditions
+    max_depth = max_bidirectional_depth(ctx)
+    max_frontier = max_frontier_size(ctx)
+
+    cond do
+      depth > max_depth ->
+        emit_telemetry(:bidirectional_depth_limit, %{depth: depth})
+        false
+
+      mapset_empty?(forward_frontier) and mapset_empty?(backward_frontier) ->
+        false
+
+      MapSet.size(forward_visited) > max_frontier or MapSet.size(backward_visited) > max_frontier ->
+        emit_telemetry(:bidirectional_frontier_limit, %{
+          forward_size: MapSet.size(forward_visited),
+          backward_size: MapSet.size(backward_visited)
+        })
+        false
+
+      true ->
+        do_bidirectional_bfs_step(
+          ctx,
+          inner_path,
+          reversed_path,
+          forward_frontier,
+          backward_frontier,
+          forward_visited,
+          backward_visited,
+          depth
+        )
+    end
   end
 
+  # Initial call - start the BFS
   defp do_bidirectional_bfs(
+         ctx,
+         inner_path,
+         reversed_path,
+         forward_frontier,
+         backward_frontier,
+         forward_visited,
+         backward_visited,
+         0 = depth
+       ) do
+    do_bidirectional_bfs_step(
+      ctx,
+      inner_path,
+      reversed_path,
+      forward_frontier,
+      backward_frontier,
+      forward_visited,
+      backward_visited,
+      depth
+    )
+  end
+
+  defp do_bidirectional_bfs_step(
          ctx,
          inner_path,
          reversed_path,
@@ -352,30 +449,18 @@ defmodule TripleStore.SPARQL.PropertyPath do
     {new_forward_frontier, new_forward_visited, new_backward_frontier, new_backward_visited} =
       if MapSet.size(forward_frontier) <= MapSet.size(backward_frontier) do
         # Expand forward
-        next_forward =
-          forward_frontier
-          |> Enum.flat_map(fn node_id ->
-            get_one_step_forward(ctx, inner_path, node_id) |> MapSet.to_list()
-          end)
-          |> MapSet.new()
-
+        next_forward = expand_frontier(ctx, inner_path, forward_frontier)
         new_forward = MapSet.difference(next_forward, forward_visited)
         {new_forward, MapSet.union(forward_visited, new_forward), backward_frontier, backward_visited}
       else
         # Expand backward
-        next_backward =
-          backward_frontier
-          |> Enum.flat_map(fn node_id ->
-            get_one_step_forward(ctx, reversed_path, node_id) |> MapSet.to_list()
-          end)
-          |> MapSet.new()
-
+        next_backward = expand_frontier(ctx, reversed_path, backward_frontier)
         new_backward = MapSet.difference(next_backward, backward_visited)
         {forward_frontier, forward_visited, new_backward, MapSet.union(backward_visited, new_backward)}
       end
 
     # Check for intersection (path found)
-    if MapSet.intersection(new_forward_visited, new_backward_visited) |> MapSet.size() > 0 do
+    if mapsets_intersect?(new_forward_visited, new_backward_visited) do
       true
     else
       do_bidirectional_bfs(
@@ -389,6 +474,15 @@ defmodule TripleStore.SPARQL.PropertyPath do
         depth + 1
       )
     end
+  end
+
+  # Expand a frontier by one step
+  defp expand_frontier(ctx, path, frontier) do
+    frontier
+    |> Enum.flat_map(fn node_id ->
+      get_one_step_forward(ctx, path, node_id) |> MapSet.to_list()
+    end)
+    |> MapSet.new()
   end
 
   # ===========================================================================
@@ -502,7 +596,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   defp evaluate_sequence(ctx, binding, subject, left, right, object) do
     # Generate a unique intermediate variable name
-    intermediate = {:variable, "_seq_#{:erlang.unique_integer([:positive])}"}
+    {:variable, var_name} = intermediate = gen_intermediate_var("seq")
 
     # First, evaluate left path: subject-[left]->intermediate
     case do_evaluate(ctx, binding, subject, left, intermediate) do
@@ -513,10 +607,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
             case do_evaluate(ctx, intermediate_binding, intermediate, right, object) do
               {:ok, right_stream} ->
                 # Filter out the intermediate variable from results
-                Stream.map(right_stream, fn b ->
-                  {_, result} = intermediate
-                  Map.delete(b, result)
-                end)
+                Stream.map(right_stream, &Map.delete(&1, var_name))
 
               {:error, _} ->
                 []
@@ -734,13 +825,16 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Both subject and object unbound - enumerate all reachable pairs
+  # NOTE: This is expensive and has result limits for DoS protection
   defp evaluate_zero_or_more_both_unbound(ctx, binding, subject, inner_path, object) do
     %{db: db, dict_manager: dict_manager} = ctx
+    max_results = max_unbounded_results(ctx)
 
     # Get all nodes in the graph (subjects and objects of any triple)
-    all_nodes = get_all_nodes(db)
+    all_nodes = get_all_nodes(ctx, db)
 
     # For each starting node, find all reachable nodes and emit pairs
+    # Use Stream.take to limit result count for DoS protection
     binding_stream =
       all_nodes
       |> Stream.flat_map(fn start_id ->
@@ -756,6 +850,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
           end
         end)
       end)
+      |> Stream.take(max_results)
 
     {:ok, binding_stream}
   end
@@ -878,10 +973,12 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Both unbound - enumerate all pairs
+  # NOTE: This is expensive and has result limits for DoS protection
   defp evaluate_one_or_more_both_unbound(ctx, binding, subject, inner_path, object) do
     %{db: db, dict_manager: dict_manager} = ctx
+    max_results = max_unbounded_results(ctx)
 
-    all_nodes = get_all_nodes(db)
+    all_nodes = get_all_nodes(ctx, db)
 
     binding_stream =
       all_nodes
@@ -899,6 +996,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
           end
         end)
       end)
+      |> Stream.take(max_results)
 
     {:ok, binding_stream}
   end
@@ -1018,10 +1116,12 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Both unbound - enumerate all identity + one-step pairs
+  # NOTE: This is expensive and has result limits for DoS protection
   defp evaluate_zero_or_one_both_unbound(ctx, binding, subject, inner_path, object) do
     %{db: db, dict_manager: dict_manager} = ctx
+    max_results = max_unbounded_results(ctx)
 
-    all_nodes = get_all_nodes(db)
+    all_nodes = get_all_nodes(ctx, db)
 
     binding_stream =
       all_nodes
@@ -1042,6 +1142,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
           end
         end)
       end)
+      |> Stream.take(max_results)
 
     {:ok, binding_stream}
   end
@@ -1050,41 +1151,51 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # BFS Traversal with Cycle Detection
   # ===========================================================================
 
-  # Maximum path length to prevent runaway evaluation
-  @max_path_depth 100
-
   # BFS forward: find all nodes reachable via the inner path
   # frontier: nodes to explore next
   # visited: nodes already found (for cycle detection)
   defp bfs_forward(ctx, inner_path, frontier, visited, depth \\ 0)
 
-  defp bfs_forward(_ctx, _inner_path, _frontier, visited, depth) when depth > @max_path_depth do
-    visited
-  end
-
-  defp bfs_forward(_ctx, _inner_path, frontier, visited, _depth) when map_size(frontier) == 0 do
-    visited
-  end
-
   defp bfs_forward(ctx, inner_path, frontier, visited, depth) do
-    # Get all nodes reachable in one step from the frontier
-    next_nodes =
-      frontier
-      |> Enum.flat_map(fn node_id ->
-        get_one_step_forward(ctx, inner_path, node_id)
-        |> MapSet.to_list()
-      end)
-      |> MapSet.new()
+    max_depth = max_path_depth(ctx)
+    max_visited = max_visited_size(ctx)
+    max_frontier = max_frontier_size(ctx)
 
-    # Filter out already visited nodes
-    new_frontier = MapSet.difference(next_nodes, visited)
-    new_visited = MapSet.union(visited, new_frontier)
+    cond do
+      # Depth limit reached
+      depth > max_depth ->
+        emit_telemetry(:bfs_depth_limit, %{depth: depth, visited_size: MapSet.size(visited)})
+        visited
 
-    # Continue BFS if there are new nodes to explore
-    if MapSet.size(new_frontier) > 0 do
-      bfs_forward(ctx, inner_path, new_frontier, new_visited, depth + 1)
-    else
-      new_visited
+      # No more nodes to explore
+      mapset_empty?(frontier) ->
+        visited
+
+      # Visited set too large (memory protection)
+      MapSet.size(visited) > max_visited ->
+        emit_telemetry(:bfs_visited_limit, %{visited_size: MapSet.size(visited)})
+        visited
+
+      # Frontier too large (memory protection)
+      MapSet.size(frontier) > max_frontier ->
+        emit_telemetry(:bfs_frontier_limit, %{frontier_size: MapSet.size(frontier)})
+        visited
+
+      # Continue BFS
+      true ->
+        # Get all nodes reachable in one step from the frontier
+        next_nodes = expand_frontier(ctx, inner_path, frontier)
+
+        # Filter out already visited nodes
+        new_frontier = MapSet.difference(next_nodes, visited)
+        new_visited = MapSet.union(visited, new_frontier)
+
+        # Continue BFS if there are new nodes to explore
+        if mapset_empty?(new_frontier) do
+          new_visited
+        else
+          bfs_forward(ctx, inner_path, new_frontier, new_visited, depth + 1)
+        end
     end
   end
 
@@ -1093,17 +1204,17 @@ defmodule TripleStore.SPARQL.PropertyPath do
     %{dict_manager: dict_manager} = ctx
 
     # Decode the node ID to an algebra term
-    case decode_term(node_id, dict_manager) do
+    case Term.decode(node_id, dict_manager) do
       {:ok, node_term} ->
         # Create a variable for the target
-        target_var = {:variable, "_step_#{:erlang.unique_integer([:positive])}"}
+        {:variable, var_name} = target_var = gen_intermediate_var("step")
 
         # Evaluate the inner path
         case do_evaluate(ctx, %{}, node_term, inner_path, target_var) do
           {:ok, stream} ->
             stream
             |> Enum.flat_map(fn binding ->
-              case Map.get(binding, elem(target_var, 1)) do
+              case Map.get(binding, var_name) do
                 nil -> []
                 term ->
                   case term_to_id(term, dict_manager) do
@@ -1123,14 +1234,25 @@ defmodule TripleStore.SPARQL.PropertyPath do
     end
   end
 
-  # Get all nodes (subjects and objects) in the graph
-  defp get_all_nodes(db) do
+  # Get all nodes (subjects and objects) in the graph with limit protection
+  defp get_all_nodes(ctx, db) do
+    max_nodes = max_all_nodes(ctx)
+
     # Query all triples with all variables
     case Index.lookup(db, {:var, :var, :var}) do
       {:ok, stream} ->
-        stream
-        |> Enum.flat_map(fn {s, _p, o} -> [s, o] end)
-        |> MapSet.new()
+        # Use Stream.take to limit memory usage during collection
+        nodes =
+          stream
+          |> Stream.take(max_nodes * 2)
+          |> Enum.flat_map(fn {s, _p, o} -> [s, o] end)
+          |> MapSet.new()
+
+        if MapSet.size(nodes) >= max_nodes do
+          emit_telemetry(:all_nodes_limit, %{size: MapSet.size(nodes), limit: max_nodes})
+        end
+
+        nodes
 
       {:error, _} ->
         MapSet.new()
@@ -1239,17 +1361,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Lookup a term ID from the dictionary
+  # Note: Wraps Term.lookup_term_id to return {:ok, :not_found} instead of :not_found
+  # to allow pattern matching in callers that expect all results wrapped in :ok
   defp lookup_term_id(dict_manager, rdf_term) do
-    case GenServer.call(dict_manager, :get_db) do
-      {:ok, db} ->
-        case StringToId.lookup_id(db, rdf_term) do
-          {:ok, id} -> {:ok, id}
-          :not_found -> {:ok, :not_found}
-          {:error, _} = error -> error
-        end
-
-      {:error, _} = error ->
-        error
+    case Term.lookup_term_id(dict_manager, rdf_term) do
+      {:ok, id} -> {:ok, id}
+      :not_found -> {:ok, :not_found}
+      {:error, _} = error -> error
     end
   end
 
@@ -1270,7 +1388,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
     case Map.get(binding, name) do
       nil ->
         # Unbound - decode and bind
-        case decode_term(id, dict_manager) do
+        case Term.decode(id, dict_manager) do
           {:ok, term} -> {:ok, Map.put(binding, name, term)}
           {:error, _} = error -> error
         end
@@ -1285,7 +1403,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       existing_term ->
         # Already bound to a term - need to check if IDs match
-        case encode_term(existing_term, dict_manager) do
+        case Term.encode(existing_term, dict_manager) do
           {:ok, existing_id} when existing_id == id -> {:ok, binding}
           {:ok, _} -> {:error, :binding_mismatch}
           :not_found -> {:error, :binding_mismatch}
@@ -1297,114 +1415,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   defp maybe_bind(binding, _concrete_term, _id, _dict_manager) do
     # Concrete term - already matched by index lookup
     {:ok, binding}
-  end
-
-  # Decode a term ID back to an algebra term
-  defp decode_term(term_id, dict_manager) do
-    if Dictionary.inline_encoded?(term_id) do
-      decode_inline_term(term_id)
-    else
-      case GenServer.call(dict_manager, :get_db) do
-        {:ok, db} ->
-          case IdToString.lookup_term(db, term_id) do
-            {:ok, rdf_term} -> {:ok, rdf_term_to_algebra(rdf_term)}
-            :not_found -> {:error, :term_not_found}
-            {:error, _} = error -> error
-          end
-
-        {:error, _} = error ->
-          error
-      end
-    end
-  end
-
-  # Decode inline-encoded terms
-  defp decode_inline_term(term_id) do
-    case Dictionary.term_type(term_id) do
-      :integer ->
-        case Dictionary.decode_integer(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, Integer.to_string(value),
-              "http://www.w3.org/2001/XMLSchema#integer"}}
-
-          error ->
-            error
-        end
-
-      :decimal ->
-        case Dictionary.decode_decimal(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, Decimal.to_string(value),
-              "http://www.w3.org/2001/XMLSchema#decimal"}}
-
-          error ->
-            error
-        end
-
-      :datetime ->
-        case Dictionary.decode_datetime(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, DateTime.to_iso8601(value),
-              "http://www.w3.org/2001/XMLSchema#dateTime"}}
-
-          error ->
-            error
-        end
-
-      _ ->
-        {:error, :unknown_inline_type}
-    end
-  end
-
-  # Encode a term to its ID
-  defp encode_term({:named_node, iri}, dict_manager) do
-    lookup_term_id(dict_manager, RDF.iri(iri))
-  end
-
-  defp encode_term({:blank_node, id}, dict_manager) do
-    lookup_term_id(dict_manager, RDF.bnode(id))
-  end
-
-  defp encode_term({:literal, :simple, value}, dict_manager) do
-    lookup_term_id(dict_manager, RDF.literal(value))
-  end
-
-  defp encode_term({:literal, :typed, value, datatype}, dict_manager) do
-    lookup_term_id(dict_manager, RDF.literal(value, datatype: datatype))
-  end
-
-  defp encode_term({:literal, :lang, value, lang}, dict_manager) do
-    lookup_term_id(dict_manager, RDF.literal(value, language: lang))
-  end
-
-  defp encode_term(_term, _dict_manager), do: :not_found
-
-  # Convert RDF.ex term to algebra term representation
-  defp rdf_term_to_algebra(%RDF.IRI{value: uri}) do
-    {:named_node, uri}
-  end
-
-  defp rdf_term_to_algebra(%RDF.BlankNode{value: name}) do
-    {:blank_node, name}
-  end
-
-  defp rdf_term_to_algebra(%RDF.Literal{literal: %{language: lang}} = lit)
-       when not is_nil(lang) do
-    {:literal, :lang, to_string(lit), lang}
-  end
-
-  defp rdf_term_to_algebra(%RDF.Literal{} = lit) do
-    datatype_id = RDF.Literal.datatype_id(lit)
-    value = to_string(lit)
-
-    if datatype_id == RDF.XSD.String.id() do
-      {:literal, :simple, value}
-    else
-      {:literal, :typed, value, to_string(datatype_id)}
-    end
   end
 
   # Wrap an ID in {:bound, id} for Index module, pass :var through

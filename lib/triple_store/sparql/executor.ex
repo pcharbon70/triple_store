@@ -26,6 +26,19 @@ defmodule TripleStore.SPARQL.Executor do
   Solution bindings are represented as maps from variable names (strings)
   to RDF terms. The executor produces streams of these binding maps.
 
+  ## Query Timeouts
+
+  Query timeout enforcement should be implemented by the caller (e.g., TripleStore.query/3)
+  by wrapping stream consumption with a timeout mechanism:
+
+      # Example timeout wrapper at the API level:
+      Task.async(fn -> Enum.to_list(stream) end)
+      |> Task.await(timeout_ms)
+
+  Individual operation limits (DISTINCT size, ORDER BY size, etc.) are enforced at the
+  executor level via module attributes. Property path operations have their own depth,
+  frontier size, and result set limits defined in `TripleStore.SPARQL.PropertyPath`.
+
   ## Examples
 
       # Execute a BGP against the database
@@ -37,12 +50,11 @@ defmodule TripleStore.SPARQL.Executor do
 
   """
 
-  alias TripleStore.Dictionary
-  alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
+  alias TripleStore.SPARQL.Term
 
 
   # ===========================================================================
@@ -288,99 +300,11 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Convert a concrete term to a bound index pattern
   defp term_to_bound_pattern(term, dict_manager) do
-    case encode_term(term, dict_manager) do
+    case Term.encode(term, dict_manager) do
       {:ok, id} -> {:ok, {:bound, id}}
       # Term not in dictionary - no matches possible
       :not_found -> {:ok, {:bound, :not_found}}
       {:error, _} = error -> error
-    end
-  end
-
-  # Encode an RDF term to a dictionary ID (lookup only, don't create)
-  defp encode_term({:named_node, uri}, dict_manager) do
-    rdf_term = RDF.iri(uri)
-    lookup_term_id(dict_manager, rdf_term)
-  end
-
-  defp encode_term({:blank_node, name}, dict_manager) do
-    rdf_term = RDF.bnode(name)
-    lookup_term_id(dict_manager, rdf_term)
-  end
-
-  defp encode_term({:literal, :simple, value}, dict_manager) do
-    rdf_term = RDF.literal(value)
-    lookup_term_id(dict_manager, rdf_term)
-  end
-
-  defp encode_term({:literal, :lang, value, lang}, dict_manager) do
-    rdf_term = RDF.literal(value, language: lang)
-    lookup_term_id(dict_manager, rdf_term)
-  end
-
-  defp encode_term({:literal, :typed, value, datatype}, dict_manager) do
-    # Check for inline-encodable types first
-    case try_inline_encode(value, datatype) do
-      {:ok, id} ->
-        {:ok, id}
-
-      :not_inline ->
-        rdf_term = RDF.literal(value, datatype: datatype)
-        lookup_term_id(dict_manager, rdf_term)
-    end
-  end
-
-  defp encode_term(_term, _dict_manager) do
-    {:error, :unsupported_term_type}
-  end
-
-  # Try to inline-encode numeric types
-  defp try_inline_encode(value, "http://www.w3.org/2001/XMLSchema#integer") do
-    case Integer.parse(value) do
-      {int_val, ""} ->
-        case Dictionary.encode_integer(int_val) do
-          {:ok, id} -> {:ok, id}
-          {:error, :out_of_range} -> :not_inline
-        end
-
-      _ ->
-        :not_inline
-    end
-  end
-
-  defp try_inline_encode(value, "http://www.w3.org/2001/XMLSchema#decimal") do
-    case Decimal.parse(value) do
-      {decimal, ""} ->
-        case Dictionary.encode_decimal(decimal) do
-          {:ok, id} -> {:ok, id}
-          {:error, :out_of_range} -> :not_inline
-        end
-
-      {decimal, _remainder} ->
-        case Dictionary.encode_decimal(decimal) do
-          {:ok, id} -> {:ok, id}
-          {:error, :out_of_range} -> :not_inline
-        end
-
-      :error ->
-        :not_inline
-    end
-  end
-
-  defp try_inline_encode(_value, _datatype), do: :not_inline
-
-  # Lookup a term ID from the dictionary (read-only)
-  defp lookup_term_id(dict_manager, rdf_term) do
-    # Get the database reference from the manager
-    case GenServer.call(dict_manager, :get_db) do
-      {:ok, db} ->
-        case StringToId.lookup_id(db, rdf_term) do
-          {:ok, id} -> {:ok, id}
-          :not_found -> :not_found
-          {:error, _} = error -> error
-        end
-
-      {:error, _} = error ->
-        error
     end
   end
 
@@ -402,14 +326,14 @@ defmodule TripleStore.SPARQL.Executor do
     case Map.get(binding, name) do
       nil ->
         # Variable not bound - decode and bind
-        case decode_term(term_id, dict_manager) do
+        case Term.decode(term_id, dict_manager) do
           {:ok, term} -> {:ok, Map.put(binding, name, term)}
           {:error, _} = error -> error
         end
 
       existing_term ->
         # Variable already bound - verify it matches
-        case encode_term(existing_term, dict_manager) do
+        case Term.encode(existing_term, dict_manager) do
           {:ok, existing_id} when existing_id == term_id ->
             {:ok, binding}
 
@@ -448,98 +372,6 @@ defmodule TripleStore.SPARQL.Executor do
   # Non-variable terms don't need binding
   defp maybe_bind(binding, _term, _term_id, _dict_manager) do
     {:ok, binding}
-  end
-
-  # Decode a term ID back to an RDF term
-  defp decode_term(term_id, dict_manager) do
-    # Check for inline-encoded types first
-    if Dictionary.inline_encoded?(term_id) do
-      decode_inline_term(term_id)
-    else
-      # Dictionary lookup required
-      case GenServer.call(dict_manager, :get_db) do
-        {:ok, db} ->
-          case IdToString.lookup_term(db, term_id) do
-            {:ok, rdf_term} -> {:ok, rdf_term_to_algebra(rdf_term)}
-            :not_found -> {:error, :term_not_found}
-            {:error, _} = error -> error
-          end
-
-        {:error, _} = error ->
-          error
-      end
-    end
-  end
-
-  # Decode inline-encoded terms
-  defp decode_inline_term(term_id) do
-    case Dictionary.term_type(term_id) do
-      :integer ->
-        case Dictionary.decode_integer(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, Integer.to_string(value),
-              "http://www.w3.org/2001/XMLSchema#integer"}}
-
-          error ->
-            error
-        end
-
-      :decimal ->
-        case Dictionary.decode_decimal(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, Decimal.to_string(value),
-              "http://www.w3.org/2001/XMLSchema#decimal"}}
-
-          error ->
-            error
-        end
-
-      :datetime ->
-        case Dictionary.decode_datetime(term_id) do
-          {:ok, value} ->
-            {:ok,
-             {:literal, :typed, DateTime.to_iso8601(value),
-              "http://www.w3.org/2001/XMLSchema#dateTime"}}
-
-          error ->
-            error
-        end
-
-      _ ->
-        {:error, :unknown_inline_type}
-    end
-  end
-
-  # Convert RDF.ex term to algebra term representation
-  defp rdf_term_to_algebra(%RDF.IRI{value: uri}) do
-    {:named_node, uri}
-  end
-
-  defp rdf_term_to_algebra(%RDF.BlankNode{value: name}) do
-    {:blank_node, name}
-  end
-
-  defp rdf_term_to_algebra(%RDF.Literal{literal: %{language: lang}} = lit)
-       when not is_nil(lang) do
-    {:literal, :lang, RDF.Literal.value(lit), lang}
-  end
-
-  defp rdf_term_to_algebra(%RDF.Literal{literal: literal} = lit) do
-    datatype = RDF.Literal.datatype_id(lit)
-
-    if datatype == RDF.XSD.String.id() do
-      {:literal, :simple, RDF.Literal.value(lit)}
-    else
-      value =
-        case literal do
-          %{value: v} when is_binary(v) -> v
-          _ -> RDF.Literal.lexical(lit)
-        end
-
-      {:literal, :typed, value, to_string(datatype)}
-    end
   end
 
   # ===========================================================================
