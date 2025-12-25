@@ -12,7 +12,7 @@ The semi-naive evaluation strategy processes only newly derived facts (delta) in
 
 ## 4.1 Rule Compiler
 
-- [ ] **Section 4.1 Complete**
+- [x] **Section 4.1 Complete** (2025-12-25)
 
 This section implements compilation of OWL 2 RL axioms into Datalog-style rules suitable for forward-chaining evaluation.
 
@@ -70,16 +70,16 @@ Optimize rules for efficient evaluation.
 
 ### 4.1.5 Unit Tests
 
-- [ ] **Task 4.1.5 Complete**
+- [x] **Task 4.1.5 Complete** (2025-12-25)
 
-- [ ] Test rule representation captures patterns correctly
-- [ ] Test subClassOf rule produces correct inferences
-- [ ] Test domain/range rules produce type inferences
-- [ ] Test transitive property rule chains correctly
-- [ ] Test symmetric property rule generates inverse
-- [ ] Test sameAs rules propagate equality
-- [ ] Test rule compilation filters inapplicable rules
-- [ ] Test rule optimization reorders patterns
+- [x] Test rule representation captures patterns correctly
+- [x] Test subClassOf rule produces correct inferences
+- [x] Test domain/range rules produce type inferences
+- [x] Test transitive property rule chains correctly
+- [x] Test symmetric property rule generates inverse
+- [x] Test sameAs rules propagate equality
+- [x] Test rule compilation filters inapplicable rules
+- [x] Test rule optimization reorders patterns
 
 ---
 
