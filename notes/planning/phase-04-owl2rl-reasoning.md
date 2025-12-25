@@ -18,14 +18,14 @@ This section implements compilation of OWL 2 RL axioms into Datalog-style rules 
 
 ### 4.1.1 Rule Representation
 
-- [ ] **Task 4.1.1 Complete**
+- [x] **Task 4.1.1 Complete** (2025-12-25)
 
 Define the rule representation structure.
 
-- [ ] 4.1.1.1 Define `%Rule{name, body, head}` struct
-- [ ] 4.1.1.2 Define pattern structure `{:pattern, [var_or_term, var_or_term, var_or_term]}`
-- [ ] 4.1.1.3 Support variable binding between patterns (shared variables)
-- [ ] 4.1.1.4 Support literal conditions in rule bodies
+- [x] 4.1.1.1 Define `%Rule{name, body, head}` struct
+- [x] 4.1.1.2 Define pattern structure `{:pattern, [var_or_term, var_or_term, var_or_term]}`
+- [x] 4.1.1.3 Support variable binding between patterns (shared variables)
+- [x] 4.1.1.4 Support literal conditions in rule bodies
 
 ### 4.1.2 OWL 2 RL Rules
 
