@@ -29,23 +29,23 @@ Define the rule representation structure.
 
 ### 4.1.2 OWL 2 RL Rules
 
-- [ ] **Task 4.1.2 Complete**
+- [x] **Task 4.1.2 Complete** (2025-12-25)
 
 Implement the standard OWL 2 RL rule set.
 
-- [ ] 4.1.2.1 Implement rdfs:subClassOf transitivity (scm-sco)
-- [ ] 4.1.2.2 Implement class membership through subclass (cax-sco)
-- [ ] 4.1.2.3 Implement property domain (prp-dom)
-- [ ] 4.1.2.4 Implement property range (prp-rng)
-- [ ] 4.1.2.5 Implement transitive property (prp-trp)
-- [ ] 4.1.2.6 Implement symmetric property (prp-symp)
-- [ ] 4.1.2.7 Implement inverse properties (prp-inv1, prp-inv2)
-- [ ] 4.1.2.8 Implement functional property (prp-fp)
-- [ ] 4.1.2.9 Implement inverse functional property (prp-ifp)
-- [ ] 4.1.2.10 Implement owl:sameAs transitivity and symmetry (eq-trans, eq-sym)
-- [ ] 4.1.2.11 Implement hasValue restriction (cls-hv1, cls-hv2)
-- [ ] 4.1.2.12 Implement someValuesFrom (cls-svf1, cls-svf2)
-- [ ] 4.1.2.13 Implement allValuesFrom (cls-avf)
+- [x] 4.1.2.1 Implement rdfs:subClassOf transitivity (scm-sco)
+- [x] 4.1.2.2 Implement class membership through subclass (cax-sco)
+- [x] 4.1.2.3 Implement property domain (prp-dom)
+- [x] 4.1.2.4 Implement property range (prp-rng)
+- [x] 4.1.2.5 Implement transitive property (prp-trp)
+- [x] 4.1.2.6 Implement symmetric property (prp-symp)
+- [x] 4.1.2.7 Implement inverse properties (prp-inv1, prp-inv2)
+- [x] 4.1.2.8 Implement functional property (prp-fp)
+- [x] 4.1.2.9 Implement inverse functional property (prp-ifp)
+- [x] 4.1.2.10 Implement owl:sameAs transitivity and symmetry (eq-trans, eq-sym)
+- [x] 4.1.2.11 Implement hasValue restriction (cls-hv1, cls-hv2)
+- [x] 4.1.2.12 Implement someValuesFrom (cls-svf1, cls-svf2)
+- [x] 4.1.2.13 Implement allValuesFrom (cls-avf)
 
 ### 4.1.3 Rule Compilation
 
