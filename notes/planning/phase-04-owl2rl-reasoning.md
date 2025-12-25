@@ -13,8 +13,34 @@ The semi-naive evaluation strategy processes only newly derived facts (delta) in
 ## 4.1 Rule Compiler
 
 - [x] **Section 4.1 Complete** (2025-12-25)
+- [x] **Section 4.1 Review Fixes Complete** (2025-12-25)
 
 This section implements compilation of OWL 2 RL axioms into Datalog-style rules suitable for forward-chaining evaluation.
+
+### Review Fixes (2025-12-25)
+
+The following issues from the comprehensive review were addressed:
+
+**Blockers Fixed:**
+- SPARQL injection vulnerability (IRI validation via Namespaces module)
+- Atom table exhaustion (sanitized names, specialization limits)
+- Improved error handling specificity
+
+**New Modules Added:**
+- `TripleStore.Reasoner.Namespaces` - Shared namespace constants, IRI validation
+- `TripleStore.Reasoner.SchemaInfo` - Type-safe struct with validation
+- `TripleStore.Reasoner.Telemetry` - Instrumentation events
+
+**Enhancements:**
+- :persistent_term lifecycle management (list_stored, clear_all, stale?)
+- Rule specialization limits (max_specializations, max_properties)
+- Delta pattern marking for semi-naive evaluation
+- Rule.validate/1 for well-formedness checks
+- Rule.explain/1 and explain_applicability/2 for debugging
+- Blank node type support
+- Module attributes for selectivity constants
+
+**Test Coverage:** 258 tests (219 original + 39 review fixes)
 
 ### 4.1.1 Rule Representation
 

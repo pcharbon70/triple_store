@@ -44,14 +44,24 @@ defmodule TripleStore.Reasoner.Rule do
   - `{:is_literal, term}` - Term must be a literal
 
   These conditions filter bindings without querying the database.
+
+  ## Semi-Naive Evaluation Support
+
+  Rules can be marked with `:delta_positions` metadata indicating which body
+  patterns should use delta facts during semi-naive evaluation:
+
+      %Rule{
+        name: :scm_sco,
+        body: [...],
+        head: ...,
+        metadata: %{delta_positions: [0, 1]}  # Both patterns can use delta
+      }
   """
 
-  @enforce_keys [:name, :body, :head]
-  defstruct [:name, :body, :head, :description, :profile]
+  alias TripleStore.Reasoner.Namespaces
 
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  @enforce_keys [:name, :body, :head]
+  defstruct [:name, :body, :head, :description, :profile, :metadata]
 
   # ============================================================================
   # Types
@@ -63,6 +73,9 @@ defmodule TripleStore.Reasoner.Rule do
   @typedoc "An IRI constant in a pattern"
   @type iri_term :: {:iri, String.t()}
 
+  @typedoc "A blank node in a pattern"
+  @type blank_node :: {:blank_node, String.t()}
+
   @typedoc "A literal constant in a pattern"
   @type literal_term ::
           {:literal, :simple, String.t()}
@@ -70,7 +83,7 @@ defmodule TripleStore.Reasoner.Rule do
           | {:literal, :lang, String.t(), String.t()}
 
   @typedoc "A term in a rule pattern (variable or constant)"
-  @type rule_term :: variable() | iri_term() | literal_term()
+  @type rule_term :: variable() | iri_term() | blank_node() | literal_term()
 
   @typedoc "A triple pattern in a rule body or head"
   @type pattern :: {:pattern, [rule_term()]}
@@ -89,13 +102,21 @@ defmodule TripleStore.Reasoner.Rule do
   @typedoc "The reasoning profile this rule belongs to"
   @type profile :: :rdfs | :owl2rl | :custom
 
+  @typedoc "Rule metadata for optimization and evaluation hints"
+  @type metadata :: %{
+          optional(:delta_positions) => [non_neg_integer()],
+          optional(:stratum) => non_neg_integer(),
+          optional(:priority) => integer()
+        }
+
   @typedoc "A complete reasoning rule"
   @type t :: %__MODULE__{
           name: atom(),
           body: [body_element()],
           head: pattern(),
           description: String.t() | nil,
-          profile: profile() | nil
+          profile: profile() | nil,
+          metadata: metadata() | nil
         }
 
   @typedoc "A variable binding map"
@@ -118,6 +139,7 @@ defmodule TripleStore.Reasoner.Rule do
 
   - `:description` - Human-readable description of the rule
   - `:profile` - Reasoning profile (:rdfs, :owl2rl, or :custom)
+  - `:metadata` - Additional metadata for optimization and evaluation
 
   ## Examples
 
@@ -135,9 +157,21 @@ defmodule TripleStore.Reasoner.Rule do
       body: body,
       head: head,
       description: Keyword.get(opts, :description),
-      profile: Keyword.get(opts, :profile)
+      profile: Keyword.get(opts, :profile),
+      metadata: Keyword.get(opts, :metadata)
     }
   end
+
+  @doc """
+  Creates a blank node term.
+
+  ## Examples
+
+      iex> Rule.blank_node("b1")
+      {:blank_node, "b1"}
+  """
+  @spec blank_node(String.t()) :: blank_node()
+  def blank_node(id) when is_binary(id), do: {:blank_node, id}
 
   # ============================================================================
   # Term Constructors
@@ -285,68 +319,68 @@ defmodule TripleStore.Reasoner.Rule do
   def bound(term), do: {:bound, term}
 
   # ============================================================================
-  # Commonly Used IRIs
+  # Commonly Used IRIs (using Namespaces module)
   # ============================================================================
 
   @doc "Returns the rdf:type IRI"
   @spec rdf_type() :: iri_term()
-  def rdf_type, do: {:iri, @rdf <> "type"}
+  def rdf_type, do: {:iri, Namespaces.rdf_type()}
 
   @doc "Returns the rdfs:subClassOf IRI"
   @spec rdfs_subClassOf() :: iri_term()
-  def rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
+  def rdfs_subClassOf, do: {:iri, Namespaces.rdfs_subClassOf()}
 
   @doc "Returns the rdfs:subPropertyOf IRI"
   @spec rdfs_subPropertyOf() :: iri_term()
-  def rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
+  def rdfs_subPropertyOf, do: {:iri, Namespaces.rdfs_subPropertyOf()}
 
   @doc "Returns the rdfs:domain IRI"
   @spec rdfs_domain() :: iri_term()
-  def rdfs_domain, do: {:iri, @rdfs <> "domain"}
+  def rdfs_domain, do: {:iri, Namespaces.rdfs_domain()}
 
   @doc "Returns the rdfs:range IRI"
   @spec rdfs_range() :: iri_term()
-  def rdfs_range, do: {:iri, @rdfs <> "range"}
+  def rdfs_range, do: {:iri, Namespaces.rdfs_range()}
 
   @doc "Returns the owl:sameAs IRI"
   @spec owl_sameAs() :: iri_term()
-  def owl_sameAs, do: {:iri, @owl <> "sameAs"}
+  def owl_sameAs, do: {:iri, Namespaces.owl_sameAs()}
 
   @doc "Returns the owl:TransitiveProperty IRI"
   @spec owl_TransitiveProperty() :: iri_term()
-  def owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
+  def owl_TransitiveProperty, do: {:iri, Namespaces.owl_TransitiveProperty()}
 
   @doc "Returns the owl:SymmetricProperty IRI"
   @spec owl_SymmetricProperty() :: iri_term()
-  def owl_SymmetricProperty, do: {:iri, @owl <> "SymmetricProperty"}
+  def owl_SymmetricProperty, do: {:iri, Namespaces.owl_SymmetricProperty()}
 
   @doc "Returns the owl:inverseOf IRI"
   @spec owl_inverseOf() :: iri_term()
-  def owl_inverseOf, do: {:iri, @owl <> "inverseOf"}
+  def owl_inverseOf, do: {:iri, Namespaces.owl_inverseOf()}
 
   @doc "Returns the owl:FunctionalProperty IRI"
   @spec owl_FunctionalProperty() :: iri_term()
-  def owl_FunctionalProperty, do: {:iri, @owl <> "FunctionalProperty"}
+  def owl_FunctionalProperty, do: {:iri, Namespaces.owl_FunctionalProperty()}
 
   @doc "Returns the owl:InverseFunctionalProperty IRI"
   @spec owl_InverseFunctionalProperty() :: iri_term()
-  def owl_InverseFunctionalProperty, do: {:iri, @owl <> "InverseFunctionalProperty"}
+  def owl_InverseFunctionalProperty, do: {:iri, Namespaces.owl_InverseFunctionalProperty()}
 
   @doc "Returns the owl:hasValue IRI"
   @spec owl_hasValue() :: iri_term()
-  def owl_hasValue, do: {:iri, @owl <> "hasValue"}
+  def owl_hasValue, do: {:iri, Namespaces.owl_hasValue()}
 
   @doc "Returns the owl:onProperty IRI"
   @spec owl_onProperty() :: iri_term()
-  def owl_onProperty, do: {:iri, @owl <> "onProperty"}
+  def owl_onProperty, do: {:iri, Namespaces.owl_onProperty()}
 
   @doc "Returns the owl:someValuesFrom IRI"
   @spec owl_someValuesFrom() :: iri_term()
-  def owl_someValuesFrom, do: {:iri, @owl <> "someValuesFrom"}
+  def owl_someValuesFrom, do: {:iri, Namespaces.owl_someValuesFrom()}
 
   @doc "Returns the owl:allValuesFrom IRI"
   @spec owl_allValuesFrom() :: iri_term()
-  def owl_allValuesFrom, do: {:iri, @owl <> "allValuesFrom"}
+  def owl_allValuesFrom, do: {:iri, Namespaces.owl_allValuesFrom()}
 
   # ============================================================================
   # Analysis Functions
@@ -589,4 +623,337 @@ defmodule TripleStore.Reasoner.Rule do
 
   defp extract_term_vars({:var, name}), do: [name]
   defp extract_term_vars(_), do: []
+
+  # ============================================================================
+  # Validation
+  # ============================================================================
+
+  @doc """
+  Validates a rule for well-formedness.
+
+  Checks:
+  - Rule safety (all head variables appear in body)
+  - Pattern structure (each pattern has 3 terms)
+  - Condition variables reference existing body variables
+  - No unsatisfiable conditions (e.g., not_equal with same variable)
+
+  Returns `{:ok, rule}` if valid, or `{:error, reasons}` with a list of issues.
+
+  ## Examples
+
+      iex> rule = Rule.new(:test, [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+      ...>   {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]})
+      iex> Rule.validate(rule)
+      {:ok, rule}
+
+      iex> unsafe_rule = Rule.new(:test, [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+      ...>   {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "z"}]})  # z not in body
+      iex> {:error, reasons} = Rule.validate(unsafe_rule)
+      iex> :unsafe_rule in reasons
+      true
+  """
+  @spec validate(t()) :: {:ok, t()} | {:error, [atom() | {atom(), term()}]}
+  def validate(%__MODULE__{} = rule) do
+    errors =
+      []
+      |> check_safety(rule)
+      |> check_pattern_structure(rule)
+      |> check_condition_variables(rule)
+      |> check_unsatisfiable_conditions(rule)
+
+    if Enum.empty?(errors) do
+      {:ok, rule}
+    else
+      {:error, errors}
+    end
+  end
+
+  @doc """
+  Validates a rule, raising an error if invalid.
+  """
+  @spec validate!(t()) :: t()
+  def validate!(%__MODULE__{} = rule) do
+    case validate(rule) do
+      {:ok, rule} -> rule
+      {:error, reasons} ->
+        raise ArgumentError, "Invalid rule #{rule.name}: #{inspect(reasons)}"
+    end
+  end
+
+  defp check_safety(errors, rule) do
+    if safe?(rule) do
+      errors
+    else
+      [:unsafe_rule | errors]
+    end
+  end
+
+  defp check_pattern_structure(errors, %__MODULE__{body: body, head: head}) do
+    all_patterns = [head | Enum.filter(body, &match?({:pattern, _}, &1))]
+
+    invalid =
+      Enum.any?(all_patterns, fn
+        {:pattern, terms} when is_list(terms) -> length(terms) != 3
+        _ -> true
+      end)
+
+    if invalid do
+      [:invalid_pattern_structure | errors]
+    else
+      errors
+    end
+  end
+
+  defp check_condition_variables(errors, rule) do
+    body_vars = body_variables(rule)
+    conditions = body_conditions(rule)
+
+    unbound =
+      Enum.any?(conditions, fn cond ->
+        cond_vars = condition_vars(cond)
+        not MapSet.subset?(MapSet.new(cond_vars), body_vars)
+      end)
+
+    if unbound do
+      [:condition_references_unbound_variable | errors]
+    else
+      errors
+    end
+  end
+
+  defp condition_vars({:not_equal, t1, t2}), do: extract_term_vars(t1) ++ extract_term_vars(t2)
+  defp condition_vars({:is_iri, t}), do: extract_term_vars(t)
+  defp condition_vars({:is_blank, t}), do: extract_term_vars(t)
+  defp condition_vars({:is_literal, t}), do: extract_term_vars(t)
+  defp condition_vars({:bound, t}), do: extract_term_vars(t)
+
+  defp check_unsatisfiable_conditions(errors, rule) do
+    conditions = body_conditions(rule)
+
+    unsatisfiable =
+      Enum.any?(conditions, fn
+        {:not_equal, {:var, v}, {:var, v}} -> true  # Same variable, always fails
+        _ -> false
+      end)
+
+    if unsatisfiable do
+      [:unsatisfiable_condition | errors]
+    else
+      errors
+    end
+  end
+
+  # ============================================================================
+  # Debug/Explain Capabilities
+  # ============================================================================
+
+  @doc """
+  Returns a human-readable explanation of a rule.
+
+  ## Examples
+
+      iex> rule = Rules.cax_sco()
+      iex> Rule.explain(rule)
+      "cax_sco: Class membership through subclass\\n..."
+  """
+  @spec explain(t()) :: String.t()
+  def explain(%__MODULE__{} = rule) do
+    """
+    Rule: #{rule.name}
+    Description: #{rule.description || "No description"}
+    Profile: #{rule.profile || "Not specified"}
+
+    Body (#{length(rule.body)} elements):
+    #{explain_body(rule.body)}
+
+    Head:
+    #{explain_pattern(rule.head)}
+
+    Properties:
+    - Safe: #{safe?(rule)}
+    - Pattern count: #{pattern_count(rule)}
+    - Condition count: #{condition_count(rule)}
+    - Variables: #{Enum.join(MapSet.to_list(variables(rule)), ", ")}
+    """
+    |> String.trim()
+  end
+
+  @doc """
+  Explains why a rule would or would not apply given schema information.
+
+  ## Examples
+
+      iex> rule = Rules.prp_trp()
+      iex> schema = %{transitive_properties: []}
+      iex> Rule.explain_applicability(rule, schema)
+      {:not_applicable, "Rule prp_trp requires transitive_properties but none found"}
+  """
+  @spec explain_applicability(t(), map()) :: {:applicable, String.t()} | {:not_applicable, String.t()}
+  def explain_applicability(%__MODULE__{name: name} = _rule, schema_info) do
+    case name do
+      :prp_trp ->
+        check_property_list(schema_info, :transitive_properties, name)
+
+      :prp_symp ->
+        check_property_list(schema_info, :symmetric_properties, name)
+
+      :prp_inv1 ->
+        check_property_list(schema_info, :inverse_properties, name)
+
+      :prp_inv2 ->
+        check_property_list(schema_info, :inverse_properties, name)
+
+      :prp_fp ->
+        check_property_list(schema_info, :functional_properties, name)
+
+      :prp_ifp ->
+        check_property_list(schema_info, :inverse_functional_properties, name)
+
+      :scm_sco ->
+        check_boolean_feature(schema_info, :has_subclass, name)
+
+      :cax_sco ->
+        check_boolean_feature(schema_info, :has_subclass, name)
+
+      :scm_spo ->
+        check_boolean_feature(schema_info, :has_subproperty, name)
+
+      :prp_spo1 ->
+        check_boolean_feature(schema_info, :has_subproperty, name)
+
+      :prp_dom ->
+        check_boolean_feature(schema_info, :has_domain, name)
+
+      :prp_rng ->
+        check_boolean_feature(schema_info, :has_range, name)
+
+      :eq_sym ->
+        check_boolean_feature(schema_info, :has_sameas, name)
+
+      :eq_trans ->
+        check_boolean_feature(schema_info, :has_sameas, name)
+
+      :eq_rep_s ->
+        check_boolean_feature(schema_info, :has_sameas, name)
+
+      :eq_rep_p ->
+        check_boolean_feature(schema_info, :has_sameas, name)
+
+      :eq_rep_o ->
+        check_boolean_feature(schema_info, :has_sameas, name)
+
+      :cls_hv1 ->
+        check_boolean_feature(schema_info, :has_restrictions, name)
+
+      :cls_hv2 ->
+        check_boolean_feature(schema_info, :has_restrictions, name)
+
+      :cls_svf1 ->
+        check_boolean_feature(schema_info, :has_restrictions, name)
+
+      :cls_svf2 ->
+        check_boolean_feature(schema_info, :has_restrictions, name)
+
+      :cls_avf ->
+        check_boolean_feature(schema_info, :has_restrictions, name)
+
+      :eq_ref ->
+        {:applicable, "Rule #{name} is always applicable"}
+
+      _ ->
+        {:applicable, "Rule #{name} has no specific schema requirements"}
+    end
+  end
+
+  defp check_property_list(schema, key, name) do
+    props = Map.get(schema, key, [])
+
+    if Enum.empty?(props) do
+      {:not_applicable, "Rule #{name} requires #{key} but none found"}
+    else
+      {:applicable, "Rule #{name} can apply with #{length(props)} #{key}"}
+    end
+  end
+
+  defp check_boolean_feature(schema, key, name) do
+    if Map.get(schema, key, false) do
+      {:applicable, "Rule #{name} can apply (#{key} is true)"}
+    else
+      {:not_applicable, "Rule #{name} requires #{key} to be true"}
+    end
+  end
+
+  defp explain_body(body) do
+    body
+    |> Enum.with_index(1)
+    |> Enum.map(fn {elem, i} ->
+      "  #{i}. #{explain_element(elem)}"
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp explain_element({:pattern, _} = pattern), do: explain_pattern(pattern)
+  defp explain_element({:not_equal, t1, t2}), do: "#{explain_term(t1)} != #{explain_term(t2)}"
+  defp explain_element({:is_iri, t}), do: "isIRI(#{explain_term(t)})"
+  defp explain_element({:is_blank, t}), do: "isBlank(#{explain_term(t)})"
+  defp explain_element({:is_literal, t}), do: "isLiteral(#{explain_term(t)})"
+  defp explain_element({:bound, t}), do: "BOUND(#{explain_term(t)})"
+
+  defp explain_pattern({:pattern, [s, p, o]}) do
+    "#{explain_term(s)} #{explain_term(p)} #{explain_term(o)}"
+  end
+
+  defp explain_term({:var, name}), do: "?#{name}"
+  defp explain_term({:iri, iri}), do: "<#{Namespaces.extract_local_name(iri)}>"
+  defp explain_term({:blank_node, id}), do: "_:#{id}"
+  defp explain_term({:literal, :simple, value}), do: "\"#{value}\""
+  defp explain_term({:literal, :typed, value, _type}), do: "\"#{value}\"^^..."
+  defp explain_term({:literal, :lang, value, lang}), do: "\"#{value}\"@#{lang}"
+
+  # ============================================================================
+  # Delta Pattern Marking for Semi-Naive Evaluation
+  # ============================================================================
+
+  @doc """
+  Marks delta positions for semi-naive evaluation.
+
+  By default, all body patterns can use delta facts. This function adds
+  metadata to the rule indicating which pattern positions should use delta.
+
+  ## Examples
+
+      iex> rule = Rules.scm_sco()
+      iex> marked = Rule.mark_delta_positions(rule)
+      iex> marked.metadata.delta_positions
+      [0, 1]  # Both patterns can use delta
+  """
+  @spec mark_delta_positions(t(), [non_neg_integer()] | nil) :: t()
+  def mark_delta_positions(%__MODULE__{} = rule, positions \\ nil) do
+    pattern_positions = positions || default_delta_positions(rule)
+
+    metadata = (rule.metadata || %{}) |> Map.put(:delta_positions, pattern_positions)
+    %{rule | metadata: metadata}
+  end
+
+  @doc """
+  Returns the delta positions for a rule.
+
+  If not explicitly marked, returns all pattern positions.
+  """
+  @spec delta_positions(t()) :: [non_neg_integer()]
+  def delta_positions(%__MODULE__{metadata: nil} = rule) do
+    default_delta_positions(rule)
+  end
+
+  def delta_positions(%__MODULE__{metadata: metadata}) do
+    Map.get(metadata, :delta_positions, [])
+  end
+
+  defp default_delta_positions(rule) do
+    # All pattern positions by default
+    rule
+    |> body_patterns()
+    |> Enum.with_index()
+    |> Enum.map(fn {_, i} -> i end)
+  end
 end

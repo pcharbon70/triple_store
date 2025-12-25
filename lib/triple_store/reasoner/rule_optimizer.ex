@@ -20,6 +20,17 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
   - The predicate position is typically most discriminating in RDF data
   - Variables that are already bound by earlier patterns add selectivity
 
+  ## Selectivity Constants
+
+  The optimizer uses configurable selectivity estimates (defined as module attributes):
+  - Bound variable: 0.01 (very selective)
+  - Literal constant: 0.001 (extremely selective)
+  - IRI in predicate position: 0.001 (very selective)
+  - IRI in subject/object position: 0.01
+  - Unbound subject: 0.1
+  - Unbound predicate: 0.01 (predicates rare in RDF)
+  - Unbound object: 0.1
+
   ## Usage
 
       # Optimize a single rule
@@ -35,7 +46,20 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
       dead_rules = RuleOptimizer.find_dead_rules(rules, schema_info)
   """
 
-  alias TripleStore.Reasoner.Rule
+  alias TripleStore.Reasoner.{Rule, Namespaces}
+
+  # ============================================================================
+  # Selectivity Constants
+  # ============================================================================
+
+  # Selectivity estimates (lower = more selective, filters more)
+  @bound_var_selectivity 0.01
+  @literal_selectivity 0.001
+  @iri_predicate_selectivity 0.001
+  @iri_subject_object_selectivity 0.01
+  @unbound_subject_selectivity 0.1
+  @unbound_predicate_selectivity 0.01
+  @unbound_object_selectivity 0.1
 
   # ============================================================================
   # Types
@@ -337,7 +361,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
       {:var, name} ->
         if MapSet.member?(bound_vars, name) do
           # Already bound - very selective
-          0.01
+          @bound_var_selectivity
         else
           # Unbound variable - low selectivity
           base_selectivity
@@ -349,11 +373,15 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
 
       {:literal, _, _} ->
         # Literal constant - typically very selective
-        0.001
+        @literal_selectivity
 
       {:literal, _, _, _} ->
         # Typed/lang literal - typically very selective
-        0.001
+        @literal_selectivity
+
+      {:blank_node, _} ->
+        # Blank nodes are fairly selective
+        @iri_subject_object_selectivity
 
       _ ->
         base_selectivity
@@ -361,9 +389,9 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
   end
 
   # Predicate position is most selective in typical RDF data
-  defp position_selectivity(:subject), do: 0.1
-  defp position_selectivity(:predicate), do: 0.01
-  defp position_selectivity(:object), do: 0.1
+  defp position_selectivity(:subject), do: @unbound_subject_selectivity
+  defp position_selectivity(:predicate), do: @unbound_predicate_selectivity
+  defp position_selectivity(:object), do: @unbound_object_selectivity
 
   defp get_iri_selectivity(iri, :predicate, %{predicate_counts: counts, total_triples: total})
        when is_map(counts) and total > 0 do
@@ -371,8 +399,8 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
     count / total
   end
 
-  defp get_iri_selectivity(_iri, :predicate, _data_stats), do: 0.001
-  defp get_iri_selectivity(_iri, _position, _data_stats), do: 0.01
+  defp get_iri_selectivity(_iri, :predicate, _data_stats), do: @iri_predicate_selectivity
+  defp get_iri_selectivity(_iri, _position, _data_stats), do: @iri_subject_object_selectivity
 
   # ============================================================================
   # Private - Condition Placement
@@ -508,16 +536,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
   end
 
   defp extract_local_name(iri) do
-    cond do
-      String.contains?(iri, "#") ->
-        iri |> String.split("#") |> List.last()
-
-      String.contains?(iri, "/") ->
-        iri |> String.split("/") |> List.last()
-
-      true ->
-        iri
-    end
+    Namespaces.extract_local_name(iri)
   end
 
   # ============================================================================
