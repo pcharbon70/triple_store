@@ -250,7 +250,7 @@ Optimize common property path patterns.
 
 ## 3.5 Phase 3 Integration Tests
 
-- [ ] **Section 3.5 Complete**
+- [x] **Section 3.5 Complete**
 
 Integration tests validate advanced query processing features working together.
 
@@ -289,14 +289,35 @@ Test property paths on real-world patterns.
 
 ### 3.5.4 Optimizer Integration Testing
 
-- [ ] **Task 3.5.4 Complete**
+- [x] **Task 3.5.4 Complete**
 
 Test cost-based optimizer selections.
 
-- [ ] 3.5.4.1 Test optimizer chooses hash join for large intermediate results
-- [ ] 3.5.4.2 Test optimizer chooses nested loop for small inputs
-- [ ] 3.5.4.3 Test optimizer chooses Leapfrog for multi-way joins
-- [ ] 3.5.4.4 Test plan cache shows >90% hit rate on repeated queries
+- [x] 3.5.4.1 Test optimizer chooses hash join for large intermediate results
+- [x] 3.5.4.2 Test optimizer chooses nested loop for small inputs
+- [x] 3.5.4.3 Test optimizer chooses Leapfrog for multi-way joins
+- [x] 3.5.4.4 Test plan cache shows >90% hit rate on repeated queries
+
+### 3.5.5 Review Fixes
+
+- [x] **Review Fixes Complete** (2025-12-25)
+
+Addressed all blockers, concerns, and suggestions from the Section 3.5 review:
+- [x] B1: Extract duplicate helper functions to test/support/integration_helpers.ex
+- [x] B2: Add symmetric bind-join handling (path on left or right)
+- [x] B3: Add test for blank node bind-join scenario
+- [x] C1: Add aggregate result limit for bind-joins (DoS protection)
+- [x] C2: Tighten benchmark thresholds (10x buffer instead of 890x)
+- [x] C3: Standardize timeout patterns with module constants
+- [x] C4: Add error injection tests (8 new tests)
+- [x] C5: Use accessor functions instead of AST pattern matching
+- [x] C6: Add pattern recursion depth limit (DoS protection)
+- [x] S1: Extract common test fixtures with graph generators
+- [x] S2: Add property-based testing with StreamData
+- [x] S3: Document test data patterns with ASCII diagrams
+- [x] S4: Add telemetry verification tests
+- [x] S5: Document Stream.resource consideration for future optimization
+- [x] S6: Add real-world query pattern tests (Wikidata, DBpedia, enterprise)
 
 ---
 

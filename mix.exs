@@ -51,7 +51,10 @@ defmodule TripleStore.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
 
       # Static analysis
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+
+      # Property-based testing
+      {:stream_data, "~> 1.0", only: :test}
     ]
   end
 

@@ -12,6 +12,8 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   """
   use ExUnit.Case, async: false
 
+  import TripleStore.Test.IntegrationHelpers, only: [extract_count: 1, ast_to_rdf: 1]
+
   alias TripleStore.Transaction
   alias TripleStore.Update
   alias TripleStore.Backend.RocksDB.NIF
@@ -692,24 +694,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   # 3.5.2.2: Concurrent queries during update see consistent state
   # ---------------------------------------------------------------------------
 
-  # Helper to extract count from query result (handles both RDF.Literal and AST format)
-  defp extract_count(result) do
-    case result do
-      %RDF.Literal{} = lit -> RDF.Literal.value(lit) |> to_string() |> String.to_integer()
-      {:literal, :typed, value, _} -> String.to_integer(value)
-      {:literal, :simple, value} -> String.to_integer(value)
-      value when is_integer(value) -> value
-      value when is_binary(value) -> String.to_integer(value)
-    end
-  end
-
-  # Helper to convert AST format back to RDF terms
-  defp ast_to_rdf({:named_node, iri}), do: RDF.iri(iri)
-  defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
-  defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
-  defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :typed, value, datatype}), do: RDF.literal(value, datatype: datatype)
-  defp ast_to_rdf(other), do: other
+  # extract_count/1 and ast_to_rdf/1 imported from IntegrationHelpers
 
   describe "concurrent queries during update see consistent state (Task 3.5.2.2)" do
     test "multiple readers see consistent snapshots during heavy writes", %{db: db, manager: manager} do
@@ -1257,6 +1242,164 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, results} = Transaction.query(txn, """
         SELECT ?s WHERE { ?s ?p ?o }
       """)
+      assert length(results) == 1
+
+      Transaction.stop(txn)
+    end
+  end
+
+  # ===========================================================================
+  # Error Injection Tests (C4)
+  # ===========================================================================
+
+  describe "error handling and injection tests" do
+    test "handles invalid SPARQL UPDATE syntax", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Invalid syntax - missing closing brace
+      result = Transaction.update(txn, """
+        INSERT DATA {
+          <http://example.org/s> <http://example.org/p> <http://example.org/o>
+      """)
+
+      assert match?({:error, _}, result)
+      Transaction.stop(txn)
+    end
+
+    test "handles invalid IRI in update", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Invalid IRI (spaces not allowed)
+      result = Transaction.update(txn, """
+        INSERT DATA {
+          <http://example.org/invalid iri> <http://example.org/p> <http://example.org/o> .
+        }
+      """)
+
+      assert match?({:error, _}, result)
+      Transaction.stop(txn)
+    end
+
+    test "transaction remains usable after parse error", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # First: invalid update
+      {:error, _} = Transaction.update(txn, "INVALID SPARQL")
+
+      # Transaction should still be usable
+      {:ok, 1} = Transaction.update(txn, """
+        INSERT DATA {
+          <http://example.org/s> <http://example.org/p> "value" .
+        }
+      """)
+
+      # Verify insert worked
+      {:ok, results} = Transaction.query(txn, "SELECT ?s WHERE { ?s ?p ?o }")
+      assert length(results) == 1
+
+      Transaction.stop(txn)
+    end
+
+    test "handles empty WHERE clause gracefully", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # This should work - DELETE WHERE with no matches deletes nothing
+      {:ok, 0} = Transaction.update(txn, """
+        DELETE WHERE {
+          <http://nonexistent.org/x> <http://nonexistent.org/y> ?z .
+        }
+      """)
+
+      Transaction.stop(txn)
+    end
+
+    test "handles process shutdown during operation", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Insert some data
+      {:ok, 10} = Transaction.update(txn, """
+        INSERT DATA {
+          #{for i <- 1..10 do
+            "<http://example.org/item#{i}> <http://example.org/value> \"#{i}\" ."
+          end |> Enum.join("\n")}
+        }
+      """)
+
+      # Stop the transaction
+      Transaction.stop(txn)
+
+      # Attempting to use it should fail gracefully
+      result = catch_exit(Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }"))
+      assert result != nil
+    end
+
+    test "verify data integrity after interrupted operation", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Insert initial data
+      {:ok, 5} = Transaction.update(txn, """
+        INSERT DATA {
+          #{for i <- 1..5 do
+            "<http://example.org/stable#{i}> <http://example.org/p> \"#{i}\" ."
+          end |> Enum.join("\n")}
+        }
+      """)
+
+      # Stop transaction
+      Transaction.stop(txn)
+
+      # Start new transaction
+      {:ok, txn2} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Data should still be there
+      {:ok, results} = Transaction.query(txn2, """
+        SELECT (COUNT(?s) AS ?count) WHERE {
+          ?s <http://example.org/p> ?o
+        }
+      """)
+
+      count = extract_count(hd(results)["count"])
+      assert count == 5
+
+      Transaction.stop(txn2)
+    end
+
+    test "handles MODIFY with no matching WHERE", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # MODIFY with WHERE that matches nothing
+      {:ok, 0} = Transaction.update(txn, """
+        DELETE { ?s <http://example.org/old> ?o }
+        INSERT { ?s <http://example.org/new> ?o }
+        WHERE { ?s <http://example.org/old> ?o }
+      """)
+
+      # No triples should exist
+      {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
+      assert length(results) == 0
+
+      Transaction.stop(txn)
+    end
+
+    test "handles DELETE template with unbound variables", %{db: db, manager: manager} do
+      {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
+
+      # Insert data
+      {:ok, 1} = Transaction.update(txn, """
+        INSERT DATA {
+          <http://example.org/s> <http://example.org/p> "value" .
+        }
+      """)
+
+      # DELETE with WHERE that binds different variable than template expects
+      # (this is valid SPARQL - just won't match anything)
+      {:ok, _} = Transaction.update(txn, """
+        DELETE { <http://nonexistent.org/x> ?p ?o }
+        WHERE { ?s <http://example.org/p> ?o }
+      """)
+
+      # Original triple should still exist
+      {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
       assert length(results) == 1
 
       Transaction.stop(txn)

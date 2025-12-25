@@ -129,6 +129,12 @@ defmodule TripleStore.SPARQL.Query do
   # Default timeout: 30 seconds
   @default_timeout 30_000
 
+  # Maximum results from bind-join before triggering limit (DoS protection)
+  @max_bind_join_results 1_000_000
+
+  # Maximum pattern recursion depth to prevent stack overflow (DoS protection)
+  @max_pattern_depth 100
+
   # ===========================================================================
   # Prepared Query Struct
   # Task 2.5.3: Prepared Queries
@@ -935,26 +941,39 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   # Execute a pattern and return a stream of bindings
-  defp execute_pattern(ctx, pattern) do
+  # Tracks recursion depth to prevent stack overflow from adversarial queries
+  defp execute_pattern(ctx, pattern, depth \\ 0)
+
+  defp execute_pattern(_ctx, _pattern, depth) when depth > @max_pattern_depth do
+    {:error, {:pattern_depth_exceeded, depth}}
+  end
+
+  defp execute_pattern(ctx, pattern, depth) do
     case pattern do
       {:bgp, triples} ->
         Executor.execute_bgp(ctx, triples)
 
       {:join, left, right} ->
-        # Check if right side is a path with a blank node subject
-        # In that case, we need a bind-join where left bindings are passed to right
-        if path_with_blank_node_subject?(right) do
-          execute_bind_join_with_path(ctx, left, right)
-        else
-          with {:ok, left_stream} <- execute_pattern(ctx, left),
-               {:ok, right_stream} <- execute_pattern(ctx, right) do
-            {:ok, Executor.hash_join(left_stream, right_stream)}
-          end
+        # Check if either side is a path with a blank node subject
+        # In that case, we need a bind-join where bindings are passed from the other side
+        cond do
+          path_with_blank_node_subject?(right) ->
+            execute_bind_join_with_path(ctx, left, right, depth)
+
+          path_with_blank_node_subject?(left) ->
+            # Symmetric case: path on left, bind from right
+            execute_bind_join_with_path(ctx, right, left, depth)
+
+          true ->
+            with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
+                 {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
+              {:ok, Executor.hash_join(left_stream, right_stream)}
+            end
         end
 
       {:left_join, left, right, expr} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left),
-             {:ok, right_stream} <- execute_pattern(ctx, right) do
+        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
+             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
           opts =
             if expr do
               [filter: fn binding -> Executor.evaluate_filter(expr, binding) end]
@@ -966,45 +985,45 @@ defmodule TripleStore.SPARQL.Query do
         end
 
       {:union, left, right} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left),
-             {:ok, right_stream} <- execute_pattern(ctx, right) do
+        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
+             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
           {:ok, Executor.union(left_stream, right_stream)}
         end
 
       {:filter, expr, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           {:ok, Executor.filter(stream, expr)}
         end
 
       {:project, inner, vars} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           var_names = extract_variable_names(vars)
           {:ok, Executor.project(stream, var_names)}
         end
 
       {:distinct, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           {:ok, Executor.distinct(stream)}
         end
 
       {:reduced, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           {:ok, Executor.reduced(stream)}
         end
 
       {:slice, inner, offset, limit} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           {:ok, Executor.slice(stream, offset || 0, limit)}
         end
 
       {:order_by, inner, order_conditions} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           comparators = convert_order_conditions(order_conditions)
           {:ok, Executor.order_by(stream, comparators)}
         end
 
       {:extend, inner, {:variable, var_name}, expr} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           extended =
             Stream.map(stream, fn binding ->
               case TripleStore.SPARQL.Expression.evaluate(expr, binding) do
@@ -1017,7 +1036,7 @@ defmodule TripleStore.SPARQL.Query do
         end
 
       {:group, inner, group_vars, aggregates} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner) do
+        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           grouped =
             if Enum.empty?(group_vars) do
               # Implicit grouping - all solutions form one group
@@ -1050,13 +1069,18 @@ defmodule TripleStore.SPARQL.Query do
 
   # Execute a bind-join where left bindings are passed to the path evaluation
   # This is necessary when the path's subject is a blank node that gets bound by the left side
-  defp execute_bind_join_with_path(ctx, left, {:path, subject, path_expr, object}) do
-    with {:ok, left_stream} <- execute_pattern(ctx, left) do
+  #
+  # NOTE: This function includes result limiting to prevent memory exhaustion
+  # from adversarial queries that could produce billions of results.
+  defp execute_bind_join_with_path(ctx, left, {:path, subject, path_expr, object}, depth) do
+    with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1) do
       path_ctx = %{db: ctx.db, dict_manager: ctx.dict_manager}
 
       # For each left binding, evaluate the path with that binding
+      # Apply a limit to prevent memory exhaustion from adversarial queries
       result_stream =
-        Stream.flat_map(left_stream, fn left_binding ->
+        left_stream
+        |> Stream.flat_map(fn left_binding ->
           case PropertyPath.evaluate(path_ctx, left_binding, subject, path_expr, object) do
             {:ok, path_stream} ->
               # The path stream already has left_binding merged in
@@ -1066,6 +1090,7 @@ defmodule TripleStore.SPARQL.Query do
               []
           end
         end)
+        |> Stream.take(@max_bind_join_results)
 
       {:ok, result_stream}
     end

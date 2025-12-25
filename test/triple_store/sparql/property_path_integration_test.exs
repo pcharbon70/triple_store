@@ -11,6 +11,9 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
   use ExUnit.Case, async: false
 
+  import TripleStore.Test.IntegrationHelpers,
+    only: [extract_count: 1, get_iri: 1, get_literal: 1, extract_iris: 2]
+
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Query
@@ -18,10 +21,13 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
   @moduletag :property_path_integration
 
+  # Timeout constants for test consistency
+  @benchmark_timeout 120_000
+  @performance_threshold_ms 50
+
   # Standard RDF/RDFS/OWL namespaces
   @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
   @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
   @foaf "http://xmlns.com/foaf/0.1/"
   @ex "http://example.org/"
 
@@ -68,17 +74,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
   end
   defp to_rdf_term(term), do: term
 
-  defp extract_iris(results, var) do
-    results
-    |> Enum.map(fn r ->
-      case r[var] do
-        {:named_node, iri} -> iri
-        %RDF.IRI{value: iri} -> iri
-        other -> other
-      end
-    end)
-    |> MapSet.new()
-  end
+  # extract_iris/2, get_iri/1, get_literal/1 imported from IntegrationHelpers
 
   # ===========================================================================
   # 3.5.3.1: rdfs:subClassOf* for Class Hierarchy Traversal
@@ -419,6 +415,81 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.member?(types, "#{@ex}Agent")
     end
 
+    test "sequence path with blank node intermediate (bind-join)", %{ctx: ctx} do
+      # Test the bind-join for blank node intermediates in sequence paths
+      # Query: ?x rdf:type/rdfs:subClassOf* ?type uses blank node for intermediate
+      #
+      # Graph:
+      #   alice --rdf:type--> Student --subClassOf--> Person --subClassOf--> Agent
+      #   bob --rdf:type--> Teacher --subClassOf--> Person
+      #
+      insert_triples(ctx, [
+        {"#{@ex}alice", "#{@rdf}type", "#{@ex}Student"},
+        {"#{@ex}bob", "#{@rdf}type", "#{@ex}Teacher"},
+        {"#{@ex}Student", "#{@rdfs}subClassOf", "#{@ex}Person"},
+        {"#{@ex}Teacher", "#{@rdfs}subClassOf", "#{@ex}Person"},
+        {"#{@ex}Person", "#{@rdfs}subClassOf", "#{@ex}Agent"}
+      ])
+
+      # Find all (person, type) pairs via sequence path with transitive closure
+      sparql = """
+      SELECT ?person ?type WHERE {
+        ?person <#{@rdf}type>/<#{@rdfs}subClassOf>* ?type
+      }
+      """
+
+      {:ok, results} = Query.query(ctx, sparql)
+
+      # Group results by person
+      alice_types = results
+        |> Enum.filter(&(get_iri(&1["person"]) == "#{@ex}alice"))
+        |> Enum.map(&get_iri(&1["type"]))
+        |> MapSet.new()
+
+      bob_types = results
+        |> Enum.filter(&(get_iri(&1["person"]) == "#{@ex}bob"))
+        |> Enum.map(&get_iri(&1["type"]))
+        |> MapSet.new()
+
+      # Alice's direct type is Student
+      assert MapSet.member?(alice_types, "#{@ex}Student")
+      # Alice is also a Person and Agent via subClassOf*
+      assert MapSet.member?(alice_types, "#{@ex}Person")
+      assert MapSet.member?(alice_types, "#{@ex}Agent")
+
+      # Bob's direct type is Teacher
+      assert MapSet.member?(bob_types, "#{@ex}Teacher")
+      # Bob is also a Person and Agent via subClassOf*
+      assert MapSet.member?(bob_types, "#{@ex}Person")
+      assert MapSet.member?(bob_types, "#{@ex}Agent")
+    end
+
+    test "path on left side of join (symmetric bind-join)", %{ctx: ctx} do
+      # Test that optimizer can handle path on LEFT side of join
+      # This tests the symmetric bind-join handling (B2 fix)
+      insert_triples(ctx, [
+        {"#{@ex}alice", "#{@foaf}knows", "#{@ex}bob"},
+        {"#{@ex}bob", "#{@foaf}knows", "#{@ex}charlie"},
+        {"#{@ex}alice", "#{@ex}name", "Alice"},
+        {"#{@ex}bob", "#{@ex}name", "Bob"},
+        {"#{@ex}charlie", "#{@ex}name", "Charlie"}
+      ])
+
+      # Query where path comes first, then BGP with related variable
+      sparql = """
+      SELECT ?friend ?name WHERE {
+        <#{@ex}alice> <#{@foaf}knows>+ ?friend .
+        ?friend <#{@ex}name> ?name
+      }
+      """
+
+      {:ok, results} = Query.query(ctx, sparql)
+      names = Enum.map(results, &get_literal(&1["name"])) |> MapSet.new()
+
+      assert MapSet.member?(names, "Bob")
+      assert MapSet.member?(names, "Charlie")
+    end
+
     test "alternative with sequence", %{ctx: ctx} do
       # Find either direct friends or colleagues (friend or worksAt/employs^)
       insert_triples(ctx, [
@@ -490,7 +561,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
   # ===========================================================================
 
   describe "benchmark recursive paths on deep hierarchies" do
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "deep class hierarchy (100 levels)", %{ctx: ctx} do
       # Create a 100-level deep hierarchy
       triples = for i <- 1..99 do
@@ -513,11 +584,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.size(superclasses) == 100
       IO.puts("\n  Deep hierarchy (100 levels) traversal: #{time_us / 1000}ms")
 
-      # Reasonable performance expectation: under 5 seconds
-      assert time_us < 5_000_000, "Deep hierarchy traversal took too long: #{time_us / 1000}ms"
+      # Reasonable performance expectation (10x buffer over typical ~5ms)
+      assert time_us < @performance_threshold_ms * 1000, "Deep hierarchy traversal took too long: #{time_us / 1000}ms"
     end
 
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "wide hierarchy (50 classes at each level)", %{ctx: ctx} do
       # Create 3 levels with 50 classes each
       level1_triples = for i <- 1..50 do
@@ -545,10 +616,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.size(subclasses) == 150
       IO.puts("\n  Wide hierarchy (150 classes) traversal: #{time_us / 1000}ms")
 
-      assert time_us < 5_000_000, "Wide hierarchy traversal took too long: #{time_us / 1000}ms"
+      # Reasonable performance expectation (10x buffer)
+      assert time_us < @performance_threshold_ms * 1000, "Wide hierarchy traversal took too long: #{time_us / 1000}ms"
     end
 
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "social network with cycles (100 nodes)", %{ctx: ctx} do
       # Create a circular network of 100 people
       triples = for i <- 1..100 do
@@ -572,10 +644,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.size(people) == 100
       IO.puts("\n  Circular network (100 nodes) traversal: #{time_us / 1000}ms")
 
-      assert time_us < 5_000_000, "Circular network traversal took too long: #{time_us / 1000}ms"
+      # Reasonable performance expectation (10x buffer)
+      assert time_us < @performance_threshold_ms * 1000, "Circular network traversal took too long: #{time_us / 1000}ms"
     end
 
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "dense graph (complete graph of 20 nodes)", %{ctx: ctx} do
       # Create complete graph: everyone knows everyone
       triples = for i <- 1..20, j <- 1..20, i != j do
@@ -598,10 +671,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.size(people) == 20
       IO.puts("\n  Complete graph (20 nodes, 380 edges) traversal: #{time_us / 1000}ms")
 
-      assert time_us < 5_000_000, "Complete graph traversal took too long: #{time_us / 1000}ms"
+      # Reasonable performance expectation (10x buffer)
+      assert time_us < @performance_threshold_ms * 1000, "Complete graph traversal took too long: #{time_us / 1000}ms"
     end
 
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "binary tree hierarchy (7 levels, 127 nodes)", %{ctx: ctx} do
       # Create a binary tree with 7 levels
       # Level 0: 1 node, Level 1: 2 nodes, ... Level 6: 64 nodes = 127 total
@@ -632,10 +706,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       assert MapSet.size(nodes) == 126
       IO.puts("\n  Binary tree (127 nodes) traversal: #{time_us / 1000}ms")
 
-      assert time_us < 5_000_000, "Binary tree traversal took too long: #{time_us / 1000}ms"
+      # Reasonable performance expectation (10x buffer)
+      assert time_us < @performance_threshold_ms * 1000, "Binary tree traversal took too long: #{time_us / 1000}ms"
     end
 
-    @tag timeout: 120_000
+    @tag timeout: @benchmark_timeout
     test "compare zero-or-more vs one-or-more performance", %{ctx: ctx} do
       # Create chain of 50 nodes
       triples = for i <- 1..49 do
@@ -745,17 +820,5 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
     end
   end
 
-  # ===========================================================================
-  # Helper
-  # ===========================================================================
-
-  defp extract_count(result) do
-    case result do
-      %RDF.Literal{} = lit -> RDF.Literal.value(lit) |> to_string() |> String.to_integer()
-      {:literal, :typed, value, _} -> String.to_integer(value)
-      {:literal, :simple, value} -> String.to_integer(value)
-      value when is_integer(value) -> value
-      value when is_binary(value) -> String.to_integer(value)
-    end
-  end
+  # extract_count/1 imported from IntegrationHelpers
 end
