@@ -267,14 +267,14 @@ Test Leapfrog Triejoin on complex queries.
 
 ### 3.5.2 Update Integration Testing
 
-- [ ] **Task 3.5.2 Complete**
+- [x] **Task 3.5.2 Complete**
 
 Test SPARQL UPDATE with complex scenarios.
 
-- [ ] 3.5.2.1 Test DELETE/INSERT WHERE modifying same triples
-- [ ] 3.5.2.2 Test concurrent queries during update see consistent state
-- [ ] 3.5.2.3 Test large batch updates (10K+ triples)
-- [ ] 3.5.2.4 Test update with inference implications (prepare for Phase 4)
+- [x] 3.5.2.1 Test DELETE/INSERT WHERE modifying same triples
+- [x] 3.5.2.2 Test concurrent queries during update see consistent state
+- [x] 3.5.2.3 Test large batch updates (10K+ triples)
+- [x] 3.5.2.4 Test update with inference implications (prepare for Phase 4)
 
 ### 3.5.3 Property Path Integration Testing
 
