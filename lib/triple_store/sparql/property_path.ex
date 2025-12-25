@@ -105,9 +105,289 @@ defmodule TripleStore.SPARQL.PropertyPath do
   @spec evaluate(context(), binding(), rdf_term(), path_expr(), rdf_term()) ::
           {:ok, binding_stream()} | {:error, term()}
   def evaluate(ctx, binding, subject, path, object) do
-    case do_evaluate(ctx, binding, subject, path, object) do
-      {:ok, _} = result -> result
-      {:error, _} = error -> error
+    # Try optimized evaluation first, fall back to standard evaluation
+    case evaluate_optimized(ctx, binding, subject, path, object) do
+      {:optimized, result} -> result
+      :not_optimized -> do_evaluate(ctx, binding, subject, path, object)
+    end
+  end
+
+  # ===========================================================================
+  # Path Optimization (Task 3.4.3)
+  # ===========================================================================
+
+  # Try to apply optimizations to the path evaluation
+  defp evaluate_optimized(ctx, binding, subject, path, object) do
+    s_resolved = resolve_term(subject, binding)
+    o_resolved = resolve_term(object, binding)
+
+    cond do
+      # Optimization 1: Fixed-length path (sequence of simple predicates)
+      fixed_length_path?(path) ->
+        {:optimized, evaluate_fixed_length_path(ctx, binding, subject, path, object)}
+
+      # Optimization 2: Bidirectional search for bounded recursive paths
+      both_bound?(s_resolved, o_resolved) and recursive_path?(path) ->
+        {:optimized, evaluate_bidirectional(ctx, binding, subject, path, object, s_resolved, o_resolved)}
+
+      true ->
+        :not_optimized
+    end
+  end
+
+  # Check if path is a fixed-length sequence of simple predicates
+  defp fixed_length_path?({:sequence, left, right}) do
+    simple_predicate?(left) and (simple_predicate?(right) or fixed_length_path?(right))
+  end
+
+  defp fixed_length_path?(_), do: false
+
+  # Check if a path element is a simple predicate (link or named_node)
+  defp simple_predicate?({:link, _}), do: true
+  defp simple_predicate?({:named_node, _}), do: true
+  defp simple_predicate?({:reverse, inner}), do: simple_predicate?(inner)
+  defp simple_predicate?(_), do: false
+
+  # Check if both subject and object are bound (not variables)
+  defp both_bound?({:variable, _}, _), do: false
+  defp both_bound?(_, {:variable, _}), do: false
+  defp both_bound?(_, _), do: true
+
+  # Check if path is a recursive path (*, +)
+  defp recursive_path?({:zero_or_more, _}), do: true
+  defp recursive_path?({:one_or_more, _}), do: true
+  defp recursive_path?(_), do: false
+
+  # ===========================================================================
+  # Fixed-Length Path Optimization
+  # ===========================================================================
+
+  # Optimize fixed-length paths by converting to a sequence of joins
+  # Instead of using intermediate streams, we extract all predicates and
+  # evaluate as a multi-way join
+  defp evaluate_fixed_length_path(ctx, binding, subject, path, object) do
+    # Extract the predicate chain
+    predicates = extract_predicate_chain(path)
+
+    case predicates do
+      [] ->
+        {:error, :empty_path}
+
+      [single] ->
+        # Just one predicate - evaluate normally
+        evaluate_link_predicate(ctx, binding, subject, single, object)
+
+      chain ->
+        # Multiple predicates - use chained evaluation with optimized intermediate handling
+        evaluate_predicate_chain(ctx, binding, subject, chain, object)
+    end
+  end
+
+  # Extract predicates from a sequence path
+  defp extract_predicate_chain({:sequence, left, right}) do
+    left_chain = extract_predicate_chain(left)
+    right_chain = extract_predicate_chain(right)
+    left_chain ++ right_chain
+  end
+
+  defp extract_predicate_chain({:link, iri}), do: [{:forward, iri}]
+  defp extract_predicate_chain({:named_node, iri}), do: [{:forward, iri}]
+  defp extract_predicate_chain({:reverse, {:link, iri}}), do: [{:reverse, iri}]
+  defp extract_predicate_chain({:reverse, {:named_node, iri}}), do: [{:reverse, iri}]
+  defp extract_predicate_chain(_), do: []
+
+  # Evaluate a link predicate with direction
+  defp evaluate_link_predicate(ctx, binding, subject, {:forward, iri}, object) do
+    evaluate_link(ctx, binding, subject, iri, object)
+  end
+
+  defp evaluate_link_predicate(ctx, binding, subject, {:reverse, iri}, object) do
+    # Reverse: swap subject and object
+    evaluate_link(ctx, binding, object, iri, subject)
+  end
+
+  # Evaluate a chain of predicates efficiently
+  defp evaluate_predicate_chain(ctx, binding, subject, [pred | rest], object) do
+    case rest do
+      [] ->
+        # Last predicate - connect to final object
+        evaluate_link_predicate(ctx, binding, subject, pred, object)
+
+      _ ->
+        # Intermediate predicate - use a generated variable
+        intermediate = {:variable, "_chain_#{:erlang.unique_integer([:positive])}"}
+
+        case evaluate_link_predicate(ctx, binding, subject, pred, intermediate) do
+          {:ok, stream} ->
+            # Chain to rest of predicates
+            result_stream =
+              Stream.flat_map(stream, fn intermediate_binding ->
+                case evaluate_predicate_chain(ctx, intermediate_binding, intermediate, rest, object) do
+                  {:ok, rest_stream} ->
+                    # Remove intermediate variable from final bindings
+                    {_, var_name} = intermediate
+
+                    Stream.map(rest_stream, fn b ->
+                      Map.delete(b, var_name)
+                    end)
+
+                  {:error, _} ->
+                    []
+                end
+              end)
+
+            {:ok, result_stream}
+
+          {:error, _} = error ->
+            error
+        end
+    end
+  end
+
+  # ===========================================================================
+  # Bidirectional Search Optimization
+  # ===========================================================================
+
+  # Use bidirectional BFS when both endpoints are bound
+  # This can be significantly faster for sparse graphs where the path
+  # might be long but the search space expands exponentially
+  defp evaluate_bidirectional(ctx, binding, _subject, path, _object, s_resolved, o_resolved) do
+    %{dict_manager: dict_manager} = ctx
+
+    inner_path =
+      case path do
+        {:zero_or_more, inner} -> inner
+        {:one_or_more, inner} -> inner
+      end
+
+    include_identity = match?({:zero_or_more, _}, path)
+
+    with {:ok, s_id} <- term_to_id(s_resolved, dict_manager),
+         {:ok, o_id} <- term_to_id(o_resolved, dict_manager) do
+      if s_id == :not_found or o_id == :not_found do
+        {:ok, empty_stream()}
+      else
+        # Check identity first for zero-or-more
+        if include_identity and s_id == o_id do
+          {:ok, Stream.map([binding], & &1)}
+        else
+          # Bidirectional BFS
+          case bidirectional_bfs(ctx, inner_path, s_id, o_id) do
+            true -> {:ok, Stream.map([binding], & &1)}
+            false -> {:ok, empty_stream()}
+          end
+        end
+      end
+    end
+  end
+
+  # Bidirectional BFS: search from both ends and meet in the middle
+  # Returns true if a path exists, false otherwise
+  defp bidirectional_bfs(ctx, inner_path, start_id, target_id) do
+    reversed_path = reverse_path(inner_path)
+
+    # Take one step from each side first (since we need at least one step for one-or-more paths)
+    forward_step_1 =
+      get_one_step_forward(ctx, inner_path, start_id)
+
+    backward_step_1 =
+      get_one_step_forward(ctx, reversed_path, target_id)
+
+    # Check for 1-hop connection (forward reaches target directly or backward reaches start)
+    if MapSet.member?(forward_step_1, target_id) or MapSet.member?(backward_step_1, start_id) do
+      true
+    else
+      # Check for 2-hop connection (frontiers meet in the middle)
+      if MapSet.intersection(forward_step_1, backward_step_1) |> MapSet.size() > 0 do
+        true
+      else
+        # Continue with bidirectional BFS
+        # IMPORTANT: visited sets track only discovered nodes, NOT the start/target
+        # This ensures we don't report a path when start == target but no cycle exists
+        forward_visited = forward_step_1
+        backward_visited = backward_step_1
+
+        do_bidirectional_bfs(
+          ctx,
+          inner_path,
+          reversed_path,
+          forward_step_1,
+          backward_step_1,
+          forward_visited,
+          backward_visited,
+          1
+        )
+      end
+    end
+  end
+
+  @max_bidirectional_depth 50
+
+  defp do_bidirectional_bfs(
+         _ctx,
+         _inner_path,
+         _reversed_path,
+         forward_frontier,
+         backward_frontier,
+         _forward_visited,
+         _backward_visited,
+         depth
+       )
+       when depth > @max_bidirectional_depth or
+              (map_size(forward_frontier) == 0 and map_size(backward_frontier) == 0) do
+    false
+  end
+
+  defp do_bidirectional_bfs(
+         ctx,
+         inner_path,
+         reversed_path,
+         forward_frontier,
+         backward_frontier,
+         forward_visited,
+         backward_visited,
+         depth
+       ) do
+    # Expand the smaller frontier (optimization)
+    {new_forward_frontier, new_forward_visited, new_backward_frontier, new_backward_visited} =
+      if MapSet.size(forward_frontier) <= MapSet.size(backward_frontier) do
+        # Expand forward
+        next_forward =
+          forward_frontier
+          |> Enum.flat_map(fn node_id ->
+            get_one_step_forward(ctx, inner_path, node_id) |> MapSet.to_list()
+          end)
+          |> MapSet.new()
+
+        new_forward = MapSet.difference(next_forward, forward_visited)
+        {new_forward, MapSet.union(forward_visited, new_forward), backward_frontier, backward_visited}
+      else
+        # Expand backward
+        next_backward =
+          backward_frontier
+          |> Enum.flat_map(fn node_id ->
+            get_one_step_forward(ctx, reversed_path, node_id) |> MapSet.to_list()
+          end)
+          |> MapSet.new()
+
+        new_backward = MapSet.difference(next_backward, backward_visited)
+        {forward_frontier, forward_visited, new_backward, MapSet.union(backward_visited, new_backward)}
+      end
+
+    # Check for intersection (path found)
+    if MapSet.intersection(new_forward_visited, new_backward_visited) |> MapSet.size() > 0 do
+      true
+    else
+      do_bidirectional_bfs(
+        ctx,
+        inner_path,
+        reversed_path,
+        new_forward_frontier,
+        new_backward_frontier,
+        new_forward_visited,
+        new_backward_visited,
+        depth + 1
+      )
     end
   end
 

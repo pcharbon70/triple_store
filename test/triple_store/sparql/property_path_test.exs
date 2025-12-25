@@ -958,4 +958,171 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       assert MapSet.size(objects) == 1
     end
   end
+
+  # =========================================================================
+  # Path Optimization Tests (Task 3.4.3)
+  # =========================================================================
+
+  describe "path optimization - fixed length paths" do
+    test "fixed-length path p1/p2 optimization", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/p1", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/p2", "http://ex.org/c"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:sequence, {:named_node, "http://ex.org/p1"}, {:named_node, "http://ex.org/p2"}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+      assert hd(results)["o"] == {:named_node, "http://ex.org/c"}
+    end
+
+    test "fixed-length path p1/p2/p3 optimization", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/p1", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/p2", "http://ex.org/c"})
+      insert_triple(ctx, {"http://ex.org/c", "http://ex.org/p3", "http://ex.org/d"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path =
+        {:sequence, {:named_node, "http://ex.org/p1"},
+         {:sequence, {:named_node, "http://ex.org/p2"}, {:named_node, "http://ex.org/p3"}}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+      assert hd(results)["o"] == {:named_node, "http://ex.org/d"}
+    end
+
+    test "fixed-length path with reverse predicate", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/p1", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/c", "http://ex.org/p2", "http://ex.org/b"})
+
+      # a -[p1]-> b <-[p2]- c
+      # Path: p1/^p2 from a should reach c
+      subject = {:named_node, "http://ex.org/a"}
+      path =
+        {:sequence, {:named_node, "http://ex.org/p1"},
+         {:reverse, {:named_node, "http://ex.org/p2"}}}
+      object = {:variable, "o"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+      assert hd(results)["o"] == {:named_node, "http://ex.org/c"}
+    end
+
+    test "fixed-length path with unbound subject", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/p1", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/p2", "http://ex.org/c"})
+
+      subject = {:variable, "s"}
+      path = {:sequence, {:named_node, "http://ex.org/p1"}, {:named_node, "http://ex.org/p2"}}
+      object = {:named_node, "http://ex.org/c"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+      assert hd(results)["s"] == {:named_node, "http://ex.org/a"}
+    end
+  end
+
+  describe "path optimization - bidirectional search" do
+    test "bidirectional search finds path between bound endpoints", %{ctx: ctx} do
+      # Create a longer path: a -> b -> c -> d -> e
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/knows", "http://ex.org/c"})
+      insert_triple(ctx, {"http://ex.org/c", "http://ex.org/knows", "http://ex.org/d"})
+      insert_triple(ctx, {"http://ex.org/d", "http://ex.org/knows", "http://ex.org/e"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/e"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Path exists from a to e
+      assert length(results) == 1
+    end
+
+    test "bidirectional search returns no path when none exists", %{ctx: ctx} do
+      # Create disconnected components: a -> b and c -> d
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/c", "http://ex.org/knows", "http://ex.org/d"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/d"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # No path from a to d
+      assert length(results) == 0
+    end
+
+    test "bidirectional search handles cycle correctly", %{ctx: ctx} do
+      # Create a cycle: a -> b -> c -> a
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/knows", "http://ex.org/c"})
+      insert_triple(ctx, {"http://ex.org/c", "http://ex.org/knows", "http://ex.org/a"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/a"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Path back to a via the cycle
+      assert length(results) == 1
+    end
+
+    test "bidirectional search with zero-or-more same node", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:zero_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/a"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      # Zero-or-more: identity path exists
+      assert length(results) == 1
+    end
+
+    test "bidirectional search 1-hop path", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/b"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+
+    test "bidirectional search 2-hop path meeting in middle", %{ctx: ctx} do
+      insert_triple(ctx, {"http://ex.org/a", "http://ex.org/knows", "http://ex.org/b"})
+      insert_triple(ctx, {"http://ex.org/b", "http://ex.org/knows", "http://ex.org/c"})
+
+      subject = {:named_node, "http://ex.org/a"}
+      path = {:one_or_more, {:named_node, "http://ex.org/knows"}}
+      object = {:named_node, "http://ex.org/c"}
+
+      {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
+      results = collect_results(stream)
+
+      assert length(results) == 1
+    end
+  end
 end

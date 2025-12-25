@@ -225,13 +225,13 @@ Implement recursive path evaluation with cycle detection.
 
 ### 3.4.3 Path Optimization
 
-- [ ] **Task 3.4.3 Complete**
+- [x] **Task 3.4.3 Complete**
 
 Optimize common property path patterns.
 
-- [ ] 3.4.3.1 Detect and optimize fixed-length paths
-- [ ] 3.4.3.2 Use bidirectional search when both endpoints bound
-- [ ] 3.4.3.3 Consider materialized path indices (optional)
+- [x] 3.4.3.1 Detect and optimize fixed-length paths
+- [x] 3.4.3.2 Use bidirectional search when both endpoints bound
+- [x] 3.4.3.3 Consider materialized path indices (optional)
 
 ### 3.4.4 Unit Tests
 
