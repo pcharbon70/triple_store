@@ -49,14 +49,14 @@ Implement the standard OWL 2 RL rule set.
 
 ### 4.1.3 Rule Compilation
 
-- [ ] **Task 4.1.3 Complete**
+- [x] **Task 4.1.3 Complete** (2025-12-25)
 
 Compile ontology axioms to applicable rules.
 
-- [ ] 4.1.3.1 Implement `RuleCompiler.compile(ontology)` returning rule list
-- [ ] 4.1.3.2 Filter rules to those applicable given ontology axioms
-- [ ] 4.1.3.3 Specialize rules with ontology constants where possible
-- [ ] 4.1.3.4 Store compiled rules in `:persistent_term` for fast access
+- [x] 4.1.3.1 Implement `RuleCompiler.compile(ontology)` returning rule list
+- [x] 4.1.3.2 Filter rules to those applicable given ontology axioms
+- [x] 4.1.3.3 Specialize rules with ontology constants where possible
+- [x] 4.1.3.4 Store compiled rules in `:persistent_term` for fast access
 
 ### 4.1.4 Rule Optimization
 
