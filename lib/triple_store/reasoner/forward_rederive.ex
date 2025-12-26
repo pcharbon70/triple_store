@@ -47,7 +47,18 @@ defmodule TripleStore.Reasoner.ForwardRederive do
       # result.delete - facts that cannot be re-derived
   """
 
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
+
+  require Logger
+
+  # ============================================================================
+  # Configuration
+  # ============================================================================
+
+  # Maximum number of binding sets to prevent exponential memory growth
+  # This limits the cartesian product expansion when matching multiple body patterns
+  @max_binding_sets 10_000
 
   # ============================================================================
   # Types
@@ -115,15 +126,16 @@ defmodule TripleStore.Reasoner.ForwardRederive do
     {keep, delete} =
       potentially_invalid
       |> Enum.reduce({MapSet.new(), MapSet.new()}, fn fact, {keep_acc, delete_acc} ->
-        # Valid facts for checking this specific fact
-        # Include other potentially invalid facts that we've determined can be kept
-        valid_for_check = MapSet.union(base_valid, keep_acc)
-        # But exclude the fact we're checking (to avoid self-justification)
-        valid_for_check = MapSet.delete(valid_for_check, fact)
-        # Also exclude potentially invalid facts we haven't processed yet
-        valid_for_check = MapSet.difference(valid_for_check, potentially_invalid)
-        # But add back facts we've already determined are valid
-        valid_for_check = MapSet.union(valid_for_check, keep_acc)
+        # Valid facts for checking this specific fact:
+        # Start with base_valid (all facts minus deleted)
+        # Exclude potentially invalid facts we haven't processed yet
+        # Add back facts we've already determined can be kept
+        # Exclude the fact we're checking (to avoid self-justification)
+        valid_for_check =
+          base_valid
+          |> MapSet.difference(potentially_invalid)
+          |> MapSet.union(keep_acc)
+          |> MapSet.delete(fact)
 
         if can_rederive?(fact, valid_for_check, rules) do
           {MapSet.put(keep_acc, fact), delete_acc}
@@ -208,7 +220,7 @@ defmodule TripleStore.Reasoner.ForwardRederive do
   # Check if a fact can be derived using a specific rule
   defp can_derive_with_rule?(fact, valid_facts, rule) do
     # First, check if the fact matches the rule's head pattern
-    case match_head(fact, rule.head) do
+    case PatternMatcher.match_rule_head(fact, rule.head) do
       {:ok, head_bindings} ->
         # Get body patterns
         patterns = Rule.body_patterns(rule)
@@ -216,14 +228,23 @@ defmodule TripleStore.Reasoner.ForwardRederive do
 
         # Try to find bindings that satisfy all body patterns
         case find_satisfying_bindings(patterns, head_bindings, valid_facts) do
-          [] ->
+          {:ok, []} ->
             false
 
-          bindings_list ->
+          {:ok, bindings_list} ->
             # Check if any binding set satisfies the conditions
             Enum.any?(bindings_list, fn bindings ->
               satisfies_conditions?(conditions, bindings)
             end)
+
+          {:error, :binding_limit_exceeded} ->
+            # Conservatively assume fact cannot be re-derived if we hit the limit
+            # This is safe because it may lead to over-deletion but not incorrect retention
+            Logger.warning(
+              "Binding set limit exceeded during re-derivation check, " <>
+              "conservatively marking fact as non-re-derivable"
+            )
+            false
         end
 
       :no_match ->
@@ -231,103 +252,58 @@ defmodule TripleStore.Reasoner.ForwardRederive do
     end
   end
 
-  # Match a fact against a rule head, returning bindings
-  defp match_head({s, p, o}, {:pattern, [hs, hp, ho]}) do
-    with {:ok, b1} <- unify_term(s, hs, %{}),
-         {:ok, b2} <- unify_term(p, hp, b1),
-         {:ok, b3} <- unify_term(o, ho, b2) do
-      {:ok, b3}
-    else
-      :no_match -> :no_match
-    end
-  end
-
-  # Unify a concrete term with a pattern term
-  defp unify_term(concrete, {:var, name}, bindings) do
-    case Map.get(bindings, name) do
-      nil -> {:ok, Map.put(bindings, name, concrete)}
-      ^concrete -> {:ok, bindings}
-      _other -> :no_match
-    end
-  end
-
-  defp unify_term(concrete, pattern, bindings) when concrete == pattern do
-    {:ok, bindings}
-  end
-
-  defp unify_term(_concrete, _pattern, _bindings) do
-    :no_match
-  end
-
   # Find all binding sets that satisfy all body patterns
+  # Returns {:ok, bindings_list} or {:error, :binding_limit_exceeded}
   defp find_satisfying_bindings(patterns, initial_bindings, valid_facts) do
-    # Start with the initial bindings from the head match
-    patterns
-    |> Enum.reduce([[initial_bindings]], fn pattern, bindings_list ->
-      # For each current binding set, try to extend it
-      bindings_list
-      |> Enum.flat_map(fn bindings_set ->
-        bindings_set
-        |> Enum.flat_map(fn bindings ->
-          extend_bindings(pattern, bindings, valid_facts)
-        end)
+    result =
+      patterns
+      |> Enum.reduce_while({:ok, [initial_bindings]}, fn pattern, {:ok, bindings_list} ->
+        # For each current binding set, try to extend it
+        extended =
+          bindings_list
+          |> Enum.flat_map(fn bindings ->
+            extend_bindings(pattern, bindings, valid_facts)
+          end)
+
+        # Check binding set size limit to prevent exponential memory growth
+        if length(extended) > @max_binding_sets do
+          {:halt, {:error, :binding_limit_exceeded}}
+        else
+          case extended do
+            [] -> {:cont, {:ok, []}}
+            _ -> {:cont, {:ok, extended}}
+          end
+        end
       end)
-      |> case do
-        [] -> [[]]  # No bindings found, will be filtered
-        extended -> [extended]
-      end
-    end)
-    |> List.flatten()
-    |> Enum.reject(&Enum.empty?/1)
+
+    case result do
+      {:ok, bindings_list} -> {:ok, Enum.reject(bindings_list, &Enum.empty?/1)}
+      {:error, _} = error -> error
+    end
   end
 
   # Try to extend bindings by matching a pattern against valid facts
   defp extend_bindings({:pattern, [ps, pp, po]}, bindings, valid_facts) do
     # Substitute known bindings into the pattern
-    s_sub = substitute_if_bound(ps, bindings)
-    p_sub = substitute_if_bound(pp, bindings)
-    o_sub = substitute_if_bound(po, bindings)
+    s_sub = PatternMatcher.substitute_if_bound(ps, bindings)
+    p_sub = PatternMatcher.substitute_if_bound(pp, bindings)
+    o_sub = PatternMatcher.substitute_if_bound(po, bindings)
 
     # Find matching facts and extend bindings
     valid_facts
     |> Enum.filter(fn {fs, fp, fo} ->
-      term_matches?(fs, s_sub) and term_matches?(fp, p_sub) and term_matches?(fo, o_sub)
+      PatternMatcher.matches_term?(fs, s_sub) and
+        PatternMatcher.matches_term?(fp, p_sub) and
+        PatternMatcher.matches_term?(fo, o_sub)
     end)
     |> Enum.map(fn {fs, fp, fo} ->
       # Extend bindings with matched values
       bindings
-      |> maybe_bind(ps, fs)
-      |> maybe_bind(pp, fp)
-      |> maybe_bind(po, fo)
+      |> PatternMatcher.maybe_bind(ps, fs)
+      |> PatternMatcher.maybe_bind(pp, fp)
+      |> PatternMatcher.maybe_bind(po, fo)
     end)
     |> Enum.reject(&is_nil/1)
-  end
-
-  # Substitute a term if the binding exists
-  defp substitute_if_bound({:var, name}, bindings) do
-    case Map.get(bindings, name) do
-      nil -> {:var, name}
-      value -> value
-    end
-  end
-
-  defp substitute_if_bound(term, _bindings), do: term
-
-  # Check if a concrete term matches a pattern term
-  defp term_matches?(_concrete, {:var, _}), do: true
-  defp term_matches?(concrete, pattern), do: concrete == pattern
-
-  # Maybe add a binding if the pattern is a variable
-  defp maybe_bind(bindings, {:var, name}, value) do
-    case Map.get(bindings, name) do
-      nil -> Map.put(bindings, name, value)
-      ^value -> bindings
-      _other -> nil  # Inconsistent binding
-    end
-  end
-
-  defp maybe_bind(bindings, pattern, value) do
-    if pattern == value, do: bindings, else: nil
   end
 
   # Check if all conditions are satisfied

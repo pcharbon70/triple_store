@@ -196,4 +196,136 @@ defmodule TripleStore.Reasoner.PatternMatcher do
 
   defp convert_from_index(:var, name), do: {:var, :"_#{name}"}
   defp convert_from_index({:bound, value}, _name), do: value
+
+  # ============================================================================
+  # Unification and Binding Operations
+  # ============================================================================
+
+  @typedoc "Variable bindings map"
+  @type bindings :: %{atom() => term()}
+
+  @doc """
+  Unifies a concrete term with a pattern term, returning updated bindings.
+
+  - If the pattern is a variable and unbound, binds it to the concrete term
+  - If the pattern is a variable and already bound, checks for consistency
+  - If the pattern is a constant, checks for equality
+
+  ## Examples
+
+      iex> PatternMatcher.unify_term(:foo, {:var, :x}, %{})
+      {:ok, %{x: :foo}}
+
+      iex> PatternMatcher.unify_term(:foo, {:var, :x}, %{x: :foo})
+      {:ok, %{x: :foo}}
+
+      iex> PatternMatcher.unify_term(:foo, {:var, :x}, %{x: :bar})
+      :no_match
+
+      iex> PatternMatcher.unify_term(:foo, :foo, %{})
+      {:ok, %{}}
+
+      iex> PatternMatcher.unify_term(:foo, :bar, %{})
+      :no_match
+  """
+  @spec unify_term(term(), rule_term(), bindings()) :: {:ok, bindings()} | :no_match
+  def unify_term(concrete, {:var, name}, bindings) do
+    case Map.get(bindings, name) do
+      nil -> {:ok, Map.put(bindings, name, concrete)}
+      ^concrete -> {:ok, bindings}
+      _other -> :no_match
+    end
+  end
+
+  def unify_term(concrete, pattern, bindings) when concrete == pattern do
+    {:ok, bindings}
+  end
+
+  def unify_term(_concrete, _pattern, _bindings) do
+    :no_match
+  end
+
+  @doc """
+  Matches a triple against a rule head pattern, returning bindings.
+
+  ## Examples
+
+      iex> PatternMatcher.match_rule_head({:a, :p, :b}, {:pattern, [{:var, :s}, :p, {:var, :o}]})
+      {:ok, %{s: :a, o: :b}}
+
+      iex> PatternMatcher.match_rule_head({:a, :q, :b}, {:pattern, [{:var, :s}, :p, {:var, :o}]})
+      :no_match
+  """
+  @spec match_rule_head(triple(), pattern()) :: {:ok, bindings()} | :no_match
+  def match_rule_head({s, p, o}, {:pattern, [hs, hp, ho]}) do
+    with {:ok, b1} <- unify_term(s, hs, %{}),
+         {:ok, b2} <- unify_term(p, hp, b1),
+         {:ok, b3} <- unify_term(o, ho, b2) do
+      {:ok, b3}
+    else
+      :no_match -> :no_match
+    end
+  end
+
+  @doc """
+  Substitutes a pattern term with its bound value if available.
+
+  Returns the bound value if the variable is bound, otherwise returns the
+  original pattern term.
+
+  ## Examples
+
+      iex> PatternMatcher.substitute_if_bound({:var, :x}, %{x: :foo})
+      :foo
+
+      iex> PatternMatcher.substitute_if_bound({:var, :x}, %{})
+      {:var, :x}
+
+      iex> PatternMatcher.substitute_if_bound(:constant, %{})
+      :constant
+  """
+  @spec substitute_if_bound(rule_term(), bindings()) :: term()
+  def substitute_if_bound({:var, name}, bindings) do
+    case Map.get(bindings, name) do
+      nil -> {:var, name}
+      value -> value
+    end
+  end
+
+  def substitute_if_bound(term, _bindings), do: term
+
+  @doc """
+  Attempts to extend bindings by binding a pattern term to a value.
+
+  Returns the updated bindings if successful, or nil if there's a conflict.
+
+  ## Examples
+
+      iex> PatternMatcher.maybe_bind(%{}, {:var, :x}, :foo)
+      %{x: :foo}
+
+      iex> PatternMatcher.maybe_bind(%{x: :foo}, {:var, :x}, :foo)
+      %{x: :foo}
+
+      iex> PatternMatcher.maybe_bind(%{x: :foo}, {:var, :x}, :bar)
+      nil
+
+      iex> PatternMatcher.maybe_bind(%{}, :foo, :foo)
+      %{}
+
+      iex> PatternMatcher.maybe_bind(%{}, :foo, :bar)
+      nil
+  """
+  @spec maybe_bind(bindings(), rule_term(), term()) :: bindings() | nil
+  def maybe_bind(bindings, {:var, name}, value) do
+    case Map.get(bindings, name) do
+      nil -> Map.put(bindings, name, value)
+      ^value -> bindings
+      _other -> nil
+    end
+  end
+
+  def maybe_bind(bindings, pattern, value) do
+    if pattern == value, do: bindings, else: nil
+  end
 end

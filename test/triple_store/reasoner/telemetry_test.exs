@@ -15,7 +15,7 @@ defmodule TripleStore.Reasoner.TelemetryTest do
   end
 
   # ============================================================================
-  # Helper Functions
+  # Test Helpers
   # ============================================================================
 
   defp iri(local), do: {:iri, "http://example.org/#{local}"}
@@ -58,15 +58,16 @@ defmodule TripleStore.Reasoner.TelemetryTest do
       assert [:triple_store, :reasoner, :compile, :exception] in events
     end
 
-    test "returns total of 13 events" do
-      # 3 compile + 3 optimize + 3 extract_schema + 1 compile complete + 1 optimize complete +
-      # 1 extract_schema complete - wait, let's just count
+    test "returns total of 17 events" do
       # compile: start, stop, exception, complete = 4
       # optimize: start, stop, complete = 3
       # extract_schema: start, stop, complete = 3
       # materialize: start, stop, iteration = 3
-      # Total = 13
-      assert length(Telemetry.event_names()) == 13
+      # delete: start, stop = 2
+      # backward_trace: complete = 1
+      # forward_rederive: complete = 1
+      # Total = 17
+      assert length(Telemetry.event_names()) == 17
     end
   end
 

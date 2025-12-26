@@ -5,7 +5,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
   alias TripleStore.Reasoner.Rules
 
   # ============================================================================
-  # Helper Functions
+  # Test Helpers
   # ============================================================================
 
   # Create an IRI term

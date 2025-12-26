@@ -721,7 +721,7 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
   end
 
   # ============================================================================
-  # Helper Functions
+  # Test Helpers
   # ============================================================================
 
   defp match_pattern({:pattern, [s, p, o]}, facts) do

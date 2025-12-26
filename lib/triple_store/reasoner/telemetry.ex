@@ -75,6 +75,46 @@ defmodule TripleStore.Reasoner.Telemetry do
   Metadata (iteration):
   - `:iteration` - Current iteration number
 
+  ### Deletion with Reasoning
+
+  - `[:triple_store, :reasoner, :delete, :start]` - Deletion started
+  - `[:triple_store, :reasoner, :delete, :stop]` - Deletion completed
+
+  Measurements (start):
+  - `:system_time` - System time at start
+
+  Measurements (stop):
+  - `:duration` - Time in native units
+
+  Metadata (start):
+  - `:triple_count` - Number of triples to delete
+  - `:rule_count` - Number of reasoning rules
+
+  Metadata (stop):
+  - `:explicit_deleted` - Number of explicit facts deleted
+  - `:derived_deleted` - Number of derived facts deleted
+  - `:derived_kept` - Number of derived facts kept via re-derivation
+  - `:potentially_invalid_count` - Number of potentially invalid facts traced
+  - `:duration_ms` - Duration in milliseconds
+
+  ### Backward Trace
+
+  - `[:triple_store, :reasoner, :backward_trace, :complete]` - Backward trace completed
+
+  Metadata:
+  - `:trace_depth` - Maximum depth reached during tracing
+  - `:facts_examined` - Number of facts examined
+  - `:potentially_invalid_count` - Number of potentially invalid facts found
+
+  ### Forward Re-derivation
+
+  - `[:triple_store, :reasoner, :forward_rederive, :complete]` - Forward re-derivation completed
+
+  Metadata:
+  - `:facts_checked` - Number of facts checked for re-derivation
+  - `:rederivation_count` - Number of facts successfully re-derived
+  - `:deleted_count` - Number of facts that could not be re-derived
+
   ## Usage with Telemetry Handlers
 
       :telemetry.attach_many(
@@ -242,7 +282,11 @@ defmodule TripleStore.Reasoner.Telemetry do
       @prefix ++ [:extract_schema, :complete],
       @prefix ++ [:materialize, :start],
       @prefix ++ [:materialize, :stop],
-      @prefix ++ [:materialize, :iteration]
+      @prefix ++ [:materialize, :iteration],
+      @prefix ++ [:delete, :start],
+      @prefix ++ [:delete, :stop],
+      @prefix ++ [:backward_trace, :complete],
+      @prefix ++ [:forward_rederive, :complete]
     ]
   end
 
@@ -261,5 +305,29 @@ defmodule TripleStore.Reasoner.Telemetry do
       %{derivations: derivations},
       %{iteration: iteration}
     )
+  end
+
+  @doc """
+  Emits a backward trace completion event.
+
+  ## Parameters
+
+  - `metadata` - Map with :trace_depth, :facts_examined, :potentially_invalid_count
+  """
+  @spec emit_backward_trace(map()) :: :ok
+  def emit_backward_trace(metadata) do
+    :telemetry.execute(@prefix ++ [:backward_trace, :complete], %{}, metadata)
+  end
+
+  @doc """
+  Emits a forward re-derivation completion event.
+
+  ## Parameters
+
+  - `metadata` - Map with :facts_checked, :rederivation_count, :deleted_count
+  """
+  @spec emit_forward_rederive(map()) :: :ok
+  def emit_forward_rederive(metadata) do
+    :telemetry.execute(@prefix ++ [:forward_rederive, :complete], %{}, metadata)
   end
 end

@@ -21,7 +21,7 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
   alias TripleStore.Reasoner.Rules
 
   # ============================================================================
-  # Helper Functions
+  # Test Helpers
   # ============================================================================
 
   defp iri(value), do: {:iri, "http://example.org/#{value}"}

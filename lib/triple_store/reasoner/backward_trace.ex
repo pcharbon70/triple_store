@@ -29,11 +29,11 @@ defmodule TripleStore.Reasoner.BackwardTrace do
   If we delete `(alice rdf:type Student)`, we must trace:
   - Any derived facts like `(alice rdf:type Person)` that came from this
 
-  ## In-Memory vs Database
+  ## In-Memory API
 
-  This module provides two APIs:
-  1. `trace_in_memory/3` - For testing with in-memory fact sets
-  2. `trace/4` - For database-backed tracing
+  This module provides an in-memory API via `trace_in_memory/4` for testing
+  with in-memory fact sets. Database integration is handled by the
+  `DeleteWithReasoning` module which uses this module internally.
 
   ## Usage
 
@@ -43,6 +43,7 @@ defmodule TripleStore.Reasoner.BackwardTrace do
       # invalid contains all derived facts that may need to be re-evaluated
   """
 
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
 
   # ============================================================================
@@ -193,13 +194,13 @@ defmodule TripleStore.Reasoner.BackwardTrace do
   @spec could_derive?(term_triple(), term_triple(), Rule.t(), fact_set()) :: boolean()
   def could_derive?(derived, input, rule, all_facts) do
     # Check if derived matches the rule head
-    case match_head(derived, rule) do
+    case PatternMatcher.match_rule_head(derived, rule.head) do
       {:ok, head_bindings} ->
         # Check if input matches any body pattern with consistent bindings
         patterns = Rule.body_patterns(rule)
 
         Enum.any?(patterns, fn pattern ->
-          case match_pattern(input, pattern) do
+          case PatternMatcher.match_rule_head(input, pattern) do
             {:ok, input_bindings} ->
               # Check binding consistency and other patterns
               consistent_bindings?(head_bindings, input_bindings) and
@@ -271,7 +272,7 @@ defmodule TripleStore.Reasoner.BackwardTrace do
     patterns
     |> Enum.with_index()
     |> Enum.flat_map(fn {pattern, _idx} ->
-      case match_pattern(fact, pattern) do
+      case PatternMatcher.match_rule_head(fact, pattern) do
         {:ok, bindings} ->
           # Find derived facts that match the head with these bindings
           find_matching_derivations(rule.head, bindings, all_derived)
@@ -287,71 +288,16 @@ defmodule TripleStore.Reasoner.BackwardTrace do
     # Substitute known bindings into the head pattern
     {:pattern, [h_s, h_p, h_o]} = head_pattern
 
-    s_sub = substitute_if_bound(h_s, bindings)
-    p_sub = substitute_if_bound(h_p, bindings)
-    o_sub = substitute_if_bound(h_o, bindings)
+    s_sub = PatternMatcher.substitute_if_bound(h_s, bindings)
+    p_sub = PatternMatcher.substitute_if_bound(h_p, bindings)
+    o_sub = PatternMatcher.substitute_if_bound(h_o, bindings)
 
     # Find derived facts that match the (partially) substituted head
     Enum.filter(all_derived, fn {d_s, d_p, d_o} ->
-      term_matches?(d_s, s_sub) and
-        term_matches?(d_p, p_sub) and
-        term_matches?(d_o, o_sub)
+      PatternMatcher.matches_term?(d_s, s_sub) and
+        PatternMatcher.matches_term?(d_p, p_sub) and
+        PatternMatcher.matches_term?(d_o, o_sub)
     end)
-  end
-
-  # Substitute a term if the binding exists
-  defp substitute_if_bound({:var, name}, bindings) do
-    case Map.get(bindings, name) do
-      nil -> {:var, name}
-      value -> value
-    end
-  end
-
-  defp substitute_if_bound(term, _bindings), do: term
-
-  # Check if a concrete term matches a pattern term
-  defp term_matches?(_concrete, {:var, _}), do: true
-  defp term_matches?(concrete, pattern), do: concrete == pattern
-
-  # Match a fact against a pattern, returning bindings
-  defp match_pattern({s, p, o}, {:pattern, [ps, pp, po]}) do
-    with {:ok, b1} <- unify_term(s, ps, %{}),
-         {:ok, b2} <- unify_term(p, pp, b1),
-         {:ok, b3} <- unify_term(o, po, b2) do
-      {:ok, b3}
-    else
-      :no_match -> :no_match
-    end
-  end
-
-  # Match a derived fact against a rule head
-  defp match_head({s, p, o}, rule) do
-    {:pattern, [hs, hp, ho]} = rule.head
-
-    with {:ok, b1} <- unify_term(s, hs, %{}),
-         {:ok, b2} <- unify_term(p, hp, b1),
-         {:ok, b3} <- unify_term(o, ho, b2) do
-      {:ok, b3}
-    else
-      :no_match -> :no_match
-    end
-  end
-
-  # Unify a concrete term with a pattern term
-  defp unify_term(concrete, {:var, name}, bindings) do
-    case Map.get(bindings, name) do
-      nil -> {:ok, Map.put(bindings, name, concrete)}
-      ^concrete -> {:ok, bindings}
-      _other -> :no_match
-    end
-  end
-
-  defp unify_term(concrete, pattern, bindings) when concrete == pattern do
-    {:ok, bindings}
-  end
-
-  defp unify_term(_concrete, _pattern, _bindings) do
-    :no_match
   end
 
   # Check if two binding sets are consistent (no conflicting values)
@@ -383,7 +329,7 @@ defmodule TripleStore.Reasoner.BackwardTrace do
         # Multiple patterns - check if any pattern besides the one matching input
         # could have facts satisfying it
         Enum.any?(multiple, fn pattern ->
-          case match_pattern(input, pattern) do
+          case PatternMatcher.match_rule_head(input, pattern) do
             {:ok, _} ->
               # This is the pattern that input matches
               true
@@ -398,14 +344,14 @@ defmodule TripleStore.Reasoner.BackwardTrace do
 
   # Check if a pattern could be satisfied given current bindings
   defp pattern_satisfiable?({:pattern, [ps, pp, po]}, bindings, all_facts) do
-    s_sub = substitute_if_bound(ps, bindings)
-    p_sub = substitute_if_bound(pp, bindings)
-    o_sub = substitute_if_bound(po, bindings)
+    s_sub = PatternMatcher.substitute_if_bound(ps, bindings)
+    p_sub = PatternMatcher.substitute_if_bound(pp, bindings)
+    o_sub = PatternMatcher.substitute_if_bound(po, bindings)
 
     Enum.any?(all_facts, fn {fs, fp, fo} ->
-      term_matches?(fs, s_sub) and
-        term_matches?(fp, p_sub) and
-        term_matches?(fo, o_sub)
+      PatternMatcher.matches_term?(fs, s_sub) and
+        PatternMatcher.matches_term?(fp, p_sub) and
+        PatternMatcher.matches_term?(fo, o_sub)
     end)
   end
 end

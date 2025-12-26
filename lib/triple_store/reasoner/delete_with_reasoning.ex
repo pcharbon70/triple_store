@@ -57,11 +57,14 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   alias TripleStore.Reasoner.BackwardTrace
   alias TripleStore.Reasoner.ForwardRederive
   alias TripleStore.Reasoner.Rule
+  alias TripleStore.Reasoner.Telemetry
 
   # Database-related imports for the database API
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
   alias TripleStore.Reasoner.DerivedStore
+
+  require Logger
 
   # ============================================================================
   # Types
@@ -157,10 +160,19 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   @spec delete_in_memory([term_triple()], fact_set(), fact_set(), [Rule.t()], delete_opts()) ::
           {:ok, delete_result()}
   def delete_in_memory(deleted_triples, all_facts, derived_facts, rules, opts \\ []) do
-    start_time = System.monotonic_time(:millisecond)
+    start_time = System.monotonic_time()
+    emit_telemetry = Keyword.get(opts, :emit_telemetry, true)
     max_depth = Keyword.get(opts, :max_trace_depth, @default_max_trace_depth)
 
     deleted_set = MapSet.new(deleted_triples)
+
+    # Emit start telemetry
+    if emit_telemetry do
+      Telemetry.emit_start([:triple_store, :reasoner, :delete], %{
+        triple_count: length(deleted_triples),
+        rule_count: length(rules)
+      })
+    end
 
     # Partition deleted facts into explicit and derived
     explicit_deleted = MapSet.difference(deleted_set, derived_facts)
@@ -179,6 +191,15 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
       include_deleted: false
     )
 
+    # Emit backward trace telemetry
+    if emit_telemetry do
+      Telemetry.emit_backward_trace(%{
+        trace_depth: trace_result.trace_depth,
+        facts_examined: trace_result.facts_examined,
+        potentially_invalid_count: MapSet.size(trace_result.potentially_invalid)
+      })
+    end
+
     potentially_invalid = trace_result.potentially_invalid
 
     # Phase 3: Forward re-derivation to partition keep/delete
@@ -189,13 +210,23 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
       rules
     )
 
+    # Emit forward re-derivation telemetry
+    if emit_telemetry do
+      Telemetry.emit_forward_rederive(%{
+        facts_checked: rederive_result.facts_checked,
+        rederivation_count: rederive_result.rederivation_count,
+        deleted_count: MapSet.size(rederive_result.delete)
+      })
+    end
+
     derived_kept = rederive_result.keep
     derived_deleted = MapSet.union(derived_in_deleted, rederive_result.delete)
 
     # Phase 4: Compute final facts
     final_facts = MapSet.difference(facts_after_explicit_delete, rederive_result.delete)
 
-    duration_ms = System.monotonic_time(:millisecond) - start_time
+    duration = System.monotonic_time() - start_time
+    duration_ms = System.convert_time_unit(duration, :native, :millisecond)
 
     stats = %{
       explicit_deleted: MapSet.size(explicit_deleted),
@@ -204,6 +235,11 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
       potentially_invalid_count: MapSet.size(potentially_invalid),
       duration_ms: duration_ms
     }
+
+    # Emit stop telemetry
+    if emit_telemetry do
+      Telemetry.emit_stop([:triple_store, :reasoner, :delete], duration, stats)
+    end
 
     {:ok, %{
       explicit_deleted: explicit_deleted,
@@ -405,10 +441,17 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
             case DerivedStore.derived_exists?(db, triple) do
               {:ok, true} -> {exp_acc, [triple | der_acc]}
               {:ok, false} -> {exp_acc, der_acc}
-              {:error, _} -> {exp_acc, der_acc}
+              {:error, reason} ->
+                Logger.warning(
+                  "Error checking derived store for triple #{inspect(triple)}: #{inspect(reason)}"
+                )
+                {exp_acc, der_acc}
             end
 
-          {:error, _} ->
+          {:error, reason} ->
+            Logger.warning(
+              "Error checking index for triple #{inspect(triple)}: #{inspect(reason)}"
+            )
             {exp_acc, der_acc}
         end
       end)
