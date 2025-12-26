@@ -111,7 +111,7 @@ Optimize rules for efficient evaluation.
 
 ## 4.2 Semi-Naive Evaluation
 
-- [ ] **Section 4.2 Complete**
+- [x] **Section 4.2 Complete** (2025-12-26)
 
 This section implements semi-naive evaluation for forward-chaining materialization. The algorithm iterates until fixpoint, processing only newly derived facts (delta) in each iteration.
 
@@ -162,14 +162,14 @@ Store derived facts distinctly from explicit facts.
 
 ### 4.2.5 Unit Tests
 
-- [ ] **Task 4.2.5 Complete**
+- [x] **Task 4.2.5 Complete** (2025-12-26)
 
-- [ ] Test delta computation finds new facts only
-- [ ] Test fixpoint terminates correctly
-- [ ] Test fixpoint produces complete inference closure
-- [ ] Test parallel evaluation produces same results as sequential
-- [ ] Test derived facts stored separately
-- [ ] Test clear derived removes only inferred triples
+- [x] Test delta computation finds new facts only
+- [x] Test fixpoint terminates correctly
+- [x] Test fixpoint produces complete inference closure
+- [x] Test parallel evaluation produces same results as sequential
+- [x] Test derived facts stored separately
+- [x] Test clear derived removes only inferred triples
 
 ---
 
