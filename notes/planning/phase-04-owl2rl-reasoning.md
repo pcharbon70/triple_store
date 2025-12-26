@@ -238,13 +238,21 @@ Implement backward phase of deletion algorithm.
 
 ### 4.3.3 Forward Phase
 
-- [ ] **Task 4.3.3 Complete**
+- [x] **Task 4.3.3 Complete** (2025-12-26)
 
 Implement forward phase to re-derive facts with alternative justifications.
 
-- [ ] 4.3.3.1 Implement `can_rederive?(db, fact)` checking for alternative derivations
-- [ ] 4.3.3.2 Attempt re-derivation for each potentially invalid fact
-- [ ] 4.3.3.3 Keep facts that can be re-derived, delete those that cannot
+- [x] 4.3.3.1 Implement `can_rederive?(db, fact)` checking for alternative derivations
+- [x] 4.3.3.2 Attempt re-derivation for each potentially invalid fact
+- [x] 4.3.3.3 Keep facts that can be re-derived, delete those that cannot
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.ForwardRederive`
+- `rederive_in_memory/4` for attempting re-derivation with statistics
+- `can_rederive?/3` for checking if a single fact can be re-derived
+- `partition_invalid/4` for convenience partition of facts
+- Complete pattern matching and unification for body/head matching
+- 20 new tests added
 
 ### 4.3.4 Delete with Reasoning
 
