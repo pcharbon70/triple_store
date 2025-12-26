@@ -480,14 +480,23 @@ Support different reasoning modes.
 
 ### 4.5.3 Reasoning Status
 
-- [ ] **Task 4.5.3 Complete**
+- [x] **Task 4.5.3 Complete** (2025-12-26)
 
 Provide reasoning status information.
 
-- [ ] 4.5.3.1 Implement `TripleStore.reasoning_status(db)` returning current state
-- [ ] 4.5.3.2 Report derived triple count
-- [ ] 4.5.3.3 Report last materialization time
-- [ ] 4.5.3.4 Report active profile and mode
+- [x] 4.5.3.1 Implement `TripleStore.reasoning_status(db)` returning current state
+- [x] 4.5.3.2 Report derived triple count
+- [x] 4.5.3.3 Report last materialization time
+- [x] 4.5.3.4 Report active profile and mode
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.ReasoningStatus`
+- Status states: :initialized, :materialized, :stale, :error
+- Tracks: config, derived_count, explicit_count, materialization history
+- Materialization stats: derived_count, iterations, duration_ms, rules_applied
+- Query API: profile/1, mode/1, derived_count/1, total_count/1, etc.
+- Storage API: store/2, load/1, remove/1 for persistent_term access
+- 49 new tests for status functionality
 
 ### 4.5.4 Unit Tests
 
