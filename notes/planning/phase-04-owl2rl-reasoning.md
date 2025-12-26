@@ -204,13 +204,19 @@ This section implements incremental maintenance of materialized inferences when 
 
 ### 4.3.1 Incremental Addition
 
-- [ ] **Task 4.3.1 Complete**
+- [x] **Task 4.3.1 Complete** (2025-12-26)
 
 Handle incremental addition of new facts.
 
-- [ ] 4.3.1.1 Implement `add_with_reasoning(db, triples)` adding facts and deriving consequences
-- [ ] 4.3.1.2 Use semi-naive with new facts as initial delta
-- [ ] 4.3.1.3 Efficiently check for novel derivations vs existing facts
+- [x] 4.3.1.1 Implement `add_with_reasoning(db, triples)` adding facts and deriving consequences
+- [x] 4.3.1.2 Use semi-naive with new facts as initial delta
+- [x] 4.3.1.3 Efficiently check for novel derivations vs existing facts
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.Incremental`
+- Dual API: `add_in_memory/4` for testing, `add_with_reasoning/4` for database
+- Preview functions: `preview_in_memory/3`, `preview_additions/3`
+- 24 new tests added
 
 ### 4.3.2 Backward Phase
 
