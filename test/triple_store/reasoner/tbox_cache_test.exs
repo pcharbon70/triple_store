@@ -1042,4 +1042,405 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       assert TBoxCache.symmetric_property?(hierarchy, iri("relatedTo"))
     end
   end
+
+  # ============================================================================
+  # Tests: TBox Update Detection
+  # ============================================================================
+
+  describe "tbox_predicates/0" do
+    test "returns set of TBox-modifying predicates" do
+      predicates = TBoxCache.tbox_predicates()
+
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#subClassOf"})
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"})
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"})
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2002/07/owl#inverseOf"})
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#domain"})
+      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#range"})
+    end
+  end
+
+  describe "property_characteristic_types/0" do
+    test "returns set of property characteristic types" do
+      types = TBoxCache.property_characteristic_types()
+
+      assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#TransitiveProperty"})
+      assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#SymmetricProperty"})
+      assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#FunctionalProperty"})
+      assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#InverseFunctionalProperty"})
+    end
+  end
+
+  describe "tbox_triple?/1" do
+    test "returns true for rdfs:subClassOf triple" do
+      triple = {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for rdfs:subPropertyOf triple" do
+      triple = {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for owl:inverseOf triple" do
+      triple = {iri("hasChild"), owl_inverseOf(), iri("hasParent")}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for property characteristic declaration" do
+      triple = {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for TransitiveProperty declaration" do
+      triple = {iri("contains"), rdf_type(), owl_TransitiveProperty()}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for FunctionalProperty declaration" do
+      triple = {iri("hasMother"), rdf_type(), owl_FunctionalProperty()}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for InverseFunctionalProperty declaration" do
+      triple = {iri("hasSSN"), rdf_type(), owl_InverseFunctionalProperty()}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns false for instance type declaration" do
+      triple = {iri("alice"), rdf_type(), iri("Person")}
+      refute TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns false for instance data triple" do
+      triple = {iri("alice"), iri("knows"), iri("bob")}
+      refute TBoxCache.tbox_triple?(triple)
+    end
+  end
+
+  describe "contains_tbox_triples?/1" do
+    test "returns true when collection contains TBox triple" do
+      triples = [
+        {iri("alice"), iri("knows"), iri("bob")},
+        {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      ]
+
+      assert TBoxCache.contains_tbox_triples?(triples)
+    end
+
+    test "returns false when collection has no TBox triples" do
+      triples = [
+        {iri("alice"), iri("knows"), iri("bob")},
+        {iri("bob"), rdf_type(), iri("Person")}
+      ]
+
+      refute TBoxCache.contains_tbox_triples?(triples)
+    end
+
+    test "returns false for empty collection" do
+      refute TBoxCache.contains_tbox_triples?([])
+    end
+  end
+
+  describe "filter_tbox_triples/1" do
+    test "returns only TBox triples" do
+      subclass_triple = {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      instance_triple = {iri("alice"), rdf_type(), iri("Person")}
+      property_triple = {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+
+      triples = [subclass_triple, instance_triple, property_triple]
+      filtered = TBoxCache.filter_tbox_triples(triples)
+
+      assert length(filtered) == 2
+      assert subclass_triple in filtered
+      assert property_triple in filtered
+      refute instance_triple in filtered
+    end
+
+    test "returns empty list when no TBox triples" do
+      triples = [
+        {iri("alice"), iri("knows"), iri("bob")}
+      ]
+
+      assert TBoxCache.filter_tbox_triples(triples) == []
+    end
+  end
+
+  describe "categorize_tbox_triples/1" do
+    test "categorizes triples by type" do
+      triples = [
+        {iri("Student"), rdfs_subClassOf(), iri("Person")},
+        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+        {iri("knows"), rdf_type(), owl_SymmetricProperty()},
+        {iri("hasChild"), owl_inverseOf(), iri("hasParent")},
+        {iri("alice"), iri("knows"), iri("bob")}
+      ]
+
+      categorized = TBoxCache.categorize_tbox_triples(triples)
+
+      assert length(categorized.class_hierarchy) == 1
+      assert length(categorized.property_hierarchy) == 1
+      assert length(categorized.property_characteristics) == 1
+      assert length(categorized.inverse_properties) == 1
+      assert length(categorized.domain_range) == 0
+    end
+
+    test "categorizes domain/range triples" do
+      domain_iri = {:iri, "http://www.w3.org/2000/01/rdf-schema#domain"}
+      range_iri = {:iri, "http://www.w3.org/2000/01/rdf-schema#range"}
+
+      triples = [
+        {iri("knows"), domain_iri, iri("Person")},
+        {iri("knows"), range_iri, iri("Person")}
+      ]
+
+      categorized = TBoxCache.categorize_tbox_triples(triples)
+
+      assert length(categorized.domain_range) == 2
+    end
+
+    test "ignores non-TBox triples" do
+      triples = [
+        {iri("alice"), iri("knows"), iri("bob")},
+        {iri("bob"), rdf_type(), iri("Person")}
+      ]
+
+      categorized = TBoxCache.categorize_tbox_triples(triples)
+
+      assert categorized.class_hierarchy == []
+      assert categorized.property_hierarchy == []
+      assert categorized.property_characteristics == []
+      assert categorized.inverse_properties == []
+      assert categorized.domain_range == []
+    end
+  end
+
+  # ============================================================================
+  # Tests: TBox Cache Invalidation
+  # ============================================================================
+
+  describe "invalidate_affected/2" do
+    setup do
+      key = :"invalidate_test_#{System.unique_integer([:positive])}"
+
+      on_exit(fn ->
+        TBoxCache.clear(:class_hierarchy, key)
+        TBoxCache.clear(:property_hierarchy, key)
+      end)
+
+      {:ok, key: key}
+    end
+
+    test "invalidates class hierarchy when subClassOf triples provided", %{key: key} do
+      # First, create cached hierarchies
+      facts = MapSet.new([
+        {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      ])
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
+      assert TBoxCache.cached?(:class_hierarchy, key)
+
+      # Now invalidate with a subClassOf triple
+      triples = [{iri("GradStudent"), rdfs_subClassOf(), iri("Student")}]
+      result = TBoxCache.invalidate_affected(triples, key)
+
+      assert result.class_hierarchy == true
+      refute TBoxCache.cached?(:class_hierarchy, key)
+    end
+
+    test "invalidates property hierarchy when subPropertyOf triples provided", %{key: key} do
+      facts = MapSet.new([
+        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
+      ])
+      {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
+      assert TBoxCache.cached?(:property_hierarchy, key)
+
+      triples = [{iri("hasSon"), rdfs_subPropertyOf(), iri("hasChild")}]
+      result = TBoxCache.invalidate_affected(triples, key)
+
+      assert result.property_hierarchy == true
+      refute TBoxCache.cached?(:property_hierarchy, key)
+    end
+
+    test "invalidates property hierarchy when characteristic triples provided", %{key: key} do
+      facts = MapSet.new([
+        {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+      ])
+      {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
+      assert TBoxCache.cached?(:property_hierarchy, key)
+
+      triples = [{iri("likes"), rdf_type(), owl_TransitiveProperty()}]
+      result = TBoxCache.invalidate_affected(triples, key)
+
+      assert result.property_hierarchy == true
+      refute TBoxCache.cached?(:property_hierarchy, key)
+    end
+
+    test "does not invalidate when only instance triples provided", %{key: key} do
+      facts = MapSet.new([
+        {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      ])
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
+      assert TBoxCache.cached?(:class_hierarchy, key)
+
+      triples = [{iri("alice"), rdf_type(), iri("Student")}]
+      result = TBoxCache.invalidate_affected(triples, key)
+
+      assert result.class_hierarchy == false
+      assert result.property_hierarchy == false
+      assert TBoxCache.cached?(:class_hierarchy, key)
+    end
+  end
+
+  # ============================================================================
+  # Tests: TBox Recomputation
+  # ============================================================================
+
+  describe "recompute_hierarchies/2" do
+    setup do
+      key = :"recompute_test_#{System.unique_integer([:positive])}"
+
+      on_exit(fn ->
+        TBoxCache.clear(:class_hierarchy, key)
+        TBoxCache.clear(:property_hierarchy, key)
+      end)
+
+      {:ok, key: key}
+    end
+
+    test "recomputes both class and property hierarchies", %{key: key} do
+      facts = MapSet.new([
+        {iri("Student"), rdfs_subClassOf(), iri("Person")},
+        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+        {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+      ])
+
+      {:ok, stats} = TBoxCache.recompute_hierarchies(facts, key)
+
+      assert stats.class.class_count == 2
+      assert stats.property.property_count == 3
+      assert TBoxCache.cached?(:class_hierarchy, key)
+      assert TBoxCache.cached?(:property_hierarchy, key)
+    end
+  end
+
+  describe "handle_tbox_update/4" do
+    setup do
+      key = :"handle_update_test_#{System.unique_integer([:positive])}"
+
+      on_exit(fn ->
+        TBoxCache.clear(:class_hierarchy, key)
+        TBoxCache.clear(:property_hierarchy, key)
+      end)
+
+      {:ok, key: key}
+    end
+
+    test "returns tbox_modified: false when no TBox triples", %{key: key} do
+      modified = [{iri("alice"), iri("knows"), iri("bob")}]
+      current_facts = MapSet.new(modified)
+
+      {:ok, result} = TBoxCache.handle_tbox_update(modified, current_facts, key)
+
+      assert result.tbox_modified == false
+      assert result.invalidated.class_hierarchy == false
+      assert result.invalidated.property_hierarchy == false
+      assert result.recomputed == nil
+    end
+
+    test "invalidates and recomputes class hierarchy when subClassOf added", %{key: key} do
+      # Start with initial hierarchy
+      initial_facts = MapSet.new([
+        {iri("Student"), rdfs_subClassOf(), iri("Person")}
+      ])
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(initial_facts, key)
+
+      # Add a new subClassOf triple
+      new_triple = {iri("GradStudent"), rdfs_subClassOf(), iri("Student")}
+      modified = [new_triple]
+      current_facts = MapSet.put(initial_facts, new_triple)
+
+      {:ok, result} = TBoxCache.handle_tbox_update(modified, current_facts, key)
+
+      assert result.tbox_modified == true
+      assert result.invalidated.class_hierarchy == true
+      assert result.recomputed != nil
+      assert result.recomputed.class.class_count == 3
+    end
+
+    test "skips recomputation when recompute: false option provided", %{key: key} do
+      modified = [{iri("Student"), rdfs_subClassOf(), iri("Person")}]
+      current_facts = MapSet.new(modified)
+
+      {:ok, result} = TBoxCache.handle_tbox_update(modified, current_facts, key, recompute: false)
+
+      assert result.tbox_modified == true
+      assert result.invalidated.class_hierarchy == true
+      assert result.recomputed == nil
+      refute TBoxCache.cached?(:class_hierarchy, key)
+    end
+
+    test "handles property characteristic updates", %{key: key} do
+      modified = [{iri("knows"), rdf_type(), owl_SymmetricProperty()}]
+      current_facts = MapSet.new(modified)
+
+      {:ok, result} = TBoxCache.handle_tbox_update(modified, current_facts, key)
+
+      assert result.tbox_modified == true
+      assert result.invalidated.property_hierarchy == true
+      assert result.recomputed.property.symmetric_count == 1
+    end
+  end
+
+  describe "needs_recomputation?/1" do
+    test "returns class_hierarchy: true for subClassOf triples" do
+      triples = [{iri("Student"), rdfs_subClassOf(), iri("Person")}]
+      result = TBoxCache.needs_recomputation?(triples)
+
+      assert result.class_hierarchy == true
+      assert result.property_hierarchy == false
+      assert result.any == true
+    end
+
+    test "returns property_hierarchy: true for subPropertyOf triples" do
+      triples = [{iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}]
+      result = TBoxCache.needs_recomputation?(triples)
+
+      assert result.class_hierarchy == false
+      assert result.property_hierarchy == true
+      assert result.any == true
+    end
+
+    test "returns property_hierarchy: true for characteristic triples" do
+      triples = [{iri("knows"), rdf_type(), owl_SymmetricProperty()}]
+      result = TBoxCache.needs_recomputation?(triples)
+
+      assert result.class_hierarchy == false
+      assert result.property_hierarchy == true
+      assert result.any == true
+    end
+
+    test "returns both: true for mixed TBox triples" do
+      triples = [
+        {iri("Student"), rdfs_subClassOf(), iri("Person")},
+        {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+      ]
+      result = TBoxCache.needs_recomputation?(triples)
+
+      assert result.class_hierarchy == true
+      assert result.property_hierarchy == true
+      assert result.any == true
+    end
+
+    test "returns all false for instance triples" do
+      triples = [
+        {iri("alice"), iri("knows"), iri("bob")},
+        {iri("alice"), rdf_type(), iri("Person")}
+      ]
+      result = TBoxCache.needs_recomputation?(triples)
+
+      assert result.class_hierarchy == false
+      assert result.property_hierarchy == false
+      assert result.any == false
+    end
+  end
 end

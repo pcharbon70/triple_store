@@ -325,9 +325,15 @@ Implement complete deletion with reasoning.
 
 ## 4.4 TBox Caching
 
-- [ ] **Section 4.4 Complete**
+- [x] **Section 4.4 Complete** (2025-12-26)
 
 This section implements caching of TBox (schema) inferences for efficient ABox (instance) reasoning. The class and property hierarchies are computed once at ontology load.
+
+**Section Summary:**
+- 4 tasks completed (4.4.1-4.4.4)
+- New module: `TripleStore.Reasoner.TBoxCache`
+- Features: class hierarchy, property hierarchy, property characteristics, inverse pairs, TBox update detection, cache invalidation
+- 95 tests covering all TBox caching functionality
 
 ### 4.4.1 Class Hierarchy
 
@@ -366,22 +372,36 @@ Compute and cache property hierarchy.
 
 ### 4.4.3 TBox Updates
 
-- [ ] **Task 4.4.3 Complete**
+- [x] **Task 4.4.3 Complete** (2025-12-26)
 
 Handle updates to TBox requiring hierarchy recomputation.
 
-- [ ] 4.4.3.1 Detect TBox-modifying updates (subClassOf, subPropertyOf, etc.)
-- [ ] 4.4.3.2 Trigger hierarchy recomputation on TBox changes
-- [ ] 4.4.3.3 Optionally trigger full rematerialization
+- [x] 4.4.3.1 Detect TBox-modifying updates (subClassOf, subPropertyOf, etc.)
+- [x] 4.4.3.2 Trigger hierarchy recomputation on TBox changes
+- [x] 4.4.3.3 Optionally trigger full rematerialization
+
+**Implementation Notes:**
+- Extended `TripleStore.Reasoner.TBoxCache` module
+- Detects TBox-modifying predicates: rdfs:subClassOf, rdfs:subPropertyOf, owl:inverseOf, rdfs:domain, rdfs:range
+- Detects property characteristics: owl:TransitiveProperty, owl:SymmetricProperty, owl:FunctionalProperty, owl:InverseFunctionalProperty
+- `handle_tbox_update/4` main entry point for coordinating detection, invalidation, and recomputation
+- Optional recomputation via `recompute: false` option
+- 33 new tests covering TBox update detection and cache invalidation
+- Total TBoxCache tests: 95 (30 class + 32 property + 33 updates)
 
 ### 4.4.4 Unit Tests
 
-- [ ] **Task 4.4.4 Complete**
+- [x] **Task 4.4.4 Complete** (2025-12-26)
 
-- [ ] Test class hierarchy computed correctly
-- [ ] Test superclasses returns transitive closure
-- [ ] Test property hierarchy computed correctly
-- [ ] Test TBox update triggers recomputation
+- [x] Test class hierarchy computed correctly
+- [x] Test superclasses returns transitive closure
+- [x] Test property hierarchy computed correctly
+- [x] Test TBox update triggers recomputation
+
+**Implementation Notes:**
+- All tests already implemented as part of Tasks 4.4.1, 4.4.2, and 4.4.3
+- Total TBoxCache test coverage: 95 tests
+- Covers: class hierarchy, property hierarchy, property characteristics, cache management, TBox update detection, cache invalidation, and recomputation
 
 ---
 

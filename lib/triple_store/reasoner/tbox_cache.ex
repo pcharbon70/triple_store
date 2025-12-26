@@ -918,4 +918,376 @@ defmodule TripleStore.Reasoner.TBoxCache do
   defp generate_version do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
   end
+
+  # ============================================================================
+  # TBox Update Detection
+  # ============================================================================
+
+  @doc """
+  Returns the set of predicates that indicate TBox (schema) modifications.
+
+  These predicates affect the class hierarchy, property hierarchy, or property
+  characteristics. When triples using these predicates are added or removed,
+  the TBox caches may need to be invalidated and recomputed.
+
+  ## Returns
+
+  A MapSet of `{:iri, String.t()}` tuples for TBox-modifying predicates.
+
+  ## TBox-Modifying Predicates
+
+  **Class Hierarchy:**
+  - `rdfs:subClassOf` - Class subsumption relationships
+
+  **Property Hierarchy:**
+  - `rdfs:subPropertyOf` - Property subsumption relationships
+
+  **Property Characteristics:**
+  - `rdf:type` with object `owl:TransitiveProperty`
+  - `rdf:type` with object `owl:SymmetricProperty`
+  - `rdf:type` with object `owl:FunctionalProperty`
+  - `rdf:type` with object `owl:InverseFunctionalProperty`
+  - `owl:inverseOf` - Inverse property declarations
+
+  **Domain/Range (affects type inference):**
+  - `rdfs:domain` - Property domain declarations
+  - `rdfs:range` - Property range declarations
+  """
+  @spec tbox_predicates() :: MapSet.t({:iri, String.t()})
+  def tbox_predicates do
+    MapSet.new([
+      {:iri, Namespaces.rdfs_subClassOf()},
+      {:iri, Namespaces.rdfs_subPropertyOf()},
+      {:iri, Namespaces.rdf_type()},
+      {:iri, Namespaces.owl_inverseOf()},
+      {:iri, Namespaces.rdfs_domain()},
+      {:iri, Namespaces.rdfs_range()}
+    ])
+  end
+
+  @doc """
+  Returns the set of OWL class types that indicate property characteristics.
+
+  When a triple has `rdf:type` as predicate and one of these as object,
+  it declares a property characteristic that affects reasoning.
+  """
+  @spec property_characteristic_types() :: MapSet.t({:iri, String.t()})
+  def property_characteristic_types do
+    MapSet.new([
+      {:iri, Namespaces.owl_TransitiveProperty()},
+      {:iri, Namespaces.owl_SymmetricProperty()},
+      {:iri, Namespaces.owl_FunctionalProperty()},
+      {:iri, Namespaces.owl_InverseFunctionalProperty()}
+    ])
+  end
+
+  @doc """
+  Checks if a triple is a TBox-modifying triple.
+
+  A TBox-modifying triple is one that affects the class hierarchy, property
+  hierarchy, or property characteristics. Adding or removing such triples
+  requires invalidating and recomputing cached hierarchies.
+
+  ## Parameters
+
+  - `triple` - A `{subject, predicate, object}` tuple
+
+  ## Returns
+
+  `true` if the triple modifies the TBox, `false` otherwise.
+
+  ## Examples
+
+      # Class hierarchy modification
+      iex> TBoxCache.tbox_triple?({{:iri, "Student"}, {:iri, "rdfs:subClassOf"}, {:iri, "Person"}})
+      true
+
+      # Property characteristic
+      iex> TBoxCache.tbox_triple?({{:iri, "knows"}, {:iri, "rdf:type"}, {:iri, "owl:SymmetricProperty"}})
+      true
+
+      # Instance data (not TBox)
+      iex> TBoxCache.tbox_triple?({{:iri, "alice"}, {:iri, "rdf:type"}, {:iri, "Person"}})
+      false
+  """
+  @spec tbox_triple?({term_value(), term_value(), term_value()}) :: boolean()
+  def tbox_triple?({_subject, predicate, object}) do
+    tbox_preds = tbox_predicates()
+    char_types = property_characteristic_types()
+
+    cond do
+      # rdfs:subClassOf or rdfs:subPropertyOf or owl:inverseOf or rdfs:domain or rdfs:range
+      predicate != {:iri, Namespaces.rdf_type()} and MapSet.member?(tbox_preds, predicate) ->
+        true
+
+      # rdf:type with a property characteristic type
+      predicate == {:iri, Namespaces.rdf_type()} and MapSet.member?(char_types, object) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  @doc """
+  Checks if any triples in a collection are TBox-modifying.
+
+  ## Parameters
+
+  - `triples` - An enumerable of `{subject, predicate, object}` tuples
+
+  ## Returns
+
+  `true` if any triple modifies the TBox, `false` if none do.
+  """
+  @spec contains_tbox_triples?(Enumerable.t()) :: boolean()
+  def contains_tbox_triples?(triples) do
+    Enum.any?(triples, &tbox_triple?/1)
+  end
+
+  @doc """
+  Filters TBox-modifying triples from a collection.
+
+  ## Parameters
+
+  - `triples` - An enumerable of `{subject, predicate, object}` tuples
+
+  ## Returns
+
+  A list of triples that are TBox-modifying.
+  """
+  @spec filter_tbox_triples(Enumerable.t()) :: [{term_value(), term_value(), term_value()}]
+  def filter_tbox_triples(triples) do
+    Enum.filter(triples, &tbox_triple?/1)
+  end
+
+  @doc """
+  Categorizes TBox-modifying triples by what they affect.
+
+  ## Parameters
+
+  - `triples` - An enumerable of `{subject, predicate, object}` tuples
+
+  ## Returns
+
+  A map with keys:
+  - `:class_hierarchy` - Triples affecting class hierarchy (rdfs:subClassOf)
+  - `:property_hierarchy` - Triples affecting property hierarchy (rdfs:subPropertyOf)
+  - `:property_characteristics` - Triples declaring property types
+  - `:inverse_properties` - Triples declaring inverse relationships
+  - `:domain_range` - Triples declaring domain/range constraints
+  """
+  @spec categorize_tbox_triples(Enumerable.t()) :: %{
+          class_hierarchy: list(),
+          property_hierarchy: list(),
+          property_characteristics: list(),
+          inverse_properties: list(),
+          domain_range: list()
+        }
+  def categorize_tbox_triples(triples) do
+    subclass_of = {:iri, Namespaces.rdfs_subClassOf()}
+    subprop_of = {:iri, Namespaces.rdfs_subPropertyOf()}
+    rdf_type = {:iri, Namespaces.rdf_type()}
+    inverse_of = {:iri, Namespaces.owl_inverseOf()}
+    domain = {:iri, Namespaces.rdfs_domain()}
+    range = {:iri, Namespaces.rdfs_range()}
+    char_types = property_characteristic_types()
+
+    Enum.reduce(triples, %{
+      class_hierarchy: [],
+      property_hierarchy: [],
+      property_characteristics: [],
+      inverse_properties: [],
+      domain_range: []
+    }, fn {_s, p, o} = triple, acc ->
+      cond do
+        p == subclass_of ->
+          %{acc | class_hierarchy: [triple | acc.class_hierarchy]}
+
+        p == subprop_of ->
+          %{acc | property_hierarchy: [triple | acc.property_hierarchy]}
+
+        p == rdf_type and MapSet.member?(char_types, o) ->
+          %{acc | property_characteristics: [triple | acc.property_characteristics]}
+
+        p == inverse_of ->
+          %{acc | inverse_properties: [triple | acc.inverse_properties]}
+
+        p == domain or p == range ->
+          %{acc | domain_range: [triple | acc.domain_range]}
+
+        true ->
+          acc
+      end
+    end)
+  end
+
+  # ============================================================================
+  # TBox Cache Invalidation and Recomputation
+  # ============================================================================
+
+  @doc """
+  Invalidates cached hierarchies based on TBox-modifying triples.
+
+  Analyzes the provided triples and invalidates only the caches that are
+  affected by those changes.
+
+  ## Parameters
+
+  - `triples` - Triples that were added or removed
+  - `key` - The cache key (default: :default)
+
+  ## Returns
+
+  A map indicating which caches were invalidated:
+  - `:class_hierarchy` - `true` if class hierarchy was invalidated
+  - `:property_hierarchy` - `true` if property hierarchy was invalidated
+  """
+  @spec invalidate_affected(Enumerable.t(), atom()) :: %{
+          class_hierarchy: boolean(),
+          property_hierarchy: boolean()
+        }
+  def invalidate_affected(triples, key \\ :default) do
+    categorized = categorize_tbox_triples(triples)
+
+    class_affected = length(categorized.class_hierarchy) > 0
+    property_affected = length(categorized.property_hierarchy) > 0 or
+                        length(categorized.property_characteristics) > 0 or
+                        length(categorized.inverse_properties) > 0
+
+    if class_affected do
+      clear(:class_hierarchy, key)
+    end
+
+    if property_affected do
+      clear(:property_hierarchy, key)
+    end
+
+    %{
+      class_hierarchy: class_affected,
+      property_hierarchy: property_affected
+    }
+  end
+
+  @doc """
+  Recomputes cached hierarchies from a fact set.
+
+  This is a convenience function that recomputes both class and property
+  hierarchies from the current fact set.
+
+  ## Parameters
+
+  - `facts` - The complete fact set (all triples)
+  - `key` - The cache key (default: :default)
+
+  ## Returns
+
+  - `{:ok, stats}` - Statistics about the recomputation
+  - `{:error, reason}` - If computation fails
+  """
+  @spec recompute_hierarchies(Enumerable.t(), atom()) ::
+          {:ok, %{class: map(), property: map()}} | {:error, term()}
+  def recompute_hierarchies(facts, key \\ :default) do
+    with {:ok, class_stats} <- compute_and_store_class_hierarchy(facts, key),
+         {:ok, property_stats} <- compute_and_store_property_hierarchy(facts, key) do
+      {:ok, %{class: class_stats, property: property_stats}}
+    end
+  end
+
+  @doc """
+  Handles TBox updates by invalidating and optionally recomputing caches.
+
+  This is the main entry point for handling TBox modifications. It:
+  1. Checks if any triples are TBox-modifying
+  2. Invalidates affected caches
+  3. Optionally recomputes hierarchies from the updated fact set
+
+  ## Parameters
+
+  - `modified_triples` - Triples that were added or removed
+  - `current_facts` - The current complete fact set (after modification)
+  - `key` - The cache key (default: :default)
+  - `opts` - Options:
+    - `:recompute` - Whether to recompute hierarchies (default: true)
+
+  ## Returns
+
+  - `{:ok, result}` with:
+    - `:invalidated` - Map of which caches were invalidated
+    - `:recomputed` - Map of recomputation stats (if recompute: true)
+    - `:tbox_modified` - Whether any TBox triples were found
+  - `{:error, reason}` - If recomputation fails
+  """
+  @spec handle_tbox_update(Enumerable.t(), Enumerable.t(), atom(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def handle_tbox_update(modified_triples, current_facts, key \\ :default, opts \\ []) do
+    recompute = Keyword.get(opts, :recompute, true)
+    tbox_triples = filter_tbox_triples(modified_triples)
+
+    if Enum.empty?(tbox_triples) do
+      {:ok, %{
+        tbox_modified: false,
+        invalidated: %{class_hierarchy: false, property_hierarchy: false},
+        recomputed: nil
+      }}
+    else
+      invalidated = invalidate_affected(tbox_triples, key)
+
+      if recompute and (invalidated.class_hierarchy or invalidated.property_hierarchy) do
+        case recompute_hierarchies(current_facts, key) do
+          {:ok, stats} ->
+            {:ok, %{
+              tbox_modified: true,
+              invalidated: invalidated,
+              recomputed: stats
+            }}
+
+          {:error, _} = error ->
+            error
+        end
+      else
+        {:ok, %{
+          tbox_modified: true,
+          invalidated: invalidated,
+          recomputed: nil
+        }}
+      end
+    end
+  end
+
+  @doc """
+  Checks if hierarchies need recomputation based on modified triples.
+
+  This is a lightweight check that doesn't actually invalidate or recompute.
+
+  ## Parameters
+
+  - `modified_triples` - Triples that were added or removed
+
+  ## Returns
+
+  A map indicating what would need recomputation:
+  - `:class_hierarchy` - `true` if class hierarchy would be affected
+  - `:property_hierarchy` - `true` if property hierarchy would be affected
+  - `:any` - `true` if any hierarchy would be affected
+  """
+  @spec needs_recomputation?(Enumerable.t()) :: %{
+          class_hierarchy: boolean(),
+          property_hierarchy: boolean(),
+          any: boolean()
+        }
+  def needs_recomputation?(modified_triples) do
+    categorized = categorize_tbox_triples(modified_triples)
+
+    class_affected = length(categorized.class_hierarchy) > 0
+    property_affected = length(categorized.property_hierarchy) > 0 or
+                        length(categorized.property_characteristics) > 0 or
+                        length(categorized.inverse_properties) > 0
+
+    %{
+      class_hierarchy: class_affected,
+      property_hierarchy: property_affected,
+      any: class_affected or property_affected
+    }
+  end
 end
