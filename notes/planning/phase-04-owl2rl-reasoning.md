@@ -256,14 +256,23 @@ Implement forward phase to re-derive facts with alternative justifications.
 
 ### 4.3.4 Delete with Reasoning
 
-- [ ] **Task 4.3.4 Complete**
+- [x] **Task 4.3.4 Complete** (2025-12-26)
 
 Implement complete deletion with reasoning.
 
-- [ ] 4.3.4.1 Implement `delete_with_reasoning(db, triples)` removing facts and retracting consequences
-- [ ] 4.3.4.2 Coordinate backward and forward phases
-- [ ] 4.3.4.3 Handle cascading deletions correctly
-- [ ] 4.3.4.4 Optimize for bulk deletions
+- [x] 4.3.4.1 Implement `delete_with_reasoning(db, triples)` removing facts and retracting consequences
+- [x] 4.3.4.2 Coordinate backward and forward phases
+- [x] 4.3.4.3 Handle cascading deletions correctly
+- [x] 4.3.4.4 Optimize for bulk deletions
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.DeleteWithReasoning`
+- `delete_in_memory/5` for full deletion with comprehensive results
+- `delete_with_reasoning/4` for database-backed deletion
+- `bulk_delete_with_reasoning/4` for batched large deletions
+- `preview_delete_in_memory/4` for dry-run capability
+- Coordinates BackwardTrace and ForwardRederive phases
+- 20 new tests added
 
 ### 4.3.5 Unit Tests
 
