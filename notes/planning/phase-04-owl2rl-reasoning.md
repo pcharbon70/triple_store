@@ -151,14 +151,14 @@ Parallelize rule evaluation across CPU cores.
 
 ### 4.2.4 Derived Fact Storage
 
-- [ ] **Task 4.2.4 Complete**
+- [x] **Task 4.2.4 Complete** (2025-12-26)
 
 Store derived facts distinctly from explicit facts.
 
-- [ ] 4.2.4.1 Write derived facts to `derived` column family
-- [ ] 4.2.4.2 Query both explicit and derived during evaluation
-- [ ] 4.2.4.3 Support querying derived facts only
-- [ ] 4.2.4.4 Support clearing all derived facts (rematerialization)
+- [x] 4.2.4.1 Write derived facts to `derived` column family
+- [x] 4.2.4.2 Query both explicit and derived during evaluation
+- [x] 4.2.4.3 Support querying derived facts only
+- [x] 4.2.4.4 Support clearing all derived facts (rematerialization)
 
 ### 4.2.5 Unit Tests
 
