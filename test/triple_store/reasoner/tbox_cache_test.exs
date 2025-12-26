@@ -436,6 +436,81 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       {:ok, stats} = TBoxCache.stats(:class_hierarchy, key)
       assert stats.class_count == 3
     end
+
+    test "returns error for non-existent cache", %{key: key} do
+      assert {:error, :not_found} = TBoxCache.stats(:class_hierarchy, key)
+    end
+  end
+
+  describe "clear_all/0" do
+    test "clears all cached hierarchies" do
+      key1 = :"clear_all_test_1_#{System.unique_integer([:positive])}"
+      key2 = :"clear_all_test_2_#{System.unique_integer([:positive])}"
+
+      facts = MapSet.new([
+        {iri("A"), rdfs_subClassOf(), iri("B")}
+      ])
+
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key1)
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key2)
+
+      assert TBoxCache.cached?(:class_hierarchy, key1)
+      assert TBoxCache.cached?(:class_hierarchy, key2)
+
+      TBoxCache.clear_all()
+
+      refute TBoxCache.cached?(:class_hierarchy, key1)
+      refute TBoxCache.cached?(:class_hierarchy, key2)
+    end
+
+    test "clears both class and property hierarchies" do
+      key = :"clear_all_test_both_#{System.unique_integer([:positive])}"
+
+      class_facts = MapSet.new([{iri("A"), rdfs_subClassOf(), iri("B")}])
+      prop_facts = MapSet.new([{iri("p1"), rdfs_subPropertyOf(), iri("p2")}])
+
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(class_facts, key)
+      {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(prop_facts, key)
+
+      assert TBoxCache.cached?(:class_hierarchy, key)
+      assert TBoxCache.cached?(:property_hierarchy, key)
+
+      TBoxCache.clear_all()
+
+      refute TBoxCache.cached?(:class_hierarchy, key)
+      refute TBoxCache.cached?(:property_hierarchy, key)
+    end
+  end
+
+  describe "list_cached/0" do
+    test "returns empty list when nothing cached" do
+      # Clear all first to ensure clean state
+      TBoxCache.clear_all()
+
+      cached = TBoxCache.list_cached()
+      assert cached == []
+    end
+
+    test "returns list of cached hierarchy keys" do
+      # Clear all first to ensure clean state
+      TBoxCache.clear_all()
+
+      key1 = :"list_cached_test_1_#{System.unique_integer([:positive])}"
+      key2 = :"list_cached_test_2_#{System.unique_integer([:positive])}"
+
+      facts = MapSet.new([{iri("A"), rdfs_subClassOf(), iri("B")}])
+
+      {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key1)
+      {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key2)
+
+      cached = TBoxCache.list_cached()
+
+      assert {:class_hierarchy, key1} in cached
+      assert {:property_hierarchy, key2} in cached
+
+      # Cleanup
+      TBoxCache.clear_all()
+    end
   end
 
   # ============================================================================
@@ -1115,6 +1190,18 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "returns false for instance data triple" do
       triple = {iri("alice"), iri("knows"), iri("bob")}
       refute TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for rdfs:domain triple" do
+      domain_iri = {:iri, "http://www.w3.org/2000/01/rdf-schema#domain"}
+      triple = {iri("knows"), domain_iri, iri("Person")}
+      assert TBoxCache.tbox_triple?(triple)
+    end
+
+    test "returns true for rdfs:range triple" do
+      range_iri = {:iri, "http://www.w3.org/2000/01/rdf-schema#range"}
+      triple = {iri("knows"), range_iri, iri("Person")}
+      assert TBoxCache.tbox_triple?(triple)
     end
   end
 

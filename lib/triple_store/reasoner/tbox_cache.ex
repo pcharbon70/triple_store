@@ -50,6 +50,17 @@ defmodule TripleStore.Reasoner.TBoxCache do
 
       {:ok, cache} = TBoxCache.compute_class_hierarchy_in_memory(facts)
       superclasses = TBoxCache.superclasses_from(cache, class_iri)
+
+  ## Security Considerations
+
+  - **Trusted Input**: This module assumes input triples come from trusted sources.
+    No validation is performed on IRI formats or values.
+  - **Cache Keys**: Cache keys are atoms and should be controlled by the application.
+    Do not derive cache keys from user input to avoid atom table exhaustion.
+  - **Memory Usage**: Memory consumption grows linearly with ontology size. For very
+    large ontologies (100k+ classes), monitor memory usage during hierarchy computation.
+  - **No Input Limits**: There are no built-in limits on fact set size. Applications
+    processing untrusted ontologies should implement their own size limits.
   """
 
   alias TripleStore.Reasoner.Namespaces
@@ -106,6 +117,24 @@ defmodule TripleStore.Reasoner.TBoxCache do
 
   # Maximum iterations for transitive closure to prevent infinite loops
   @max_iterations 1000
+
+  # TBox-modifying predicates (computed at compile time for efficiency)
+  @tbox_predicates MapSet.new([
+    {:iri, Namespaces.rdfs_subClassOf()},
+    {:iri, Namespaces.rdfs_subPropertyOf()},
+    {:iri, Namespaces.rdf_type()},
+    {:iri, Namespaces.owl_inverseOf()},
+    {:iri, Namespaces.rdfs_domain()},
+    {:iri, Namespaces.rdfs_range()}
+  ])
+
+  # OWL property characteristic types (computed at compile time)
+  @property_characteristic_types MapSet.new([
+    {:iri, Namespaces.owl_TransitiveProperty()},
+    {:iri, Namespaces.owl_SymmetricProperty()},
+    {:iri, Namespaces.owl_FunctionalProperty()},
+    {:iri, Namespaces.owl_InverseFunctionalProperty()}
+  ])
 
   # ============================================================================
   # In-Memory API
@@ -807,12 +836,8 @@ defmodule TripleStore.Reasoner.TBoxCache do
   end
 
   # Check if two maps with MapSet values are equal
-  defp maps_equal?(map1, map2) do
-    Map.keys(map1) == Map.keys(map2) and
-      Enum.all?(Map.keys(map1), fn key ->
-        Map.get(map1, key) == Map.get(map2, key)
-      end)
-  end
+  # Maps can be directly compared with == since MapSet equality works
+  defp maps_equal?(map1, map2), do: map1 == map2
 
   # Invert a hierarchy: for each (class -> supers), add (super -> class) to inverse
   defp invert_hierarchy(superclass_map) do
@@ -834,7 +859,8 @@ defmodule TripleStore.Reasoner.TBoxCache do
   # Private Functions - Property Characteristics
   # ============================================================================
 
-  # Extract property characteristics from facts
+  # Extract property characteristics from facts in a single pass
+  # This is O(n) instead of O(5n) for large ontologies
   defp extract_property_characteristics(facts) do
     rdf_type_iri = {:iri, Namespaces.rdf_type()}
     transitive_iri = {:iri, Namespaces.owl_TransitiveProperty()}
@@ -843,49 +869,38 @@ defmodule TripleStore.Reasoner.TBoxCache do
     inverse_functional_iri = {:iri, Namespaces.owl_InverseFunctionalProperty()}
     inverse_of_iri = {:iri, Namespaces.owl_inverseOf()}
 
-    # Extract properties by type
-    transitive =
-      facts
-      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == transitive_iri end)
-      |> Enum.map(fn {s, _p, _o} -> s end)
-      |> MapSet.new()
-
-    symmetric =
-      facts
-      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == symmetric_iri end)
-      |> Enum.map(fn {s, _p, _o} -> s end)
-      |> MapSet.new()
-
-    functional =
-      facts
-      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == functional_iri end)
-      |> Enum.map(fn {s, _p, _o} -> s end)
-      |> MapSet.new()
-
-    inverse_functional =
-      facts
-      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == inverse_functional_iri end)
-      |> Enum.map(fn {s, _p, _o} -> s end)
-      |> MapSet.new()
-
-    # Extract inverse property pairs (bidirectional)
-    inverse_pairs =
-      facts
-      |> Enum.filter(fn {_s, p, _o} -> p == inverse_of_iri end)
-      |> Enum.reduce(%{}, fn {p1, _p, p2}, acc ->
-        # Add both directions
-        acc
-        |> Map.put(p1, p2)
-        |> Map.put(p2, p1)
-      end)
-
-    %{
-      transitive: transitive,
-      symmetric: symmetric,
-      functional: functional,
-      inverse_functional: inverse_functional,
-      inverse_pairs: inverse_pairs
+    initial_acc = %{
+      transitive: MapSet.new(),
+      symmetric: MapSet.new(),
+      functional: MapSet.new(),
+      inverse_functional: MapSet.new(),
+      inverse_pairs: %{}
     }
+
+    Enum.reduce(facts, initial_acc, fn {s, p, o}, acc ->
+      cond do
+        # Property characteristic declarations via rdf:type
+        p == rdf_type_iri and o == transitive_iri ->
+          %{acc | transitive: MapSet.put(acc.transitive, s)}
+
+        p == rdf_type_iri and o == symmetric_iri ->
+          %{acc | symmetric: MapSet.put(acc.symmetric, s)}
+
+        p == rdf_type_iri and o == functional_iri ->
+          %{acc | functional: MapSet.put(acc.functional, s)}
+
+        p == rdf_type_iri and o == inverse_functional_iri ->
+          %{acc | inverse_functional: MapSet.put(acc.inverse_functional, s)}
+
+        # Inverse property pairs (bidirectional)
+        p == inverse_of_iri ->
+          inverse_pairs = acc.inverse_pairs |> Map.put(s, o) |> Map.put(o, s)
+          %{acc | inverse_pairs: inverse_pairs}
+
+        true ->
+          acc
+      end
+    end)
   end
 
   # ============================================================================
@@ -954,16 +969,7 @@ defmodule TripleStore.Reasoner.TBoxCache do
   - `rdfs:range` - Property range declarations
   """
   @spec tbox_predicates() :: MapSet.t({:iri, String.t()})
-  def tbox_predicates do
-    MapSet.new([
-      {:iri, Namespaces.rdfs_subClassOf()},
-      {:iri, Namespaces.rdfs_subPropertyOf()},
-      {:iri, Namespaces.rdf_type()},
-      {:iri, Namespaces.owl_inverseOf()},
-      {:iri, Namespaces.rdfs_domain()},
-      {:iri, Namespaces.rdfs_range()}
-    ])
-  end
+  def tbox_predicates, do: @tbox_predicates
 
   @doc """
   Returns the set of OWL class types that indicate property characteristics.
@@ -972,14 +978,7 @@ defmodule TripleStore.Reasoner.TBoxCache do
   it declares a property characteristic that affects reasoning.
   """
   @spec property_characteristic_types() :: MapSet.t({:iri, String.t()})
-  def property_characteristic_types do
-    MapSet.new([
-      {:iri, Namespaces.owl_TransitiveProperty()},
-      {:iri, Namespaces.owl_SymmetricProperty()},
-      {:iri, Namespaces.owl_FunctionalProperty()},
-      {:iri, Namespaces.owl_InverseFunctionalProperty()}
-    ])
-  end
+  def property_characteristic_types, do: @property_characteristic_types
 
   @doc """
   Checks if a triple is a TBox-modifying triple.
@@ -1012,16 +1011,15 @@ defmodule TripleStore.Reasoner.TBoxCache do
   """
   @spec tbox_triple?({term_value(), term_value(), term_value()}) :: boolean()
   def tbox_triple?({_subject, predicate, object}) do
-    tbox_preds = tbox_predicates()
-    char_types = property_characteristic_types()
+    rdf_type_iri = {:iri, Namespaces.rdf_type()}
 
     cond do
       # rdfs:subClassOf or rdfs:subPropertyOf or owl:inverseOf or rdfs:domain or rdfs:range
-      predicate != {:iri, Namespaces.rdf_type()} and MapSet.member?(tbox_preds, predicate) ->
+      predicate != rdf_type_iri and MapSet.member?(@tbox_predicates, predicate) ->
         true
 
       # rdf:type with a property characteristic type
-      predicate == {:iri, Namespaces.rdf_type()} and MapSet.member?(char_types, object) ->
+      predicate == rdf_type_iri and MapSet.member?(@property_characteristic_types, object) ->
         true
 
       true ->
@@ -1149,11 +1147,7 @@ defmodule TripleStore.Reasoner.TBoxCache do
         }
   def invalidate_affected(triples, key \\ :default) do
     categorized = categorize_tbox_triples(triples)
-
-    class_affected = length(categorized.class_hierarchy) > 0
-    property_affected = length(categorized.property_hierarchy) > 0 or
-                        length(categorized.property_characteristics) > 0 or
-                        length(categorized.inverse_properties) > 0
+    {class_affected, property_affected} = determine_affected_caches(categorized)
 
     if class_affected do
       clear(:class_hierarchy, key)
@@ -1278,16 +1272,30 @@ defmodule TripleStore.Reasoner.TBoxCache do
         }
   def needs_recomputation?(modified_triples) do
     categorized = categorize_tbox_triples(modified_triples)
-
-    class_affected = length(categorized.class_hierarchy) > 0
-    property_affected = length(categorized.property_hierarchy) > 0 or
-                        length(categorized.property_characteristics) > 0 or
-                        length(categorized.inverse_properties) > 0
+    {class_affected, property_affected} = determine_affected_caches(categorized)
 
     %{
       class_hierarchy: class_affected,
       property_hierarchy: property_affected,
       any: class_affected or property_affected
     }
+  end
+
+  # ============================================================================
+  # Private Functions - Affected Cache Detection
+  # ============================================================================
+
+  # Determines which caches are affected by categorized TBox triples.
+  # Uses != [] pattern instead of length/1 > 0 for O(1) empty check.
+  @spec determine_affected_caches(map()) :: {boolean(), boolean()}
+  defp determine_affected_caches(categorized) do
+    class_affected = categorized.class_hierarchy != []
+
+    property_affected =
+      categorized.property_hierarchy != [] or
+        categorized.property_characteristics != [] or
+        categorized.inverse_properties != []
+
+    {class_affected, property_affected}
   end
 end

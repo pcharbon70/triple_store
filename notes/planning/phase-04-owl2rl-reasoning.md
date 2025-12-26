@@ -326,6 +326,7 @@ Implement complete deletion with reasoning.
 ## 4.4 TBox Caching
 
 - [x] **Section 4.4 Complete** (2025-12-26)
+- [x] **Section 4.4 Review Fixes Complete** (2025-12-26)
 
 This section implements caching of TBox (schema) inferences for efficient ABox (instance) reasoning. The class and property hierarchies are computed once at ontology load.
 
@@ -333,7 +334,29 @@ This section implements caching of TBox (schema) inferences for efficient ABox (
 - 4 tasks completed (4.4.1-4.4.4)
 - New module: `TripleStore.Reasoner.TBoxCache`
 - Features: class hierarchy, property hierarchy, property characteristics, inverse pairs, TBox update detection, cache invalidation
-- 95 tests covering all TBox caching functionality
+- 102 tests covering all TBox caching functionality
+
+### Review Fixes (2025-12-26)
+
+The following issues from the comprehensive review were addressed:
+
+**Performance Fixes (High Priority):**
+- Fixed `maps_equal?/2` inefficiency - replaced O(2n) with O(1) direct map comparison
+- Single-pass `extract_property_characteristics/1` - reduced O(5n) to O(n)
+- Replaced `length/1 > 0` with `!= []` pattern for O(1) empty checks
+
+**Code Quality Improvements:**
+- Extracted `determine_affected_caches/1` helper to eliminate duplicate logic
+- Moved TBox predicates and property characteristic types to module attributes (compile-time)
+- Added Security Considerations section to moduledoc
+
+**Test Coverage Added:**
+- Tests for `clear_all/0` function
+- Tests for `list_cached/0` function
+- Tests for `stats/2` error path
+- Tests for domain/range predicates in `tbox_triple?/1`
+
+**Test Coverage:** 102 tests (95 original + 7 review fixes)
 
 ### 4.4.1 Class Hierarchy
 
