@@ -65,7 +65,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   atom table exhaustion.
   """
 
-  alias TripleStore.Reasoner.{Rule, Rules, SchemaInfo, Namespaces}
+  alias TripleStore.Reasoner.{Rule, SchemaInfo, Namespaces, ReasoningProfile}
 
   require Logger
 
@@ -92,7 +92,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   @typedoc "Compilation options"
   @type compile_opts :: [
-          profile: :rdfs | :owl2rl | :all,
+          profile: :rdfs | :owl2rl | :custom | :none,
+          rules: [atom()],
+          exclude: [atom()],
           specialize: boolean(),
           max_specializations: pos_integer(),
           max_properties: pos_integer()
@@ -110,7 +112,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   ## Options
 
-  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, or `:all`). Default: `:owl2rl`
+  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, `:custom`, or `:none`). Default: `:owl2rl`
+  - `:rules` - List of rule names for custom profile. Required when profile is `:custom`
+  - `:exclude` - List of rule names to exclude from the profile
   - `:specialize` - Whether to create specialized rules. Default: `true`
   - `:max_specializations` - Maximum specialized rules to create. Default: #{@default_max_specializations}
   - `:max_properties` - Maximum properties per type to extract. Default: #{@default_max_properties_per_type}
@@ -137,8 +141,14 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     max_specs = Keyword.get(opts, :max_specializations, @default_max_specializations)
     max_props = Keyword.get(opts, :max_properties, @default_max_properties_per_type)
 
-    with {:ok, schema_info} <- extract_schema_info(ctx, max_properties: max_props) do
-      base_rules = Rules.rules_for_profile(profile)
+    # Build profile options for ReasoningProfile
+    profile_opts = [
+      rules: Keyword.get(opts, :rules, []),
+      exclude: Keyword.get(opts, :exclude, [])
+    ]
+
+    with {:ok, schema_info} <- extract_schema_info(ctx, max_properties: max_props),
+         {:ok, base_rules} <- ReasoningProfile.rules_for(profile, profile_opts) do
       applicable_rules = filter_applicable_rules(base_rules, schema_info)
 
       specialized_rules =
@@ -175,35 +185,42 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       )
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
   """
-  @spec compile_with_schema(SchemaInfo.t() | map(), compile_opts()) :: {:ok, compiled()}
+  @spec compile_with_schema(SchemaInfo.t() | map(), compile_opts()) :: {:ok, compiled()} | {:error, term()}
   def compile_with_schema(schema_info, opts \\ []) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     specialize = Keyword.get(opts, :specialize, true)
     max_specs = Keyword.get(opts, :max_specializations, @default_max_specializations)
 
+    # Build profile options for ReasoningProfile
+    profile_opts = [
+      rules: Keyword.get(opts, :rules, []),
+      exclude: Keyword.get(opts, :exclude, [])
+    ]
+
     # Convert map to SchemaInfo if needed
     schema_info = normalize_schema_info(schema_info)
 
-    base_rules = Rules.rules_for_profile(profile)
-    applicable_rules = filter_applicable_rules(base_rules, schema_info)
+    with {:ok, base_rules} <- ReasoningProfile.rules_for(profile, profile_opts) do
+      applicable_rules = filter_applicable_rules(base_rules, schema_info)
 
-    specialized_rules =
-      if specialize do
-        specialize_rules(applicable_rules, schema_info, max_specs)
-      else
-        []
-      end
+      specialized_rules =
+        if specialize do
+          specialize_rules(applicable_rules, schema_info, max_specs)
+        else
+          []
+        end
 
-    compiled = %{
-      rules: applicable_rules,
-      specialized_rules: specialized_rules,
-      profile: profile,
-      schema_info: schema_info,
-      compiled_at: DateTime.utc_now(),
-      version: generate_version()
-    }
+      compiled = %{
+        rules: applicable_rules,
+        specialized_rules: specialized_rules,
+        profile: profile,
+        schema_info: schema_info,
+        compiled_at: DateTime.utc_now(),
+        version: generate_version()
+      }
 
-    {:ok, compiled}
+      {:ok, compiled}
+    end
   end
 
   @doc """

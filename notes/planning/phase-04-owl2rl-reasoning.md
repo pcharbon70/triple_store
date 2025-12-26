@@ -436,14 +436,26 @@ This section implements configuration options for reasoning behavior, including 
 
 ### 4.5.1 Profile Selection
 
-- [ ] **Task 4.5.1 Complete**
+- [x] **Task 4.5.1 Complete** (2025-12-26)
 
 Support different reasoning profiles.
 
-- [ ] 4.5.1.1 Implement RDFS profile (subclass, domain, range only)
-- [ ] 4.5.1.2 Implement OWL 2 RL profile (full rule set)
-- [ ] 4.5.1.3 Implement custom profile (user-selected rules)
-- [ ] 4.5.1.4 Configure profile via `TripleStore.materialize(db, profile: :owl2rl)`
+- [x] 4.5.1.1 Implement RDFS profile (subclass, domain, range only)
+- [x] 4.5.1.2 Implement OWL 2 RL profile (full rule set)
+- [x] 4.5.1.3 Implement custom profile (user-selected rules)
+- [x] 4.5.1.4 Configure profile via `TripleStore.materialize(db, profile: :owl2rl)`
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.ReasoningProfile`
+- Built-in profiles: `:none`, `:rdfs`, `:owl2rl`, `:custom`
+- RDFS profile: 6 rules (scm_sco, scm_spo, cax_sco, prp_spo1, prp_dom, prp_rng)
+- OWL 2 RL profile: 23 rules (RDFS + property characteristics + equality + restrictions)
+- Custom profile with `:rules` option for user-selected rules
+- `:exclude` option to remove specific rules from any profile
+- Category-based composition via `from_categories/2`
+- Profile suggestion based on schema analysis
+- Integrated with RuleCompiler for seamless profile selection
+- 42 new tests for profile functionality
 
 ### 4.5.2 Reasoning Mode
 
