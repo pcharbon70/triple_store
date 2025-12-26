@@ -348,13 +348,21 @@ Compute and cache class hierarchy.
 
 ### 4.4.2 Property Hierarchy
 
-- [ ] **Task 4.4.2 Complete**
+- [x] **Task 4.4.2 Complete** (2025-12-26)
 
 Compute and cache property hierarchy.
 
-- [ ] 4.4.2.1 Implement `compute_property_hierarchy(db)` building superproperty map
-- [ ] 4.4.2.2 Implement `superproperties(prop)` returning all superproperties
-- [ ] 4.4.2.3 Cache property characteristics (transitive, symmetric, etc.)
+- [x] 4.4.2.1 Implement `compute_property_hierarchy(db)` building superproperty map
+- [x] 4.4.2.2 Implement `superproperties(prop)` returning all superproperties
+- [x] 4.4.2.3 Cache property characteristics (transitive, symmetric, etc.)
+
+**Implementation Notes:**
+- Extended `TripleStore.Reasoner.TBoxCache` module
+- Computes transitive closure of `rdfs:subPropertyOf` relationships
+- Extracts property characteristics: transitive, symmetric, functional, inverse functional
+- Extracts and caches inverse property pairs bidirectionally
+- 32 new tests covering property hierarchy computation, characteristics, and cache management
+- Total TBoxCache tests: 62 (30 class + 32 property)
 
 ### 4.4.3 TBox Updates
 

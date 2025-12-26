@@ -13,6 +13,16 @@ defmodule TripleStore.Reasoner.TBoxCache do
   - All superclasses (transitive closure of subClassOf)
   - All subclasses (inverse of the superclass relationship)
 
+  ## Property Hierarchy
+
+  The property hierarchy is computed by following `rdfs:subPropertyOf` relationships
+  transitively. Additionally, property characteristics are extracted:
+  - Transitive properties (owl:TransitiveProperty)
+  - Symmetric properties (owl:SymmetricProperty)
+  - Functional properties (owl:FunctionalProperty)
+  - Inverse functional properties (owl:InverseFunctionalProperty)
+  - Inverse property pairs (owl:inverseOf)
+
   ## Storage
 
   Hierarchies are stored in `:persistent_term` for zero-copy access from all
@@ -70,6 +80,24 @@ defmodule TripleStore.Reasoner.TBoxCache do
           class_count: non_neg_integer(),
           relationship_count: non_neg_integer(),
           computation_time_ms: non_neg_integer()
+        }
+
+  @typedoc "Property characteristics"
+  @type property_characteristics :: %{
+          transitive: MapSet.t(term_value()),
+          symmetric: MapSet.t(term_value()),
+          functional: MapSet.t(term_value()),
+          inverse_functional: MapSet.t(term_value()),
+          inverse_pairs: %{term_value() => term_value()}
+        }
+
+  @typedoc "Property hierarchy cache structure"
+  @type property_hierarchy :: %{
+          superproperty_map: transitive_map(),
+          subproperty_map: transitive_map(),
+          characteristics: property_characteristics(),
+          property_count: non_neg_integer(),
+          version: String.t()
         }
 
   # ============================================================================
@@ -237,6 +265,262 @@ defmodule TripleStore.Reasoner.TBoxCache do
   end
 
   # ============================================================================
+  # In-Memory API - Property Hierarchy
+  # ============================================================================
+
+  @doc """
+  Computes the property hierarchy from a set of facts.
+
+  Extracts all `rdfs:subPropertyOf` relationships and computes the transitive
+  closure to build complete superproperty and subproperty maps. Also extracts
+  property characteristics (transitive, symmetric, functional, etc.).
+
+  ## Parameters
+
+  - `facts` - A MapSet or list of `{subject, predicate, object}` triples
+
+  ## Returns
+
+  - `{:ok, hierarchy}` - The computed property hierarchy
+  - `{:error, :max_iterations_exceeded}` - If transitive closure doesn't converge
+
+  ## Examples
+
+      facts = MapSet.new([
+        {{:iri, "hasChild"}, {:iri, "rdfs:subPropertyOf"}, {:iri, "hasDescendant"}},
+        {{:iri, "contains"}, {:iri, "rdf:type"}, {:iri, "owl:TransitiveProperty"}}
+      ])
+
+      {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
+  """
+  @spec compute_property_hierarchy_in_memory(Enumerable.t()) ::
+          {:ok, property_hierarchy()} | {:error, :max_iterations_exceeded}
+  def compute_property_hierarchy_in_memory(facts) do
+    start_time = System.monotonic_time(:millisecond)
+
+    # Extract rdfs:subPropertyOf relationships
+    subproperty_of_iri = {:iri, Namespaces.rdfs_subPropertyOf()}
+
+    direct_superproperty_map =
+      facts
+      |> Enum.filter(fn {_s, p, _o} -> p == subproperty_of_iri end)
+      |> Enum.reduce(%{}, fn {subprop, _p, superprop}, acc ->
+        Map.update(acc, subprop, MapSet.new([superprop]), &MapSet.put(&1, superprop))
+      end)
+
+    # Compute transitive closure of superproperty relationships
+    case compute_transitive_closure(direct_superproperty_map) do
+      {:ok, superproperty_map} ->
+        # Compute inverse (subproperty map) from superproperty map
+        subproperty_map = invert_hierarchy(superproperty_map)
+
+        # Extract property characteristics
+        characteristics = extract_property_characteristics(facts)
+
+        # Get all properties (from subPropertyOf and characteristics)
+        all_properties =
+          MapSet.new()
+          |> MapSet.union(MapSet.new(Map.keys(superproperty_map)))
+          |> MapSet.union(MapSet.new(Map.keys(subproperty_map)))
+          |> MapSet.union(characteristics.transitive)
+          |> MapSet.union(characteristics.symmetric)
+          |> MapSet.union(characteristics.functional)
+          |> MapSet.union(characteristics.inverse_functional)
+          |> MapSet.union(MapSet.new(Map.keys(characteristics.inverse_pairs)))
+          |> MapSet.union(MapSet.new(Map.values(characteristics.inverse_pairs)))
+
+        duration_ms = System.monotonic_time(:millisecond) - start_time
+
+        hierarchy = %{
+          superproperty_map: superproperty_map,
+          subproperty_map: subproperty_map,
+          characteristics: characteristics,
+          property_count: MapSet.size(all_properties),
+          version: generate_version(),
+          stats: %{
+            property_count: MapSet.size(all_properties),
+            relationship_count: count_relationships(superproperty_map),
+            transitive_count: MapSet.size(characteristics.transitive),
+            symmetric_count: MapSet.size(characteristics.symmetric),
+            functional_count: MapSet.size(characteristics.functional),
+            inverse_functional_count: MapSet.size(characteristics.inverse_functional),
+            inverse_pair_count: map_size(characteristics.inverse_pairs),
+            computation_time_ms: duration_ms
+          }
+        }
+
+        {:ok, hierarchy}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Returns all superproperties of a property from a precomputed hierarchy.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to look up
+
+  ## Returns
+
+  A MapSet of all superproperties (transitive closure), or empty MapSet if not found.
+
+  ## Examples
+
+      superprops = TBoxCache.superproperties_from(hierarchy, {:iri, "hasChild"})
+      # => MapSet.new([{:iri, "hasDescendant"}, {:iri, "hasRelative"}])
+  """
+  @spec superproperties_from(property_hierarchy(), term_value()) :: MapSet.t(term_value())
+  def superproperties_from(%{superproperty_map: map}, property) do
+    Map.get(map, property, MapSet.new())
+  end
+
+  @doc """
+  Returns all subproperties of a property from a precomputed hierarchy.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to look up
+
+  ## Returns
+
+  A MapSet of all subproperties (transitive closure), or empty MapSet if not found.
+
+  ## Examples
+
+      subprops = TBoxCache.subproperties_from(hierarchy, {:iri, "hasDescendant"})
+      # => MapSet.new([{:iri, "hasChild"}, {:iri, "hasGrandchild"}])
+  """
+  @spec subproperties_from(property_hierarchy(), term_value()) :: MapSet.t(term_value())
+  def subproperties_from(%{subproperty_map: map}, property) do
+    Map.get(map, property, MapSet.new())
+  end
+
+  @doc """
+  Checks if a property is transitive.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to check
+
+  ## Returns
+
+  `true` if the property is declared as owl:TransitiveProperty.
+  """
+  @spec transitive_property?(property_hierarchy(), term_value()) :: boolean()
+  def transitive_property?(%{characteristics: %{transitive: set}}, property) do
+    MapSet.member?(set, property)
+  end
+
+  @doc """
+  Checks if a property is symmetric.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to check
+
+  ## Returns
+
+  `true` if the property is declared as owl:SymmetricProperty.
+  """
+  @spec symmetric_property?(property_hierarchy(), term_value()) :: boolean()
+  def symmetric_property?(%{characteristics: %{symmetric: set}}, property) do
+    MapSet.member?(set, property)
+  end
+
+  @doc """
+  Checks if a property is functional.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to check
+
+  ## Returns
+
+  `true` if the property is declared as owl:FunctionalProperty.
+  """
+  @spec functional_property?(property_hierarchy(), term_value()) :: boolean()
+  def functional_property?(%{characteristics: %{functional: set}}, property) do
+    MapSet.member?(set, property)
+  end
+
+  @doc """
+  Checks if a property is inverse functional.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to check
+
+  ## Returns
+
+  `true` if the property is declared as owl:InverseFunctionalProperty.
+  """
+  @spec inverse_functional_property?(property_hierarchy(), term_value()) :: boolean()
+  def inverse_functional_property?(%{characteristics: %{inverse_functional: set}}, property) do
+    MapSet.member?(set, property)
+  end
+
+  @doc """
+  Returns the inverse of a property if one is declared.
+
+  ## Parameters
+
+  - `hierarchy` - The precomputed property hierarchy
+  - `property` - The property to look up
+
+  ## Returns
+
+  The inverse property, or `nil` if no inverse is declared.
+
+  ## Examples
+
+      TBoxCache.inverse_of(hierarchy, {:iri, "hasParent"})
+      # => {:iri, "hasChild"}
+  """
+  @spec inverse_of(property_hierarchy(), term_value()) :: term_value() | nil
+  def inverse_of(%{characteristics: %{inverse_pairs: pairs}}, property) do
+    Map.get(pairs, property)
+  end
+
+  @doc """
+  Returns all transitive properties from the hierarchy.
+  """
+  @spec transitive_properties(property_hierarchy()) :: MapSet.t(term_value())
+  def transitive_properties(%{characteristics: %{transitive: set}}), do: set
+
+  @doc """
+  Returns all symmetric properties from the hierarchy.
+  """
+  @spec symmetric_properties(property_hierarchy()) :: MapSet.t(term_value())
+  def symmetric_properties(%{characteristics: %{symmetric: set}}), do: set
+
+  @doc """
+  Returns all functional properties from the hierarchy.
+  """
+  @spec functional_properties(property_hierarchy()) :: MapSet.t(term_value())
+  def functional_properties(%{characteristics: %{functional: set}}), do: set
+
+  @doc """
+  Returns all inverse functional properties from the hierarchy.
+  """
+  @spec inverse_functional_properties(property_hierarchy()) :: MapSet.t(term_value())
+  def inverse_functional_properties(%{characteristics: %{inverse_functional: set}}), do: set
+
+  @doc """
+  Returns all inverse property pairs as a map.
+  """
+  @spec inverse_pairs(property_hierarchy()) :: %{term_value() => term_value()}
+  def inverse_pairs(%{characteristics: %{inverse_pairs: pairs}}), do: pairs
+
+  # ============================================================================
   # Persistent Term API
   # ============================================================================
 
@@ -306,6 +590,76 @@ defmodule TripleStore.Reasoner.TBoxCache do
   def subclasses(class, key \\ :default) do
     case load_hierarchy(:class_hierarchy, key) do
       {:ok, hierarchy} -> subclasses_from(hierarchy, class)
+      {:error, :not_found} -> MapSet.new()
+    end
+  end
+
+  @doc """
+  Computes and stores the property hierarchy in `:persistent_term`.
+
+  ## Parameters
+
+  - `facts` - A MapSet or list of triples
+  - `key` - Optional key for the cache (default: :default)
+
+  ## Returns
+
+  - `{:ok, stats}` - Computation statistics
+  - `{:error, reason}` - On failure
+  """
+  @spec compute_and_store_property_hierarchy(Enumerable.t(), atom()) ::
+          {:ok, map()} | {:error, term()}
+  def compute_and_store_property_hierarchy(facts, key \\ :default) do
+    case compute_property_hierarchy_in_memory(facts) do
+      {:ok, hierarchy} ->
+        store_hierarchy(:property_hierarchy, key, hierarchy)
+        {:ok, hierarchy.stats}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Returns all superproperties of a property from the cached hierarchy.
+
+  Uses the stored `:persistent_term` cache.
+
+  ## Parameters
+
+  - `property` - The property to look up
+  - `key` - Optional cache key (default: :default)
+
+  ## Returns
+
+  A MapSet of all superproperties, or empty MapSet if not cached or not found.
+  """
+  @spec superproperties(term_value(), atom()) :: MapSet.t(term_value())
+  def superproperties(property, key \\ :default) do
+    case load_hierarchy(:property_hierarchy, key) do
+      {:ok, hierarchy} -> superproperties_from(hierarchy, property)
+      {:error, :not_found} -> MapSet.new()
+    end
+  end
+
+  @doc """
+  Returns all subproperties of a property from the cached hierarchy.
+
+  Uses the stored `:persistent_term` cache.
+
+  ## Parameters
+
+  - `property` - The property to look up
+  - `key` - Optional cache key (default: :default)
+
+  ## Returns
+
+  A MapSet of all subproperties, or empty MapSet if not cached or not found.
+  """
+  @spec subproperties(term_value(), atom()) :: MapSet.t(term_value())
+  def subproperties(property, key \\ :default) do
+    case load_hierarchy(:property_hierarchy, key) do
+      {:ok, hierarchy} -> subproperties_from(hierarchy, property)
       {:error, :not_found} -> MapSet.new()
     end
   end
@@ -471,9 +825,67 @@ defmodule TripleStore.Reasoner.TBoxCache do
 
   # Count total relationships in a hierarchy map
   defp count_relationships(map) do
-    Enum.reduce(map, 0, fn {_class, supers}, acc ->
-      acc + MapSet.size(supers)
+    Enum.reduce(map, 0, fn {_term, related}, acc ->
+      acc + MapSet.size(related)
     end)
+  end
+
+  # ============================================================================
+  # Private Functions - Property Characteristics
+  # ============================================================================
+
+  # Extract property characteristics from facts
+  defp extract_property_characteristics(facts) do
+    rdf_type_iri = {:iri, Namespaces.rdf_type()}
+    transitive_iri = {:iri, Namespaces.owl_TransitiveProperty()}
+    symmetric_iri = {:iri, Namespaces.owl_SymmetricProperty()}
+    functional_iri = {:iri, Namespaces.owl_FunctionalProperty()}
+    inverse_functional_iri = {:iri, Namespaces.owl_InverseFunctionalProperty()}
+    inverse_of_iri = {:iri, Namespaces.owl_inverseOf()}
+
+    # Extract properties by type
+    transitive =
+      facts
+      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == transitive_iri end)
+      |> Enum.map(fn {s, _p, _o} -> s end)
+      |> MapSet.new()
+
+    symmetric =
+      facts
+      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == symmetric_iri end)
+      |> Enum.map(fn {s, _p, _o} -> s end)
+      |> MapSet.new()
+
+    functional =
+      facts
+      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == functional_iri end)
+      |> Enum.map(fn {s, _p, _o} -> s end)
+      |> MapSet.new()
+
+    inverse_functional =
+      facts
+      |> Enum.filter(fn {_s, p, o} -> p == rdf_type_iri and o == inverse_functional_iri end)
+      |> Enum.map(fn {s, _p, _o} -> s end)
+      |> MapSet.new()
+
+    # Extract inverse property pairs (bidirectional)
+    inverse_pairs =
+      facts
+      |> Enum.filter(fn {_s, p, _o} -> p == inverse_of_iri end)
+      |> Enum.reduce(%{}, fn {p1, _p, p2}, acc ->
+        # Add both directions
+        acc
+        |> Map.put(p1, p2)
+        |> Map.put(p2, p1)
+      end)
+
+    %{
+      transitive: transitive,
+      symmetric: symmetric,
+      functional: functional,
+      inverse_functional: inverse_functional,
+      inverse_pairs: inverse_pairs
+    }
   end
 
   # ============================================================================
