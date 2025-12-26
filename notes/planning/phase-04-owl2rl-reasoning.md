@@ -331,14 +331,20 @@ This section implements caching of TBox (schema) inferences for efficient ABox (
 
 ### 4.4.1 Class Hierarchy
 
-- [ ] **Task 4.4.1 Complete**
+- [x] **Task 4.4.1 Complete** (2025-12-26)
 
 Compute and cache class hierarchy.
 
-- [ ] 4.4.1.1 Implement `compute_class_hierarchy(db)` building superclass map
-- [ ] 4.4.1.2 Store in `:persistent_term` for zero-copy access
-- [ ] 4.4.1.3 Implement `superclasses(class)` returning all superclasses
-- [ ] 4.4.1.4 Implement `subclasses(class)` returning all subclasses
+- [x] 4.4.1.1 Implement `compute_class_hierarchy(db)` building superclass map
+- [x] 4.4.1.2 Store in `:persistent_term` for zero-copy access
+- [x] 4.4.1.3 Implement `superclasses(class)` returning all superclasses
+- [x] 4.4.1.4 Implement `subclasses(class)` returning all subclasses
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.TBoxCache`
+- Computes transitive closure of `rdfs:subClassOf` relationships
+- Dual API: in-memory for testing, persistent_term for production
+- 30 tests covering hierarchy computation, queries, and cache management
 
 ### 4.4.2 Property Hierarchy
 
