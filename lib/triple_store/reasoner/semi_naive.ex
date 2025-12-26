@@ -42,6 +42,19 @@ defmodule TripleStore.Reasoner.SemiNaive do
   - **Convergence**: Guaranteed for monotonic rules (no negation)
   - **Typical iterations**: 3-10 for most ontologies
 
+  ## Parallel Evaluation
+
+  Rules within a stratum can be evaluated in parallel since they are independent.
+  Use the `:parallel` option to enable parallel rule evaluation:
+
+      {:ok, stats} = SemiNaive.materialize(lookup_fn, store_fn, rules, initial_facts,
+        parallel: true,
+        max_concurrency: System.schedulers_online()
+      )
+
+  Parallelism is deterministic - the same inputs always produce the same outputs
+  regardless of the order rules complete.
+
   ## Telemetry Events
 
   Emits telemetry events during materialization:
@@ -84,7 +97,9 @@ defmodule TripleStore.Reasoner.SemiNaive do
           max_iterations: non_neg_integer(),
           max_facts: non_neg_integer(),
           trace: boolean(),
-          emit_telemetry: boolean()
+          emit_telemetry: boolean(),
+          parallel: boolean(),
+          max_concurrency: pos_integer()
         ]
 
   @typedoc "Stratum definition for rule ordering"
@@ -99,6 +114,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
 
   @default_max_iterations 1000
   @default_max_facts 10_000_000
+  @default_max_concurrency System.schedulers_online()
 
   # ============================================================================
   # Public API
@@ -124,6 +140,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
   - `:max_facts` - Maximum total facts before stopping (default: #{@default_max_facts})
   - `:trace` - Log detailed progress (default: false)
   - `:emit_telemetry` - Emit telemetry events (default: true)
+  - `:parallel` - Enable parallel rule evaluation (default: false)
+  - `:max_concurrency` - Maximum parallel tasks when parallel is true (default: schedulers_online)
 
   ## Returns
 
@@ -148,6 +166,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
     max_facts = Keyword.get(opts, :max_facts, @default_max_facts)
     emit_telemetry = Keyword.get(opts, :emit_telemetry, true)
+    parallel = Keyword.get(opts, :parallel, false)
+    max_concurrency = Keyword.get(opts, :max_concurrency, @default_max_concurrency)
 
     start_time = System.monotonic_time(:millisecond)
 
@@ -164,11 +184,18 @@ defmodule TripleStore.Reasoner.SemiNaive do
       rules_applied: 0
     }
 
+    # Parallel options
+    parallel_opts = %{
+      parallel: parallel,
+      max_concurrency: max_concurrency
+    }
+
     # Emit start telemetry
     if emit_telemetry do
       Telemetry.emit_start([:triple_store, :reasoner, :materialize], %{
         rule_count: length(rules),
-        initial_fact_count: MapSet.size(initial_facts)
+        initial_fact_count: MapSet.size(initial_facts),
+        parallel: parallel
       })
     end
 
@@ -180,7 +207,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
       state,
       max_iterations,
       max_facts,
-      emit_telemetry
+      emit_telemetry,
+      parallel_opts
     )
 
     # Calculate duration and emit stop telemetry
@@ -268,6 +296,45 @@ defmodule TripleStore.Reasoner.SemiNaive do
   end
 
   @doc """
+  Returns the default max concurrency (number of schedulers online).
+
+  This is the default parallelism level used when `parallel: true` is set
+  without an explicit `max_concurrency` option.
+
+  ## Examples
+
+      iex> SemiNaive.default_concurrency()
+      8  # On an 8-core machine
+  """
+  @spec default_concurrency() :: pos_integer()
+  def default_concurrency, do: @default_max_concurrency
+
+  @doc """
+  Materializes inferences using parallel rule evaluation.
+
+  This is a convenience function that enables parallel rule evaluation
+  with the default concurrency level.
+
+  ## Parameters
+
+  - `lookup_fn` - Function to look up facts
+  - `store_fn` - Function to store derived facts
+  - `rules` - List of reasoning rules
+  - `initial_facts` - Initial set of explicit facts
+  - `opts` - Additional options (max_concurrency, etc.)
+
+  ## Examples
+
+      {:ok, stats} = SemiNaive.materialize_parallel(lookup_fn, store_fn, rules, facts)
+  """
+  @spec materialize_parallel(lookup_fn(), store_fn(), [Rule.t()], fact_set(), materialize_opts()) ::
+          {:ok, stats()} | {:error, term()}
+  def materialize_parallel(lookup_fn, store_fn, rules, initial_facts, opts \\ []) do
+    opts = Keyword.put(opts, :parallel, true)
+    materialize(lookup_fn, store_fn, rules, initial_facts, opts)
+  end
+
+  @doc """
   Stratifies rules based on negation dependencies.
 
   For OWL 2 RL (which has no negation), all rules are placed in stratum 0.
@@ -317,7 +384,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
   # Private Functions
   # ============================================================================
 
-  defp run_fixpoint(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry) do
+  defp run_fixpoint(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts) do
     if MapSet.size(state.delta) == 0 do
       # Fixpoint reached - no new facts
       {:ok, state}
@@ -329,7 +396,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
           {:error, :max_facts_exceeded}
         else
           # Apply all strata in order
-          case apply_strata(lookup_fn, strata, state) do
+          case apply_strata(lookup_fn, strata, state, parallel_opts) do
             {:ok, new_derivations, rules_applied} ->
               iteration_count = MapSet.size(new_derivations)
 
@@ -354,7 +421,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
                     rules_applied: state.rules_applied + rules_applied
                   }
 
-                  run_fixpoint(lookup_fn, store_fn, strata, new_state, max_iterations, max_facts, emit_telemetry)
+                  run_fixpoint(lookup_fn, store_fn, strata, new_state, max_iterations, max_facts, emit_telemetry, parallel_opts)
 
                 {:error, _} = error ->
                   error
@@ -368,10 +435,10 @@ defmodule TripleStore.Reasoner.SemiNaive do
     end
   end
 
-  defp apply_strata(lookup_fn, strata, state) do
+  defp apply_strata(lookup_fn, strata, state, parallel_opts) do
     # Apply each stratum in order, collecting all derivations
     Enum.reduce_while(strata, {:ok, MapSet.new(), 0}, fn stratum, {:ok, acc_derivations, acc_rules} ->
-      case apply_stratum(lookup_fn, stratum, state, acc_derivations) do
+      case apply_stratum(lookup_fn, stratum, state, acc_derivations, parallel_opts) do
         {:ok, stratum_derivations, rules_applied} ->
           {:cont, {:ok, MapSet.union(acc_derivations, stratum_derivations), acc_rules + rules_applied}}
 
@@ -381,10 +448,18 @@ defmodule TripleStore.Reasoner.SemiNaive do
     end)
   end
 
-  defp apply_stratum(lookup_fn, %{rules: rules}, state, already_derived) do
-    # Apply each rule in the stratum
+  defp apply_stratum(lookup_fn, %{rules: rules}, state, already_derived, parallel_opts) do
     all_existing = MapSet.union(state.all_facts, already_derived)
 
+    if parallel_opts.parallel and length(rules) > 1 do
+      apply_stratum_parallel(lookup_fn, rules, state, all_existing, parallel_opts.max_concurrency)
+    else
+      apply_stratum_sequential(lookup_fn, rules, state, all_existing)
+    end
+  end
+
+  # Sequential rule application (original implementation)
+  defp apply_stratum_sequential(lookup_fn, rules, state, all_existing) do
     result =
       Enum.reduce_while(rules, {:ok, MapSet.new(), 0}, fn rule, {:ok, acc, rule_count} ->
         case DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing) do
@@ -407,6 +482,56 @@ defmodule TripleStore.Reasoner.SemiNaive do
       error ->
         error
     end
+  end
+
+  # Parallel rule application using Task.async_stream
+  defp apply_stratum_parallel(lookup_fn, rules, state, all_existing, max_concurrency) do
+    # Apply each rule in parallel
+    # Each task returns {:ok, fact_set} or {:error, reason}
+    results =
+      rules
+      |> Task.async_stream(
+        fn rule ->
+          DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing)
+        end,
+        max_concurrency: max_concurrency,
+        ordered: false,
+        timeout: :infinity
+      )
+      |> Enum.to_list()
+
+    # Merge all results
+    merge_parallel_results(results, state.all_facts, length(rules))
+  end
+
+  # Merge results from parallel rule applications
+  # Ensures deterministic output by using set union (order-independent)
+  defp merge_parallel_results(results, existing_facts, rule_count) do
+    # Collect all successful results
+    case collect_parallel_results(results) do
+      {:ok, fact_sets} ->
+        # Union all fact sets - this is deterministic regardless of completion order
+        merged = Enum.reduce(fact_sets, MapSet.new(), &MapSet.union/2)
+        # Filter out facts already in database
+        filtered = MapSet.difference(merged, existing_facts)
+        {:ok, filtered, rule_count}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp collect_parallel_results(results) do
+    Enum.reduce_while(results, {:ok, []}, fn
+      {:ok, {:ok, facts}}, {:ok, acc} ->
+        {:cont, {:ok, [facts | acc]}}
+
+      {:ok, {:error, _} = error}, _acc ->
+        {:halt, error}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, {:task_crashed, reason}}}
+    end)
   end
 
   defp match_pattern({:pattern, [s, p, o]}, facts) do

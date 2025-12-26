@@ -426,6 +426,136 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   end
 
   # ============================================================================
+  # Tests: Parallel Evaluation
+  # ============================================================================
+
+  describe "parallel evaluation" do
+    test "parallel produces same results as sequential" do
+      initial = MapSet.new([
+        {iri("alice"), rdf_type(), iri("Student")},
+        {iri("bob"), rdf_type(), iri("Teacher")},
+        {iri("Student"), rdfs_subClassOf(), iri("Person")},
+        {iri("Teacher"), rdfs_subClassOf(), iri("Person")},
+        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+      ])
+
+      rules = [Rules.scm_sco(), Rules.cax_sco()]
+
+      # Run sequential
+      {:ok, seq_facts, seq_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: false)
+
+      # Run parallel
+      {:ok, par_facts, par_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+
+      # Results should be identical
+      assert seq_facts == par_facts
+      assert seq_stats.total_derived == par_stats.total_derived
+    end
+
+    test "parallel with max_concurrency option" do
+      initial = MapSet.new([
+        {iri("a"), rdfs_subClassOf(), iri("b")},
+        {iri("b"), rdfs_subClassOf(), iri("c")},
+        {iri("c"), rdfs_subClassOf(), iri("d")}
+      ])
+
+      rules = [Rules.scm_sco()]
+
+      {:ok, _facts, stats} = SemiNaive.materialize_in_memory(
+        rules,
+        initial,
+        parallel: true,
+        max_concurrency: 2
+      )
+
+      assert stats.total_derived > 0
+    end
+
+    test "materialize_parallel convenience function works" do
+      {:ok, store_agent} = Agent.start_link(fn -> MapSet.new() end)
+
+      initial = MapSet.new([
+        {iri("x"), rdf_type(), iri("A")},
+        {iri("A"), rdfs_subClassOf(), iri("B")}
+      ])
+
+      Agent.update(store_agent, fn _ -> initial end)
+
+      lookup_fn = fn pattern ->
+        facts = Agent.get(store_agent, & &1)
+        {:ok, match_pattern(pattern, facts)}
+      end
+
+      store_fn = fn new_facts ->
+        Agent.update(store_agent, fn existing -> MapSet.union(existing, new_facts) end)
+        :ok
+      end
+
+      rules = [Rules.cax_sco()]
+
+      {:ok, stats} = SemiNaive.materialize_parallel(lookup_fn, store_fn, rules, initial)
+
+      assert stats.total_derived > 0
+
+      final_facts = Agent.get(store_agent, & &1)
+      assert MapSet.member?(final_facts, {iri("x"), rdf_type(), iri("B")})
+
+      Agent.stop(store_agent)
+    end
+
+    test "default_concurrency returns positive integer" do
+      concurrency = SemiNaive.default_concurrency()
+      assert is_integer(concurrency)
+      assert concurrency > 0
+    end
+
+    test "parallel handles many rules efficiently" do
+      # Create a larger set of rules to test parallelism
+      initial = MapSet.new([
+        {iri("alice"), rdf_type(), iri("Person")},
+        {iri("bob"), rdf_type(), iri("Person")},
+        {iri("Person"), rdfs_subClassOf(), iri("Agent")},
+        {iri("Agent"), rdfs_subClassOf(), iri("Entity")},
+        {iri("alice"), owl_sameAs(), iri("alice2")}
+      ])
+
+      # Use multiple rules that can run in parallel
+      rules = [
+        Rules.scm_sco(),
+        Rules.cax_sco(),
+        Rules.eq_sym(),
+        Rules.eq_trans()
+      ]
+
+      {:ok, _facts, stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+
+      # Should complete without error
+      assert stats.rules_applied > 0
+    end
+
+    test "parallel is deterministic across multiple runs" do
+      initial = MapSet.new([
+        {iri("a"), rdfs_subClassOf(), iri("b")},
+        {iri("b"), rdfs_subClassOf(), iri("c")},
+        {iri("c"), rdfs_subClassOf(), iri("d")},
+        {iri("x"), rdf_type(), iri("a")}
+      ])
+
+      rules = [Rules.scm_sco(), Rules.cax_sco()]
+
+      # Run multiple times and ensure same result
+      results = for _ <- 1..5 do
+        {:ok, facts, _stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+        facts
+      end
+
+      # All results should be identical
+      first = hd(results)
+      assert Enum.all?(results, fn r -> r == first end)
+    end
+  end
+
+  # ============================================================================
   # Test Helpers
   # ============================================================================
 

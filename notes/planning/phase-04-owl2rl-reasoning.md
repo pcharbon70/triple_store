@@ -140,14 +140,14 @@ Implement the fixpoint iteration loop.
 
 ### 4.2.3 Parallel Rule Evaluation
 
-- [ ] **Task 4.2.3 Complete**
+- [x] **Task 4.2.3 Complete** (2025-12-25)
 
 Parallelize rule evaluation across CPU cores.
 
-- [ ] 4.2.3.1 Apply independent rules in parallel via `Task.async_stream`
-- [ ] 4.2.3.2 Merge results from parallel rule applications
-- [ ] 4.2.3.3 Configure parallelism level based on available cores
-- [ ] 4.2.3.4 Ensure deterministic results despite parallelism
+- [x] 4.2.3.1 Apply independent rules in parallel via `Task.async_stream`
+- [x] 4.2.3.2 Merge results from parallel rule applications
+- [x] 4.2.3.3 Configure parallelism level based on available cores
+- [x] 4.2.3.4 Ensure deterministic results despite parallelism
 
 ### 4.2.4 Derived Fact Storage
 
