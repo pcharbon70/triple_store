@@ -220,13 +220,21 @@ Handle incremental addition of new facts.
 
 ### 4.3.2 Backward Phase
 
-- [ ] **Task 4.3.2 Complete**
+- [x] **Task 4.3.2 Complete** (2025-12-26)
 
 Implement backward phase of deletion algorithm.
 
-- [ ] 4.3.2.1 Implement `backward_trace(db, deleted_triple)` finding dependent derivations
-- [ ] 4.3.2.2 Track all derived facts that used deleted triple in derivation
-- [ ] 4.3.2.3 Recursively trace facts derived from potentially invalid facts
+- [x] 4.3.2.1 Implement `backward_trace(db, deleted_triple)` finding dependent derivations
+- [x] 4.3.2.2 Track all derived facts that used deleted triple in derivation
+- [x] 4.3.2.3 Recursively trace facts derived from potentially invalid facts
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.BackwardTrace`
+- `trace_in_memory/4` for backward tracing with recursive dependency detection
+- `find_direct_dependents/3` for single-level dependency detection
+- `could_derive?/4` for checking derivation possibility
+- Cycle-safe with visited set tracking
+- 25 new tests added
 
 ### 4.3.3 Forward Phase
 
