@@ -459,14 +459,24 @@ Support different reasoning profiles.
 
 ### 4.5.2 Reasoning Mode
 
-- [ ] **Task 4.5.2 Complete**
+- [x] **Task 4.5.2 Complete** (2025-12-26)
 
 Support different reasoning modes.
 
-- [ ] 4.5.2.1 Implement `:materialized` mode (all inferences pre-computed)
-- [ ] 4.5.2.2 Implement `:hybrid` mode (common inferences materialized, rare backward-chained)
-- [ ] 4.5.2.3 Implement `:query_time` mode (no materialization, backward chaining)
-- [ ] 4.5.2.4 Configure mode via `TripleStore.configure_reasoning(db, mode: :materialized)`
+- [x] 4.5.2.1 Implement `:materialized` mode (all inferences pre-computed)
+- [x] 4.5.2.2 Implement `:hybrid` mode (common inferences materialized, rare backward-chained)
+- [x] 4.5.2.3 Implement `:query_time` mode (no materialization, backward chaining)
+- [x] 4.5.2.4 Configure mode via `TripleStore.configure_reasoning(db, mode: :materialized)`
+
+**Implementation Notes:**
+- New module: `TripleStore.Reasoner.ReasoningMode`
+- New module: `TripleStore.Reasoner.ReasoningConfig`
+- Built-in modes: `:none`, `:materialized`, `:query_time`, `:hybrid`
+- Mode configuration options: parallel, max_iterations, max_depth, cache_results
+- Hybrid mode: configurable materialized_rules and query_time_rules
+- Preset configurations: full_materialization, rdfs_only, minimal_memory, balanced, none
+- Workload-based mode suggestion via `suggest_mode/1`
+- 82 new tests for mode and configuration functionality
 
 ### 4.5.3 Reasoning Status
 
