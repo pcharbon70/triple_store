@@ -112,8 +112,31 @@ Optimize rules for efficient evaluation.
 ## 4.2 Semi-Naive Evaluation
 
 - [x] **Section 4.2 Complete** (2025-12-26)
+- [x] **Section 4.2 Review Fixes Complete** (2025-12-26)
 
 This section implements semi-naive evaluation for forward-chaining materialization. The algorithm iterates until fixpoint, processing only newly derived facts (delta) in each iteration.
+
+### Review Fixes (2025-12-26)
+
+The following issues from the comprehensive review were addressed:
+
+**Blockers Fixed:**
+- Task timeout in parallel execution (60s default, configurable)
+- Batched deletion in clear_all/1 to prevent OOM
+- Fixed max_facts test logic
+- Created PatternMatcher module eliminating code duplication
+
+**Enhancements:**
+- Error logging for lookup failures
+- Refactored nested if to cond for clarity
+- Stream-based lazy evaluation in delta computation
+- Optional rule validation before materialization
+- Documented materialize telemetry events
+- Added emit_iteration/2 helper
+
+**New Module:** `TripleStore.Reasoner.PatternMatcher` - Shared pattern matching utilities
+
+**Test Coverage:** 381 tests (370 original + 11 telemetry tests)
 
 ### 4.2.1 Delta Computation
 

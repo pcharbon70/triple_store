@@ -45,6 +45,36 @@ defmodule TripleStore.Reasoner.Telemetry do
   Metadata:
   - `:property_count` - Total specialized properties found (stop only)
 
+  ### Materialization (Semi-Naive Evaluation)
+
+  - `[:triple_store, :reasoner, :materialize, :start]` - Materialization started
+  - `[:triple_store, :reasoner, :materialize, :stop]` - Materialization completed
+  - `[:triple_store, :reasoner, :materialize, :iteration]` - Iteration completed
+
+  Measurements (start):
+  - `:system_time` - System time at start
+
+  Measurements (stop):
+  - `:duration` - Time in native units
+
+  Measurements (iteration):
+  - `:derivations` - Number of facts derived in this iteration
+
+  Metadata (start):
+  - `:rule_count` - Number of rules being applied
+  - `:initial_fact_count` - Number of initial facts
+  - `:parallel` - Whether parallel evaluation is enabled
+
+  Metadata (stop):
+  - `:iterations` - Total number of iterations
+  - `:total_derived` - Total number of derived facts
+  - `:duration_ms` - Duration in milliseconds
+  - `:rules_applied` - Total rule applications
+  - `:error` - Error reason (on failure only)
+
+  Metadata (iteration):
+  - `:iteration` - Current iteration number
+
   ## Usage with Telemetry Handlers
 
       :telemetry.attach_many(
@@ -209,7 +239,27 @@ defmodule TripleStore.Reasoner.Telemetry do
       @prefix ++ [:optimize, :complete],
       @prefix ++ [:extract_schema, :start],
       @prefix ++ [:extract_schema, :stop],
-      @prefix ++ [:extract_schema, :complete]
+      @prefix ++ [:extract_schema, :complete],
+      @prefix ++ [:materialize, :start],
+      @prefix ++ [:materialize, :stop],
+      @prefix ++ [:materialize, :iteration]
     ]
+  end
+
+  @doc """
+  Emits a materialization iteration event.
+
+  ## Parameters
+
+  - `derivations` - Number of facts derived in this iteration
+  - `iteration` - Current iteration number
+  """
+  @spec emit_iteration(non_neg_integer(), non_neg_integer()) :: :ok
+  def emit_iteration(derivations, iteration) do
+    :telemetry.execute(
+      @prefix ++ [:materialize, :iteration],
+      %{derivations: derivations},
+      %{iteration: iteration}
+    )
   end
 end

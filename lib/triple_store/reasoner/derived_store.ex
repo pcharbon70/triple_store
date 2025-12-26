@@ -44,6 +44,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
 
   # ============================================================================
@@ -197,22 +198,23 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
       {:ok, 1523} = DerivedStore.clear_all(db)
   """
+  # Batch size for chunked deletion to avoid loading all keys into memory
+  @clear_batch_size 1000
+
   @spec clear_all(db_ref()) :: {:ok, non_neg_integer()} | {:error, term()}
   def clear_all(db) do
-    # Collect all keys in derived column family
+    # Use batched deletion to avoid loading all keys into memory
     case NIF.prefix_stream(db, @derived_cf, <<>>) do
       {:ok, stream} ->
-        keys = Enum.map(stream, fn {key, _value} -> {@derived_cf, key} end)
-        count = length(keys)
-
-        if count > 0 do
-          case NIF.delete_batch(db, keys) do
-            :ok -> {:ok, count}
-            error -> error
+        stream
+        |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
+        |> Stream.chunk_every(@clear_batch_size)
+        |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
+          case NIF.delete_batch(db, chunk) do
+            :ok -> {:cont, {:ok, acc + length(chunk)}}
+            error -> {:halt, error}
           end
-        else
-          {:ok, 0}
-        end
+        end)
 
       error ->
         error
@@ -471,10 +473,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
     end
   end
 
-  defp triple_matches_pattern?({s, p, o}, {s_pat, p_pat, o_pat}) do
-    matches_element?(s, s_pat) and matches_element?(p, p_pat) and matches_element?(o, o_pat)
+  defp triple_matches_pattern?(triple, pattern) do
+    PatternMatcher.matches_index_pattern?(triple, pattern)
   end
-
-  defp matches_element?(_value, :var), do: true
-  defp matches_element?(value, {:bound, expected}), do: value == expected
 end

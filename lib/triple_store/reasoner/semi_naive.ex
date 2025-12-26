@@ -64,6 +64,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
   """
 
   alias TripleStore.Reasoner.DeltaComputation
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
   alias TripleStore.Reasoner.Telemetry
 
@@ -99,7 +100,9 @@ defmodule TripleStore.Reasoner.SemiNaive do
           trace: boolean(),
           emit_telemetry: boolean(),
           parallel: boolean(),
-          max_concurrency: pos_integer()
+          max_concurrency: pos_integer(),
+          task_timeout: timeout(),
+          validate_rules: boolean()
         ]
 
   @typedoc "Stratum definition for rule ordering"
@@ -115,6 +118,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
   @default_max_iterations 1000
   @default_max_facts 10_000_000
   @default_max_concurrency System.schedulers_online()
+  # 60 second timeout per rule evaluation task
+  @default_task_timeout 60_000
 
   # ============================================================================
   # Public API
@@ -142,6 +147,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
   - `:emit_telemetry` - Emit telemetry events (default: true)
   - `:parallel` - Enable parallel rule evaluation (default: false)
   - `:max_concurrency` - Maximum parallel tasks when parallel is true (default: schedulers_online)
+  - `:task_timeout` - Timeout per rule evaluation task in milliseconds (default: #{@default_task_timeout})
+  - `:validate_rules` - Validate rules before materialization (default: false)
 
   ## Returns
 
@@ -168,7 +175,30 @@ defmodule TripleStore.Reasoner.SemiNaive do
     emit_telemetry = Keyword.get(opts, :emit_telemetry, true)
     parallel = Keyword.get(opts, :parallel, false)
     max_concurrency = Keyword.get(opts, :max_concurrency, @default_max_concurrency)
+    task_timeout = Keyword.get(opts, :task_timeout, @default_task_timeout)
+    validate_rules = Keyword.get(opts, :validate_rules, false)
 
+    # Optionally validate rules before materialization
+    if validate_rules do
+      case validate_all_rules(rules) do
+        :ok -> do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout)
+        {:error, _} = error -> error
+      end
+    else
+      do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout)
+    end
+  end
+
+  defp validate_all_rules(rules) do
+    Enum.reduce_while(rules, :ok, fn rule, :ok ->
+      case Rule.validate(rule) do
+        {:ok, _validated_rule} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, {:invalid_rule, rule.name, reason}}}
+      end
+    end)
+  end
+
+  defp do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout) do
     start_time = System.monotonic_time(:millisecond)
 
     # Stratify rules (for OWL 2 RL, all rules are in stratum 0)
@@ -187,7 +217,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
     # Parallel options
     parallel_opts = %{
       parallel: parallel,
-      max_concurrency: max_concurrency
+      max_concurrency: max_concurrency,
+      task_timeout: task_timeout
     }
 
     # Emit start telemetry
@@ -385,53 +416,55 @@ defmodule TripleStore.Reasoner.SemiNaive do
   # ============================================================================
 
   defp run_fixpoint(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts) do
-    if MapSet.size(state.delta) == 0 do
+    cond do
       # Fixpoint reached - no new facts
-      {:ok, state}
-    else
-      if state.iterations >= max_iterations do
+      MapSet.size(state.delta) == 0 ->
+        {:ok, state}
+
+      # Hit iteration limit
+      state.iterations >= max_iterations ->
         {:error, :max_iterations_exceeded}
-      else
-        if MapSet.size(state.all_facts) >= max_facts do
-          {:error, :max_facts_exceeded}
-        else
-          # Apply all strata in order
-          case apply_strata(lookup_fn, strata, state, parallel_opts) do
-            {:ok, new_derivations, rules_applied} ->
-              iteration_count = MapSet.size(new_derivations)
 
-              # Emit iteration telemetry
-              if emit_telemetry and iteration_count > 0 do
-                :telemetry.execute(
-                  [:triple_store, :reasoner, :materialize, :iteration],
-                  %{derivations: iteration_count},
-                  %{iteration: state.iterations + 1}
-                )
-              end
+      # Hit fact limit
+      MapSet.size(state.all_facts) >= max_facts ->
+        {:error, :max_facts_exceeded}
 
-              # Store derived facts
-              case store_fn.(new_derivations) do
-                :ok ->
-                  new_state = %{
-                    all_facts: MapSet.union(state.all_facts, new_derivations),
-                    delta: new_derivations,
-                    iterations: state.iterations + 1,
-                    total_derived: state.total_derived + iteration_count,
-                    derivations_per_iteration: [iteration_count | state.derivations_per_iteration],
-                    rules_applied: state.rules_applied + rules_applied
-                  }
+      # Continue iteration
+      true ->
+        apply_iteration(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts)
+    end
+  end
 
-                  run_fixpoint(lookup_fn, store_fn, strata, new_state, max_iterations, max_facts, emit_telemetry, parallel_opts)
+  defp apply_iteration(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts) do
+    case apply_strata(lookup_fn, strata, state, parallel_opts) do
+      {:ok, new_derivations, rules_applied} ->
+        iteration_count = MapSet.size(new_derivations)
 
-                {:error, _} = error ->
-                  error
-              end
-
-            {:error, _} = error ->
-              error
-          end
+        # Emit iteration telemetry
+        if emit_telemetry and iteration_count > 0 do
+          Telemetry.emit_iteration(iteration_count, state.iterations + 1)
         end
-      end
+
+        # Store derived facts
+        case store_fn.(new_derivations) do
+          :ok ->
+            new_state = %{
+              all_facts: MapSet.union(state.all_facts, new_derivations),
+              delta: new_derivations,
+              iterations: state.iterations + 1,
+              total_derived: state.total_derived + iteration_count,
+              derivations_per_iteration: [iteration_count | state.derivations_per_iteration],
+              rules_applied: state.rules_applied + rules_applied
+            }
+
+            run_fixpoint(lookup_fn, store_fn, strata, new_state, max_iterations, max_facts, emit_telemetry, parallel_opts)
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -452,7 +485,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
     all_existing = MapSet.union(state.all_facts, already_derived)
 
     if parallel_opts.parallel and length(rules) > 1 do
-      apply_stratum_parallel(lookup_fn, rules, state, all_existing, parallel_opts.max_concurrency)
+      apply_stratum_parallel(lookup_fn, rules, state, all_existing, parallel_opts.max_concurrency, parallel_opts.task_timeout)
     else
       apply_stratum_sequential(lookup_fn, rules, state, all_existing)
     end
@@ -460,32 +493,21 @@ defmodule TripleStore.Reasoner.SemiNaive do
 
   # Sequential rule application (original implementation)
   defp apply_stratum_sequential(lookup_fn, rules, state, all_existing) do
-    result =
-      Enum.reduce_while(rules, {:ok, MapSet.new(), 0}, fn rule, {:ok, acc, rule_count} ->
-        case DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing) do
-          {:ok, new_facts} ->
-            # Filter out facts we've already derived in this iteration
-            truly_new = MapSet.difference(new_facts, acc)
-            {:cont, {:ok, MapSet.union(acc, truly_new), rule_count + 1}}
-
-          {:error, _} = error ->
-            {:halt, error}
-        end
+    {derivations, rules_applied} =
+      Enum.reduce(rules, {MapSet.new(), 0}, fn rule, {acc, rule_count} ->
+        {:ok, new_facts} = DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing)
+        # Filter out facts we've already derived in this iteration
+        truly_new = MapSet.difference(new_facts, acc)
+        {MapSet.union(acc, truly_new), rule_count + 1}
       end)
 
-    case result do
-      {:ok, derivations, rules_applied} ->
-        # Filter out facts already in database
-        filtered = MapSet.difference(derivations, state.all_facts)
-        {:ok, filtered, rules_applied}
-
-      error ->
-        error
-    end
+    # Filter out facts already in database
+    filtered = MapSet.difference(derivations, state.all_facts)
+    {:ok, filtered, rules_applied}
   end
 
   # Parallel rule application using Task.async_stream
-  defp apply_stratum_parallel(lookup_fn, rules, state, all_existing, max_concurrency) do
+  defp apply_stratum_parallel(lookup_fn, rules, state, all_existing, max_concurrency, task_timeout) do
     # Apply each rule in parallel
     # Each task returns {:ok, fact_set} or {:error, reason}
     results =
@@ -496,7 +518,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
         end,
         max_concurrency: max_concurrency,
         ordered: false,
-        timeout: :infinity
+        timeout: task_timeout,
+        on_timeout: :kill_task
       )
       |> Enum.to_list()
 
@@ -529,17 +552,15 @@ defmodule TripleStore.Reasoner.SemiNaive do
       {:ok, {:error, _} = error}, _acc ->
         {:halt, error}
 
+      {:exit, :timeout}, _acc ->
+        {:halt, {:error, :task_timeout}}
+
       {:exit, reason}, _acc ->
         {:halt, {:error, {:task_crashed, reason}}}
     end)
   end
 
-  defp match_pattern({:pattern, [s, p, o]}, facts) do
-    Enum.filter(facts, fn {fs, fp, fo} ->
-      matches_term?(fs, s) and matches_term?(fp, p) and matches_term?(fo, o)
-    end)
+  defp match_pattern(pattern, facts) do
+    PatternMatcher.filter_matching(facts, pattern)
   end
-
-  defp matches_term?(_fact_term, {:var, _}), do: true
-  defp matches_term?(fact_term, pattern_term), do: fact_term == pattern_term
 end

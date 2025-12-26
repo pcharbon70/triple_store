@@ -49,7 +49,10 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   - For rules with many body patterns, consider limiting delta positions
   """
 
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
+
+  require Logger
 
   # ============================================================================
   # Types
@@ -132,10 +135,11 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       # Index delta facts by predicate for efficient lookup
       delta_index = index_by_predicate(delta)
 
-      # Apply rule for each delta position
+      # Apply rule for each delta position using Stream for lazy evaluation
+      # This avoids building large intermediate lists before taking max_derivations
       new_facts =
         delta_positions
-        |> Enum.flat_map(fn delta_pos ->
+        |> Stream.flat_map(fn delta_pos ->
           apply_with_delta_at_position(
             lookup_fn,
             rule,
@@ -146,7 +150,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
             existing
           )
         end)
-        |> Enum.take(max_derivations)
+        |> Stream.take(max_derivations)
         |> MapSet.new()
 
       # Filter out existing facts
@@ -364,8 +368,12 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
         {:lookup, lookup_pattern} ->
           case lookup_fn.(lookup_pattern) do
-            {:ok, facts} -> facts
-            {:error, _} -> []
+            {:ok, facts} ->
+              facts
+
+            {:error, reason} ->
+              Logger.warning("Lookup failed during delta computation: #{inspect(reason)}")
+              []
           end
       end
     end
@@ -390,12 +398,9 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     end
   end
 
-  defp matches_pattern?({fs, fp, fo}, s, p, o) do
-    matches_term?(fs, s) and matches_term?(fp, p) and matches_term?(fo, o)
+  defp matches_pattern?(fact, s, p, o) do
+    PatternMatcher.matches_triple?(fact, {:pattern, [s, p, o]})
   end
-
-  defp matches_term?(_fact_term, {:var, _}), do: true
-  defp matches_term?(fact_term, pattern_term), do: fact_term == pattern_term
 
   defp pattern_to_lookup({:pattern, [s, p, o]}) do
     s_bound = pattern_element(s)

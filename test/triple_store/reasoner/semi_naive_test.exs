@@ -228,22 +228,37 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "respects max_facts limit" do
-      # Create many entities
-      entities = for i <- 1..100, do: {iri("entity#{i}"), rdf_type(), iri("Thing")}
+      # Create a small initial set that will expand via reasoning
+      # 10 entities + 1 hierarchy = 11 initial facts
+      # cax_sco will derive 10 more (Entity types) = 21 total
+      entities = for i <- 1..10, do: {iri("entity#{i}"), rdf_type(), iri("Thing")}
       hierarchy = [{iri("Thing"), rdfs_subClassOf(), iri("Entity")}]
 
       initial = MapSet.new(entities ++ hierarchy)
       rules = [Rules.cax_sco()]
 
-      result = SemiNaive.materialize_in_memory(rules, initial, max_facts: 50)
+      # Set max_facts to 15 which is between initial (11) and expected total (21)
+      # This should trigger max_facts_exceeded during derivation
+      result = SemiNaive.materialize_in_memory(rules, initial, max_facts: 15)
 
-      case result do
-        {:ok, facts, _stats} ->
-          assert MapSet.size(facts) <= 50
+      # Should hit the limit since reasoning would derive 10 more facts
+      assert {:error, :max_facts_exceeded} = result
+    end
 
-        {:error, :max_facts_exceeded} ->
-          :ok
-      end
+    test "max_facts allows completion when limit not exceeded" do
+      # Create a small initial set with limit high enough to complete
+      entities = for i <- 1..5, do: {iri("entity#{i}"), rdf_type(), iri("Thing")}
+      hierarchy = [{iri("Thing"), rdfs_subClassOf(), iri("Entity")}]
+
+      initial = MapSet.new(entities ++ hierarchy)
+      rules = [Rules.cax_sco()]
+
+      # 6 initial + 5 derived = 11 total, set limit to 20
+      result = SemiNaive.materialize_in_memory(rules, initial, max_facts: 20)
+
+      assert {:ok, facts, stats} = result
+      assert MapSet.size(facts) == 11  # 5 entities + 1 hierarchy + 5 derived Entity types
+      assert stats.total_derived == 5
     end
   end
 
