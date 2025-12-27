@@ -59,7 +59,7 @@ defmodule TripleStore.Reasoner.ReasoningMode do
       config = ReasoningMode.default_config(:materialized)
   """
 
-  alias TripleStore.Reasoner.ReasoningProfile
+  alias TripleStore.Reasoner.{ReasoningProfile, Rules}
 
   # ============================================================================
   # Types
@@ -220,13 +220,8 @@ defmodule TripleStore.Reasoner.ReasoningMode do
 
   def default_config(:hybrid) do
     # By default, materialize RDFS rules and compute OWL rules at query time
-    rdfs_rules = [:scm_sco, :scm_spo, :cax_sco, :prp_spo1, :prp_dom, :prp_rng]
-
-    owl_rules = [
-      :prp_trp, :prp_symp, :prp_inv1, :prp_inv2, :prp_fp, :prp_ifp,
-      :eq_ref, :eq_sym, :eq_trans, :eq_rep_s, :eq_rep_p, :eq_rep_o,
-      :cls_hv1, :cls_hv2, :cls_svf1, :cls_svf2, :cls_avf
-    ]
+    rdfs_rules = Rules.rdfs_rule_names()
+    owl2rl_only = Rules.owl2rl_rule_names() -- rdfs_rules
 
     %{
       mode: :hybrid,
@@ -235,7 +230,7 @@ defmodule TripleStore.Reasoner.ReasoningMode do
       max_depth: @default_max_depth,
       cache_results: true,
       materialized_rules: rdfs_rules,
-      query_time_rules: owl_rules
+      query_time_rules: owl2rl_only
     }
   end
 
@@ -344,8 +339,7 @@ defmodule TripleStore.Reasoner.ReasoningMode do
 
   def materialization_profile(%{mode: :query_time}, _profile), do: :none
 
-  def materialization_profile(%{mode: :hybrid, materialized_rules: rules}, _profile)
-      when is_list(rules) and length(rules) > 0 do
+  def materialization_profile(%{mode: :hybrid, materialized_rules: [_ | _] = rules}, _profile) do
     {:custom, rules}
   end
 
@@ -382,51 +376,75 @@ defmodule TripleStore.Reasoner.ReasoningMode do
   # Private Functions
   # ============================================================================
 
+  # Maximum allowed values to prevent DoS
+  @max_allowed_iterations 100_000
+  @max_allowed_depth 1_000
+
   defp apply_options(config, opts) do
-    try do
-      config =
-        Enum.reduce(opts, config, fn {key, value}, acc ->
-          case key do
-            :parallel when is_boolean(value) ->
-              %{acc | parallel: value}
-
-            :max_iterations when is_integer(value) and value > 0 ->
-              %{acc | max_iterations: value}
-
-            :max_depth when is_integer(value) and value >= 0 ->
-              %{acc | max_depth: value}
-
-            :cache_results when is_boolean(value) ->
-              %{acc | cache_results: value}
-
-            :materialized_rules when is_list(value) ->
-              %{acc | materialized_rules: value}
-
-            :query_time_rules when is_list(value) ->
-              %{acc | query_time_rules: value}
-
-            _ ->
-              throw({:invalid_option, key, value})
-          end
-        end)
-
-      {:ok, config}
-    catch
-      {:invalid_option, key, value} ->
-        {:error, {:invalid_option, key, "invalid value: #{inspect(value)}"}}
-    end
+    Enum.reduce_while(opts, {:ok, config}, fn {key, value}, {:ok, acc} ->
+      case apply_option(acc, key, value) do
+        {:ok, updated} -> {:cont, {:ok, updated}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
   end
 
-  defp validate_rules(%{materialized_rules: rules}) when is_list(rules) do
-    available = ReasoningProfile.available_rules()
-    unknown = Enum.reject(rules, &(&1 in available))
+  defp apply_option(config, :parallel, value) when is_boolean(value) do
+    {:ok, %{config | parallel: value}}
+  end
 
-    if Enum.empty?(unknown) do
+  defp apply_option(config, :max_iterations, value)
+       when is_integer(value) and value > 0 and value <= @max_allowed_iterations do
+    {:ok, %{config | max_iterations: value}}
+  end
+
+  defp apply_option(_config, :max_iterations, value) when is_integer(value) and value > @max_allowed_iterations do
+    {:error, {:invalid_option, :max_iterations, "exceeds maximum of #{@max_allowed_iterations}"}}
+  end
+
+  defp apply_option(config, :max_depth, value)
+       when is_integer(value) and value >= 0 and value <= @max_allowed_depth do
+    {:ok, %{config | max_depth: value}}
+  end
+
+  defp apply_option(_config, :max_depth, value) when is_integer(value) and value > @max_allowed_depth do
+    {:error, {:invalid_option, :max_depth, "exceeds maximum of #{@max_allowed_depth}"}}
+  end
+
+  defp apply_option(config, :cache_results, value) when is_boolean(value) do
+    {:ok, %{config | cache_results: value}}
+  end
+
+  defp apply_option(config, :materialized_rules, value) when is_list(value) do
+    {:ok, %{config | materialized_rules: value}}
+  end
+
+  defp apply_option(config, :query_time_rules, value) when is_list(value) do
+    {:ok, %{config | query_time_rules: value}}
+  end
+
+  defp apply_option(_config, key, value) do
+    {:error, {:invalid_option, key, "invalid value: #{inspect(value)}"}}
+  end
+
+  defp validate_rules(config) do
+    available = MapSet.new(ReasoningProfile.available_rules())
+
+    with :ok <- validate_rule_list(config[:materialized_rules], available, :materialized_rules),
+         :ok <- validate_rule_list(config[:query_time_rules], available, :query_time_rules) do
       :ok
-    else
-      {:error, {:unknown_rules, unknown}}
     end
   end
 
-  defp validate_rules(_config), do: :ok
+  defp validate_rule_list(nil, _available, _field), do: :ok
+  defp validate_rule_list([], _available, _field), do: :ok
+
+  defp validate_rule_list(rules, available, field) when is_list(rules) do
+    unknown = Enum.reject(rules, &MapSet.member?(available, &1))
+
+    case unknown do
+      [] -> :ok
+      _ -> {:error, {:unknown_rules, field, unknown}}
+    end
+  end
 end

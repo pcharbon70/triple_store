@@ -56,7 +56,7 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
   - Use `:custom` when you need specific rules for performance optimization
   """
 
-  alias TripleStore.Reasoner.{Rules, Rule}
+  alias TripleStore.Reasoner.{Rule, Rules}
 
   # ============================================================================
   # Types
@@ -75,22 +75,10 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
   @type profile_info :: %{
           name: profile_name(),
           description: String.t(),
-          rule_count: non_neg_integer(),
-          rule_names: [atom()],
+          rule_count: non_neg_integer() | :variable,
+          rule_names: [atom()] | :user_defined,
           categories: [atom()]
         }
-
-  # ============================================================================
-  # Profile Definitions
-  # ============================================================================
-
-  @rdfs_rules [:scm_sco, :scm_spo, :cax_sco, :prp_spo1, :prp_dom, :prp_rng]
-
-  @owl2rl_property_rules [:prp_trp, :prp_symp, :prp_inv1, :prp_inv2, :prp_fp, :prp_ifp]
-
-  @owl2rl_equality_rules [:eq_ref, :eq_sym, :eq_trans, :eq_rep_s, :eq_rep_p, :eq_rep_o]
-
-  @owl2rl_restriction_rules [:cls_hv1, :cls_hv2, :cls_svf1, :cls_svf2, :cls_avf]
 
   # ============================================================================
   # Public API
@@ -222,17 +210,19 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
   end
 
   def info(:rdfs) do
+    rdfs_rules = Rules.rdfs_rule_names()
+
     %{
       name: :rdfs,
       description: "RDFS semantics - subclass/subproperty hierarchies and domain/range",
-      rule_count: length(@rdfs_rules),
-      rule_names: @rdfs_rules,
+      rule_count: length(rdfs_rules),
+      rule_names: rdfs_rules,
       categories: [:schema_hierarchy, :domain_range]
     }
   end
 
   def info(:owl2rl) do
-    all_rules = @rdfs_rules ++ @owl2rl_property_rules ++ @owl2rl_equality_rules ++ @owl2rl_restriction_rules
+    all_rules = Rules.owl2rl_rule_names()
 
     %{
       name: :owl2rl,
@@ -274,10 +264,10 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
   @spec rules_by_category() :: %{atom() => [atom()]}
   def rules_by_category do
     %{
-      rdfs: @rdfs_rules,
-      property_characteristics: @owl2rl_property_rules,
-      equality: @owl2rl_equality_rules,
-      restrictions: @owl2rl_restriction_rules
+      rdfs: Rules.rdfs_rule_names(),
+      property_characteristics: Rules.owl2rl_property_rule_names(),
+      equality: Rules.owl2rl_equality_rule_names(),
+      restrictions: Rules.owl2rl_restriction_rule_names()
     }
   end
 
@@ -354,39 +344,45 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
   # ============================================================================
 
   defp get_rules_by_name(names) do
+    name_set = MapSet.new(names)
     all_rules = Rules.all_rules()
-
-    Enum.filter(all_rules, fn rule ->
-      rule.name in names
-    end)
+    Enum.filter(all_rules, fn rule -> MapSet.member?(name_set, rule.name) end)
   end
 
   defp apply_exclusions(rules, opts) do
     case Keyword.get(opts, :exclude) do
-      nil -> rules
-      exclude_names -> Enum.reject(rules, fn r -> r.name in exclude_names end)
+      nil ->
+        rules
+
+      exclude_names ->
+        exclude_set = MapSet.new(exclude_names)
+        Enum.reject(rules, fn r -> MapSet.member?(exclude_set, r.name) end)
+    end
+  end
+
+  # Helper to check if a schema has non-empty property list
+  defp has_properties?(schema_info, key) do
+    case Map.get(schema_info, key, []) do
+      [_ | _] -> true
+      _ -> false
     end
   end
 
   defp has_transitive_properties?(schema_info) do
-    props = Map.get(schema_info, :transitive_properties, [])
-    is_list(props) and length(props) > 0
+    has_properties?(schema_info, :transitive_properties)
   end
 
   defp has_symmetric_properties?(schema_info) do
-    props = Map.get(schema_info, :symmetric_properties, [])
-    is_list(props) and length(props) > 0
+    has_properties?(schema_info, :symmetric_properties)
   end
 
   defp has_inverse_properties?(schema_info) do
-    props = Map.get(schema_info, :inverse_properties, [])
-    is_list(props) and length(props) > 0
+    has_properties?(schema_info, :inverse_properties)
   end
 
   defp has_functional_properties?(schema_info) do
-    fp = Map.get(schema_info, :functional_properties, [])
-    ifp = Map.get(schema_info, :inverse_functional_properties, [])
-    (is_list(fp) and length(fp) > 0) or (is_list(ifp) and length(ifp) > 0)
+    has_properties?(schema_info, :functional_properties) or
+      has_properties?(schema_info, :inverse_functional_properties)
   end
 
   defp has_sameas?(schema_info) do

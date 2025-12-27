@@ -136,6 +136,18 @@ defmodule TripleStore.Reasoner.ReasoningModeTest do
       assert config.materialized_rules == [:scm_sco, :prp_trp]
     end
 
+    test "returns error for max_iterations exceeding limit" do
+      {:error, reason} = ReasoningMode.validate_config(:materialized, max_iterations: 200_000)
+      assert {:invalid_option, :max_iterations, message} = reason
+      assert message =~ "exceeds maximum"
+    end
+
+    test "returns error for max_depth exceeding limit" do
+      {:error, reason} = ReasoningMode.validate_config(:query_time, max_depth: 2000)
+      assert {:invalid_option, :max_depth, message} = reason
+      assert message =~ "exceeds maximum"
+    end
+
     test "returns error for invalid mode" do
       {:error, reason} = ReasoningMode.validate_config(:invalid)
       assert {:invalid_mode, :invalid, _} = reason
@@ -145,7 +157,14 @@ defmodule TripleStore.Reasoner.ReasoningModeTest do
       {:error, reason} = ReasoningMode.validate_config(:hybrid,
         materialized_rules: [:unknown_rule]
       )
-      assert {:unknown_rules, [:unknown_rule]} = reason
+      assert {:unknown_rules, :materialized_rules, [:unknown_rule]} = reason
+    end
+
+    test "returns error for unknown query_time_rules in hybrid mode" do
+      {:error, reason} = ReasoningMode.validate_config(:hybrid,
+        query_time_rules: [:unknown_rule]
+      )
+      assert {:unknown_rules, :query_time_rules, [:unknown_rule]} = reason
     end
   end
 

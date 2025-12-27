@@ -53,7 +53,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       config = ReasoningConfig.preset(:balanced)
   """
 
-  alias TripleStore.Reasoner.{ReasoningProfile, ReasoningMode}
+  alias TripleStore.Reasoner.{ReasoningMode, ReasoningProfile, Rules}
 
   # ============================================================================
   # Types
@@ -229,7 +229,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
 
   def materialization_rules(%__MODULE__{mode: :hybrid}) do
     # Default to RDFS rules for hybrid mode
-    [:scm_sco, :scm_spo, :cax_sco, :prp_spo1, :prp_dom, :prp_rng]
+    Rules.rdfs_rule_names()
   end
 
   @doc """
@@ -251,7 +251,10 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       }) do
     case ReasoningProfile.rules_for(profile, opts) do
       {:ok, rules} -> Enum.map(rules, & &1.name)
-      {:error, _} -> []
+      {:error, reason} ->
+        require Logger
+        Logger.warning("Failed to get rules for profile #{inspect(profile)}: #{inspect(reason)}")
+        []
     end
   end
 
@@ -279,7 +282,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         |> Enum.map(& &1.name)
         |> Enum.reject(&(&1 in materialized))
 
-      {:error, _} ->
+      {:error, reason} ->
+        require Logger
+        Logger.warning("Failed to get rules for profile #{inspect(profile)}: #{inspect(reason)}")
         []
     end
   end

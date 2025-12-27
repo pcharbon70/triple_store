@@ -114,6 +114,52 @@ defmodule TripleStore.Reasoner.Rules do
     Enum.map(all_rules(), & &1.name)
   end
 
+  @doc """
+  Returns the names of RDFS rules.
+
+  This is the canonical list of RDFS rule names - use this
+  function instead of duplicating the list.
+  """
+  @spec rdfs_rule_names() :: [atom()]
+  def rdfs_rule_names do
+    [:scm_sco, :scm_spo, :cax_sco, :prp_spo1, :prp_dom, :prp_rng]
+  end
+
+  @doc """
+  Returns the names of OWL 2 RL property rules.
+  """
+  @spec owl2rl_property_rule_names() :: [atom()]
+  def owl2rl_property_rule_names do
+    [:prp_trp, :prp_symp, :prp_inv1, :prp_inv2, :prp_fp, :prp_ifp]
+  end
+
+  @doc """
+  Returns the names of OWL 2 RL equality rules.
+  """
+  @spec owl2rl_equality_rule_names() :: [atom()]
+  def owl2rl_equality_rule_names do
+    [:eq_ref, :eq_sym, :eq_trans, :eq_rep_s, :eq_rep_p, :eq_rep_o]
+  end
+
+  @doc """
+  Returns the names of OWL 2 RL class restriction rules.
+  """
+  @spec owl2rl_restriction_rule_names() :: [atom()]
+  def owl2rl_restriction_rule_names do
+    [:cls_hv1, :cls_hv2, :cls_svf1, :cls_svf2, :cls_avf]
+  end
+
+  @doc """
+  Returns the names of all OWL 2 RL rules (including RDFS).
+  """
+  @spec owl2rl_rule_names() :: [atom()]
+  def owl2rl_rule_names do
+    rdfs_rule_names() ++
+      owl2rl_property_rule_names() ++
+      owl2rl_equality_rule_names() ++
+      owl2rl_restriction_rule_names()
+  end
+
   # ============================================================================
   # Property Rules
   # ============================================================================

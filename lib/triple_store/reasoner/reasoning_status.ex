@@ -37,6 +37,9 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
 
   alias TripleStore.Reasoner.ReasoningConfig
 
+  # ETS table for registry (provides atomic concurrent access)
+  @registry_table :reasoning_status_registry
+
   # ============================================================================
   # Types
   # ============================================================================
@@ -235,8 +238,8 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
   def summary(%__MODULE__{} = status) do
     %{
       state: status.state,
-      profile: get_profile(status),
-      mode: get_mode(status),
+      profile: profile(status),
+      mode: mode(status),
       derived_count: status.derived_count,
       explicit_count: status.explicit_count,
       total_count: status.derived_count + status.explicit_count,
@@ -402,10 +405,7 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
   """
   @spec list_stored() :: [atom()]
   def list_stored do
-    case :persistent_term.get({__MODULE__, :__registry__}, nil) do
-      nil -> []
-      keys -> MapSet.to_list(keys)
-    end
+    list_registry_keys()
   end
 
   @doc """
@@ -419,7 +419,11 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
       :persistent_term.erase({__MODULE__, key})
     end)
 
-    :persistent_term.erase({__MODULE__, :__registry__})
+    # Clear the ETS registry
+    if registry_exists?() do
+      :ets.delete_all_objects(@registry_table)
+    end
+
     :ok
   end
 
@@ -427,19 +431,38 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
   # Private Functions
   # ============================================================================
 
-  defp get_profile(%__MODULE__{config: nil}), do: nil
-  defp get_profile(%__MODULE__{config: config}), do: config.profile
-
-  defp get_mode(%__MODULE__{config: nil}), do: nil
-  defp get_mode(%__MODULE__{config: config}), do: config.mode
-
   defp register_key(key) do
-    registry = :persistent_term.get({__MODULE__, :__registry__}, MapSet.new())
-    :persistent_term.put({__MODULE__, :__registry__}, MapSet.put(registry, key))
+    ensure_registry_exists()
+    :ets.insert(@registry_table, {key, true})
   end
 
   defp unregister_key(key) do
-    registry = :persistent_term.get({__MODULE__, :__registry__}, MapSet.new())
-    :persistent_term.put({__MODULE__, :__registry__}, MapSet.delete(registry, key))
+    if registry_exists?() do
+      :ets.delete(@registry_table, key)
+    end
+  end
+
+  defp ensure_registry_exists do
+    unless registry_exists?() do
+      try do
+        :ets.new(@registry_table, [:set, :public, :named_table])
+      rescue
+        ArgumentError ->
+          # Table already exists (race condition), that's fine
+          :ok
+      end
+    end
+  end
+
+  defp registry_exists? do
+    :ets.whereis(@registry_table) != :undefined
+  end
+
+  defp list_registry_keys do
+    if registry_exists?() do
+      :ets.tab2list(@registry_table) |> Enum.map(fn {key, _} -> key end)
+    else
+      []
+    end
   end
 end
