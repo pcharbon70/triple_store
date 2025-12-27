@@ -27,14 +27,14 @@ Implement data generators for standard benchmarks.
 
 ### 5.1.2 Query Templates
 
-- [ ] **Task 5.1.2 Complete**
+- [x] **Task 5.1.2 Complete**
 
 Implement standard benchmark query templates.
 
-- [ ] 5.1.2.1 Implement LUBM query set (14 queries with varied complexity)
-- [ ] 5.1.2.2 Implement BSBM query mix (12 queries simulating e-commerce)
-- [ ] 5.1.2.3 Support parameterized queries for varied inputs
-- [ ] 5.1.2.4 Include expected result counts for validation
+- [x] 5.1.2.1 Implement LUBM query set (14 queries with varied complexity)
+- [x] 5.1.2.2 Implement BSBM query mix (12 queries simulating e-commerce)
+- [x] 5.1.2.3 Support parameterized queries for varied inputs
+- [x] 5.1.2.4 Include expected result counts for validation
 
 ### 5.1.3 Benchmark Runner
 
