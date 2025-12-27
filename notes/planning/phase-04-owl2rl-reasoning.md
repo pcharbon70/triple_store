@@ -581,6 +581,41 @@ Validate reasoning correctness against reference implementation.
 - [x] 4.6.4.3 Test consistency checking (owl:Nothing membership)
 - [x] 4.6.4.4 Test no spurious inferences generated
 
+### Section 4.6 Review Fixes
+
+- [x] **Review Fixes Complete** (2025-12-27)
+
+Addressed all concerns and suggestions from comprehensive review:
+
+**Code Deduplication:**
+- Extracted ~200 lines of duplicated helpers to `test/support/reasoner_helpers.ex`
+- Created `test/support/reasoner_test_case.ex` ExUnit case template
+- All 4 integration test files now use shared helpers
+
+**Code Quality:**
+- Changed public test helpers to private (`def` -> `defp`)
+- Replaced `IO.puts` with `Logger.debug` in benchmark tests
+- Added credo disable comments for intentional camelCase function names
+- Used `Enum.empty?/1` instead of `length/1 > 0`
+
+**Additional Test Coverage:**
+- Added `test/triple_store/reasoner/reasoning_error_handling_test.exs` (23 tests)
+  - Empty input handling
+  - Profile handling and validation
+  - Edge cases (circular hierarchies, long IRIs, special characters)
+  - Non-existent pattern queries
+  - Iteration behavior verification
+- Added `test/triple_store/reasoner/reasoning_stress_test.exs` (12 tests)
+  - Long sameAs chains (50+ entities)
+  - Deep transitive chains (100+ hops)
+  - Wide class hierarchies (100+ classes)
+  - Complex property graphs
+  - Performance verification
+
+**Test Results:**
+- Total integration tests: 156 (121 original + 35 new)
+- All tests pass (0 failures, 6 benchmarks excluded)
+
 ---
 
 ## Success Criteria

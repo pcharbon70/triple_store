@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
   @moduledoc """
   Integration tests for Task 4.6.2: Incremental Reasoning Testing.
@@ -15,45 +16,14 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
   - 4.6.2.3: Test delete with alternative derivation preserves fact
   - 4.6.2.4: Test TBox update triggers rematerialization
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Reasoner.{
-    Incremental,
-    DeleteWithReasoning,
-    SemiNaive,
-    ReasoningProfile,
-    ReasoningStatus,
-    TBoxCache
-  }
-
-  @moduletag :integration
+  use TripleStore.ReasonerTestCase
 
   # ============================================================================
-  # Namespace Constants
+  # Test-specific Helpers
   # ============================================================================
 
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
-  @ex "http://example.org/"
-
-  # ============================================================================
-  # Test Helpers
-  # ============================================================================
-
-  defp ex_iri(name), do: {:iri, @ex <> name}
-  defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
-  defp rdfs_domain, do: {:iri, @rdfs <> "domain"}
-  defp rdfs_range, do: {:iri, @rdfs <> "range"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
-  defp owl_SymmetricProperty, do: {:iri, @owl <> "SymmetricProperty"}
-
-  @doc """
-  Creates a base ontology for testing incremental operations.
-  """
-  def create_base_ontology do
+  # Creates a base ontology for testing incremental operations.
+  defp create_base_ontology do
     MapSet.new([
       # Class hierarchy: Student < Person < Thing
       {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")},
@@ -82,21 +52,12 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
     ])
   end
 
-  @doc """
-  Materializes the base ontology and returns the full fact set.
-  """
-  def materialize_base(tbox, abox_facts \\ []) do
+  # Materializes the base ontology and returns the full fact set.
+  defp materialize_base(tbox, abox_facts \\ []) do
     initial = Enum.reduce(abox_facts, tbox, &MapSet.put(&2, &1))
     {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
     {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial)
     all_facts
-  end
-
-  @doc """
-  Computes which facts are derived (not in initial set).
-  """
-  def compute_derived(initial_facts, all_facts) do
-    MapSet.difference(all_facts, initial_facts)
   end
 
   # ============================================================================
@@ -117,16 +78,16 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, all_facts, stats} = Incremental.add_in_memory([new_triple], base_facts, rules)
 
       # Verify the new instance type was added
-      assert MapSet.member?(all_facts, new_triple)
+      assert has_triple?(all_facts, new_triple)
 
       # Verify Person type was derived
       alice_person = {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      assert MapSet.member?(all_facts, alice_person),
+      assert has_triple?(all_facts, alice_person),
              "Expected alice to be inferred as Person via Student < Person"
 
       # Verify Thing type was derived (transitive)
       alice_thing = {ex_iri("alice"), rdf_type(), ex_iri("Thing")}
-      assert MapSet.member?(all_facts, alice_thing),
+      assert has_triple?(all_facts, alice_thing),
              "Expected alice to be inferred as Thing via Person < Thing"
 
       # Verify stats
@@ -144,10 +105,10 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, all_facts, stats} = Incremental.add_in_memory([new_triple], base_facts, rules)
 
       # Verify full chain: GradStudent -> Student -> Person -> Thing
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("GradStudent")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("GradStudent")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
 
       assert stats.derived_count >= 3, "Expected at least 3 derived facts"
     end
@@ -162,15 +123,15 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, all_facts, _stats} = Incremental.add_in_memory([new_triple], base_facts, rules)
 
       # Verify domain inference: prof1 rdf:type Faculty
-      assert MapSet.member?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")}),
+      assert has_triple?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")}),
              "Expected prof1 to be inferred as Faculty via domain of teaches"
 
       # Verify range inference: course101 rdf:type Course
-      assert MapSet.member?(all_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")}),
+      assert has_triple?(all_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")}),
              "Expected course101 to be inferred as Course via range of teaches"
 
       # Verify transitive class inference: Faculty < Person
-      assert MapSet.member?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Person")}),
+      assert has_triple?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Person")}),
              "Expected prof1 to be inferred as Person via Faculty < Person"
     end
 
@@ -184,7 +145,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, all_facts, _stats} = Incremental.add_in_memory([new_triple], base_facts, rules)
 
       # Verify superproperty inference
-      assert MapSet.member?(all_facts, {ex_iri("prof1"), ex_iri("involves"), ex_iri("course101")}),
+      assert has_triple?(all_facts, {ex_iri("prof1"), ex_iri("involves"), ex_iri("course101")}),
              "Expected involves relationship via teaches < involves"
     end
 
@@ -203,9 +164,9 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, base_facts, rules)
 
       # All should be Person
-      assert MapSet.member?(all_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
-      assert MapSet.member?(all_facts, {ex_iri("carol"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("carol"), rdf_type(), ex_iri("Person")})
 
       assert stats.explicit_added == 3
       assert stats.derived_count >= 6, "Expected multiple derived facts"
@@ -249,7 +210,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Verify alice is Person before deletion
       alice_person = {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      assert MapSet.member?(all_facts, alice_person)
+      assert has_triple?(all_facts, alice_person)
 
       # Delete the student type
       {:ok, result} = DeleteWithReasoning.delete_in_memory(
@@ -260,12 +221,12 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Verify alice is no longer Person
-      refute MapSet.member?(result.final_facts, alice_person),
+      refute has_triple?(result.final_facts, alice_person),
              "Expected Person type to be retracted when Student type is deleted"
 
       # Verify alice is no longer Thing
       alice_thing = {ex_iri("alice"), rdf_type(), ex_iri("Thing")}
-      refute MapSet.member?(result.final_facts, alice_thing),
+      refute has_triple?(result.final_facts, alice_thing),
              "Expected Thing type to be retracted transitively"
 
       # Verify stats
@@ -284,8 +245,8 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       derived = compute_derived(initial, all_facts)
 
       # Verify domain/range types before deletion
-      assert MapSet.member?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")})
-      assert MapSet.member?(all_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")})
+      assert has_triple?(all_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")})
+      assert has_triple?(all_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")})
 
       # Delete the teaches relationship
       {:ok, result} = DeleteWithReasoning.delete_in_memory(
@@ -296,9 +257,9 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Verify domain/range types are retracted
-      refute MapSet.member?(result.final_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")}),
+      refute has_triple?(result.final_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")}),
              "Expected Faculty type to be retracted when teaches is deleted"
-      refute MapSet.member?(result.final_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")}),
+      refute has_triple?(result.final_facts, {ex_iri("course101"), rdf_type(), ex_iri("Course")}),
              "Expected Course type to be retracted when teaches is deleted"
     end
 
@@ -314,7 +275,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Verify superproperty exists
       involves_triple = {ex_iri("prof1"), ex_iri("involves"), ex_iri("course101")}
-      assert MapSet.member?(all_facts, involves_triple)
+      assert has_triple?(all_facts, involves_triple)
 
       # Delete the teaches relationship
       {:ok, result} = DeleteWithReasoning.delete_in_memory(
@@ -325,7 +286,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Verify superproperty is retracted
-      refute MapSet.member?(result.final_facts, involves_triple),
+      refute has_triple?(result.final_facts, involves_triple),
              "Expected involves to be retracted when teaches is deleted"
     end
 
@@ -340,9 +301,9 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       derived = compute_derived(initial, all_facts)
 
       # Verify full chain exists
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
-      assert MapSet.member?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
 
       # Delete the GradStudent type
       {:ok, result} = DeleteWithReasoning.delete_in_memory(
@@ -353,9 +314,9 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # All downstream types should be retracted
-      refute MapSet.member?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
-      refute MapSet.member?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
-      refute MapSet.member?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
+      refute has_triple?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
+      refute has_triple?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
+      refute has_triple?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Thing")})
     end
   end
 
@@ -378,7 +339,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Verify Person type exists
       alice_person = {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      assert MapSet.member?(all_facts, alice_person)
+      assert has_triple?(all_facts, alice_person)
 
       # Delete only the Student type
       student_triple = {ex_iri("alice"), rdf_type(), ex_iri("Student")}
@@ -390,12 +351,12 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Person type should still exist via Faculty
-      assert MapSet.member?(result.final_facts, alice_person),
+      assert has_triple?(result.final_facts, alice_person),
              "Expected Person type to be preserved via Faculty alternative derivation"
 
       # Thing type should also be preserved
       alice_thing = {ex_iri("alice"), rdf_type(), ex_iri("Thing")}
-      assert MapSet.member?(result.final_facts, alice_thing),
+      assert has_triple?(result.final_facts, alice_thing),
              "Expected Thing type to be preserved via Faculty -> Person -> Thing"
 
       # Stats should show the fact was kept
@@ -425,7 +386,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Thing should be derived via two paths
       alice_thing = {ex_iri("alice"), rdf_type(), ex_iri("Thing")}
-      assert MapSet.member?(all_facts, alice_thing)
+      assert has_triple?(all_facts, alice_thing)
 
       # Delete Person (one path to Thing)
       person_triple = {ex_iri("alice"), rdf_type(), ex_iri("Person")}
@@ -437,12 +398,12 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Thing should still exist via Agent path
-      assert MapSet.member?(result.final_facts, alice_thing),
+      assert has_triple?(result.final_facts, alice_thing),
              "Expected Thing to be preserved via Agent alternative path"
 
       # Agent should still exist
       alice_agent = {ex_iri("alice"), rdf_type(), ex_iri("Agent")}
-      assert MapSet.member?(result.final_facts, alice_agent)
+      assert has_triple?(result.final_facts, alice_agent)
     end
 
     test "preserves property when multiple instances support it" do
@@ -460,8 +421,8 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       # Both involves relationships should exist
       involves1 = {ex_iri("prof1"), ex_iri("involves"), ex_iri("course101")}
       involves2 = {ex_iri("prof1"), ex_iri("involves"), ex_iri("course102")}
-      assert MapSet.member?(all_facts, involves1)
-      assert MapSet.member?(all_facts, involves2)
+      assert has_triple?(all_facts, involves1)
+      assert has_triple?(all_facts, involves2)
 
       # Delete one teaches
       teaches1 = {ex_iri("prof1"), ex_iri("teaches"), ex_iri("course101")}
@@ -473,11 +434,11 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # involves1 should be deleted, involves2 should remain
-      refute MapSet.member?(result.final_facts, involves1)
-      assert MapSet.member?(result.final_facts, involves2)
+      refute has_triple?(result.final_facts, involves1)
+      assert has_triple?(result.final_facts, involves2)
 
       # Faculty type should still exist via teaches course102
-      assert MapSet.member?(result.final_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")})
+      assert has_triple?(result.final_facts, {ex_iri("prof1"), rdf_type(), ex_iri("Faculty")})
     end
 
     test "correctly handles multiple independent entities" do
@@ -502,11 +463,11 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Alice's derived types should be gone
-      refute MapSet.member?(result.final_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
+      refute has_triple?(result.final_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
 
       # Bob's types should still exist
-      assert MapSet.member?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
-      assert MapSet.member?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Student")})
+      assert has_triple?(result.final_facts, {ex_iri("bob"), rdf_type(), ex_iri("Person")})
     end
   end
 
@@ -525,18 +486,18 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Charlie should not be Person yet
       charlie_person = {ex_iri("charlie"), rdf_type(), ex_iri("Person")}
-      refute MapSet.member?(base_facts, charlie_person)
+      refute has_triple?(base_facts, charlie_person)
 
       # Add TBox triple: Worker < Person
       tbox_update = {ex_iri("Worker"), rdfs_subClassOf(), ex_iri("Person")}
       {:ok, all_facts, stats} = Incremental.add_in_memory([tbox_update], base_facts, rules)
 
       # Now charlie should be inferred as Person
-      assert MapSet.member?(all_facts, charlie_person),
+      assert has_triple?(all_facts, charlie_person),
              "Expected charlie to become Person after TBox update"
 
       # And Thing
-      assert MapSet.member?(all_facts, {ex_iri("charlie"), rdf_type(), ex_iri("Thing")})
+      assert has_triple?(all_facts, {ex_iri("charlie"), rdf_type(), ex_iri("Thing")})
 
       assert stats.derived_count >= 2
     end
@@ -553,14 +514,14 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
 
       # Inverse should not exist yet
       inverse = {ex_iri("bob"), ex_iri("likes"), ex_iri("alice")}
-      refute MapSet.member?(base_facts, inverse)
+      refute has_triple?(base_facts, inverse)
 
       # Add TBox: likes is symmetric
       symmetric_decl = {ex_iri("likes"), rdf_type(), owl_SymmetricProperty()}
       {:ok, all_facts, _stats} = Incremental.add_in_memory([symmetric_decl], base_facts, rules)
 
       # Now inverse should be derived
-      assert MapSet.member?(all_facts, inverse),
+      assert has_triple?(all_facts, inverse),
              "Expected symmetric inverse after property characteristic added"
     end
 
@@ -595,7 +556,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       derived = compute_derived(initial, all_facts)
 
       # Verify alice is Person
-      assert MapSet.member?(all_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
 
       # Delete TBox triple: Student < Person
       tbox_triple = {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")}
@@ -607,7 +568,7 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       )
 
       # Alice should no longer be Person (after TBox change)
-      refute MapSet.member?(result.final_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")}),
+      refute has_triple?(result.final_facts, {ex_iri("alice"), rdf_type(), ex_iri("Person")}),
              "Expected Person derivation to be invalidated when subclass removed"
     end
 
@@ -693,8 +654,8 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, would_derive} = Incremental.preview_in_memory([new_triple], base_facts, rules)
 
       # Should include Person and Thing
-      assert MapSet.member?(would_derive, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
-      assert MapSet.member?(would_derive, {ex_iri("alice"), rdf_type(), ex_iri("Thing")})
+      assert has_triple?(would_derive, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(would_derive, {ex_iri("alice"), rdf_type(), ex_iri("Thing")})
     end
 
     test "preview_delete_in_memory shows what would be deleted" do
@@ -708,8 +669,8 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
       {:ok, {explicit_deleted, derived_deleted}} =
         DeleteWithReasoning.preview_delete_in_memory([student_triple], all_facts, derived, rules)
 
-      assert MapSet.member?(explicit_deleted, student_triple)
-      assert MapSet.member?(derived_deleted, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
+      assert has_triple?(explicit_deleted, student_triple)
+      assert has_triple?(derived_deleted, {ex_iri("alice"), rdf_type(), ex_iri("Person")})
     end
   end
 end

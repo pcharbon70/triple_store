@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
   @moduledoc """
   Integration tests for Task 4.6.1: Materialization Testing.
@@ -19,136 +20,129 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
   - 4.6.1.2: Verify query results match expected inference closure
   - 4.6.1.3: Benchmark materialization performance
   - 4.6.1.4: Test parallel materialization speedup
+
+  ## Test Data Scale Rationale
+
+  The LUBM benchmark scales by number of universities. LUBM(1) corresponds to:
+  - 15 departments per university
+  - 10 faculty per department
+  - 100 students per department
+  - 10 courses per department
+
+  These parameters were chosen to match the standard LUBM(1) scale while
+  remaining practical for in-memory testing.
   """
-  use ExUnit.Case, async: false
+  use TripleStore.ReasonerTestCase
 
-  alias TripleStore.Reasoner.{SemiNaive, ReasoningProfile}
-
-  @moduletag :integration
+  require Logger
 
   # ============================================================================
-  # Namespace Constants
+  # LUBM-Specific Namespace
   # ============================================================================
 
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
+  # LUBM uses its own namespace for university benchmark terms
   @ub "http://swat.cse.lehigh.edu/onto/univ-bench.owl#"
-  @ex "http://example.org/university/"
 
   # ============================================================================
-  # Test Helpers
+  # LUBM Test Helpers
   # ============================================================================
 
-  defp ub_iri(name), do: {:iri, @ub <> name}
-  defp ex_iri(name), do: {:iri, @ex <> name}
-  defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
-  defp rdfs_domain, do: {:iri, @rdfs <> "domain"}
-  defp rdfs_range, do: {:iri, @rdfs <> "range"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
-  defp owl_SymmetricProperty, do: {:iri, @owl <> "SymmetricProperty"}
+  # LUBM-specific IRI builder (not shared, specific to this test)
+  defp lubm_iri(name), do: {:iri, @ub <> name}
 
-  @doc """
-  Generates a LUBM-style TBox (schema) with class and property hierarchies.
-  """
-  def generate_lubm_tbox do
+  # Generates a LUBM-style TBox (schema) with class and property hierarchies.
+  #
+  # Class hierarchy:
+  #   Thing (top)
+  #     ├── Person
+  #     │     ├── Employee
+  #     │     │     ├── Faculty
+  #     │     │     │     ├── Professor
+  #     │     │     │     │     ├── FullProfessor
+  #     │     │     │     │     ├── AssociateProfessor
+  #     │     │     │     │     └── AssistantProfessor
+  #     │     │     │     └── Lecturer
+  #     │     │     └── AdministrativeStaff
+  #     │     └── Student
+  #     │           ├── GraduateStudent
+  #     │           │     ├── PhDStudent
+  #     │           │     └── MastersStudent
+  #     │           └── UndergraduateStudent
+  #     ├── Organization
+  #     │     ├── University
+  #     │     └── Department
+  #     ├── Work
+  #     │     ├── Course
+  #     │     └── Publication
+  #     │           ├── Article
+  #     │           └── Book
+  #     └── ResearchGroup
+  defp generate_lubm_tbox do
     MapSet.new([
-      # Class hierarchy
-      # Thing (top)
-      #   ├── Person
-      #   │     ├── Employee
-      #   │     │     ├── Faculty
-      #   │     │     │     ├── Professor
-      #   │     │     │     │     ├── FullProfessor
-      #   │     │     │     │     ├── AssociateProfessor
-      #   │     │     │     │     └── AssistantProfessor
-      #   │     │     │     └── Lecturer
-      #   │     │     └── AdministrativeStaff
-      #   │     └── Student
-      #   │           ├── GraduateStudent
-      #   │           │     ├── PhDStudent
-      #   │           │     └── MastersStudent
-      #   │           └── UndergraduateStudent
-      #   ├── Organization
-      #   │     ├── University
-      #   │     └── Department
-      #   ├── Work
-      #   │     ├── Course
-      #   │     └── Publication
-      #   │           ├── Article
-      #   │           └── Book
-      #   └── ResearchGroup
-
       # Person hierarchy
-      {ub_iri("Person"), rdfs_subClassOf(), ub_iri("Thing")},
-      {ub_iri("Employee"), rdfs_subClassOf(), ub_iri("Person")},
-      {ub_iri("Faculty"), rdfs_subClassOf(), ub_iri("Employee")},
-      {ub_iri("Professor"), rdfs_subClassOf(), ub_iri("Faculty")},
-      {ub_iri("FullProfessor"), rdfs_subClassOf(), ub_iri("Professor")},
-      {ub_iri("AssociateProfessor"), rdfs_subClassOf(), ub_iri("Professor")},
-      {ub_iri("AssistantProfessor"), rdfs_subClassOf(), ub_iri("Professor")},
-      {ub_iri("Lecturer"), rdfs_subClassOf(), ub_iri("Faculty")},
-      {ub_iri("AdministrativeStaff"), rdfs_subClassOf(), ub_iri("Employee")},
-      {ub_iri("Student"), rdfs_subClassOf(), ub_iri("Person")},
-      {ub_iri("GraduateStudent"), rdfs_subClassOf(), ub_iri("Student")},
-      {ub_iri("PhDStudent"), rdfs_subClassOf(), ub_iri("GraduateStudent")},
-      {ub_iri("MastersStudent"), rdfs_subClassOf(), ub_iri("GraduateStudent")},
-      {ub_iri("UndergraduateStudent"), rdfs_subClassOf(), ub_iri("Student")},
+      {lubm_iri("Person"), rdfs_subClassOf(), lubm_iri("Thing")},
+      {lubm_iri("Employee"), rdfs_subClassOf(), lubm_iri("Person")},
+      {lubm_iri("Faculty"), rdfs_subClassOf(), lubm_iri("Employee")},
+      {lubm_iri("Professor"), rdfs_subClassOf(), lubm_iri("Faculty")},
+      {lubm_iri("FullProfessor"), rdfs_subClassOf(), lubm_iri("Professor")},
+      {lubm_iri("AssociateProfessor"), rdfs_subClassOf(), lubm_iri("Professor")},
+      {lubm_iri("AssistantProfessor"), rdfs_subClassOf(), lubm_iri("Professor")},
+      {lubm_iri("Lecturer"), rdfs_subClassOf(), lubm_iri("Faculty")},
+      {lubm_iri("AdministrativeStaff"), rdfs_subClassOf(), lubm_iri("Employee")},
+      {lubm_iri("Student"), rdfs_subClassOf(), lubm_iri("Person")},
+      {lubm_iri("GraduateStudent"), rdfs_subClassOf(), lubm_iri("Student")},
+      {lubm_iri("PhDStudent"), rdfs_subClassOf(), lubm_iri("GraduateStudent")},
+      {lubm_iri("MastersStudent"), rdfs_subClassOf(), lubm_iri("GraduateStudent")},
+      {lubm_iri("UndergraduateStudent"), rdfs_subClassOf(), lubm_iri("Student")},
 
       # Organization hierarchy
-      {ub_iri("Organization"), rdfs_subClassOf(), ub_iri("Thing")},
-      {ub_iri("University"), rdfs_subClassOf(), ub_iri("Organization")},
-      {ub_iri("Department"), rdfs_subClassOf(), ub_iri("Organization")},
+      {lubm_iri("Organization"), rdfs_subClassOf(), lubm_iri("Thing")},
+      {lubm_iri("University"), rdfs_subClassOf(), lubm_iri("Organization")},
+      {lubm_iri("Department"), rdfs_subClassOf(), lubm_iri("Organization")},
 
       # Work hierarchy
-      {ub_iri("Work"), rdfs_subClassOf(), ub_iri("Thing")},
-      {ub_iri("Course"), rdfs_subClassOf(), ub_iri("Work")},
-      {ub_iri("Publication"), rdfs_subClassOf(), ub_iri("Work")},
-      {ub_iri("Article"), rdfs_subClassOf(), ub_iri("Publication")},
-      {ub_iri("Book"), rdfs_subClassOf(), ub_iri("Publication")},
+      {lubm_iri("Work"), rdfs_subClassOf(), lubm_iri("Thing")},
+      {lubm_iri("Course"), rdfs_subClassOf(), lubm_iri("Work")},
+      {lubm_iri("Publication"), rdfs_subClassOf(), lubm_iri("Work")},
+      {lubm_iri("Article"), rdfs_subClassOf(), lubm_iri("Publication")},
+      {lubm_iri("Book"), rdfs_subClassOf(), lubm_iri("Publication")},
 
       # ResearchGroup
-      {ub_iri("ResearchGroup"), rdfs_subClassOf(), ub_iri("Thing")},
+      {lubm_iri("ResearchGroup"), rdfs_subClassOf(), lubm_iri("Thing")},
 
       # Property hierarchy
-      {ub_iri("memberOf"), rdfs_subPropertyOf(), ub_iri("affiliatedWith")},
-      {ub_iri("worksFor"), rdfs_subPropertyOf(), ub_iri("affiliatedWith")},
-      {ub_iri("headOf"), rdfs_subPropertyOf(), ub_iri("worksFor")},
+      {lubm_iri("memberOf"), rdfs_subPropertyOf(), lubm_iri("affiliatedWith")},
+      {lubm_iri("worksFor"), rdfs_subPropertyOf(), lubm_iri("affiliatedWith")},
+      {lubm_iri("headOf"), rdfs_subPropertyOf(), lubm_iri("worksFor")},
 
       # Property domain/range
-      {ub_iri("memberOf"), rdfs_domain(), ub_iri("Person")},
-      {ub_iri("memberOf"), rdfs_range(), ub_iri("Organization")},
-      {ub_iri("worksFor"), rdfs_domain(), ub_iri("Employee")},
-      {ub_iri("worksFor"), rdfs_range(), ub_iri("Organization")},
-      {ub_iri("teacherOf"), rdfs_domain(), ub_iri("Faculty")},
-      {ub_iri("teacherOf"), rdfs_range(), ub_iri("Course")},
-      {ub_iri("takesCourse"), rdfs_domain(), ub_iri("Student")},
-      {ub_iri("takesCourse"), rdfs_range(), ub_iri("Course")},
-      {ub_iri("advisor"), rdfs_domain(), ub_iri("Student")},
-      {ub_iri("advisor"), rdfs_range(), ub_iri("Professor")},
-      {ub_iri("publicationAuthor"), rdfs_domain(), ub_iri("Person")},
-      {ub_iri("publicationAuthor"), rdfs_range(), ub_iri("Publication")},
+      {lubm_iri("memberOf"), rdfs_domain(), lubm_iri("Person")},
+      {lubm_iri("memberOf"), rdfs_range(), lubm_iri("Organization")},
+      {lubm_iri("worksFor"), rdfs_domain(), lubm_iri("Employee")},
+      {lubm_iri("worksFor"), rdfs_range(), lubm_iri("Organization")},
+      {lubm_iri("teacherOf"), rdfs_domain(), lubm_iri("Faculty")},
+      {lubm_iri("teacherOf"), rdfs_range(), lubm_iri("Course")},
+      {lubm_iri("takesCourse"), rdfs_domain(), lubm_iri("Student")},
+      {lubm_iri("takesCourse"), rdfs_range(), lubm_iri("Course")},
+      {lubm_iri("advisor"), rdfs_domain(), lubm_iri("Student")},
+      {lubm_iri("advisor"), rdfs_range(), lubm_iri("Professor")},
+      {lubm_iri("publicationAuthor"), rdfs_domain(), lubm_iri("Person")},
+      {lubm_iri("publicationAuthor"), rdfs_range(), lubm_iri("Publication")},
 
       # Property characteristics
-      {ub_iri("subOrganizationOf"), rdf_type(), owl_TransitiveProperty()},
-      {ub_iri("collaboratesWith"), rdf_type(), owl_SymmetricProperty()}
+      {lubm_iri("subOrganizationOf"), rdf_type(), owl_TransitiveProperty()},
+      {lubm_iri("collaboratesWith"), rdf_type(), owl_SymmetricProperty()}
     ])
   end
 
-  @doc """
-  Generates ABox (instance data) for a university with the given parameters.
-
-  ## Parameters
-  - num_departments: Number of departments
-  - faculty_per_dept: Number of faculty members per department
-  - students_per_dept: Number of students per department
-  - courses_per_dept: Number of courses per department
-
-  Returns a MapSet of triples.
-  """
-  def generate_lubm_abox(opts \\ []) do
+  # Generates ABox (instance data) for a university with the given parameters.
+  #
+  # Options:
+  #   - :departments - Number of departments (default: 15)
+  #   - :faculty_per_dept - Number of faculty members per department (default: 10)
+  #   - :students_per_dept - Number of students per department (default: 100)
+  #   - :courses_per_dept - Number of courses per department (default: 10)
+  defp generate_lubm_abox(opts \\ []) do
     num_departments = Keyword.get(opts, :departments, 15)
     faculty_per_dept = Keyword.get(opts, :faculty_per_dept, 10)
     students_per_dept = Keyword.get(opts, :students_per_dept, 100)
@@ -158,7 +152,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
     # Generate university
     facts = MapSet.new([
-      {university, rdf_type(), ub_iri("University")}
+      {university, rdf_type(), lubm_iri("University")}
     ])
 
     # Generate departments and their contents
@@ -167,8 +161,8 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Department facts
       dept_facts = MapSet.new([
-        {dept, rdf_type(), ub_iri("Department")},
-        {dept, ub_iri("subOrganizationOf"), university}
+        {dept, rdf_type(), lubm_iri("Department")},
+        {dept, lubm_iri("subOrganizationOf"), university}
       ])
 
       # Generate faculty
@@ -194,20 +188,20 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Assign professor types
       type = case rem(faculty_id, 4) do
-        0 -> ub_iri("FullProfessor")
-        1 -> ub_iri("AssociateProfessor")
-        2 -> ub_iri("AssistantProfessor")
-        3 -> ub_iri("Lecturer")
+        0 -> lubm_iri("FullProfessor")
+        1 -> lubm_iri("AssociateProfessor")
+        2 -> lubm_iri("AssistantProfessor")
+        3 -> lubm_iri("Lecturer")
       end
 
       facts = MapSet.new([
         {faculty, rdf_type(), type},
-        {faculty, ub_iri("worksFor"), dept}
+        {faculty, lubm_iri("worksFor"), dept}
       ])
 
       # First faculty is head of department
       facts = if faculty_id == 0 do
-        MapSet.put(facts, {faculty, ub_iri("headOf"), dept})
+        MapSet.put(facts, {faculty, lubm_iri("headOf"), dept})
       else
         facts
       end
@@ -222,10 +216,10 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Assign student types
       type = case rem(student_id, 4) do
-        0 -> ub_iri("PhDStudent")
-        1 -> ub_iri("MastersStudent")
-        2 -> ub_iri("UndergraduateStudent")
-        3 -> ub_iri("UndergraduateStudent")
+        0 -> lubm_iri("PhDStudent")
+        1 -> lubm_iri("MastersStudent")
+        2 -> lubm_iri("UndergraduateStudent")
+        3 -> lubm_iri("UndergraduateStudent")
       end
 
       # Assign advisor (for graduate students)
@@ -234,12 +228,12 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       facts = MapSet.new([
         {student, rdf_type(), type},
-        {student, ub_iri("memberOf"), dept}
+        {student, lubm_iri("memberOf"), dept}
       ])
 
       # Graduate students have advisors
       facts = if rem(student_id, 4) in [0, 1] do
-        MapSet.put(facts, {student, ub_iri("advisor"), advisor})
+        MapSet.put(facts, {student, lubm_iri("advisor"), advisor})
       else
         facts
       end
@@ -255,8 +249,8 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       teacher = ex_iri("Faculty#{dept_id}_#{teacher_id}")
 
       facts = MapSet.new([
-        {course, rdf_type(), ub_iri("Course")},
-        {teacher, ub_iri("teacherOf"), course}
+        {course, rdf_type(), lubm_iri("Course")},
+        {teacher, lubm_iri("teacherOf"), course}
       ])
 
       # Students take courses
@@ -264,7 +258,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       student_facts = Enum.reduce(0..(students_per_course - 1), MapSet.new(), fn i, sacc ->
         student_id = rem(course_id * students_per_course + i, num_students)
         student = ex_iri("Student#{dept_id}_#{student_id}")
-        MapSet.put(sacc, {student, ub_iri("takesCourse"), course})
+        MapSet.put(sacc, {student, lubm_iri("takesCourse"), course})
       end)
 
       acc
@@ -273,10 +267,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     end)
   end
 
-  @doc """
-  Creates an in-memory lookup function for a fact set.
-  """
-  def make_lookup(facts) do
+  defp make_lookup(facts) do
     fn {:pattern, [s, p, o]} ->
       matching =
         facts
@@ -310,24 +301,23 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       initial_facts = MapSet.union(tbox, abox)
       initial_count = MapSet.size(initial_facts)
 
-      # Use RDFS rules
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
-      # Materialize
-      {:ok, all_facts, stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      # Materialize with stats
+      {all_facts, stats} = materialize_with_stats(initial_facts, :rdfs)
 
       # Verify materialization completed
       assert stats.iterations > 0
       assert stats.total_derived > 0
       assert MapSet.size(all_facts) > initial_count
 
-      # Output stats for debugging
-      IO.puts("\n--- LUBM(1) RDFS Materialization ---")
-      IO.puts("Initial facts: #{initial_count}")
-      IO.puts("Final facts: #{MapSet.size(all_facts)}")
-      IO.puts("Derived facts: #{stats.total_derived}")
-      IO.puts("Iterations: #{stats.iterations}")
-      IO.puts("Duration: #{stats.duration_ms}ms")
+      # Log stats for debugging (visible with --trace flag)
+      Logger.debug("""
+      LUBM(1) RDFS Materialization:
+        Initial facts: #{initial_count}
+        Final facts: #{MapSet.size(all_facts)}
+        Derived facts: #{stats.total_derived}
+        Iterations: #{stats.iterations}
+        Duration: #{stats.duration_ms}ms
+      """)
     end
 
     @tag timeout: 120_000
@@ -345,22 +335,21 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       initial_facts = MapSet.union(tbox, abox)
       initial_count = MapSet.size(initial_facts)
 
-      # Use full OWL 2 RL rules
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
-      # Materialize
-      {:ok, all_facts, stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      # Materialize with stats
+      {all_facts, stats} = materialize_with_stats(initial_facts, :owl2rl)
 
       # Verify materialization completed
       assert stats.iterations > 0
       assert MapSet.size(all_facts) > initial_count
 
-      IO.puts("\n--- LUBM(1) OWL 2 RL Materialization ---")
-      IO.puts("Initial facts: #{initial_count}")
-      IO.puts("Final facts: #{MapSet.size(all_facts)}")
-      IO.puts("Derived facts: #{stats.total_derived}")
-      IO.puts("Iterations: #{stats.iterations}")
-      IO.puts("Duration: #{stats.duration_ms}ms")
+      Logger.debug("""
+      LUBM(1) OWL 2 RL Materialization:
+        Initial facts: #{initial_count}
+        Final facts: #{MapSet.size(all_facts)}
+        Derived facts: #{stats.total_derived}
+        Iterations: #{stats.iterations}
+        Duration: #{stats.duration_ms}ms
+      """)
     end
 
     test "materializes smaller dataset correctly" do
@@ -374,9 +363,8 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       )
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
-      {:ok, all_facts, stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      {all_facts, stats} = materialize_with_stats(initial_facts, :rdfs)
 
       assert stats.iterations > 0
       assert MapSet.size(all_facts) > MapSet.size(initial_facts)
@@ -393,61 +381,55 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Create a single PhD student
       abox = MapSet.new([
-        {ex_iri("Alice"), rdf_type(), ub_iri("PhDStudent")},
-        {ex_iri("Alice"), ub_iri("memberOf"), ex_iri("Department0")}
+        {ex_iri("Alice"), rdf_type(), lubm_iri("PhDStudent")},
+        {ex_iri("Alice"), lubm_iri("memberOf"), ex_iri("Department0")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :rdfs)
 
       # Alice should be inferred to be:
       # PhDStudent < GraduateStudent < Student < Person < Thing
-      assert MapSet.member?(all_facts, {ex_iri("Alice"), rdf_type(), ub_iri("GraduateStudent")})
-      assert MapSet.member?(all_facts, {ex_iri("Alice"), rdf_type(), ub_iri("Student")})
-      assert MapSet.member?(all_facts, {ex_iri("Alice"), rdf_type(), ub_iri("Person")})
-      assert MapSet.member?(all_facts, {ex_iri("Alice"), rdf_type(), ub_iri("Thing")})
+      assert has_triple?(all_facts, {ex_iri("Alice"), rdf_type(), lubm_iri("GraduateStudent")})
+      assert has_triple?(all_facts, {ex_iri("Alice"), rdf_type(), lubm_iri("Student")})
+      assert has_triple?(all_facts, {ex_iri("Alice"), rdf_type(), lubm_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("Alice"), rdf_type(), lubm_iri("Thing")})
     end
 
     test "property hierarchy inference produces expected properties" do
       tbox = generate_lubm_tbox()
 
       abox = MapSet.new([
-        {ex_iri("Prof1"), ub_iri("headOf"), ex_iri("Department0")}
+        {ex_iri("Prof1"), lubm_iri("headOf"), ex_iri("Department0")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :rdfs)
 
       # headOf < worksFor < affiliatedWith
       # So Prof1 headOf Dept0 should imply Prof1 worksFor Dept0 and Prof1 affiliatedWith Dept0
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), ub_iri("worksFor"), ex_iri("Department0")})
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), ub_iri("affiliatedWith"), ex_iri("Department0")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")})
     end
 
     test "domain/range inference produces expected types" do
       tbox = generate_lubm_tbox()
 
       abox = MapSet.new([
-        {ex_iri("Prof1"), ub_iri("teacherOf"), ex_iri("Course101")},
-        {ex_iri("Student1"), ub_iri("takesCourse"), ex_iri("Course101")}
+        {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
+        {ex_iri("Student1"), lubm_iri("takesCourse"), ex_iri("Course101")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :rdfs)
 
       # teacherOf has domain Faculty and range Course
       # So Prof1 should be inferred to be Faculty
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), rdf_type(), ub_iri("Faculty")})
-      assert MapSet.member?(all_facts, {ex_iri("Course101"), rdf_type(), ub_iri("Course")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Faculty")})
+      assert has_triple?(all_facts, {ex_iri("Course101"), rdf_type(), lubm_iri("Course")})
 
       # takesCourse has domain Student and range Course
-      assert MapSet.member?(all_facts, {ex_iri("Student1"), rdf_type(), ub_iri("Student")})
+      assert has_triple?(all_facts, {ex_iri("Student1"), rdf_type(), lubm_iri("Student")})
     end
 
     test "transitive property inference produces expected relations" do
@@ -455,65 +437,79 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Create a chain of subOrganizationOf
       abox = MapSet.new([
-        {ex_iri("ResearchGroup1"), rdf_type(), ub_iri("ResearchGroup")},
-        {ex_iri("Department0"), rdf_type(), ub_iri("Department")},
-        {ex_iri("University0"), rdf_type(), ub_iri("University")},
-        {ex_iri("ResearchGroup1"), ub_iri("subOrganizationOf"), ex_iri("Department0")},
-        {ex_iri("Department0"), ub_iri("subOrganizationOf"), ex_iri("University0")}
+        {ex_iri("ResearchGroup1"), rdf_type(), lubm_iri("ResearchGroup")},
+        {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
+        {ex_iri("University0"), rdf_type(), lubm_iri("University")},
+        {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("Department0")},
+        {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :owl2rl)
 
       # Transitive: ResearchGroup1 subOrganizationOf University0
-      assert MapSet.member?(all_facts, {ex_iri("ResearchGroup1"), ub_iri("subOrganizationOf"), ex_iri("University0")})
+      assert has_triple?(all_facts, {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("University0")})
     end
 
     test "symmetric property inference produces expected relations" do
       tbox = generate_lubm_tbox()
 
       abox = MapSet.new([
-        {ex_iri("Prof1"), rdf_type(), ub_iri("Professor")},
-        {ex_iri("Prof2"), rdf_type(), ub_iri("Professor")},
-        {ex_iri("Prof1"), ub_iri("collaboratesWith"), ex_iri("Prof2")}
+        {ex_iri("Prof1"), rdf_type(), lubm_iri("Professor")},
+        {ex_iri("Prof2"), rdf_type(), lubm_iri("Professor")},
+        {ex_iri("Prof1"), lubm_iri("collaboratesWith"), ex_iri("Prof2")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :owl2rl)
 
       # Symmetric: Prof2 collaboratesWith Prof1
-      assert MapSet.member?(all_facts, {ex_iri("Prof2"), ub_iri("collaboratesWith"), ex_iri("Prof1")})
+      assert has_triple?(all_facts, {ex_iri("Prof2"), lubm_iri("collaboratesWith"), ex_iri("Prof1")})
     end
 
     test "complete inference closure for faculty member" do
       tbox = generate_lubm_tbox()
 
       abox = MapSet.new([
-        {ex_iri("Prof1"), rdf_type(), ub_iri("FullProfessor")},
-        {ex_iri("Prof1"), ub_iri("worksFor"), ex_iri("Department0")},
-        {ex_iri("Prof1"), ub_iri("teacherOf"), ex_iri("Course101")},
-        {ex_iri("Department0"), rdf_type(), ub_iri("Department")},
-        {ex_iri("University0"), rdf_type(), ub_iri("University")},
-        {ex_iri("Department0"), ub_iri("subOrganizationOf"), ex_iri("University0")}
+        {ex_iri("Prof1"), rdf_type(), lubm_iri("FullProfessor")},
+        {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")},
+        {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
+        {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
+        {ex_iri("University0"), rdf_type(), lubm_iri("University")},
+        {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
       ])
 
       initial_facts = MapSet.union(tbox, abox)
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
-      {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
+      all_facts = materialize(initial_facts, :rdfs)
 
       # Full class hierarchy for FullProfessor
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), rdf_type(), ub_iri("Professor")})
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), rdf_type(), ub_iri("Faculty")})
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), rdf_type(), ub_iri("Employee")})
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), rdf_type(), ub_iri("Person")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Professor")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Faculty")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Employee")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Person")})
 
       # Property hierarchy: worksFor < affiliatedWith
-      assert MapSet.member?(all_facts, {ex_iri("Prof1"), ub_iri("affiliatedWith"), ex_iri("Department0")})
+      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")})
+    end
+
+    test "statistics accuracy: derived count equals difference" do
+      tbox = generate_lubm_tbox()
+      abox = generate_lubm_abox(
+        departments: 2,
+        faculty_per_dept: 3,
+        students_per_dept: 10,
+        courses_per_dept: 2
+      )
+
+      initial_facts = MapSet.union(tbox, abox)
+      initial_count = MapSet.size(initial_facts)
+
+      {all_facts, stats} = materialize_with_stats(initial_facts, :rdfs)
+
+      # Verify stats accuracy
+      actual_derived = MapSet.size(all_facts) - initial_count
+      assert stats.total_derived == actual_derived,
+        "Stats derived (#{stats.total_derived}) != actual derived (#{actual_derived})"
     end
   end
 
@@ -544,12 +540,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       duration_ms = div(duration_us, 1000)
 
-      IO.puts("\n--- LUBM(1) Benchmark ---")
-      IO.puts("Duration: #{duration_ms}ms (#{div(duration_us, 1_000_000)}s)")
-      IO.puts("Internal duration: #{stats.duration_ms}ms")
-      IO.puts("Initial facts: #{MapSet.size(initial_facts)}")
-      IO.puts("Derived facts: #{stats.total_derived}")
-      IO.puts("Iterations: #{stats.iterations}")
+      Logger.debug("""
+      LUBM(1) Benchmark:
+        Duration: #{duration_ms}ms (#{div(duration_us, 1_000_000)}s)
+        Internal duration: #{stats.duration_ms}ms
+        Initial facts: #{MapSet.size(initial_facts)}
+        Derived facts: #{stats.total_derived}
+        Iterations: #{stats.iterations}
+      """)
 
       # LUBM(1) should complete well under 60 seconds
       # For in-memory with MapSet, it should be much faster
@@ -597,10 +595,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
         }
       end)
 
-      IO.puts("\n--- Scaling Benchmark ---")
-      Enum.each(results, fn r ->
-        IO.puts("Initial: #{r.initial_count}, Derived: #{r.derived_count}, Time: #{r.duration_ms}ms, Iters: #{r.iterations}")
-      end)
+      Logger.debug("Scaling Benchmark: #{inspect(results, pretty: true)}")
 
       # Verify all completed
       Enum.each(results, fn r ->
@@ -641,9 +636,11 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       assert seq_stats.total_derived == par_stats.total_derived,
         "Derived counts differ: seq=#{seq_stats.total_derived}, par=#{par_stats.total_derived}"
 
-      IO.puts("\n--- Sequential vs Parallel ---")
-      IO.puts("Sequential: #{seq_stats.duration_ms}ms, #{seq_stats.iterations} iterations")
-      IO.puts("Parallel: #{par_stats.duration_ms}ms, #{par_stats.iterations} iterations")
+      Logger.debug("""
+      Sequential vs Parallel:
+        Sequential: #{seq_stats.duration_ms}ms, #{seq_stats.iterations} iterations
+        Parallel: #{par_stats.duration_ms}ms, #{par_stats.iterations} iterations
+      """)
     end
 
     @tag timeout: 120_000
@@ -682,11 +679,13 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       speedup = if avg_par > 0, do: avg_seq / avg_par, else: 0
 
-      IO.puts("\n--- Parallel Speedup Benchmark ---")
-      IO.puts("Sequential avg: #{avg_seq}ms (runs: #{inspect(seq_times)})")
-      IO.puts("Parallel avg: #{avg_par}ms (runs: #{inspect(par_times)})")
-      IO.puts("Speedup: #{Float.round(speedup, 2)}x")
-      IO.puts("Schedulers: #{System.schedulers_online()}")
+      Logger.debug("""
+      Parallel Speedup Benchmark:
+        Sequential avg: #{avg_seq}ms (runs: #{inspect(seq_times)})
+        Parallel avg: #{avg_par}ms (runs: #{inspect(par_times)})
+        Speedup: #{Float.round(speedup, 2)}x
+        Schedulers: #{System.schedulers_online()}
+      """)
 
       # Both should complete
       assert avg_seq > 0

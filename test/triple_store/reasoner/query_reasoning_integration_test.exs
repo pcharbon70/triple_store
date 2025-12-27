@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
   @moduledoc """
   Integration tests for Task 4.6.3: Query with Reasoning Testing.
@@ -16,101 +17,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
   - 4.6.3.3: Test sameAs query returns canonicalized results
   - 4.6.3.4: Compare materialized vs query-time reasoning results
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Reasoner.{
-    SemiNaive,
-    ReasoningProfile,
-    ReasoningConfig,
-    ReasoningMode,
-    PatternMatcher
-  }
-
-  @moduletag :integration
+  use TripleStore.ReasonerTestCase
 
   # ============================================================================
-  # Namespace Constants
+  # Test-Specific Helpers
   # ============================================================================
 
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
-  @ex "http://example.org/"
-
-  # ============================================================================
-  # Test Helpers
-  # ============================================================================
-
-  defp ex_iri(name), do: {:iri, @ex <> name}
-  defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
-  defp owl_SymmetricProperty, do: {:iri, @owl <> "SymmetricProperty"}
-  defp owl_sameAs, do: {:iri, @owl <> "sameAs"}
-  defp owl_inverseOf, do: {:iri, @owl <> "inverseOf"}
-
-  @doc """
-  Simulates a SPARQL-like query by finding all triples matching a pattern.
-
-  Pattern uses {:var, :name} for unbound variables.
-
-  ## Examples
-
-      # Find all types of alice
-      query(facts, {ex_iri("alice"), rdf_type(), {:var, :type}})
-
-      # Find all instances of Person
-      query(facts, {{:var, :x}, rdf_type(), ex_iri("Person")})
-  """
-  def query(facts, {s, p, o}) do
-    pattern = {:pattern, [s, p, o]}
-    PatternMatcher.filter_matching(facts, pattern)
-  end
-
-  @doc """
-  Executes a simple SELECT-like query returning bindings.
-
-  ## Examples
-
-      # SELECT ?type WHERE { alice rdf:type ?type }
-      select_types(facts, ex_iri("alice"))
-  """
-  def select_types(facts, subject) do
-    query(facts, {subject, rdf_type(), {:var, :type}})
-    |> Enum.map(fn {_, _, type} -> type end)
-  end
-
-  @doc """
-  Executes a query for property values.
-
-  ## Examples
-
-      # SELECT ?object WHERE { subject predicate ?object }
-      select_objects(facts, subject, predicate)
-  """
-  def select_objects(facts, subject, predicate) do
-    query(facts, {subject, predicate, {:var, :object}})
-    |> Enum.map(fn {_, _, obj} -> obj end)
-  end
-
-  @doc """
-  Executes a query for property subjects.
-
-  ## Examples
-
-      # SELECT ?subject WHERE { ?subject predicate object }
-      select_subjects(facts, predicate, object)
-  """
-  def select_subjects(facts, predicate, object) do
-    query(facts, {{:var, :subject}, predicate, object})
-    |> Enum.map(fn {subj, _, _} -> subj end)
-  end
-
-  @doc """
-  Creates a test ontology with class hierarchy.
-  """
-  def create_class_hierarchy_ontology do
+  defp create_class_hierarchy_ontology do
     MapSet.new([
       # Class hierarchy: GradStudent < Student < Person < Agent < Thing
       {ex_iri("GradStudent"), rdfs_subClassOf(), ex_iri("Student")},
@@ -126,10 +39,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     ])
   end
 
-  @doc """
-  Creates a test ontology with transitive properties.
-  """
-  def create_transitive_property_ontology do
+  defp create_transitive_property_ontology do
     MapSet.new([
       # Transitive properties
       {ex_iri("ancestorOf"), rdf_type(), owl_TransitiveProperty()},
@@ -141,10 +51,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     ])
   end
 
-  @doc """
-  Creates a test ontology with sameAs relationships.
-  """
-  def create_sameas_ontology do
+  defp create_sameas_ontology do
     MapSet.new([
       # Basic class
       {ex_iri("Person"), rdfs_subClassOf(), ex_iri("Thing")}
@@ -158,7 +65,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
   describe "4.6.3.1 class hierarchy queries return inferred types" do
     test "query returns direct and inferred types via subClassOf" do
       tbox = create_class_hierarchy_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
       # Add a GradStudent instance
       abox = MapSet.new([
@@ -166,7 +72,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial, :rdfs)
 
       # Query: SELECT ?type WHERE { alice rdf:type ?type }
       types = select_types(all_facts, ex_iri("alice"))
@@ -181,7 +87,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query returns instances of class including inferred instances" do
       tbox = create_class_hierarchy_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
       # Add instances at different levels
       abox = MapSet.new([
@@ -192,7 +97,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial, :rdfs)
 
       # Query: SELECT ?x WHERE { ?x rdf:type Person }
       persons = select_subjects(all_facts, rdf_type(), ex_iri("Person"))
@@ -215,7 +120,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query for specific level returns only that level and below" do
       tbox = create_class_hierarchy_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
       abox = MapSet.new([
         {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
@@ -224,7 +128,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial, :rdfs)
 
       # Query: SELECT ?x WHERE { ?x rdf:type Student }
       students = select_subjects(all_facts, rdf_type(), ex_iri("Student"))
@@ -252,14 +156,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
         {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Worker")}
       ])
 
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-
       abox = MapSet.new([
         {ex_iri("alice"), rdf_type(), ex_iri("Employee")}
       ])
 
       initial = MapSet.union(diamond_tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial, :rdfs)
 
       types = select_types(all_facts, ex_iri("alice"))
 
@@ -277,7 +179,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
   describe "4.6.3.2 transitive property queries return inferred relationships" do
     test "query returns transitive closure of ancestorOf" do
       tbox = create_transitive_property_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       # Ancestor chain: alice -> bob -> carol -> dave
       abox = MapSet.new([
@@ -287,7 +188,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # Query: SELECT ?ancestor WHERE { ?ancestor ancestorOf alice }
       ancestors_of_alice = select_subjects(all_facts, ex_iri("ancestorOf"), ex_iri("alice"))
@@ -306,7 +207,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query returns transitive closure of partOf" do
       tbox = create_transitive_property_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       # Part hierarchy: handle partOf door partOf car
       abox = MapSet.new([
@@ -315,7 +215,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # Query: What is handle partOf?
       containers = select_objects(all_facts, ex_iri("handle"), ex_iri("partOf"))
@@ -326,7 +226,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query returns transitive closure of locatedIn" do
       tbox = create_transitive_property_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       # Location hierarchy: room locatedIn building locatedIn campus locatedIn city
       abox = MapSet.new([
@@ -336,7 +235,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # Query: Where is room101 located?
       locations = select_objects(all_facts, ex_iri("room101"), ex_iri("locatedIn"))
@@ -348,7 +247,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query with multiple transitive chains" do
       tbox = create_transitive_property_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       # Two parallel ancestor chains meeting at common ancestor
       abox = MapSet.new([
@@ -361,7 +259,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # ancestor1 should be ancestor of both alice and carol
       descendants_of_ancestor1 = select_objects(all_facts, ex_iri("ancestor1"), ex_iri("ancestorOf"))
@@ -374,14 +272,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "symmetric property query returns inverse relationships" do
       tbox = create_transitive_property_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       abox = MapSet.new([
         {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # Query: Who does bob know?
       bob_knows = select_objects(all_facts, ex_iri("bob"), ex_iri("knows"))
@@ -401,13 +298,11 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
   describe "4.6.3.3 sameAs queries return canonicalized results" do
     test "sameAs is symmetric" do
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
       facts = MapSet.new([
         {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
       ])
 
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, facts)
+      all_facts = materialize(facts)
 
       # Query: What is alice_smith sameAs?
       same_as_alice_smith = select_objects(all_facts, ex_iri("alice_smith"), owl_sameAs())
@@ -416,14 +311,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "sameAs is transitive" do
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
       facts = MapSet.new([
         {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
         {ex_iri("alice_smith"), owl_sameAs(), ex_iri("asmith")}
       ])
 
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, facts)
+      all_facts = materialize(facts)
 
       # Query: What is alice sameAs?
       same_as_alice = select_objects(all_facts, ex_iri("alice"), owl_sameAs())
@@ -439,7 +332,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "sameAs propagates type assertions" do
       tbox = create_sameas_ontology()
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
 
       # alice is Person, alice sameAs alice_smith
       abox = MapSet.new([
@@ -448,7 +340,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       ])
 
       initial = MapSet.union(tbox, abox)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      all_facts = materialize(initial)
 
       # Query: What types does alice_smith have?
       types = select_types(all_facts, ex_iri("alice_smith"))
@@ -457,15 +349,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "sameAs propagates property assertions" do
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
       # alice hasName "Alice", alice sameAs alice_smith
       facts = MapSet.new([
         {ex_iri("alice"), ex_iri("hasAge"), {:literal, "30", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}},
         {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
       ])
 
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, facts)
+      all_facts = materialize(facts)
 
       # Query: What is alice_smith's age?
       ages = select_objects(all_facts, ex_iri("alice_smith"), ex_iri("hasAge"))
@@ -475,8 +365,6 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "sameAs chain with multiple entities" do
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
       # Chain: a sameAs b sameAs c sameAs d
       facts = MapSet.new([
         {ex_iri("a"), owl_sameAs(), ex_iri("b")},
@@ -485,7 +373,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
         {ex_iri("a"), rdf_type(), ex_iri("Thing")}
       ])
 
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, facts)
+      all_facts = materialize(facts)
 
       # All should be sameAs each other (transitive + symmetric closure)
       for x <- [ex_iri("a"), ex_iri("b"), ex_iri("c"), ex_iri("d")] do
@@ -504,15 +392,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "sameAs with inverse property propagation" do
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-
       # bob knows alice, alice sameAs alice_smith
       facts = MapSet.new([
         {ex_iri("bob"), ex_iri("likes"), ex_iri("alice")},
         {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
       ])
 
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, facts)
+      all_facts = materialize(facts)
 
       # Query: Who does bob like? Should include alice_smith via sameAs
       bob_likes = select_objects(all_facts, ex_iri("bob"), ex_iri("likes"))
@@ -537,8 +423,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       initial = MapSet.union(tbox, abox)
 
       # Simulate materialized mode - run full materialization
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-      {:ok, materialized_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      materialized_facts = materialize(initial, :rdfs)
 
       # In materialized mode, all inferences should be stored
       # Query is just a lookup
@@ -569,8 +454,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       assert explicit_types == [ex_iri("GradStudent")], "Only explicit type before reasoning"
 
       # Compute inferences "on demand" for the query
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-      {:ok, computed_facts, _} = SemiNaive.materialize_in_memory(rules, initial)
+      computed_facts = materialize(initial, :rdfs)
 
       computed_types = select_types(computed_facts, ex_iri("alice"))
       assert length(computed_types) >= 5, "Query-time should compute all types"
@@ -588,11 +472,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       initial = MapSet.union(tbox, abox)
 
       # Run materialization (simulating materialized mode)
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-      {:ok, materialized, _} = SemiNaive.materialize_in_memory(rules, initial)
+      materialized = materialize(initial)
 
       # Run again (simulating query-time, which would compute fresh)
-      {:ok, query_time, _} = SemiNaive.materialize_in_memory(rules, initial)
+      query_time = materialize(initial)
 
       # Results should be identical
       assert MapSet.equal?(materialized, query_time),
@@ -645,7 +528,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
       # OWL-specific rules should be query-time
       # Note: actual rule split depends on implementation
-      assert length(query_time_rules) > 0, "Some rules should be query-time"
+      refute Enum.empty?(query_time_rules), "Some rules should be query-time"
     end
   end
 
@@ -665,8 +548,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
         {ex_iri("alice"), ex_iri("headOf"), ex_iri("dept1")}
       ])
 
-      {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, MapSet.union(tbox, abox))
+      all_facts = materialize(MapSet.union(tbox, abox), :rdfs)
 
       # Query: What is alice affiliatedWith?
       affiliations = select_objects(all_facts, ex_iri("alice"), ex_iri("affiliatedWith"))
@@ -688,8 +570,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
         {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")}
       ])
 
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, MapSet.union(tbox, abox))
+      all_facts = materialize(MapSet.union(tbox, abox))
 
       # Query: Who is bob childOf?
       parents = select_objects(all_facts, ex_iri("bob"), ex_iri("childOf"))
@@ -716,8 +597,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
         {ex_iri("alice"), ex_iri("supervises"), ex_iri("carol")}
       ])
 
-      {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
-      {:ok, all_facts, _} = SemiNaive.materialize_in_memory(rules, MapSet.union(tbox, abox))
+      all_facts = materialize(MapSet.union(tbox, abox))
 
       # alice should be Faculty and Person
       alice_types = select_types(all_facts, ex_iri("alice"))

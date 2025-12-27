@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
   @moduledoc """
   Integration tests for Task 4.6.4: Reasoning Correctness Testing.
@@ -21,58 +22,7 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
   These tests are based on the OWL 2 RL inference patterns defined in:
   https://www.w3.org/TR/owl2-profiles/#OWL_2_RL
   """
-  use ExUnit.Case, async: false
-
-  alias TripleStore.Reasoner.{SemiNaive, ReasoningProfile, PatternMatcher}
-
-  @moduletag :integration
-
-  # ============================================================================
-  # Namespace Constants
-  # ============================================================================
-
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
-  @ex "http://example.org/"
-
-  # ============================================================================
-  # Test Helpers
-  # ============================================================================
-
-  defp ex_iri(name), do: {:iri, @ex <> name}
-  defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
-  defp rdfs_domain, do: {:iri, @rdfs <> "domain"}
-  defp rdfs_range, do: {:iri, @rdfs <> "range"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
-  defp owl_SymmetricProperty, do: {:iri, @owl <> "SymmetricProperty"}
-  defp owl_FunctionalProperty, do: {:iri, @owl <> "FunctionalProperty"}
-  defp owl_InverseFunctionalProperty, do: {:iri, @owl <> "InverseFunctionalProperty"}
-  defp owl_inverseOf, do: {:iri, @owl <> "inverseOf"}
-  defp owl_sameAs, do: {:iri, @owl <> "sameAs"}
-  defp owl_Nothing, do: {:iri, @owl <> "Nothing"}
-
-  defp query(facts, {s, p, o}) do
-    pattern = {:pattern, [s, p, o]}
-    PatternMatcher.filter_matching(facts, pattern)
-  end
-
-  defp select_types(facts, subject) do
-    query(facts, {subject, rdf_type(), {:var, :type}})
-    |> Enum.map(fn {_, _, type} -> type end)
-  end
-
-  defp has_triple?(facts, triple) do
-    MapSet.member?(facts, triple)
-  end
-
-  defp materialize(initial_facts, profile \\ :owl2rl) do
-    {:ok, rules} = ReasoningProfile.rules_for(profile)
-    {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts)
-    all_facts
-  end
+  use TripleStore.ReasonerTestCase
 
   # ============================================================================
   # 4.6.4.1: Compare inference results with reference reasoner patterns
