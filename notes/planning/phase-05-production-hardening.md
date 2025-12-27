@@ -50,14 +50,14 @@ Implement benchmark execution infrastructure.
 
 ### 5.1.4 Performance Targets
 
-- [ ] **Task 5.1.4 Complete**
+- [x] **Task 5.1.4 Complete**
 
 Define and validate performance targets.
 
-- [ ] 5.1.4.1 Simple BGP query: <10ms p95 on 1M triples
-- [ ] 5.1.4.2 Complex join query: <100ms p95 on 1M triples
-- [ ] 5.1.4.3 Bulk load: >100K triples/second
-- [ ] 5.1.4.4 BSBM overall: <50ms p95 for query mix
+- [x] 5.1.4.1 Simple BGP query: <10ms p95 on 1M triples
+- [x] 5.1.4.2 Complex join query: <100ms p95 on 1M triples
+- [x] 5.1.4.3 Bulk load: >100K triples/second
+- [x] 5.1.4.4 BSBM overall: <50ms p95 for query mix
 
 ### 5.1.5 Unit Tests
 
