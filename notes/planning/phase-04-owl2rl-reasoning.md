@@ -533,7 +533,7 @@ New tests: 771 total (+4 for upper bounds and query_time_rules validation)
 
 ## 4.6 Phase 4 Integration Tests
 
-- [ ] **Section 4.6 Complete**
+- [x] **Section 4.6 Complete** (2025-12-27)
 
 Integration tests validate the complete reasoning subsystem with realistic ontologies.
 
@@ -572,14 +572,14 @@ Test SPARQL queries returning inferred results.
 
 ### 4.6.4 Reasoning Correctness Testing
 
-- [ ] **Task 4.6.4 Complete**
+- [x] **Task 4.6.4 Complete** (2025-12-27)
 
 Validate reasoning correctness against reference implementation.
 
-- [ ] 4.6.4.1 Compare inference results with reference reasoner (HermiT, Pellet)
-- [ ] 4.6.4.2 Test known-hard cases (owl:sameAs chains, etc.)
-- [ ] 4.6.4.3 Test consistency checking (owl:Nothing membership)
-- [ ] 4.6.4.4 Test no spurious inferences generated
+- [x] 4.6.4.1 Compare inference results with reference reasoner (HermiT, Pellet)
+- [x] 4.6.4.2 Test known-hard cases (owl:sameAs chains, etc.)
+- [x] 4.6.4.3 Test consistency checking (owl:Nothing membership)
+- [x] 4.6.4.4 Test no spurious inferences generated
 
 ---
 
