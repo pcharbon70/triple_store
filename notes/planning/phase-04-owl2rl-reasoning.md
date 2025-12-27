@@ -561,14 +561,14 @@ Test incremental maintenance scenarios.
 
 ### 4.6.3 Query with Reasoning Testing
 
-- [ ] **Task 4.6.3 Complete**
+- [x] **Task 4.6.3 Complete**
 
 Test SPARQL queries returning inferred results.
 
-- [ ] 4.6.3.1 Test class hierarchy query returns inferred types
-- [ ] 4.6.3.2 Test transitive property query returns inferred relationships
-- [ ] 4.6.3.3 Test sameAs query returns canonicalized results
-- [ ] 4.6.3.4 Compare materialized vs query-time reasoning results
+- [x] 4.6.3.1 Test class hierarchy query returns inferred types
+- [x] 4.6.3.2 Test transitive property query returns inferred relationships
+- [x] 4.6.3.3 Test sameAs query returns canonicalized results
+- [x] 4.6.3.4 Compare materialized vs query-time reasoning results
 
 ### 4.6.4 Reasoning Correctness Testing
 
