@@ -39,7 +39,8 @@ defmodule TripleStore.TransactionTest do
     end
 
     test "starts with plan cache reference", %{db: db, manager: manager} do
-      {:ok, cache} = PlanCache.start_link([])
+      cache_name = :"test_cache_#{System.unique_integer([:positive])}"
+      {:ok, cache} = PlanCache.start_link(name: cache_name)
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager, plan_cache: cache)
       assert Process.alive?(txn)
       Transaction.stop(txn)
