@@ -117,4 +117,93 @@ defmodule TripleStore.Benchmark.LUBMTest do
       assert String.contains?(ns, "univ-bench")
     end
   end
+
+  describe "RDF validity" do
+    test "all triples have valid IRI subjects" do
+      graph = LUBM.generate(1, seed: 42)
+
+      for {s, _p, _o} <- RDF.Graph.triples(graph) do
+        assert %RDF.IRI{} = s
+        assert String.starts_with?(to_string(s), "http://")
+      end
+    end
+
+    test "all triples have valid IRI predicates" do
+      graph = LUBM.generate(1, seed: 42)
+
+      for {_s, p, _o} <- RDF.Graph.triples(graph) do
+        assert %RDF.IRI{} = p
+        assert String.starts_with?(to_string(p), "http://")
+      end
+    end
+
+    test "all objects are valid RDF terms" do
+      graph = LUBM.generate(1, seed: 42)
+
+      for {_s, _p, o} <- RDF.Graph.triples(graph) do
+        assert is_struct(o, RDF.IRI) or is_struct(o, RDF.Literal)
+      end
+    end
+
+    test "no blank nodes in generated data" do
+      graph = LUBM.generate(1, seed: 42)
+
+      for {s, _p, o} <- RDF.Graph.triples(graph) do
+        refute is_struct(s, RDF.BlankNode)
+        refute is_struct(o, RDF.BlankNode)
+      end
+    end
+
+    test "all URIs are well-formed" do
+      graph = LUBM.generate(1, seed: 42)
+
+      for {s, p, o} <- RDF.Graph.triples(graph) do
+        assert valid_uri?(to_string(s))
+        assert valid_uri?(to_string(p))
+
+        if is_struct(o, RDF.IRI) do
+          assert valid_uri?(to_string(o))
+        end
+      end
+    end
+
+    test "rdf:type triples use correct namespace" do
+      graph = LUBM.generate(1, seed: 42)
+      rdf_type = RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+
+      type_triples = Enum.filter(RDF.Graph.triples(graph), fn {_, p, _} -> p == rdf_type end)
+
+      # Should have type declarations
+      assert length(type_triples) > 0
+
+      # All type objects should be LUBM classes
+      for {_, _, o} <- type_triples do
+        assert is_struct(o, RDF.IRI)
+        uri = to_string(o)
+        assert String.contains?(uri, "lehigh.edu") or String.contains?(uri, "University")
+      end
+    end
+
+    test "literals have appropriate datatypes" do
+      graph = LUBM.generate(1, seed: 42)
+
+      literals =
+        RDF.Graph.triples(graph)
+        |> Enum.map(fn {_, _, o} -> o end)
+        |> Enum.filter(&is_struct(&1, RDF.Literal))
+
+      # Should have some literals (names, emails, etc.)
+      assert length(literals) > 0
+
+      # Check that literals have values
+      for lit <- literals do
+        assert RDF.Literal.value(lit) != nil
+      end
+    end
+  end
+
+  # Helper for URI validation
+  defp valid_uri?(uri) do
+    String.starts_with?(uri, "http://") or String.starts_with?(uri, "https://")
+  end
 end

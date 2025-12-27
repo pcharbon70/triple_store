@@ -126,4 +126,136 @@ defmodule TripleStore.Benchmark.BSBMTest do
       assert String.contains?(ns, "vocabulary")
     end
   end
+
+  describe "RDF validity" do
+    test "all triples have valid IRI subjects" do
+      graph = BSBM.generate(50, seed: 42)
+
+      for {s, _p, _o} <- RDF.Graph.triples(graph) do
+        assert %RDF.IRI{} = s
+        assert String.starts_with?(to_string(s), "http://")
+      end
+    end
+
+    test "all triples have valid IRI predicates" do
+      graph = BSBM.generate(50, seed: 42)
+
+      for {_s, p, _o} <- RDF.Graph.triples(graph) do
+        assert %RDF.IRI{} = p
+        assert String.starts_with?(to_string(p), "http://")
+      end
+    end
+
+    test "all objects are valid RDF terms" do
+      graph = BSBM.generate(50, seed: 42)
+
+      for {_s, _p, o} <- RDF.Graph.triples(graph) do
+        assert is_struct(o, RDF.IRI) or is_struct(o, RDF.Literal)
+      end
+    end
+
+    test "no blank nodes in generated data" do
+      graph = BSBM.generate(50, seed: 42)
+
+      for {s, _p, o} <- RDF.Graph.triples(graph) do
+        refute is_struct(s, RDF.BlankNode)
+        refute is_struct(o, RDF.BlankNode)
+      end
+    end
+
+    test "all URIs are well-formed" do
+      graph = BSBM.generate(50, seed: 42)
+
+      for {s, p, o} <- RDF.Graph.triples(graph) do
+        assert valid_uri?(to_string(s))
+        assert valid_uri?(to_string(p))
+
+        if is_struct(o, RDF.IRI) do
+          assert valid_uri?(to_string(o))
+        end
+      end
+    end
+
+    test "rdf:type triples use correct namespace" do
+      graph = BSBM.generate(50, seed: 42)
+      rdf_type = RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+
+      type_triples = Enum.filter(RDF.Graph.triples(graph), fn {_, p, _} -> p == rdf_type end)
+
+      # Should have type declarations
+      assert length(type_triples) > 0
+
+      # All type objects should be BSBM classes or ProductType instances
+      for {_, _, o} <- type_triples do
+        assert is_struct(o, RDF.IRI)
+        uri = to_string(o)
+        assert String.contains?(uri, "bsbm") or String.contains?(uri, "Product")
+      end
+    end
+
+    test "literals have appropriate datatypes" do
+      graph = BSBM.generate(50, seed: 42)
+
+      literals =
+        RDF.Graph.triples(graph)
+        |> Enum.map(fn {_, _, o} -> o end)
+        |> Enum.filter(&is_struct(&1, RDF.Literal))
+
+      # Should have some literals (labels, prices, etc.)
+      assert length(literals) > 0
+
+      # Check that literals have values
+      for lit <- literals do
+        assert RDF.Literal.value(lit) != nil
+      end
+    end
+
+    test "date literals are valid" do
+      graph = BSBM.generate(50, seed: 42)
+
+      date_literals =
+        RDF.Graph.triples(graph)
+        |> Enum.map(fn {_, _, o} -> o end)
+        |> Enum.filter(fn o ->
+          is_struct(o, RDF.Literal) and
+            String.contains?(to_string(RDF.Literal.datatype_id(o) || ""), "date")
+        end)
+
+      # Should have date literals (validFrom, validTo, reviewDate)
+      assert length(date_literals) > 0
+
+      # Check date format
+      for lit <- date_literals do
+        value = RDF.Literal.lexical(lit)
+        assert Regex.match?(~r/^\d{4}-\d{2}-\d{2}$/, value)
+      end
+    end
+
+    test "numeric properties have numeric values" do
+      graph = BSBM.generate(50, seed: 42)
+
+      numeric_predicates = [
+        "productPropertyNumeric1",
+        "productPropertyNumeric2",
+        "rating1",
+        "rating2",
+        "price"
+      ]
+
+      for {_s, p, o} <- RDF.Graph.triples(graph) do
+        pred_str = to_string(p)
+
+        if Enum.any?(numeric_predicates, &String.contains?(pred_str, &1)) do
+          assert is_struct(o, RDF.Literal)
+          value = RDF.Literal.value(o)
+          assert is_number(value)
+        end
+      end
+    end
+  end
+
+  # Helper for URI validation
+  defp valid_uri?(uri) do
+    String.starts_with?(uri, "http://") or String.starts_with?(uri, "https://")
+  end
 end

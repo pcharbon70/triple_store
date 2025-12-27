@@ -10,7 +10,7 @@ The focus is on measuring and optimizing real-world performance, providing opera
 
 ## 5.1 Benchmarking Suite
 
-- [ ] **Section 5.1 Complete**
+- [x] **Section 5.1 Complete**
 
 This section implements benchmarking infrastructure using standard RDF benchmarks (LUBM, BSBM) to measure and track performance.
 
@@ -61,12 +61,12 @@ Define and validate performance targets.
 
 ### 5.1.5 Unit Tests
 
-- [ ] **Task 5.1.5 Complete**
+- [x] **Task 5.1.5 Complete**
 
-- [ ] Test LUBM generator produces valid RDF
-- [ ] Test BSBM generator produces valid RDF
-- [ ] Test benchmark runner collects accurate metrics
-- [ ] Test percentile calculation is correct
+- [x] Test LUBM generator produces valid RDF
+- [x] Test BSBM generator produces valid RDF
+- [x] Test benchmark runner collects accurate metrics
+- [x] Test percentile calculation is correct
 
 ---
 

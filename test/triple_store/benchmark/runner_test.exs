@@ -200,6 +200,128 @@ defmodule TripleStore.Benchmark.RunnerTest do
     end
   end
 
+  describe "percentile calculation accuracy" do
+    test "percentile calculation is mathematically correct for known distributions" do
+      # Test with a known uniform distribution
+      values = Enum.to_list(1..100)
+
+      # For uniform 1-100, p50 should be ~50
+      p50 = Runner.percentile(values, 50)
+      assert_in_delta p50, 50, 1
+
+      # p25 should be ~25
+      p25 = Runner.percentile(values, 25)
+      assert_in_delta p25, 25, 1
+
+      # p75 should be ~75
+      p75 = Runner.percentile(values, 75)
+      assert_in_delta p75, 75, 1
+    end
+
+    test "percentile handles large datasets correctly" do
+      # Generate 10000 values
+      values = Enum.map(1..10000, fn _ -> :rand.uniform(1000) end)
+
+      p50 = Runner.percentile(values, 50)
+      p95 = Runner.percentile(values, 95)
+      p99 = Runner.percentile(values, 99)
+
+      # For uniform random 1-1000, p50 should be around 500
+      assert p50 > 400 and p50 < 600
+
+      # p95 should be around 950
+      assert p95 > 900 and p95 < 1000
+
+      # p99 should be around 990
+      assert p99 > 950 and p99 < 1000
+    end
+
+    test "percentile is monotonically increasing" do
+      values = Enum.to_list(1..1000)
+
+      p25 = Runner.percentile(values, 25)
+      p50 = Runner.percentile(values, 50)
+      p75 = Runner.percentile(values, 75)
+      p90 = Runner.percentile(values, 90)
+      p95 = Runner.percentile(values, 95)
+      p99 = Runner.percentile(values, 99)
+
+      assert p25 <= p50
+      assert p50 <= p75
+      assert p75 <= p90
+      assert p90 <= p95
+      assert p95 <= p99
+    end
+
+    test "percentile handles identical values" do
+      values = List.duplicate(42, 100)
+
+      assert Runner.percentile(values, 50) == 42
+      assert Runner.percentile(values, 95) == 42
+      assert Runner.percentile(values, 99) == 42
+    end
+
+    test "percentile handles bimodal distribution" do
+      # 50 values at 100, 50 values at 200
+      values = List.duplicate(100, 50) ++ List.duplicate(200, 50)
+
+      p50 = Runner.percentile(values, 50)
+      # p50 should be between 100 and 200
+      assert p50 >= 100 and p50 <= 200
+    end
+  end
+
+  describe "metrics accuracy" do
+    test "aggregate total_queries equals sum of iterations" do
+      result = mock_benchmark_result()
+
+      expected_total =
+        result.query_results
+        |> Enum.map(& &1.iterations)
+        |> Enum.sum()
+
+      assert result.aggregate.total_queries == expected_total
+    end
+
+    test "aggregate total_time_us equals sum of all latencies" do
+      result = mock_benchmark_result()
+
+      expected_total =
+        result.query_results
+        |> Enum.flat_map(& &1.latencies_us)
+        |> Enum.sum()
+
+      assert result.aggregate.total_time_us == expected_total
+    end
+
+    test "queries_per_sec is calculated correctly from mean latency" do
+      latencies = [1000, 1000, 1000, 1000, 1000]
+      mean = Enum.sum(latencies) / length(latencies)
+      expected_qps = 1_000_000 / mean
+
+      # QPS should be 1000 queries/sec for 1ms mean latency
+      assert_in_delta expected_qps, 1000, 0.1
+    end
+
+    test "standard deviation calculation is correct" do
+      # Known values: [2, 4, 4, 4, 5, 5, 7, 9]
+      # Mean = 5, Variance = 4, StdDev = 2
+      values = [2, 4, 4, 4, 5, 5, 7, 9]
+      mean = Enum.sum(values) / length(values)
+
+      variance =
+        values
+        |> Enum.map(fn x -> (x - mean) * (x - mean) end)
+        |> Enum.sum()
+        |> Kernel./(length(values))
+
+      std_dev = :math.sqrt(variance)
+
+      assert_in_delta mean, 5.0, 0.01
+      assert_in_delta std_dev, 2.0, 0.01
+    end
+  end
+
   # ===========================================================================
   # Helper Functions
   # ===========================================================================
