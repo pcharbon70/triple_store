@@ -550,14 +550,14 @@ Test full materialization on benchmark ontologies.
 
 ### 4.6.2 Incremental Testing
 
-- [ ] **Task 4.6.2 Complete**
+- [x] **Task 4.6.2 Complete**
 
 Test incremental maintenance scenarios.
 
-- [ ] 4.6.2.1 Test add instance -> new type inferences derived
-- [ ] 4.6.2.2 Test delete instance -> dependent inferences retracted
-- [ ] 4.6.2.3 Test delete with alternative derivation preserves fact
-- [ ] 4.6.2.4 Test TBox update triggers rematerialization
+- [x] 4.6.2.1 Test add instance -> new type inferences derived
+- [x] 4.6.2.2 Test delete instance -> dependent inferences retracted
+- [x] 4.6.2.3 Test delete with alternative derivation preserves fact
+- [x] 4.6.2.4 Test TBox update triggers rematerialization
 
 ### 4.6.3 Query with Reasoning Testing
 
