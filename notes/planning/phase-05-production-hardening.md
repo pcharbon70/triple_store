@@ -16,14 +16,14 @@ This section implements benchmarking infrastructure using standard RDF benchmark
 
 ### 5.1.1 Data Generators
 
-- [ ] **Task 5.1.1 Complete**
+- [x] **Task 5.1.1 Complete**
 
 Implement data generators for standard benchmarks.
 
-- [ ] 5.1.1.1 Implement LUBM data generator with configurable scale
-- [ ] 5.1.1.2 Implement BSBM data generator with configurable scale
-- [ ] 5.1.1.3 Support deterministic generation for reproducible benchmarks
-- [ ] 5.1.1.4 Output as RDF.Graph for direct loading
+- [x] 5.1.1.1 Implement LUBM data generator with configurable scale
+- [x] 5.1.1.2 Implement BSBM data generator with configurable scale
+- [x] 5.1.1.3 Support deterministic generation for reproducible benchmarks
+- [x] 5.1.1.4 Output as RDF.Graph for direct loading
 
 ### 5.1.2 Query Templates
 
