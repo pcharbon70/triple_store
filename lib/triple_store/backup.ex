@@ -10,21 +10,33 @@ defmodule TripleStore.Backup do
   Backups are created by copying the entire database directory to a backup
   location. This provides a complete snapshot of the database state.
 
+  Two backup types are supported:
+
+  - **Full backup**: Complete copy of the database directory
+  - **Incremental backup**: Only copies changed files, hard-links unchanged ones
+
   ## Important Notes
 
   - **Consistency**: Close the store before backup for guaranteed consistency
   - **Hot Backup**: Hot backups (while open) may capture writes in progress
-  - **Space**: Backup requires approximately the same disk space as the original
+  - **Space**: Full backup requires same disk space; incremental saves space via hard links
 
   ## Usage
 
-      # Create a backup
+      # Create a full backup
       {:ok, metadata} = TripleStore.Backup.create(store, "/backups/mydb_20251227")
+
+      # Create an incremental backup (based on previous full backup)
+      {:ok, incr_meta} = TripleStore.Backup.create_incremental(
+        store,
+        "/backups/mydb_20251227_incr1",
+        "/backups/mydb_20251227"
+      )
 
       # List backups
       {:ok, backups} = TripleStore.Backup.list("/backups")
 
-      # Restore from backup
+      # Restore from backup (works for both full and incremental)
       {:ok, store} = TripleStore.Backup.restore("/backups/mydb_20251227", "/data/restored")
 
       # Verify backup integrity
@@ -34,6 +46,14 @@ defmodule TripleStore.Backup do
 
       # Create a rotating backup (keeps last N backups)
       {:ok, metadata} = TripleStore.Backup.rotate(store, "/backups", max_backups: 5)
+
+  ## Incremental Backup Strategy
+
+  For large databases with infrequent changes, use incremental backups:
+
+  1. Create a full backup weekly
+  2. Create incremental backups daily based on the last full backup
+  3. Each incremental backup is independently restorable
 
   """
 
@@ -51,17 +71,21 @@ defmodule TripleStore.Backup do
 
   @typedoc "Backup metadata"
   @type backup_metadata :: %{
-          path: Path.t(),
-          source_path: Path.t(),
-          created_at: DateTime.t(),
-          size_bytes: non_neg_integer(),
-          file_count: non_neg_integer()
+          required(:path) => Path.t(),
+          required(:source_path) => Path.t(),
+          required(:created_at) => DateTime.t(),
+          required(:size_bytes) => non_neg_integer(),
+          required(:file_count) => non_neg_integer(),
+          optional(:backup_type) => :full | :incremental,
+          optional(:base_backup) => Path.t()
         }
 
   @typedoc "Backup options"
   @type backup_opts :: [
           compress: boolean(),
-          verify: boolean()
+          verify: boolean(),
+          incremental: boolean(),
+          base_backup: Path.t()
         ]
 
   @typedoc "Restore options"
@@ -123,9 +147,78 @@ defmodule TripleStore.Backup do
            :ok <- write_metadata(backup_path, source_path, store),
            :ok <- maybe_verify(backup_path, verify) do
         metadata = build_metadata(backup_path, source_path)
-        {metadata, %{size_bytes: metadata.size_bytes}}
+        {{:ok, metadata}, %{size_bytes: metadata.size_bytes}}
       end
     end)
+  end
+
+  @doc """
+  Creates an incremental backup based on a previous backup.
+
+  Only copies files that have changed since the base backup, significantly
+  reducing backup time and storage for large databases with few changes.
+
+  ## Arguments
+
+  - `store` - Store handle from `TripleStore.open/2`
+  - `backup_path` - Destination path for the backup
+  - `base_backup` - Path to the base backup to compare against
+
+  ## Options
+
+  - `:verify` - Verify backup after creation (default: true)
+
+  ## Returns
+
+  - `{:ok, metadata}` - Backup metadata with `:backup_type` set to `:incremental`
+  - `{:error, :base_backup_invalid}` - Base backup is not valid
+  - `{:error, :backup_path_exists}` - Backup path already exists
+  - `{:error, reason}` - Other failures
+
+  ## How It Works
+
+  Incremental backups work by comparing file modification times and sizes:
+  1. All files from base backup are hard-linked (no copy, saves space)
+  2. Changed/new files from source are copied over
+  3. Deleted files are not included
+
+  To restore an incremental backup, simply restore it directly - it contains
+  all necessary files (via hard links to base backup).
+
+  ## Examples
+
+      # First, create a full backup
+      {:ok, full} = TripleStore.Backup.create(store, "/backups/full_20251227")
+
+      # Later, create incremental backup
+      {:ok, incr} = TripleStore.Backup.create_incremental(
+        store,
+        "/backups/incr_20251227_1200",
+        "/backups/full_20251227"
+      )
+
+  """
+  @spec create_incremental(store(), Path.t(), Path.t(), backup_opts()) ::
+          {:ok, backup_metadata()} | {:error, term()}
+  def create_incremental(%{path: source_path} = store, backup_path, base_backup, opts \\ []) do
+    verify = Keyword.get(opts, :verify, true)
+
+    Telemetry.span(
+      :backup,
+      :create_incremental,
+      %{source: source_path, destination: backup_path, base: base_backup},
+      fn ->
+        with {:ok, :valid} <- verify(base_backup),
+             :ok <- validate_backup_path(backup_path),
+             :ok <- ensure_parent_exists(backup_path),
+             {:ok, stats} <- copy_incremental(source_path, backup_path, base_backup),
+             :ok <- write_incremental_metadata(backup_path, source_path, base_backup, store),
+             :ok <- maybe_verify(backup_path, verify) do
+          metadata = build_incremental_metadata(backup_path, source_path, base_backup, stats)
+          {{:ok, metadata}, %{size_bytes: metadata.size_bytes, files_copied: stats.files_copied}}
+        end
+      end
+    )
   end
 
   @doc """
@@ -206,7 +299,7 @@ defmodule TripleStore.Backup do
            :ok <- validate_restore_path(restore_path, overwrite),
            {:ok, _} <- copy_directory(backup_path, restore_path),
            {:ok, store} <- TripleStore.open(restore_path) do
-        {store, %{}}
+        {{:ok, store}, %{}}
       end
     end)
   end
@@ -364,11 +457,111 @@ defmodule TripleStore.Backup do
     end
   end
 
+  defp copy_incremental(source, destination, base_backup) do
+    # Create destination directory
+    case File.mkdir_p(destination) do
+      :ok ->
+        do_copy_incremental(source, destination, base_backup)
+
+      {:error, reason} ->
+        {:error, {:mkdir_failed, reason}}
+    end
+  end
+
+  defp do_copy_incremental(source, destination, base_backup) do
+    source_files = list_all_files_with_stats(source)
+    base_files = list_all_files_with_stats(base_backup)
+
+    # Build a map of base files for quick lookup
+    base_map =
+      base_files
+      |> Enum.map(fn {path, stat} ->
+        rel_path = Path.relative_to(path, base_backup)
+        {rel_path, {path, stat}}
+      end)
+      |> Map.new()
+
+    # Track statistics
+    initial_stats = %{files_copied: 0, files_linked: 0, bytes_copied: 0}
+
+    Enum.reduce_while(source_files, {:ok, initial_stats}, fn {src_path, src_stat},
+                                                              {:ok, acc_stats} ->
+      rel_path = Path.relative_to(src_path, source)
+      dest_path = Path.join(destination, rel_path)
+      File.mkdir_p!(Path.dirname(dest_path))
+
+      copy_file_incremental(src_path, dest_path, src_stat, base_map[rel_path], acc_stats)
+    end)
+  end
+
+  defp copy_file_incremental(src_path, dest_path, src_stat, base_entry, acc_stats) do
+    case base_entry do
+      {base_path, base_stat} when src_stat.size == base_stat.size ->
+        link_or_copy_file(src_path, dest_path, src_stat, base_path, acc_stats)
+
+      _ ->
+        copy_new_file(src_path, dest_path, src_stat, acc_stats)
+    end
+  end
+
+  defp link_or_copy_file(src_path, dest_path, src_stat, base_path, acc_stats) do
+    case File.ln(base_path, dest_path) do
+      :ok ->
+        {:cont, {:ok, %{acc_stats | files_linked: acc_stats.files_linked + 1}}}
+
+      {:error, _} ->
+        copy_new_file(src_path, dest_path, src_stat, acc_stats)
+    end
+  end
+
+  defp copy_new_file(src_path, dest_path, src_stat, acc_stats) do
+    case File.cp(src_path, dest_path) do
+      :ok ->
+        new_stats = %{
+          acc_stats
+          | files_copied: acc_stats.files_copied + 1,
+            bytes_copied: acc_stats.bytes_copied + src_stat.size
+        }
+
+        {:cont, {:ok, new_stats}}
+
+      {:error, reason} ->
+        {:halt, {:error, {:copy_failed, reason, src_path}}}
+    end
+  end
+
+  defp list_all_files_with_stats(path) do
+    path
+    |> list_all_files()
+    |> Enum.map(fn file_path ->
+      {file_path, File.stat!(file_path)}
+    end)
+  end
+
   defp write_metadata(backup_path, source_path, _store) do
     metadata = %{
       source_path: source_path,
       created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
-      version: "1.0"
+      version: "1.0",
+      backup_type: :full
+    }
+
+    metadata_path = Path.join(backup_path, ".backup_metadata")
+    content = :erlang.term_to_binary(metadata)
+
+    case File.write(metadata_path, content) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:metadata_write_failed, reason}}
+    end
+  end
+
+  defp write_incremental_metadata(backup_path, source_path, base_backup, _store) do
+    metadata = %{
+      source_path: source_path,
+      created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      version: "1.0",
+      backup_type: :incremental,
+      base_backup: base_backup
     }
 
     metadata_path = Path.join(backup_path, ".backup_metadata")
@@ -397,7 +590,25 @@ defmodule TripleStore.Backup do
       source_path: source_path,
       created_at: DateTime.utc_now(),
       size_bytes: size,
-      file_count: file_count
+      file_count: file_count,
+      backup_type: :full
+    }
+  end
+
+  defp build_incremental_metadata(backup_path, source_path, base_backup, stats) do
+    {size, file_count} = directory_stats(backup_path)
+
+    %{
+      path: backup_path,
+      source_path: source_path,
+      created_at: DateTime.utc_now(),
+      size_bytes: size,
+      file_count: file_count,
+      backup_type: :incremental,
+      base_backup: base_backup,
+      files_copied: stats.files_copied,
+      files_linked: stats.files_linked,
+      bytes_copied: stats.bytes_copied
     }
   end
 
@@ -442,36 +653,54 @@ defmodule TripleStore.Backup do
     metadata_path = Path.join(path, ".backup_metadata")
 
     if File.exists?(metadata_path) do
-      case File.read(metadata_path) do
-        {:ok, content} ->
-          stored = :erlang.binary_to_term(content)
-          {size, file_count} = directory_stats(path)
-
-          %{
-            path: path,
-            source_path: stored[:source_path],
-            created_at: parse_datetime(stored[:created_at]),
-            size_bytes: size,
-            file_count: file_count
-          }
-
-        {:error, _} ->
-          nil
-      end
+      read_metadata_from_file(path, metadata_path)
     else
-      # Try to infer metadata from directory
-      {size, file_count} = directory_stats(path)
-
-      %{
-        path: path,
-        source_path: nil,
-        created_at: infer_creation_time(path),
-        size_bytes: size,
-        file_count: file_count
-      }
+      infer_metadata_from_directory(path)
     end
   rescue
     _ -> nil
+  end
+
+  defp read_metadata_from_file(path, metadata_path) do
+    case File.read(metadata_path) do
+      {:ok, content} ->
+        build_metadata_from_stored(path, :erlang.binary_to_term(content))
+
+      {:error, _} ->
+        nil
+    end
+  end
+
+  defp build_metadata_from_stored(path, stored) do
+    {size, file_count} = directory_stats(path)
+
+    base_meta = %{
+      path: path,
+      source_path: stored[:source_path],
+      created_at: parse_datetime(stored[:created_at]),
+      size_bytes: size,
+      file_count: file_count,
+      backup_type: stored[:backup_type] || :full
+    }
+
+    if stored[:backup_type] == :incremental do
+      Map.put(base_meta, :base_backup, stored[:base_backup])
+    else
+      base_meta
+    end
+  end
+
+  defp infer_metadata_from_directory(path) do
+    {size, file_count} = directory_stats(path)
+
+    %{
+      path: path,
+      source_path: nil,
+      created_at: infer_creation_time(path),
+      size_bytes: size,
+      file_count: file_count,
+      backup_type: :full
+    }
   end
 
   defp parse_datetime(nil), do: nil

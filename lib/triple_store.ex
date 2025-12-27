@@ -165,7 +165,7 @@ defmodule TripleStore do
           path: path
         }
 
-        {store, %{}}
+        {{:ok, store}, %{}}
       end
     end)
   end

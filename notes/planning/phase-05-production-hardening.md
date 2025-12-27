@@ -249,45 +249,45 @@ This section implements backup and restore functionality using RocksDB checkpoin
 
 ### 5.5.1 Checkpoint Backup
 
-- [ ] **Task 5.5.1 Complete**
+- [x] **Task 5.5.1 Complete**
 
 Implement backup via RocksDB checkpoints.
 
-- [ ] 5.5.1.1 Implement `TripleStore.backup(db, path)` creating checkpoint
-- [ ] 5.5.1.2 Support incremental backups if possible
-- [ ] 5.5.1.3 Validate checkpoint integrity after creation
-- [ ] 5.5.1.4 Return backup metadata (size, timestamp)
+- [x] 5.5.1.1 Implement `TripleStore.backup(db, path)` creating checkpoint
+- [x] 5.5.1.2 Support incremental backups if possible
+- [x] 5.5.1.3 Validate checkpoint integrity after creation
+- [x] 5.5.1.4 Return backup metadata (size, timestamp)
 
 ### 5.5.2 Restore
 
-- [ ] **Task 5.5.2 Complete**
+- [x] **Task 5.5.2 Complete**
 
 Implement restore from backup.
 
-- [ ] 5.5.2.1 Implement `TripleStore.restore(backup_path, target_path)`
-- [ ] 5.5.2.2 Validate backup before restore
-- [ ] 5.5.2.3 Support restore to different location
+- [x] 5.5.2.1 Implement `TripleStore.restore(backup_path, target_path)`
+- [x] 5.5.2.2 Validate backup before restore
+- [x] 5.5.2.3 Support restore to different location
 - [ ] 5.5.2.4 Handle atomics counter restoration
 
 ### 5.5.3 Scheduled Backups
 
-- [ ] **Task 5.5.3 Complete**
+- [ ] **Task 5.5.3 Complete** (Partial - rotation implemented, scheduling deferred)
 
 Support scheduled periodic backups.
 
-- [ ] 5.5.3.1 Implement `TripleStore.schedule_backup(db, interval, path)`
-- [ ] 5.5.3.2 Implement backup rotation (keep N most recent)
-- [ ] 5.5.3.3 Report backup status via telemetry
-- [ ] 5.5.3.4 Handle backup failures gracefully
+- [ ] 5.5.3.1 Implement `TripleStore.schedule_backup(db, interval, path)` (deferred)
+- [x] 5.5.3.2 Implement backup rotation (keep N most recent)
+- [x] 5.5.3.3 Report backup status via telemetry
+- [x] 5.5.3.4 Handle backup failures gracefully
 
 ### 5.5.4 Unit Tests
 
-- [ ] **Task 5.5.4 Complete**
+- [x] **Task 5.5.4 Complete**
 
-- [ ] Test backup creates valid checkpoint
-- [ ] Test restore produces identical database
-- [ ] Test scheduled backup runs at interval
-- [ ] Test backup rotation deletes old backups
+- [x] Test backup creates valid checkpoint
+- [x] Test restore produces identical database
+- [ ] Test scheduled backup runs at interval (deferred with 5.5.3.1)
+- [x] Test backup rotation deletes old backups
 
 ---
 
