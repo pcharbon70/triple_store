@@ -539,14 +539,14 @@ Integration tests validate the complete reasoning subsystem with realistic ontol
 
 ### 4.6.1 Materialization Testing
 
-- [ ] **Task 4.6.1 Complete**
+- [x] **Task 4.6.1 Complete**
 
 Test full materialization on benchmark ontologies.
 
-- [ ] 4.6.1.1 Test materialization on LUBM(1) dataset
-- [ ] 4.6.1.2 Verify query results match expected inference closure
-- [ ] 4.6.1.3 Benchmark: LUBM(1) materialization <60 seconds
-- [ ] 4.6.1.4 Test parallel materialization shows linear speedup
+- [x] 4.6.1.1 Test materialization on LUBM(1) dataset
+- [x] 4.6.1.2 Verify query results match expected inference closure
+- [x] 4.6.1.3 Benchmark: LUBM(1) materialization <60 seconds
+- [x] 4.6.1.4 Test parallel materialization shows linear speedup
 
 ### 4.6.2 Incremental Testing
 
