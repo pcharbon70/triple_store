@@ -38,15 +38,15 @@ Implement standard benchmark query templates.
 
 ### 5.1.3 Benchmark Runner
 
-- [ ] **Task 5.1.3 Complete**
+- [x] **Task 5.1.3 Complete**
 
 Implement benchmark execution infrastructure.
 
-- [ ] 5.1.3.1 Implement `Benchmark.run(db, benchmark, opts)` entry point
-- [ ] 5.1.3.2 Support warmup iterations before measurement
-- [ ] 5.1.3.3 Collect latency percentiles (p50, p95, p99)
-- [ ] 5.1.3.4 Collect throughput metrics (queries/sec, triples/sec)
-- [ ] 5.1.3.5 Output results in structured format (JSON, CSV)
+- [x] 5.1.3.1 Implement `Benchmark.run(db, benchmark, opts)` entry point
+- [x] 5.1.3.2 Support warmup iterations before measurement
+- [x] 5.1.3.3 Collect latency percentiles (p50, p95, p99)
+- [x] 5.1.3.4 Collect throughput metrics (queries/sec, triples/sec)
+- [x] 5.1.3.5 Output results in structured format (JSON, CSV)
 
 ### 5.1.4 Performance Targets
 
