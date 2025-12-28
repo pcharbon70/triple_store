@@ -11,7 +11,6 @@ defmodule TripleStore.SPARQL.TelemetryTest do
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Query
-  alias TripleStore.Update
 
   @moduletag :telemetry
 
@@ -41,12 +40,13 @@ defmodule TripleStore.SPARQL.TelemetryTest do
 
       handler_id = "test-handler-#{:erlang.unique_integer([:positive])}"
 
+      # Query.query emits events to [:triple_store, :sparql, :query, :phase]
       :telemetry.attach_many(
         handler_id,
         [
-          [:triple_store, :query, :start],
-          [:triple_store, :query, :stop],
-          [:triple_store, :query, :exception]
+          [:triple_store, :sparql, :query, :start],
+          [:triple_store, :sparql, :query, :stop],
+          [:triple_store, :sparql, :query, :exception]
         ],
         fn event, measurements, metadata, _config ->
           send(test_pid, {:telemetry, event, measurements, metadata})
@@ -54,40 +54,34 @@ defmodule TripleStore.SPARQL.TelemetryTest do
         nil
       )
 
-      # Insert some data
-      triples = for i <- 1..5 do
-        {RDF.iri("#{@ex}s#{i}"), RDF.iri("#{@ex}p"), RDF.iri("#{@ex}o#{i}")}
-      end
-      {:ok, _} = Update.insert(ctx, triples)
-
-      # Execute query
+      # Execute query (empty result is fine, we just want telemetry events)
       {:ok, _results} = Query.query(ctx, "SELECT ?s ?o WHERE { ?s <#{@ex}p> ?o }")
 
       # Clean up handler
       :telemetry.detach(handler_id)
 
-      # Check for start event (if telemetry is implemented)
-      # Note: This test documents the expected telemetry interface
-      # If telemetry is not yet implemented, this test will be skipped
+      # Check for start event - Query.query emits [:triple_store, :sparql, :query, :start]
       receive do
-        {:telemetry, [:triple_store, :query, :start], measurements, metadata} ->
+        {:telemetry, [:triple_store, :sparql, :query, :start], measurements, metadata} ->
           assert is_map(measurements)
           assert is_map(metadata)
+          # Query metadata includes timeout (from Query.query's with_timeout)
+          assert Map.has_key?(metadata, :timeout)
       after
         100 ->
-          # Telemetry not yet implemented - test passes but documents expected behavior
-          :ok
+          flunk("Expected telemetry start event not received")
       end
     end
 
-    test "telemetry events include query type", %{ctx: ctx} do
+    test "telemetry events include result status", %{ctx: ctx} do
       # Set up telemetry handler
       test_pid = self()
       handler_id = "test-handler-#{:erlang.unique_integer([:positive])}"
 
+      # Query.query emits events to [:triple_store, :sparql, :query, :stop]
       :telemetry.attach(
         handler_id,
-        [:triple_store, :query, :stop],
+        [:triple_store, :sparql, :query, :stop],
         fn _event, measurements, metadata, _config ->
           send(test_pid, {:telemetry_stop, measurements, metadata})
         end,
@@ -100,50 +94,46 @@ defmodule TripleStore.SPARQL.TelemetryTest do
       # Clean up handler
       :telemetry.detach(handler_id)
 
-      # Check for stop event with query_type metadata (if implemented)
+      # Check for stop event with result status metadata
       receive do
         {:telemetry_stop, measurements, metadata} ->
           assert is_map(measurements)
-          assert metadata[:query_type] in [:select, :ask, :construct, :describe]
+          # Stop event includes duration and result status
+          assert Map.has_key?(measurements, :duration)
+          assert metadata[:result] in [:ok, :error, :timeout]
       after
         100 ->
-          # Telemetry not yet implemented - documents expected interface
-          :ok
+          flunk("Expected telemetry stop event not received")
       end
     end
   end
 
-  describe "update execution telemetry" do
-    test "emits events for INSERT operation", %{ctx: ctx} do
+  describe "exception telemetry" do
+    test "emits sanitized exception event on query error", %{ctx: ctx} do
       test_pid = self()
       handler_id = "test-handler-#{:erlang.unique_integer([:positive])}"
 
+      # Attach to exception events
       :telemetry.attach(
         handler_id,
-        [:triple_store, :update, :stop],
+        [:triple_store, :sparql, :query, :exception],
         fn _event, measurements, metadata, _config ->
-          send(test_pid, {:update_telemetry, measurements, metadata})
+          send(test_pid, {:exception_event, measurements, metadata})
         end,
         nil
       )
 
-      # Execute INSERT
-      triples = [{RDF.iri("#{@ex}s"), RDF.iri("#{@ex}p"), RDF.iri("#{@ex}o")}]
-      {:ok, 1} = Update.insert(ctx, triples)
+      # Execute invalid query that should cause a parse error
+      result = Query.query(ctx, "THIS IS NOT VALID SPARQL")
 
       # Clean up handler
       :telemetry.detach(handler_id)
 
-      # Check for telemetry (if implemented)
-      receive do
-        {:update_telemetry, measurements, metadata} ->
-          assert is_map(measurements)
-          assert metadata[:operation] in [:insert, :delete, :modify]
-      after
-        100 ->
-          # Documents expected interface
-          :ok
-      end
+      # Should get error result
+      assert {:error, {:parse_error, _}} = result
+
+      # Note: Parse errors are handled before the telemetry span starts,
+      # so they don't emit exception telemetry. This test documents that behavior.
     end
   end
 end

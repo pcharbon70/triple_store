@@ -203,15 +203,15 @@ defmodule TripleStore.Metrics do
 
     state = initial_state(buckets)
 
-    # Attach telemetry handlers
-    attach_handlers()
+    # Attach telemetry handlers using shared utility
+    handlers = TripleStore.Telemetry.attach_metrics_handlers(self(), "triple_store_metrics_#{inspect(self())}")
 
-    {:ok, state}
+    {:ok, Map.put(state, :handlers, handlers)}
   end
 
   @impl true
-  def terminate(_reason, _state) do
-    detach_handlers()
+  def terminate(_reason, state) do
+    TripleStore.Telemetry.detach_metrics_handlers(Map.get(state, :handlers, []))
     :ok
   end
 
@@ -257,117 +257,6 @@ defmodule TripleStore.Metrics do
   def handle_info({:telemetry_event, event, measurements, metadata}, state) do
     state = handle_telemetry_event(event, measurements, metadata, state)
     {:noreply, state}
-  end
-
-  # ===========================================================================
-  # Telemetry Handlers
-  # ===========================================================================
-
-  defp attach_handlers do
-    pid = self()
-
-    # Query events
-    :telemetry.attach(
-      handler_id(:query_execute),
-      [:triple_store, :query, :execute, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Insert events
-    :telemetry.attach(
-      handler_id(:insert),
-      [:triple_store, :insert, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Delete events
-    :telemetry.attach(
-      handler_id(:delete),
-      [:triple_store, :delete, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Load events (for insert throughput)
-    :telemetry.attach(
-      handler_id(:load),
-      [:triple_store, :load, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Cache hit events
-    :telemetry.attach_many(
-      handler_id(:cache_hit),
-      [
-        [:triple_store, :cache, :plan, :hit],
-        [:triple_store, :cache, :query, :hit],
-        [:triple_store, :cache, :stats, :hit]
-      ],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Cache miss events
-    :telemetry.attach_many(
-      handler_id(:cache_miss),
-      [
-        [:triple_store, :cache, :plan, :miss],
-        [:triple_store, :cache, :query, :miss],
-        [:triple_store, :cache, :stats, :miss]
-      ],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Reasoner materialization events
-    :telemetry.attach(
-      handler_id(:materialize),
-      [:triple_store, :reasoner, :materialize, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Reasoner iteration events
-    :telemetry.attach(
-      handler_id(:iteration),
-      [:triple_store, :reasoner, :materialize, :iteration],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-  end
-
-  defp detach_handlers do
-    :telemetry.detach(handler_id(:query_execute))
-    :telemetry.detach(handler_id(:insert))
-    :telemetry.detach(handler_id(:delete))
-    :telemetry.detach(handler_id(:load))
-    :telemetry.detach(handler_id(:cache_hit))
-    :telemetry.detach(handler_id(:cache_miss))
-    :telemetry.detach(handler_id(:materialize))
-    :telemetry.detach(handler_id(:iteration))
-  end
-
-  defp handler_id(suffix) do
-    "triple_store_metrics_#{inspect(self())}_#{suffix}"
   end
 
   # ===========================================================================
@@ -421,17 +310,9 @@ defmodule TripleStore.Metrics do
     state
   end
 
+  # Use shared duration extraction utility from Telemetry module
   defp get_duration_ms(measurements) do
-    cond do
-      Map.has_key?(measurements, :duration_ms) ->
-        measurements.duration_ms
-
-      Map.has_key?(measurements, :duration) ->
-        System.convert_time_unit(measurements.duration, :native, :millisecond)
-
-      true ->
-        0
-    end
+    TripleStore.Telemetry.duration_ms(measurements)
   end
 
   # ===========================================================================

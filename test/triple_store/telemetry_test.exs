@@ -228,8 +228,11 @@ defmodule TripleStore.TelemetryTest do
       assert_receive {:telemetry, [:triple_store, :test, :failing, :exception], measurements, metadata}
       assert is_integer(measurements.duration)
       assert metadata.kind == :error
-      assert %RuntimeError{message: "test error"} = metadata.reason
-      assert is_list(metadata.stacktrace)
+      # Exception telemetry is sanitized - no raw exception or stacktrace
+      # Only type, message, and stacktrace depth are included for security
+      assert metadata.exception_type == RuntimeError
+      assert metadata.exception_message == "test error"
+      assert is_integer(metadata.stacktrace_depth)
     end
 
     test "supports extra metadata in stop event" do

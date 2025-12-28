@@ -259,7 +259,11 @@ defmodule TripleStore.Reasoner.TelemetryTest do
       assert event == [:triple_store, :reasoner, :test_event, :exception]
       assert is_integer(measurements.duration)
       assert metadata.kind == :error
-      assert %RuntimeError{} = metadata.reason
+      # Exception telemetry is sanitized - no raw exception or stacktrace
+      # Only type, message, and stacktrace depth are included for security
+      assert metadata.exception_type == RuntimeError
+      assert metadata.exception_message == "test error"
+      assert is_integer(metadata.stacktrace_depth)
     end
   end
 end

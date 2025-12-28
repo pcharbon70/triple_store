@@ -246,7 +246,10 @@ defmodule TripleStore do
   def query(%{db: db, dict_manager: dict_manager}, sparql, opts \\ []) do
     ctx = %{db: db, dict_manager: dict_manager}
 
-    Telemetry.span(:query, :execute, %{sparql: sparql}, fn ->
+    # Sanitize query for telemetry - don't expose raw SPARQL which may contain sensitive data
+    telemetry_metadata = Telemetry.sanitize_query(sparql)
+
+    Telemetry.span(:query, :execute, telemetry_metadata, fn ->
       case Query.query(ctx, sparql, opts) do
         {:ok, result} ->
           {result, %{result_type: result_type(result)}}

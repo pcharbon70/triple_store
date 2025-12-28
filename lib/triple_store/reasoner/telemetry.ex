@@ -216,16 +216,23 @@ defmodule TripleStore.Reasoner.Telemetry do
 
   @doc """
   Emits an exception event.
+
+  The exception is sanitized to prevent sensitive information exposure.
+  Only the exception type, message, and stacktrace depth are included.
   """
   @spec emit_exception([atom()], integer(), map(), Exception.t(), Exception.stacktrace()) :: :ok
   def emit_exception(event, duration, metadata, exception, stacktrace) do
+    # Sanitize exception to prevent sensitive data exposure
+    sanitized = TripleStore.Telemetry.sanitize_exception(exception, stacktrace)
+
     :telemetry.execute(
       event ++ [:exception],
       %{duration: duration},
       Map.merge(metadata, %{
         kind: :error,
-        reason: exception,
-        stacktrace: stacktrace
+        exception_type: sanitized.exception_type,
+        exception_message: sanitized.exception_message,
+        stacktrace_depth: sanitized.stacktrace_depth
       })
     )
   end

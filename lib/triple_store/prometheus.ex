@@ -62,6 +62,25 @@ defmodule TripleStore.Prometheus do
   - `triple_store_triples` - Current triple count (gauge)
   - `triple_store_memory_bytes` - Estimated memory usage (gauge)
 
+  ## Security Considerations
+
+  The `/metrics` endpoint should be protected in production environments:
+
+  1. **Network Isolation**: Expose metrics only on internal networks or localhost
+  2. **Authentication**: Use HTTP Basic Auth or a reverse proxy with authentication
+  3. **Rate Limiting**: Consider rate limiting to prevent DoS via expensive gauge updates
+  4. **TLS**: Use HTTPS in production environments
+
+  Example with authentication (using Plug.BasicAuth):
+
+      plug Plug.BasicAuth, username: System.get_env("METRICS_USER"),
+                           password: System.get_env("METRICS_PASS")
+
+      get "/metrics" do
+        metrics = TripleStore.Prometheus.format()
+        send_resp(conn, 200, metrics)
+      end
+
   """
 
   use GenServer
@@ -309,21 +328,23 @@ defmodule TripleStore.Prometheus do
   def init(opts) do
     buckets = Keyword.get(opts, :buckets, @default_buckets)
 
+    # Attach telemetry handlers using shared utility
+    handlers = TripleStore.Telemetry.attach_metrics_handlers(self(), "triple_store_prometheus_#{inspect(self())}")
+
     state = %{
       buckets: buckets,
       counters: initial_counters(),
       histograms: initial_histograms(buckets),
-      gauges: initial_gauges()
+      gauges: initial_gauges(),
+      handlers: handlers
     }
-
-    attach_handlers()
 
     {:ok, state}
   end
 
   @impl true
-  def terminate(_reason, _state) do
-    detach_handlers()
+  def terminate(_reason, state) do
+    TripleStore.Telemetry.detach_metrics_handlers(Map.get(state, :handlers, []))
     :ok
   end
 
@@ -366,116 +387,6 @@ defmodule TripleStore.Prometheus do
   def handle_info({:telemetry_event, event, measurements, metadata}, state) do
     state = handle_telemetry_event(event, measurements, metadata, state)
     {:noreply, state}
-  end
-
-  # ===========================================================================
-  # Telemetry Handlers
-  # ===========================================================================
-
-  defp attach_handlers do
-    pid = self()
-
-    # Query events
-    :telemetry.attach(
-      handler_id(:query_stop),
-      [:triple_store, :query, :execute, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    :telemetry.attach(
-      handler_id(:query_exception),
-      [:triple_store, :query, :execute, :exception],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Insert events
-    :telemetry.attach(
-      handler_id(:insert_stop),
-      [:triple_store, :insert, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Delete events
-    :telemetry.attach(
-      handler_id(:delete_stop),
-      [:triple_store, :delete, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Load events
-    :telemetry.attach(
-      handler_id(:load_stop),
-      [:triple_store, :load, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Cache hit events
-    :telemetry.attach_many(
-      handler_id(:cache_hit),
-      [
-        [:triple_store, :cache, :plan, :hit],
-        [:triple_store, :cache, :query, :hit],
-        [:triple_store, :cache, :stats, :hit]
-      ],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Cache miss events
-    :telemetry.attach_many(
-      handler_id(:cache_miss),
-      [
-        [:triple_store, :cache, :plan, :miss],
-        [:triple_store, :cache, :query, :miss],
-        [:triple_store, :cache, :stats, :miss]
-      ],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-
-    # Reasoning events
-    :telemetry.attach(
-      handler_id(:materialize_stop),
-      [:triple_store, :reasoner, :materialize, :stop],
-      fn event, measurements, metadata, _config ->
-        send(pid, {:telemetry_event, event, measurements, metadata})
-      end,
-      nil
-    )
-  end
-
-  defp detach_handlers do
-    :telemetry.detach(handler_id(:query_stop))
-    :telemetry.detach(handler_id(:query_exception))
-    :telemetry.detach(handler_id(:insert_stop))
-    :telemetry.detach(handler_id(:delete_stop))
-    :telemetry.detach(handler_id(:load_stop))
-    :telemetry.detach(handler_id(:cache_hit))
-    :telemetry.detach(handler_id(:cache_miss))
-    :telemetry.detach(handler_id(:materialize_stop))
-  end
-
-  defp handler_id(suffix) do
-    "triple_store_prometheus_#{inspect(self())}_#{suffix}"
   end
 
   # ===========================================================================
@@ -543,17 +454,9 @@ defmodule TripleStore.Prometheus do
     state
   end
 
+  # Use shared duration extraction utility from Telemetry module
   defp get_duration_seconds(measurements) do
-    cond do
-      Map.has_key?(measurements, :duration_ms) ->
-        measurements.duration_ms / 1000.0
-
-      Map.has_key?(measurements, :duration) ->
-        System.convert_time_unit(measurements.duration, :native, :microsecond) / 1_000_000.0
-
-      true ->
-        0.0
-    end
+    TripleStore.Telemetry.duration_seconds(measurements)
   end
 
   # ===========================================================================
@@ -727,7 +630,8 @@ defmodule TripleStore.Prometheus do
 
     values =
       Enum.map(labels_map, fn {label_value, count} ->
-        "#{name}{#{label_name}=\"#{label_value}\"} #{count}"
+        escaped_value = escape_label_value(label_value)
+        "#{name}{#{label_name}=\"#{escaped_value}\"} #{count}"
       end)
 
     header ++ values
@@ -777,7 +681,8 @@ defmodule TripleStore.Prometheus do
 
     values =
       Enum.map(labels_map, fn {label_value, value} ->
-        "#{name}{#{label_name}=\"#{label_value}\"} #{value}"
+        escaped_value = escape_label_value(label_value)
+        "#{name}{#{label_name}=\"#{escaped_value}\"} #{value}"
       end)
 
     header ++ values
@@ -789,5 +694,22 @@ defmodule TripleStore.Prometheus do
 
   defp format_float(i) when is_integer(i) do
     "#{i}.0"
+  end
+
+  # Escape label values per Prometheus text format specification:
+  # - Backslash, double-quote, and newline must be escaped
+  defp escape_label_value(value) when is_atom(value) do
+    escape_label_value(Atom.to_string(value))
+  end
+
+  defp escape_label_value(value) when is_binary(value) do
+    value
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+    |> String.replace("\n", "\\n")
+  end
+
+  defp escape_label_value(value) do
+    escape_label_value(to_string(value))
   end
 end

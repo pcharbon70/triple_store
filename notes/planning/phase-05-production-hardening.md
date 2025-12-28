@@ -274,6 +274,27 @@ Note: All telemetry-related tests are covered across Tasks 5.4.1-5.4.4:
 - Task 5.4.4: 25 Prometheus tests
 Total: 107 tests for Section 5.4
 
+### Section 5.4 Review Fixes
+
+- [x] **Review Fixes Complete** (2025-12-28)
+
+Applied fixes from comprehensive review (`notes/reviews/section-5.4-telemetry-integration-review.md`):
+
+**Blockers Fixed:**
+1. SPARQL query sanitization (security) - Added `sanitize_query/2` to prevent PII exposure
+2. Exception sanitization (security) - Added `sanitize_exception/2` to prevent stacktrace exposure
+3. Shared handler attachment - Extracted common code to `attach_metrics_handlers/2`
+4. Shared duration extraction - Added `duration_ms/1` and `duration_seconds/1`
+5. SPARQL telemetry test fixes - Corrected event names and assertions
+
+**Concerns Addressed:**
+- Handler ID collision prevention via state tracking
+- Prometheus label value escaping for security
+- Security documentation for metrics endpoint
+- Compaction status limitation documentation
+
+See `notes/summaries/section-5.4-review-fixes.md` for full details.
+
 ---
 
 ## 5.5 Backup and Restore

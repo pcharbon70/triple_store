@@ -459,15 +459,22 @@ defmodule TripleStore.Health do
   @doc """
   Returns compaction status.
 
-  Since RocksDB compaction status isn't directly exposed through our NIF,
-  this provides estimated values based on available metrics.
+  ## Current Limitation
+
+  This function currently returns static default values. Actual compaction
+  monitoring requires additional RocksDB NIF bindings for:
+  - `rocksdb.compaction-pending`
+  - `rocksdb.num-running-compactions`
+  - `rocksdb.estimate-pending-compaction-bytes`
+
+  These bindings may be added in a future release.
 
   ## Returns
 
   Map with compaction information:
-  - `:running` - Whether compaction is currently running
-  - `:pending_bytes` - Estimated pending compaction bytes
-  - `:pending_compactions` - Estimated number of pending compactions
+  - `:running` - Whether compaction is currently running (always `false`)
+  - `:pending_bytes` - Estimated pending compaction bytes (always `0`)
+  - `:pending_compactions` - Estimated number of pending compactions (always `0`)
 
   ## Examples
 
@@ -477,14 +484,7 @@ defmodule TripleStore.Health do
   """
   @spec get_compaction_status() :: compaction_status()
   def get_compaction_status do
-    # RocksDB compaction runs in background threads
-    # We can't directly observe it without additional NIF support
-    # For now, return default values indicating healthy state
-    # Future: Add NIF bindings for rocksdb::DB::GetProperty() with:
-    #   - rocksdb.compaction-pending
-    #   - rocksdb.num-running-compactions
-    #   - rocksdb.estimate-pending-compaction-bytes
-
+    # Static values until RocksDB property bindings are implemented
     %{
       running: false,
       pending_bytes: 0,

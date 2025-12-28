@@ -1266,11 +1266,13 @@ defmodule TripleStore.SPARQL.Query do
     result
   rescue
     e ->
-      # S1: Telemetry exception event
+      # S1: Telemetry exception event (sanitized - no stacktrace exposure)
+      sanitized = TripleStore.Telemetry.sanitize_exception(e, __STACKTRACE__)
+
       :telemetry.execute(
         [:triple_store, :sparql, :query, :exception],
         %{system_time: System.system_time()},
-        %{exception: e.__struct__, message: Exception.message(e)}
+        sanitized
       )
 
       {:error, {:exception, e.__struct__, Exception.message(e)}}
