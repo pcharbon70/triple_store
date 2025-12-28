@@ -139,14 +139,14 @@ This section implements result caching for frequently executed queries, with int
 
 ### 5.3.1 Result Cache
 
-- [ ] **Task 5.3.1 Complete**
+- [x] **Task 5.3.1 Complete**
 
 Implement query result caching.
 
-- [ ] 5.3.1.1 Create `TripleStore.Query.Cache` GenServer with ETS backend
-- [ ] 5.3.1.2 Cache results keyed by query hash
-- [ ] 5.3.1.3 Limit cache size with configurable max entries
-- [ ] 5.3.1.4 Skip caching for large result sets
+- [x] 5.3.1.1 Create `TripleStore.Query.Cache` GenServer with ETS backend
+- [x] 5.3.1.2 Cache results keyed by query hash
+- [x] 5.3.1.3 Limit cache size with configurable max entries
+- [x] 5.3.1.4 Skip caching for large result sets
 
 ### 5.3.2 Cache Invalidation
 
