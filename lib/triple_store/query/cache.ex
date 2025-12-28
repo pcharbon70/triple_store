@@ -103,8 +103,18 @@ defmodule TripleStore.Query.Cache do
           max_entries: pos_integer(),
           max_result_size: pos_integer(),
           ttl_ms: pos_integer() | nil,
-          name: atom()
+          name: atom(),
+          persistence_path: String.t() | nil,
+          warm_on_start: boolean()
         ]
+
+  @typedoc "Persistable cache entry (for disk storage)"
+  @type persistable_entry :: %{
+          key: cache_key(),
+          result: term(),
+          result_size: non_neg_integer(),
+          predicates: [term()]
+        }
 
   # ===========================================================================
   # Constants
@@ -371,6 +381,127 @@ defmodule TripleStore.Query.Cache do
   end
 
   # ===========================================================================
+  # Cache Warming API
+  # ===========================================================================
+
+  @doc """
+  Persists the current cache contents to disk.
+
+  Saves all cached entries to the specified file path. The cache can later
+  be restored from this file using `warm_from_file/2` or by starting with
+  `warm_on_start: true`.
+
+  ## Arguments
+
+  - `path` - File path to write the cache data
+  - `opts` - Options including `:name` for the cache process
+
+  ## Returns
+
+  - `{:ok, count}` - Number of entries persisted
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      {:ok, 42} = Query.Cache.persist_to_file("/var/cache/query_cache.bin")
+
+  """
+  @spec persist_to_file(String.t(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def persist_to_file(path, opts \\ []) do
+    name = Keyword.get(opts, :name, @default_name)
+    GenServer.call(name, {:persist_to_file, path})
+  end
+
+  @doc """
+  Warms the cache from a previously persisted file.
+
+  Loads cached entries from disk and populates the cache. This is useful
+  for restoring cache state after a restart.
+
+  ## Arguments
+
+  - `path` - File path to read the cache data from
+  - `opts` - Options including `:name` for the cache process
+
+  ## Returns
+
+  - `{:ok, count}` - Number of entries loaded
+  - `{:error, reason}` - On failure (file not found, corrupt data, etc.)
+
+  ## Examples
+
+      {:ok, 42} = Query.Cache.warm_from_file("/var/cache/query_cache.bin")
+
+  """
+  @spec warm_from_file(String.t(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def warm_from_file(path, opts \\ []) do
+    name = Keyword.get(opts, :name, @default_name)
+    GenServer.call(name, {:warm_from_file, path})
+  end
+
+  @doc """
+  Pre-executes a list of queries to warm the cache.
+
+  Executes each query using the provided execute function and caches
+  the results. This is useful for pre-warming the cache with known
+  frequent queries.
+
+  ## Arguments
+
+  - `queries` - List of `{query, execute_fn, opts}` tuples where:
+    - `query` - The query to cache
+    - `execute_fn` - Function that returns `{:ok, result}` or `{:error, reason}`
+    - `opts` - Options for the cache entry (e.g., `:predicates`)
+  - `opts` - Options including `:name` for the cache process
+
+  ## Returns
+
+  - `{:ok, %{cached: count, failed: count}}` - Summary of warming results
+
+  ## Examples
+
+      queries = [
+        {"SELECT ?s WHERE { ?s a <Person> }", fn -> execute_query(...) end, []},
+        {"SELECT ?name WHERE { ?s <name> ?name }", fn -> execute_query(...) end, []}
+      ]
+      {:ok, %{cached: 2, failed: 0}} = Query.Cache.warm_queries(queries)
+
+  """
+  @spec warm_queries([{term(), (-> {:ok, term()} | {:error, term()}), keyword()}], keyword()) ::
+          {:ok, %{cached: non_neg_integer(), failed: non_neg_integer()}}
+  def warm_queries(queries, opts \\ []) do
+    name = Keyword.get(opts, :name, @default_name)
+
+    results =
+      Enum.map(queries, fn {query, execute_fn, query_opts} ->
+        case get_or_execute(query, execute_fn, Keyword.merge(query_opts, name: name)) do
+          {:ok, _result} -> :cached
+          {:error, _reason} -> :failed
+        end
+      end)
+
+    cached = Enum.count(results, &(&1 == :cached))
+    failed = Enum.count(results, &(&1 == :failed))
+
+    {:ok, %{cached: cached, failed: failed}}
+  end
+
+  @doc """
+  Returns all cache entries in a format suitable for persistence.
+
+  This is useful for manual cache management or custom persistence strategies.
+
+  ## Returns
+
+  List of persistable entry maps with `:key`, `:result`, `:result_size`, and `:predicates`.
+  """
+  @spec get_all_entries(keyword()) :: [persistable_entry()]
+  def get_all_entries(opts \\ []) do
+    name = Keyword.get(opts, :name, @default_name)
+    GenServer.call(name, :get_all_entries)
+  end
+
+  # ===========================================================================
   # Key Computation
   # ===========================================================================
 
@@ -399,6 +530,8 @@ defmodule TripleStore.Query.Cache do
     max_result_size = Keyword.get(opts, :max_result_size, @default_max_result_size)
     ttl_ms = Keyword.get(opts, :ttl_ms, @default_ttl_ms)
     name = Keyword.get(opts, :name, @default_name)
+    persistence_path = Keyword.get(opts, :persistence_path)
+    warm_on_start = Keyword.get(opts, :warm_on_start, false)
 
     # Create ETS tables
     results_table = table_name(name, @results_table_suffix)
@@ -413,12 +546,21 @@ defmodule TripleStore.Query.Cache do
       max_entries: max_entries,
       max_result_size: max_result_size,
       ttl_ms: ttl_ms,
+      persistence_path: persistence_path,
       hits: 0,
       misses: 0,
       evictions: 0,
       skipped_large: 0,
       expired: 0
     }
+
+    # Warm cache from disk if enabled and file exists
+    state =
+      if warm_on_start and persistence_path do
+        do_warm_from_file(state, persistence_path)
+      else
+        state
+      end
 
     {:ok, state}
   end
@@ -570,6 +712,42 @@ defmodule TripleStore.Query.Cache do
     end
   end
 
+  @impl true
+  def handle_call({:persist_to_file, path}, _from, state) do
+    result = do_persist_to_file(state, path)
+    {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call({:warm_from_file, path}, _from, state) do
+    case do_warm_from_file(state, path) do
+      {:error, _} = error -> {:reply, error, state}
+      new_state -> {:reply, {:ok, :ets.info(new_state.results_table, :size)}, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call(:get_all_entries, _from, state) do
+    entries =
+      :ets.foldl(
+        fn {key, entry}, acc ->
+          [
+            %{
+              key: key,
+              result: entry.result,
+              result_size: entry.result_size,
+              predicates: MapSet.to_list(entry.predicates)
+            }
+            | acc
+          ]
+        end,
+        [],
+        state.results_table
+      )
+
+    {:reply, entries, state}
+  end
+
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
@@ -671,6 +849,115 @@ defmodule TripleStore.Query.Cache do
   end
 
   # ===========================================================================
+  # Persistence Helpers
+  # ===========================================================================
+
+  # File format version for backwards compatibility
+  @cache_file_version 1
+
+  defp do_persist_to_file(state, path) do
+    entries =
+      :ets.foldl(
+        fn {key, entry}, acc ->
+          [
+            %{
+              key: key,
+              result: entry.result,
+              result_size: entry.result_size,
+              predicates: MapSet.to_list(entry.predicates)
+            }
+            | acc
+          ]
+        end,
+        [],
+        state.results_table
+      )
+
+    data = %{
+      version: @cache_file_version,
+      timestamp: System.os_time(:second),
+      entry_count: length(entries),
+      entries: entries
+    }
+
+    binary = :erlang.term_to_binary(data, [:compressed])
+
+    case File.write(path, binary) do
+      :ok ->
+        emit_cache_persist(length(entries))
+        {:ok, length(entries)}
+
+      {:error, reason} ->
+        Logger.warning("Failed to persist cache to #{path}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp do_warm_from_file(state, path) do
+    case File.read(path) do
+      {:ok, binary} ->
+        try do
+          data = :erlang.binary_to_term(binary, [:safe])
+          load_entries_from_data(state, data)
+        rescue
+          e ->
+            Logger.warning("Failed to parse cache file #{path}: #{inspect(e)}")
+            {:error, :invalid_format}
+        end
+
+      {:error, :enoent} ->
+        # File doesn't exist - not an error, just no cache to warm
+        Logger.debug("Cache file not found at #{path}, starting with empty cache")
+        state
+
+      {:error, reason} ->
+        Logger.warning("Failed to read cache file #{path}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp load_entries_from_data(state, %{version: 1, entries: entries}) do
+    now = System.monotonic_time(:millisecond)
+    loaded_count = length(entries)
+
+    # Load entries into ETS, respecting max_entries limit
+    entries_to_load = Enum.take(entries, state.max_entries)
+
+    Enum.each(entries_to_load, fn entry ->
+      # Skip entries that exceed max_result_size
+      if entry.result_size <= state.max_result_size do
+        cache_entry = %{
+          result: entry.result,
+          result_size: entry.result_size,
+          access_time: now,
+          created_at: now,
+          predicates: MapSet.new(entry.predicates)
+        }
+
+        :ets.insert(state.results_table, {entry.key, cache_entry})
+        :ets.insert(state.lru_table, {{now, entry.key}, true})
+      end
+    end)
+
+    emit_cache_warm(:ets.info(state.results_table, :size))
+
+    Logger.info(
+      "Warmed cache from file: #{:ets.info(state.results_table, :size)} entries loaded (#{loaded_count} in file)"
+    )
+
+    state
+  end
+
+  defp load_entries_from_data(_state, %{version: version}) do
+    Logger.warning("Unsupported cache file version: #{version}")
+    {:error, {:unsupported_version, version}}
+  end
+
+  defp load_entries_from_data(_state, _data) do
+    {:error, :invalid_format}
+  end
+
+  # ===========================================================================
   # Telemetry
   # ===========================================================================
 
@@ -694,6 +981,22 @@ defmodule TripleStore.Query.Cache do
     :telemetry.execute(
       [:triple_store, :cache, :query, :expired],
       %{count: 1},
+      %{}
+    )
+  end
+
+  defp emit_cache_persist(count) do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :persist],
+      %{count: count},
+      %{}
+    )
+  end
+
+  defp emit_cache_warm(count) do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :warm],
+      %{count: count},
       %{}
     )
   end

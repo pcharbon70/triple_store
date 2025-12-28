@@ -626,4 +626,248 @@ defmodule TripleStore.Query.CacheTest do
       :telemetry.detach(handler_id)
     end
   end
+
+  describe "cache warming - persistence" do
+    setup do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "cache_test_#{:erlang.unique_integer([:positive])}.bin")
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100, max_result_size: 1000)
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+      %{name: name, cache_file: cache_file}
+    end
+
+    test "persist_to_file saves cache to disk", %{name: name, cache_file: cache_file} do
+      # Add some entries
+      Cache.put("query1", [1, 2, 3], name: name, predicates: [:pred1])
+      Cache.put("query2", %{bindings: [%{a: 1}, %{a: 2}]}, name: name, predicates: [:pred2])
+      Cache.put("query3", :ok, name: name)
+
+      assert Cache.size(name: name) == 3
+
+      # Persist to file
+      assert {:ok, 3} = Cache.persist_to_file(cache_file, name: name)
+      assert File.exists?(cache_file)
+    end
+
+    test "warm_from_file restores cache from disk", %{name: name, cache_file: cache_file} do
+      # Add and persist entries
+      Cache.put("query1", [1, 2, 3], name: name, predicates: [:pred1])
+      Cache.put("query2", %{bindings: [%{a: 1}]}, name: name, predicates: [:pred2])
+      {:ok, 2} = Cache.persist_to_file(cache_file, name: name)
+
+      # Clear cache
+      Cache.invalidate(name: name)
+      assert Cache.size(name: name) == 0
+
+      # Warm from file
+      assert {:ok, 2} = Cache.warm_from_file(cache_file, name: name)
+      assert Cache.size(name: name) == 2
+
+      # Verify entries are accessible
+      assert {:ok, [1, 2, 3]} = Cache.get("query1", name: name)
+      assert {:ok, %{bindings: [%{a: 1}]}} = Cache.get("query2", name: name)
+    end
+
+    test "warm_from_file handles missing file gracefully", %{name: name} do
+      result = Cache.warm_from_file("/nonexistent/path/cache.bin", name: name)
+      # Returns the state unchanged (file not found is not an error)
+      assert {:ok, 0} = result
+    end
+
+    test "persist_to_file handles write errors", %{name: name} do
+      Cache.put("query1", [1], name: name)
+      # Try to write to a non-existent directory
+      result = Cache.persist_to_file("/nonexistent/directory/cache.bin", name: name)
+      assert {:error, :enoent} = result
+    end
+
+    test "get_all_entries returns all cached entries", %{name: name} do
+      Cache.put("query1", [1, 2, 3], name: name, predicates: [:pred1, :pred2])
+      Cache.put("query2", %{bindings: [%{a: 1}]}, name: name, predicates: [:pred3])
+
+      entries = Cache.get_all_entries(name: name)
+
+      assert length(entries) == 2
+      assert Enum.all?(entries, fn e ->
+        Map.has_key?(e, :key) and
+        Map.has_key?(e, :result) and
+        Map.has_key?(e, :result_size) and
+        Map.has_key?(e, :predicates)
+      end)
+    end
+  end
+
+  describe "cache warming - warm on start" do
+    test "warms cache from file on startup when enabled" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "cache_warm_start_#{:erlang.unique_integer([:positive])}.bin")
+
+      # Start cache, add entries, persist
+      {:ok, pid1} = Cache.start_link(name: name, max_entries: 100)
+      Cache.put("query1", [1, 2, 3], name: name)
+      Cache.put("query2", [4, 5, 6], name: name)
+      {:ok, 2} = Cache.persist_to_file(cache_file, name: name)
+      safe_stop(pid1)
+
+      # Wait for process to stop
+      Process.sleep(50)
+
+      # Start new cache with warm_on_start
+      name2 = unique_name()
+      {:ok, pid2} = Cache.start_link(
+        name: name2,
+        max_entries: 100,
+        persistence_path: cache_file,
+        warm_on_start: true
+      )
+
+      # Should have warmed entries
+      assert Cache.size(name: name2) == 2
+      assert {:ok, [1, 2, 3]} = Cache.get("query1", name: name2)
+      assert {:ok, [4, 5, 6]} = Cache.get("query2", name: name2)
+
+      safe_stop(pid2)
+      File.rm(cache_file)
+    end
+
+    test "starts empty when warm_on_start enabled but file missing" do
+      name = unique_name()
+
+      {:ok, pid} = Cache.start_link(
+        name: name,
+        max_entries: 100,
+        persistence_path: "/nonexistent/cache.bin",
+        warm_on_start: true
+      )
+
+      # Should start empty (no error)
+      assert Cache.size(name: name) == 0
+
+      safe_stop(pid)
+    end
+  end
+
+  describe "cache warming - query pre-execution" do
+    setup do
+      name = unique_name()
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100, max_result_size: 1000)
+      on_exit(fn -> safe_stop(pid) end)
+      %{name: name}
+    end
+
+    test "warm_queries pre-executes and caches queries", %{name: name} do
+      queries = [
+        {"query1", fn -> {:ok, [1, 2, 3]} end, []},
+        {"query2", fn -> {:ok, [4, 5]} end, [predicates: [:pred1]]},
+        {"query3", fn -> {:ok, %{result: true}} end, []}
+      ]
+
+      assert {:ok, %{cached: 3, failed: 0}} = Cache.warm_queries(queries, name: name)
+      assert Cache.size(name: name) == 3
+
+      # Verify entries are cached
+      assert {:ok, [1, 2, 3]} = Cache.get("query1", name: name)
+      assert {:ok, [4, 5]} = Cache.get("query2", name: name)
+      assert {:ok, %{result: true}} = Cache.get("query3", name: name)
+    end
+
+    test "warm_queries handles failures gracefully", %{name: name} do
+      queries = [
+        {"query1", fn -> {:ok, [1]} end, []},
+        {"query2", fn -> {:error, :failed} end, []},
+        {"query3", fn -> {:ok, [3]} end, []}
+      ]
+
+      assert {:ok, %{cached: 2, failed: 1}} = Cache.warm_queries(queries, name: name)
+      assert Cache.size(name: name) == 2
+    end
+
+    test "warm_queries skips already cached queries", %{name: name} do
+      # Pre-cache query1
+      Cache.put("query1", [:original], name: name)
+
+      call_count = :counters.new(1, [:atomics])
+
+      queries = [
+        {"query1", fn ->
+          :counters.add(call_count, 1, 1)
+          {:ok, [:new]}
+        end, []}
+      ]
+
+      {:ok, _} = Cache.warm_queries(queries, name: name)
+
+      # Should not have executed because query was cached
+      assert :counters.get(call_count, 1) == 0
+
+      # Original value should be preserved
+      assert {:ok, [:original]} = Cache.get("query1", name: name)
+    end
+  end
+
+  describe "cache warming - telemetry" do
+    setup do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "cache_telemetry_#{:erlang.unique_integer([:positive])}.bin")
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+      %{name: name, cache_file: cache_file}
+    end
+
+    test "emits persist event when persisting", %{name: name, cache_file: cache_file} do
+      test_pid = self()
+      handler_id = "persist-test-#{:erlang.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :cache, :query, :persist],
+        fn event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      Cache.put("query1", [1], name: name)
+      Cache.put("query2", [2], name: name)
+      Cache.persist_to_file(cache_file, name: name)
+
+      assert_receive {:telemetry, [:triple_store, :cache, :query, :persist], %{count: 2}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+
+    test "emits warm event when warming from file", %{name: name, cache_file: cache_file} do
+      # Setup: persist some entries
+      Cache.put("query1", [1], name: name)
+      Cache.persist_to_file(cache_file, name: name)
+      Cache.invalidate(name: name)
+
+      test_pid = self()
+      handler_id = "warm-test-#{:erlang.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :cache, :query, :warm],
+        fn event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      Cache.warm_from_file(cache_file, name: name)
+
+      assert_receive {:telemetry, [:triple_store, :cache, :query, :warm], %{count: 1}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+  end
 end
