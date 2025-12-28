@@ -404,4 +404,72 @@ defmodule TripleStore.BackupTest do
       TripleStore.close(restored_store)
     end
   end
+
+  describe "security" do
+    test "rejects backup path with path traversal", %{store: store, backup_dir: backup_dir} do
+      # Try to backup with path traversal
+      malicious_path = Path.join(backup_dir, "../outside/backup")
+
+      assert {:error, :path_traversal_attempt} = Backup.create(store, malicious_path)
+    end
+
+    test "rejects restore path with path traversal", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+      # Create a valid backup first
+      backup_path = Path.join(backup_dir, "valid_backup")
+      {:ok, _} = Backup.create(store, backup_path)
+
+      # Try to restore to path with traversal
+      malicious_restore = Path.join(test_dir, "../outside/restore")
+      TripleStore.close(store)
+
+      assert {:error, :path_traversal_attempt} = Backup.restore(backup_path, malicious_restore)
+    end
+
+    test "rejects source with symlinks", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+      # Create a backup first
+      backup_path = Path.join(backup_dir, "backup_for_symlink_test")
+      {:ok, _} = Backup.create(store, backup_path)
+
+      # Create a symlink inside the backup
+      symlink_target = Path.join(test_dir, "symlink_target")
+      File.write!(symlink_target, "target content")
+      symlink_path = Path.join(backup_path, "evil_symlink")
+      File.ln_s!(symlink_target, symlink_path)
+
+      # Try to restore from backup with symlink
+      restore_path = Path.join(test_dir, "restored_symlink_test")
+      TripleStore.close(store)
+
+      result = Backup.restore(backup_path, restore_path, overwrite: true)
+      assert {:error, {:symlink_detected, ^symlink_path}} = result
+    end
+
+    test "empty database backup and restore works", %{test_dir: test_dir, backup_dir: backup_dir} do
+      # Open an empty database
+      empty_db_path = Path.join(test_dir, "empty_db")
+      {:ok, empty_store} = TripleStore.open(empty_db_path)
+
+      # Backup the empty database
+      backup_path = Path.join(backup_dir, "empty_backup")
+      assert {:ok, metadata} = Backup.create(empty_store, backup_path)
+      assert metadata.backup_type == :full
+
+      TripleStore.close(empty_store)
+
+      # Restore from empty backup
+      restore_path = Path.join(test_dir, "restored_empty")
+      assert {:ok, restored_store} = Backup.restore(backup_path, restore_path)
+
+      # Should be able to insert data
+      turtle = "@prefix ex: <http://example.org/> . ex:s ex:p ex:o ."
+      assert {:ok, _} = TripleStore.load_string(restored_store, turtle, :turtle)
+
+      # Query should work
+      query = "SELECT * WHERE { ?s ?p ?o }"
+      results = TripleStore.query(restored_store, query)
+      assert length(results) == 1
+
+      TripleStore.close(restored_store)
+    end
+  end
 end

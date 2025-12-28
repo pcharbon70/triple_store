@@ -34,6 +34,13 @@ defmodule TripleStore.Telemetry do
   - `[:triple_store, :cache, :query, :hit | :miss | :expired]`
   - `[:triple_store, :cache, :query, :persist | :warm]`
 
+  ### Backup Events
+
+  - `[:triple_store, :backup, :create, :start | :stop | :exception]`
+  - `[:triple_store, :backup, :create_incremental, :start | :stop | :exception]`
+  - `[:triple_store, :backup, :restore, :start | :stop | :exception]`
+  - `[:triple_store, :backup, :verify, :start | :stop]`
+
   ### Reasoner Events
 
   See `TripleStore.Reasoner.Telemetry` for reasoning-specific events.
@@ -276,6 +283,7 @@ defmodule TripleStore.Telemetry do
       delete_events() ++
       cache_events() ++
       load_events() ++
+      backup_events() ++
       reasoner_events()
   end
 
@@ -349,6 +357,26 @@ defmodule TripleStore.Telemetry do
       @prefix ++ [:load, :stop],
       @prefix ++ [:load, :exception],
       @prefix ++ [:load, :batch, :complete]
+    ]
+  end
+
+  @doc """
+  Returns backup-related event names.
+  """
+  @spec backup_events() :: [[atom()]]
+  def backup_events do
+    [
+      @prefix ++ [:backup, :create, :start],
+      @prefix ++ [:backup, :create, :stop],
+      @prefix ++ [:backup, :create, :exception],
+      @prefix ++ [:backup, :create_incremental, :start],
+      @prefix ++ [:backup, :create_incremental, :stop],
+      @prefix ++ [:backup, :create_incremental, :exception],
+      @prefix ++ [:backup, :restore, :start],
+      @prefix ++ [:backup, :restore, :stop],
+      @prefix ++ [:backup, :restore, :exception],
+      @prefix ++ [:backup, :verify, :start],
+      @prefix ++ [:backup, :verify, :stop]
     ]
   end
 
@@ -482,7 +510,15 @@ defmodule TripleStore.Telemetry do
 
       # Reasoner events
       {handler_id(handler_prefix, :materialize), [[:triple_store, :reasoner, :materialize, :stop]]},
-      {handler_id(handler_prefix, :iteration), [[:triple_store, :reasoner, :materialize, :iteration]]}
+      {handler_id(handler_prefix, :iteration), [[:triple_store, :reasoner, :materialize, :iteration]]},
+
+      # Backup events
+      {handler_id(handler_prefix, :backup),
+       [
+         [:triple_store, :backup, :create, :stop],
+         [:triple_store, :backup, :create_incremental, :stop],
+         [:triple_store, :backup, :restore, :stop]
+       ]}
     ]
 
     Enum.each(handlers, fn {id, events} ->

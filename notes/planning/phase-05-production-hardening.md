@@ -299,7 +299,7 @@ See `notes/summaries/section-5.4-review-fixes.md` for full details.
 
 ## 5.5 Backup and Restore
 
-- [ ] **Section 5.5 Complete**
+- [x] **Section 5.5 Complete**
 
 This section implements backup and restore functionality using RocksDB checkpoints.
 
@@ -351,6 +351,35 @@ Support scheduled periodic backups.
 - [x] Test restore produces identical database
 - [ ] Test scheduled backup runs at interval (deferred with 5.5.3.1)
 - [x] Test backup rotation deletes old backups
+
+### Section 5.5 Review Fixes
+
+- [x] **Review Fixes Complete** (2025-12-28)
+
+Applied fixes from comprehensive review (`notes/reviews/section-5.5-backup-restore-review.md`):
+
+**Blockers Fixed:**
+1. Safe deserialization - Added `safe_binary_to_term/1` with `:safe` option
+2. Path traversal protection - Added `validate_path_safety/1` rejecting `..` paths
+3. Backup telemetry events - Added `backup_events/0` to `TripleStore.Telemetry`
+
+**Concerns Addressed:**
+- C4: Documented race condition in restore counter restoration
+- C5: Added mtime comparison to incremental backup (size + mtime)
+- C6: Added symlink protection with `check_for_symlinks/1`
+- C7: Fixed doc example (import vs import_values)
+- C8: Replaced bare rescue with specific exception handling
+
+**Suggested Improvements Implemented:**
+- S7: Added backup Prometheus metrics (counters, histograms, gauges)
+- S8: Documented incremental backup limitations and security features
+
+**New Security Tests:**
+- Path traversal rejection for backup and restore paths
+- Symlink detection in backup source
+- Empty database backup and restore
+
+See `notes/summaries/section-5.5-review-fixes.md` for full details.
 
 ---
 

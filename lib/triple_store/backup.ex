@@ -55,6 +55,25 @@ defmodule TripleStore.Backup do
   2. Create incremental backups daily based on the last full backup
   3. Each incremental backup is independently restorable
 
+  ## Incremental Backup Limitations
+
+  - **Best with closed store**: Incremental backups work most reliably when the
+    store is closed or quiescent. Active writes during backup may cause
+    verification failures due to file changes.
+  - **Filesystem support**: Hard links require both source and destination to
+    be on the same filesystem. Cross-filesystem backups fall back to copying.
+  - **File detection**: Changes are detected by comparing file size and mtime.
+    Files with the same size and modification time are assumed unchanged.
+
+  ## Security
+
+  - **Path traversal protection**: Backup/restore paths are validated to prevent
+    directory traversal attacks.
+  - **Symlink protection**: Source directories are checked for symlinks before
+    copying to prevent symlink-based attacks.
+  - **Safe deserialization**: Backup metadata files are deserialized with the
+    `:safe` option to prevent arbitrary code execution.
+
   """
 
   alias TripleStore.Backend.RocksDB.NIF
@@ -103,6 +122,12 @@ defmodule TripleStore.Backup do
           max_backups: pos_integer(),
           prefix: String.t()
         ]
+
+  # Default maximum backup size (10 GB)
+  @default_max_backup_bytes 10 * 1024 * 1024 * 1024
+
+  # Default maximum file count in backup
+  @default_max_file_count 100_000
 
   # ===========================================================================
   # Backup Operations
@@ -289,6 +314,18 @@ defmodule TripleStore.Backup do
   - `{:error, :destination_exists}` - Destination already exists
   - `{:error, reason}` - Other failures
 
+  ## Counter Restoration
+
+  The restore operation automatically restores sequence counters from the backup
+  to ensure that new IDs generated after restore don't collide with existing data.
+  A safety margin is applied to counter values during import.
+
+  **Note:** There is a small window between when the store opens (initializing
+  counters from RocksDB) and when backup counters are imported. During this
+  window, if concurrent writes occur, counters take the maximum of current and
+  imported values. For guaranteed consistency, ensure no writes occur during
+  restore or perform the restore on an exclusively-owned store handle.
+
   ## Examples
 
       {:ok, store} = TripleStore.Backup.restore("/backups/mydb_20251227", "/data/restored")
@@ -452,24 +489,51 @@ defmodule TripleStore.Backup do
   # ===========================================================================
 
   defp validate_backup_path(path) do
-    if File.exists?(path) do
-      {:error, :backup_path_exists}
-    else
-      :ok
+    with :ok <- validate_path_safety(path) do
+      if File.exists?(path) do
+        {:error, :backup_path_exists}
+      else
+        :ok
+      end
     end
   end
 
-  defp validate_restore_path(path, overwrite) do
-    cond do
-      not File.exists?(path) ->
-        :ok
+  # Validate path for security - no path traversal, no symlinks in components
+  defp validate_path_safety(path) do
+    expanded = Path.expand(path)
 
-      overwrite ->
-        File.rm_rf!(path)
-        :ok
+    cond do
+      # Check for path traversal attempts
+      String.contains?(path, "..") ->
+        {:error, :path_traversal_attempt}
+
+      # Check if expanded path differs significantly (indicates traversal)
+      not paths_equivalent?(path, expanded) and String.contains?(path, "..") ->
+        {:error, :path_traversal_attempt}
 
       true ->
-        {:error, :destination_exists}
+        :ok
+    end
+  end
+
+  # Check if two paths are equivalent (accounting for absolute vs relative)
+  defp paths_equivalent?(path1, path2) do
+    Path.expand(path1) == Path.expand(path2)
+  end
+
+  defp validate_restore_path(path, overwrite) do
+    with :ok <- validate_path_safety(path) do
+      cond do
+        not File.exists?(path) ->
+          :ok
+
+        overwrite ->
+          File.rm_rf!(path)
+          :ok
+
+        true ->
+          {:error, :destination_exists}
+      end
     end
   end
 
@@ -483,9 +547,46 @@ defmodule TripleStore.Backup do
   end
 
   defp copy_directory(source, destination) do
-    case File.cp_r(source, destination) do
-      {:ok, files} -> {:ok, files}
-      {:error, reason, _file} -> {:error, {:copy_failed, reason}}
+    # Check for symlinks in source before copying
+    case check_for_symlinks(source) do
+      :ok ->
+        case File.cp_r(source, destination) do
+          {:ok, files} -> {:ok, files}
+          {:error, reason, _file} -> {:error, {:copy_failed, reason}}
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Check source directory for symlinks (security measure)
+  defp check_for_symlinks(path) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        {:error, {:symlink_detected, path}}
+
+      {:ok, %File.Stat{type: :directory}} ->
+        # Check all entries in directory
+        case File.ls(path) do
+          {:ok, entries} ->
+            Enum.reduce_while(entries, :ok, fn entry, :ok ->
+              case check_for_symlinks(Path.join(path, entry)) do
+                :ok -> {:cont, :ok}
+                error -> {:halt, error}
+              end
+            end)
+
+          {:error, reason} ->
+            {:error, {:ls_failed, path, reason}}
+        end
+
+      {:ok, _} ->
+        # Regular file
+        :ok
+
+      {:error, reason} ->
+        {:error, {:lstat_failed, path, reason}}
     end
   end
 
@@ -528,10 +629,13 @@ defmodule TripleStore.Backup do
 
   defp copy_file_incremental(src_path, dest_path, src_stat, base_entry, acc_stats) do
     case base_entry do
-      {base_path, base_stat} when src_stat.size == base_stat.size ->
+      {base_path, base_stat}
+      when src_stat.size == base_stat.size and src_stat.mtime == base_stat.mtime ->
+        # Size and mtime match - file is unchanged, use hard link
         link_or_copy_file(src_path, dest_path, src_stat, base_path, acc_stats)
 
       _ ->
+        # File is new or changed - copy it
         copy_new_file(src_path, dest_path, src_stat, acc_stats)
     end
   end
@@ -697,34 +801,53 @@ defmodule TripleStore.Backup do
     # RocksDB databases have these characteristic files
     required_patterns = ["CURRENT", "MANIFEST"]
 
-    Enum.all?(required_patterns, fn pattern ->
-      path
-      |> File.ls!()
-      |> Enum.any?(&String.starts_with?(&1, pattern))
-    end)
-  rescue
-    _ -> false
+    case File.ls(path) do
+      {:ok, entries} ->
+        Enum.all?(required_patterns, fn pattern ->
+          Enum.any?(entries, &String.starts_with?(&1, pattern))
+        end)
+
+      {:error, reason} ->
+        Logger.debug("Failed to list directory #{path}: #{inspect(reason)}")
+        false
+    end
   end
 
   defp read_backup_metadata(path) do
     metadata_path = Path.join(path, ".backup_metadata")
 
-    if File.exists?(metadata_path) do
-      read_metadata_from_file(path, metadata_path)
-    else
-      infer_metadata_from_directory(path)
+    try do
+      if File.exists?(metadata_path) do
+        read_metadata_from_file(path, metadata_path)
+      else
+        infer_metadata_from_directory(path)
+      end
+    rescue
+      e in [File.Error, ArgumentError] ->
+        Logger.debug("Failed to read backup metadata from #{path}: #{inspect(e)}")
+        nil
     end
-  rescue
-    _ -> nil
   end
 
   defp read_metadata_from_file(path, metadata_path) do
     case File.read(metadata_path) do
       {:ok, content} ->
-        build_metadata_from_stored(path, :erlang.binary_to_term(content))
+        case safe_binary_to_term(content) do
+          {:ok, stored} -> build_metadata_from_stored(path, stored)
+          {:error, _} -> nil
+        end
 
       {:error, _} ->
         nil
+    end
+  end
+
+  # Safely decode binary to term - prevents arbitrary code execution
+  defp safe_binary_to_term(content) do
+    try do
+      {:ok, :erlang.binary_to_term(content, [:safe])}
+    rescue
+      ArgumentError -> {:error, :invalid_format}
     end
   end
 

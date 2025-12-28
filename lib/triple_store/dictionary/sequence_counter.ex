@@ -205,7 +205,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
 
   ## Examples
 
-      :ok = SequenceCounter.import(counter, %{uri: 1234, bnode: 567, literal: 8901})
+      :ok = SequenceCounter.import_values(counter, %{uri: 1234, bnode: 567, literal: 8901})
 
   """
   @spec import_values(counter(), map()) :: :ok | {:error, term()}
