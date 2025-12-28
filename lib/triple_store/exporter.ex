@@ -224,16 +224,28 @@ defmodule TripleStore.Exporter do
   @spec export_file(db_ref(), Path.t(), format(), export_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def export_file(db, path, format, opts \\ []) do
-    pattern = Keyword.get(opts, :pattern, {:var, :var, :var})
-    graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
+    # Validate path to prevent path traversal attacks
+    with :ok <- validate_file_path(path) do
+      pattern = Keyword.get(opts, :pattern, {:var, :var, :var})
+      graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
 
-    with_telemetry(%{operation: :file, path: Path.basename(path), format: format}, fn ->
-      # Note: export_graph already has its own telemetry, but this wraps the full file operation
-      with {:ok, graph} <- do_export_graph_raw(db, pattern, graph_opts),
-           :ok <- write_graph_to_file(graph, path, format) do
-        {:ok, RDF.Graph.triple_count(graph)}
-      end
-    end)
+      with_telemetry(%{operation: :file, path: Path.basename(path), format: format}, fn ->
+        # Note: export_graph already has its own telemetry, but this wraps the full file operation
+        with {:ok, graph} <- do_export_graph_raw(db, pattern, graph_opts),
+             :ok <- write_graph_to_file(graph, path, format) do
+          {:ok, RDF.Graph.triple_count(graph)}
+        end
+      end)
+    end
+  end
+
+  # Validate file path to prevent path traversal attacks
+  defp validate_file_path(path) when is_binary(path) do
+    if String.contains?(path, "..") do
+      {:error, :path_traversal_attempt}
+    else
+      :ok
+    end
   end
 
   # Raw export without telemetry (for use by export_file to avoid double telemetry)

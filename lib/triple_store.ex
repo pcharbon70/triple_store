@@ -239,21 +239,28 @@ defmodule TripleStore do
   """
   @spec open(Path.t(), open_opts()) :: {:ok, store()} | {:error, term()}
   def open(path, opts \\ []) do
-    _create_if_missing = Keyword.get(opts, :create_if_missing, true)
+    create_if_missing = Keyword.get(opts, :create_if_missing, true)
 
-    Telemetry.span(:store, :open, %{path: path}, fn ->
-      with {:ok, db} <- NIF.open(path),
-           {:ok, dict_manager} <- DictManager.start_link(db: db) do
-        store = %{
-          db: db,
-          dict_manager: dict_manager,
-          transaction: nil,
-          path: path
-        }
+    with :ok <- validate_path(path) do
+      Telemetry.span(:store, :open, %{path: Path.basename(path)}, fn ->
+        # Check if path exists when create_if_missing is false
+        if not create_if_missing and not File.exists?(path) do
+          {{:error, :database_not_found}, %{}}
+        else
+          with {:ok, db} <- NIF.open(path),
+               {:ok, dict_manager} <- DictManager.start_link(db: db) do
+            store = %{
+              db: db,
+              dict_manager: dict_manager,
+              transaction: nil,
+              path: path
+            }
 
-        {{:ok, store}, %{}}
-      end
-    end)
+            {{:ok, store}, %{}}
+          end
+        end
+      end)
+    end
   end
 
   @doc """
@@ -284,6 +291,28 @@ defmodule TripleStore do
 
     # Close the database
     NIF.close(db)
+  end
+
+  @doc """
+  Closes the triple store, raising on error.
+
+  See `close/1` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      TripleStore.close!(store)
+
+  """
+  @spec close!(store()) :: :ok
+  def close!(store) do
+    case close(store) do
+      :ok -> :ok
+      {:error, reason} -> raise error_for(reason, :database_io_error)
+    end
   end
 
   # ===========================================================================
@@ -653,15 +682,12 @@ defmodule TripleStore do
   """
   @spec materialize(store(), materialize_opts()) ::
           {:ok, map()} | {:error, term()}
-  def materialize(%{db: _db, dict_manager: _dict_manager}, opts \\ []) do
+  def materialize(%{db: db, dict_manager: _dict_manager}, opts \\ []) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     _parallel = Keyword.get(opts, :parallel, true)
 
-    with {:ok, rules} <- ReasoningProfile.rules_for(profile) do
-      # For in-memory reasoning, start with empty facts
-      # In production, this would stream from the database
-      initial_facts = MapSet.new()
-
+    with {:ok, rules} <- ReasoningProfile.rules_for(profile),
+         {:ok, initial_facts} <- load_facts_from_db(db) do
       result =
         SemiNaive.materialize_in_memory(rules, initial_facts,
           max_iterations: TripleStore.Config.get(:max_iterations)
@@ -674,6 +700,19 @@ defmodule TripleStore do
         {:error, _} = error ->
           error
       end
+    end
+  end
+
+  # Load all triples from the database as facts for reasoning
+  defp load_facts_from_db(db) do
+    case TripleStore.Index.lookup_all(db, {:var, :var, :var}) do
+      {:ok, triples} ->
+        # Convert internal triple list to MapSet of tuples
+        facts = MapSet.new(triples)
+        {:ok, facts}
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -955,10 +994,7 @@ defmodule TripleStore do
   """
   @spec open!(Path.t(), open_opts()) :: store()
   def open!(path, opts \\ []) do
-    case open(path, opts) do
-      {:ok, store} -> store
-      {:error, reason} -> raise error_for(reason, :database_open_failed, path: path)
-    end
+    unwrap_or_raise!(open(path, opts), :database_open_failed, path: path)
   end
 
   @doc """
@@ -977,10 +1013,45 @@ defmodule TripleStore do
   """
   @spec load!(store(), Path.t(), load_opts()) :: non_neg_integer()
   def load!(store, path, opts \\ []) do
-    case load(store, path, opts) do
-      {:ok, count} -> count
-      {:error, reason} -> raise error_for(reason, :validation_file_not_found, path: path)
-    end
+    unwrap_or_raise!(load(store, path, opts), :validation_file_not_found, path: path)
+  end
+
+  @doc """
+  Loads an RDF.Graph, raising on error.
+
+  See `load_graph/3` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.load_graph!(store, graph)
+
+  """
+  @spec load_graph!(store(), RDF.Graph.t(), load_opts()) :: non_neg_integer()
+  def load_graph!(store, graph, opts \\ []) do
+    unwrap_or_raise!(load_graph(store, graph, opts), :validation_invalid_input, [])
+  end
+
+  @doc """
+  Loads RDF from a string, raising on error.
+
+  See `load_string/4` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.load_string!(store, ttl, :turtle)
+
+  """
+  @spec load_string!(store(), String.t(), atom(), load_opts()) :: non_neg_integer()
+  def load_string!(store, content, format, opts \\ []) do
+    unwrap_or_raise!(load_string(store, content, format, opts), :data_parse_error, [])
   end
 
   @doc """
@@ -999,10 +1070,7 @@ defmodule TripleStore do
   """
   @spec query!(store(), String.t(), query_opts()) :: term()
   def query!(store, sparql, opts \\ []) do
-    case query(store, sparql, opts) do
-      {:ok, results} -> results
-      {:error, reason} -> raise error_for(reason, :query_parse_error)
-    end
+    unwrap_or_raise!(query(store, sparql, opts), :query_parse_error, [])
   end
 
   @doc """
@@ -1021,10 +1089,7 @@ defmodule TripleStore do
   """
   @spec update!(store(), String.t()) :: non_neg_integer()
   def update!(store, sparql) do
-    case update(store, sparql) do
-      {:ok, count} -> count
-      {:error, reason} -> raise error_for(reason, :query_parse_error)
-    end
+    unwrap_or_raise!(update(store, sparql), :query_parse_error, [])
   end
 
   @doc """
@@ -1044,10 +1109,7 @@ defmodule TripleStore do
   @spec insert!(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
           non_neg_integer()
   def insert!(store, triples) do
-    case insert(store, triples) do
-      {:ok, count} -> count
-      {:error, reason} -> raise error_for(reason, :validation_invalid_input)
-    end
+    unwrap_or_raise!(insert(store, triples), :validation_invalid_input, [])
   end
 
   @doc """
@@ -1067,10 +1129,7 @@ defmodule TripleStore do
   @spec delete!(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
           non_neg_integer()
   def delete!(store, triples) do
-    case delete(store, triples) do
-      {:ok, count} -> count
-      {:error, reason} -> raise error_for(reason, :validation_invalid_input)
-    end
+    unwrap_or_raise!(delete(store, triples), :validation_invalid_input, [])
   end
 
   @doc """
@@ -1091,10 +1150,7 @@ defmodule TripleStore do
   @spec export!(store(), :graph | {:file, Path.t(), atom()} | {:string, atom()}, keyword()) ::
           RDF.Graph.t() | non_neg_integer() | String.t()
   def export!(store, target, opts \\ []) do
-    case export(store, target, opts) do
-      {:ok, result} -> result
-      {:error, reason} -> raise error_for(reason, :database_io_error)
-    end
+    unwrap_or_raise!(export(store, target, opts), :database_io_error, [])
   end
 
   @doc """
@@ -1113,10 +1169,7 @@ defmodule TripleStore do
   """
   @spec materialize!(store(), materialize_opts()) :: map()
   def materialize!(store, opts \\ []) do
-    case materialize(store, opts) do
-      {:ok, stats} -> stats
-      {:error, reason} -> raise error_for(reason, :reasoning_rule_error)
-    end
+    unwrap_or_raise!(materialize(store, opts), :reasoning_rule_error, [])
   end
 
   @doc """
@@ -1135,10 +1188,9 @@ defmodule TripleStore do
   """
   @spec reasoning_status!(store()) :: map()
   def reasoning_status!(store) do
-    case reasoning_status(store) do
-      {:ok, status} -> status
-      {:error, reason} -> raise error_for(reason, :system_internal_error)
-    end
+    # reasoning_status/1 always returns {:ok, _} so we can unwrap directly
+    {:ok, status} = reasoning_status(store)
+    status
   end
 
   @doc """
@@ -1157,10 +1209,9 @@ defmodule TripleStore do
   """
   @spec health!(store()) :: health_result()
   def health!(store) do
-    case health(store) do
-      {:ok, health} -> health
-      {:error, reason} -> raise error_for(reason, :system_internal_error)
-    end
+    # health/1 always returns {:ok, _} so we can unwrap directly
+    {:ok, health} = health(store)
+    health
   end
 
   @doc """
@@ -1179,10 +1230,7 @@ defmodule TripleStore do
   """
   @spec stats!(store()) :: map()
   def stats!(store) do
-    case stats(store) do
-      {:ok, stats} -> stats
-      {:error, reason} -> raise error_for(reason, :system_internal_error)
-    end
+    unwrap_or_raise!(stats(store), :system_internal_error, [])
   end
 
   @doc """
@@ -1201,10 +1249,7 @@ defmodule TripleStore do
   """
   @spec backup!(store(), Path.t(), keyword()) :: TripleStore.Backup.backup_metadata()
   def backup!(store, backup_path, opts \\ []) do
-    case backup(store, backup_path, opts) do
-      {:ok, metadata} -> metadata
-      {:error, reason} -> raise error_for(reason, :database_io_error, path: backup_path)
-    end
+    unwrap_or_raise!(backup(store, backup_path, opts), :database_io_error, path: backup_path)
   end
 
   @doc """
@@ -1223,10 +1268,7 @@ defmodule TripleStore do
   """
   @spec restore!(Path.t(), Path.t(), keyword()) :: store()
   def restore!(backup_path, restore_path, opts \\ []) do
-    case restore(backup_path, restore_path, opts) do
-      {:ok, store} -> store
-      {:error, reason} -> raise error_for(reason, :database_io_error, path: backup_path)
-    end
+    unwrap_or_raise!(restore(backup_path, restore_path, opts), :database_io_error, path: backup_path)
   end
 
   # ===========================================================================
@@ -1238,42 +1280,75 @@ defmodule TripleStore do
   defp result_type(%RDF.Graph{}), do: :graph
   defp result_type(_), do: :unknown
 
-  # Convert a store path to an atom key for status lookup.
-  # Uses a hash of the path to avoid creating too many atoms.
-  defp path_to_status_key(path) when is_binary(path) do
-    hash = :erlang.phash2(path)
-    String.to_atom("triple_store_#{hash}")
+  # Unwrap an ok/error tuple or raise a structured error.
+  # Used by bang variants to reduce boilerplate.
+  defp unwrap_or_raise!({:ok, result}, _category, _opts), do: result
+  defp unwrap_or_raise!({:error, reason}, category, opts) do
+    raise error_for(reason, category, opts)
   end
 
-  # Convert raw error reasons to structured TripleStore.Error exceptions
+  # Validate path to prevent path traversal attacks
+  defp validate_path(path) when is_binary(path) do
+    if String.contains?(path, "..") do
+      {:error, :path_traversal_attempt}
+    else
+      :ok
+    end
+  end
+
+  # Convert a store path to a binary key for status lookup.
+  # Uses ETS-compatible binary keys to avoid atom table exhaustion.
+  defp path_to_status_key(path) when is_binary(path) do
+    hash = :erlang.phash2(path)
+    "triple_store_status_#{hash}"
+  end
+
+  # Convert raw error reasons to structured TripleStore.Error exceptions.
+  # Delegates to the centralized Error.from_reason/2 for consistency.
+  # The default_category is only used if the reason doesn't have its own
+  # natural category (e.g., generic atom/tuple errors).
   defp error_for(reason, default_category, opts \\ [])
 
   defp error_for(%TripleStore.Error{} = error, _default, _opts), do: error
 
-  defp error_for(:timeout, _default, _opts) do
-    TripleStore.Error.new(:query_timeout, "Query timed out")
-  end
-
-  defp error_for(:database_closed, _default, _opts) do
-    TripleStore.Error.database_closed()
-  end
-
-  defp error_for(:file_not_found, _default, opts) do
-    path = Keyword.get(opts, :path, "unknown")
-    TripleStore.Error.file_not_found(path)
-  end
-
-  defp error_for({:parse_error, details}, _default, _opts) do
-    TripleStore.Error.query_parse_error("Parse error: #{inspect(details)}")
-  end
-
-  defp error_for(reason, default_category, opts) when is_atom(reason) do
-    message = "#{reason}"
-    TripleStore.Error.new(default_category, message, details: Enum.into(opts, %{}))
-  end
-
   defp error_for(reason, default_category, opts) do
-    message = inspect(reason)
-    TripleStore.Error.new(default_category, message, details: Enum.into(opts, %{}))
+    # Only pass the category to from_reason for reasons that don't have
+    # their own natural category mapping. Known reasons like :timeout,
+    # :database_closed, :path_traversal_attempt, etc. have their own
+    # categories in Error.from_reason and shouldn't be overridden.
+    error_opts =
+      if has_natural_category?(reason) do
+        maybe_add_details(opts, opts)
+      else
+        opts
+        |> Keyword.put_new(:category, default_category)
+        |> maybe_add_details(opts)
+      end
+
+    TripleStore.Error.from_reason(reason, error_opts)
+  end
+
+  # Reasons that have their own natural category mapping in Error.from_reason
+  defp has_natural_category?(:timeout), do: true
+  defp has_natural_category?(:database_closed), do: true
+  defp has_natural_category?(:file_not_found), do: true
+  defp has_natural_category?(:path_traversal_attempt), do: true
+  defp has_natural_category?(:database_not_found), do: true
+  defp has_natural_category?(:max_iterations_exceeded), do: true
+  defp has_natural_category?({:parse_error, _}), do: true
+  defp has_natural_category?({:file_not_found, _}), do: true
+  defp has_natural_category?({:invalid_format, _}), do: true
+  defp has_natural_category?({:io_error, _}), do: true
+  defp has_natural_category?(_), do: false
+
+  # Merge any path or other metadata into details
+  defp maybe_add_details(error_opts, opts) do
+    path = Keyword.get(opts, :path)
+
+    if path do
+      Keyword.update(error_opts, :details, %{path: path}, &Map.put(&1, :path, path))
+    else
+      error_opts
+    end
   end
 end

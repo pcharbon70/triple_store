@@ -370,9 +370,10 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
   ## Examples
 
       {:ok, status} = ReasoningStatus.load(:my_ontology)
+      {:ok, status} = ReasoningStatus.load("store_status_12345")
   """
-  @spec load(atom()) :: {:ok, t()} | {:error, :not_found}
-  def load(key) when is_atom(key) do
+  @spec load(atom() | String.t()) :: {:ok, t()} | {:error, :not_found}
+  def load(key) when is_atom(key) or is_binary(key) do
     case :persistent_term.get({__MODULE__, key}, nil) do
       nil -> {:error, :not_found}
       status -> {:ok, status}
@@ -382,8 +383,8 @@ defmodule TripleStore.Reasoner.ReasoningStatus do
   @doc """
   Removes a status from `:persistent_term`.
   """
-  @spec remove(atom()) :: :ok
-  def remove(key) when is_atom(key) do
+  @spec remove(atom() | String.t()) :: :ok
+  def remove(key) when is_atom(key) or is_binary(key) do
     unregister_key(key)
     :persistent_term.erase({__MODULE__, key})
     :ok

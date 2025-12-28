@@ -170,7 +170,13 @@ defmodule TripleStore.Backup do
   def create(%{path: source_path} = store, backup_path, opts \\ []) do
     verify = Keyword.get(opts, :verify, true)
 
-    Telemetry.span(:backup, :create, %{source: source_path, destination: backup_path}, fn ->
+    # Use basename for telemetry to avoid exposing full paths
+    telemetry_meta = %{
+      source: Path.basename(source_path),
+      destination: Path.basename(backup_path)
+    }
+
+    Telemetry.span(:backup, :create, telemetry_meta, fn ->
       with :ok <- validate_backup_path(backup_path),
            :ok <- ensure_parent_exists(backup_path),
            {:ok, _} <- copy_directory(source_path, backup_path),
@@ -233,10 +239,17 @@ defmodule TripleStore.Backup do
   def create_incremental(%{path: source_path} = store, backup_path, base_backup, opts \\ []) do
     verify = Keyword.get(opts, :verify, true)
 
+    # Use basename for telemetry to avoid exposing full paths
+    telemetry_meta = %{
+      source: Path.basename(source_path),
+      destination: Path.basename(backup_path),
+      base: Path.basename(base_backup)
+    }
+
     Telemetry.span(
       :backup,
       :create_incremental,
-      %{source: source_path, destination: backup_path, base: base_backup},
+      telemetry_meta,
       fn ->
         with {:ok, :valid} <- verify(base_backup),
              :ok <- validate_backup_path(backup_path),
@@ -336,7 +349,12 @@ defmodule TripleStore.Backup do
   def restore(backup_path, restore_path, opts \\ []) do
     overwrite = Keyword.get(opts, :overwrite, false)
 
-    Telemetry.span(:backup, :restore, %{source: backup_path, destination: restore_path}, fn ->
+    telemetry_meta = %{
+      source: Path.basename(backup_path),
+      destination: Path.basename(restore_path)
+    }
+
+    Telemetry.span(:backup, :restore, telemetry_meta, fn ->
       with {:ok, :valid} <- verify(backup_path),
            :ok <- validate_restore_path(restore_path, overwrite),
            {:ok, _} <- copy_directory(backup_path, restore_path),

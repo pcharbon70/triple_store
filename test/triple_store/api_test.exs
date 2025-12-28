@@ -23,6 +23,7 @@ defmodule TripleStore.APITest do
     {:open, 1},
     {:open, 2},
     {:close, 1},
+    {:close!, 1},
     # Data Loading
     {:load, 2},
     {:load, 3},
@@ -57,6 +58,10 @@ defmodule TripleStore.APITest do
     {:open!, 2},
     {:load!, 2},
     {:load!, 3},
+    {:load_graph!, 2},
+    {:load_graph!, 3},
+    {:load_string!, 3},
+    {:load_string!, 4},
     {:query!, 2},
     {:query!, 3},
     {:update!, 2},
@@ -594,6 +599,197 @@ defmodule TripleStore.APITest do
 
       {:error, error2} = Error.from_legacy({:error, :database_closed})
       assert error2.category == :database_closed
+    end
+  end
+
+  # ===========================================================================
+  # Path Traversal Protection Tests
+  # ===========================================================================
+
+  describe "path traversal protection" do
+    test "open/2 rejects paths with .." do
+      result = TripleStore.open("../../../etc/passwd")
+      assert {:error, :path_traversal_attempt} = result
+    end
+
+    test "open!/2 raises on path traversal attempt" do
+      error =
+        assert_raise TripleStore.Error, fn ->
+          TripleStore.open!("../../../etc/passwd")
+        end
+
+      # The error category comes from the path_traversal_attempt reason
+      # which maps to :validation_invalid_input via Error.from_reason
+      assert error.category == :validation_invalid_input
+      assert error.message =~ "traversal"
+    end
+
+    test "open/2 with create_if_missing: false returns error for non-existent database" do
+      result = TripleStore.open("/tmp/nonexistent_db_#{:rand.uniform(1_000_000)}", create_if_missing: false)
+      assert {:error, :database_not_found} = result
+    end
+  end
+
+  # ===========================================================================
+  # Store Lifecycle Tests
+  # ===========================================================================
+
+  describe "store lifecycle" do
+    test "close/1 returns :ok on first close" do
+      path = Path.join(System.tmp_dir!(), "triple_store_close_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path)
+
+      # First close should succeed
+      assert :ok = TripleStore.close(store)
+    end
+
+    test "close/1 returns error on already closed store" do
+      path = Path.join(System.tmp_dir!(), "triple_store_close_twice_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path)
+
+      # First close
+      :ok = TripleStore.close(store)
+
+      # Second close returns error
+      assert {:error, :already_closed} = TripleStore.close(store)
+    end
+
+    test "close!/1 returns :ok" do
+      path = Path.join(System.tmp_dir!(), "triple_store_close_bang_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path)
+      assert :ok = TripleStore.close!(store)
+    end
+  end
+
+  # ===========================================================================
+  # Load Graph and Load String Bang Variant Tests
+  # ===========================================================================
+
+  describe "load_graph! and load_string! bang variants" do
+    setup do
+      path = Path.join(System.tmp_dir!(), "triple_store_load_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path)
+
+      on_exit(fn ->
+        try do
+          TripleStore.close(store)
+        rescue
+          _ -> :ok
+        end
+      end)
+
+      {:ok, store: store, path: path}
+    end
+
+    test "load_graph!/3 loads an RDF.Graph and returns count", %{store: store} do
+      graph =
+        RDF.Graph.new()
+        |> RDF.Graph.add({
+          RDF.iri("http://example.org/s"),
+          RDF.iri("http://example.org/p"),
+          RDF.literal("test")
+        })
+
+      count = TripleStore.load_graph!(store, graph)
+      assert is_integer(count)
+      assert count >= 1
+    end
+
+    test "load_string!/4 loads Turtle string and returns count", %{store: store} do
+      turtle = """
+      @prefix ex: <http://example.org/> .
+      ex:subject ex:predicate "object" .
+      """
+
+      count = TripleStore.load_string!(store, turtle, :turtle)
+      assert is_integer(count)
+      assert count >= 1
+    end
+
+    test "load_string!/4 raises on invalid Turtle", %{store: store} do
+      invalid_turtle = "this is not valid turtle {"
+
+      error =
+        assert_raise TripleStore.Error, fn ->
+          TripleStore.load_string!(store, invalid_turtle, :turtle)
+        end
+
+      assert error.category == :data_parse_error
+    end
+  end
+
+  # ===========================================================================
+  # Bang Variant Error Category Tests
+  # ===========================================================================
+
+  describe "bang variant error categories" do
+    setup do
+      path = Path.join(System.tmp_dir!(), "triple_store_bang_cat_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path)
+
+      on_exit(fn ->
+        try do
+          TripleStore.close(store)
+        rescue
+          _ -> :ok
+        end
+      end)
+
+      {:ok, store: store, path: path}
+    end
+
+    test "query! raises with :query_parse_error category for invalid SPARQL", %{store: store} do
+      error =
+        assert_raise TripleStore.Error, fn ->
+          TripleStore.query!(store, "INVALID SPARQL")
+        end
+
+      assert error.category == :query_parse_error
+      assert error.code == 1001
+    end
+
+    test "load! raises with :validation_file_not_found category for missing file", %{store: store} do
+      error =
+        assert_raise TripleStore.Error, fn ->
+          TripleStore.load!(store, "/nonexistent/path/file.ttl")
+        end
+
+      assert error.category == :validation_file_not_found
+      assert error.code == 4004
+    end
+
+    test "update! raises with :query_parse_error category for invalid SPARQL UPDATE", %{store: store} do
+      error =
+        assert_raise TripleStore.Error, fn ->
+          TripleStore.update!(store, "INVALID UPDATE")
+        end
+
+      assert error.category == :query_parse_error
     end
   end
 

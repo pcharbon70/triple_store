@@ -449,6 +449,33 @@ See `notes/summaries/task-5.6.3-error-handling.md` for details.
 
 See `notes/summaries/task-5.6.4-unit-tests.md` for details.
 
+### Section 5.6 Review Fixes
+
+- [x] **Review Fixes Complete** (2025-12-28)
+
+Applied fixes from comprehensive review (`notes/reviews/section-5.6-public-api-review.md`):
+
+**Blockers Fixed:**
+1. Path traversal protection - Added `validate_path/1` to `open/2`
+2. Path traversal protection - Added `validate_file_path/1` to `export_file/4`
+3. Fixed `materialize/2` - Now loads facts from database via `load_facts_from_db/1`
+4. Atom table exhaustion - Changed `path_to_status_key/1` to use binary keys
+
+**Concerns Addressed:**
+- C1: Fully implemented `create_if_missing` option
+- C2: Fixed bang variant error categorization with `has_natural_category?/1`
+- C3: Added 11 new tests (path traversal, close behavior, load_graph!, load_string!)
+- C4: Simplified `reasoning_status!/1` and `health!/1` (removed unreachable code)
+- C5: Added `load_graph!/3`, `load_string!/4`, and `close!/1` bang variants
+- C6: Sanitized paths in backup telemetry with `Path.basename/1`
+- C7: Consolidated error conversion in `Error.from_reason/2`
+
+**Suggested Improvements Implemented:**
+- S1: Created `unwrap_or_raise!/3` helper for DRY bang variants
+- S6: Added `close!/1` for API completeness
+
+See `notes/summaries/section-5.6-review-fixes.md` for full details.
+
 ---
 
 ## 5.7 Phase 5 Integration Tests

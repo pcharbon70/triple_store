@@ -287,22 +287,110 @@ defmodule TripleStore.Error do
   end
 
   # ===========================================================================
+  # Error Conversion
+  # ===========================================================================
+
+  @doc """
+  Converts a raw error reason to a structured `TripleStore.Error`.
+
+  This is the canonical function for converting error reasons to errors.
+  Use this instead of manually creating errors for common cases.
+
+  ## Supported Reasons
+
+  - `:timeout` - Query timeout
+  - `:database_closed` - Database is closed
+  - `:file_not_found` - File not found
+  - `:path_traversal_attempt` - Path traversal security error
+  - `:database_not_found` - Database doesn't exist
+  - `:max_iterations_exceeded` - Reasoning max iterations
+  - `{:parse_error, details}` - Parse error with details
+  - `{:file_not_found, path}` - File not found with path
+  - `{:invalid_format, details}` - Invalid format
+  - `{:io_error, reason}` - IO error
+  - Any other atom/term - Internal error
+
+  ## Options
+
+  - `:category` - Override the error category
+  - `:details` - Additional details map
+
+  ## Examples
+
+      TripleStore.Error.from_reason(:timeout)
+      # => %TripleStore.Error{category: :query_timeout, ...}
+
+      TripleStore.Error.from_reason({:parse_error, "line 5"})
+      # => %TripleStore.Error{category: :query_parse_error, ...}
+
+  """
+  @spec from_reason(term(), keyword()) :: t()
+  def from_reason(reason, opts \\ [])
+
+  def from_reason(:timeout, opts) do
+    category = Keyword.get(opts, :category, :query_timeout)
+    new(category, "Query timed out", opts)
+  end
+
+  def from_reason(:database_closed, opts) do
+    category = Keyword.get(opts, :category, :database_closed)
+    new(category, "Database is closed", opts)
+  end
+
+  def from_reason(:file_not_found, opts) do
+    category = Keyword.get(opts, :category, :validation_file_not_found)
+    new(category, "File not found", opts)
+  end
+
+  def from_reason(:path_traversal_attempt, opts) do
+    category = Keyword.get(opts, :category, :validation_invalid_input)
+    new(category, "Path traversal not allowed", opts)
+  end
+
+  def from_reason(:database_not_found, opts) do
+    category = Keyword.get(opts, :category, :database_not_found)
+    new(category, "Database does not exist", opts)
+  end
+
+  def from_reason(:max_iterations_exceeded, opts) do
+    category = Keyword.get(opts, :category, :reasoning_max_iterations)
+    new(category, "Reasoning exceeded maximum iterations", opts)
+  end
+
+  def from_reason({:parse_error, details}, opts) do
+    category = Keyword.get(opts, :category, :query_parse_error)
+    merged_opts = Keyword.update(opts, :details, %{raw: details}, &Map.put(&1, :raw, details))
+    new(category, "Parse error: #{inspect(details)}", merged_opts)
+  end
+
+  def from_reason({:file_not_found, path}, opts) do
+    category = Keyword.get(opts, :category, :validation_file_not_found)
+    new(category, "File not found: #{path}", Keyword.put(opts, :details, %{path: path}))
+  end
+
+  def from_reason({:invalid_format, details}, opts) do
+    category = Keyword.get(opts, :category, :data_parse_error)
+    new(category, "Invalid format: #{inspect(details)}", opts)
+  end
+
+  def from_reason({:io_error, reason}, opts) do
+    category = Keyword.get(opts, :category, :database_io_error)
+    new(category, "IO error: #{inspect(reason)}", opts)
+  end
+
+  def from_reason(reason, opts) when is_atom(reason) do
+    category = Keyword.get(opts, :category, :system_internal_error)
+    new(category, "Error: #{reason}", opts)
+  end
+
+  def from_reason(reason, opts) do
+    category = Keyword.get(opts, :category, :system_internal_error)
+    new(category, "Error: #{inspect(reason)}", opts)
+  end
+
+  # ===========================================================================
   # Private Helpers
   # ===========================================================================
 
-  defp reason_to_error(:timeout), do: new(:query_timeout, "Query timed out")
-  defp reason_to_error(:database_closed), do: database_closed()
-  defp reason_to_error(:file_not_found), do: new(:validation_file_not_found, "File not found")
-
-  defp reason_to_error({:parse_error, details}) do
-    new(:query_parse_error, "Parse error: #{inspect(details)}", details: %{raw: details})
-  end
-
-  defp reason_to_error(reason) when is_atom(reason) do
-    new(:system_internal_error, "Error: #{reason}")
-  end
-
-  defp reason_to_error(reason) do
-    new(:system_internal_error, "Error: #{inspect(reason)}")
-  end
+  defp reason_to_error(reason), do: from_reason(reason)
 end
