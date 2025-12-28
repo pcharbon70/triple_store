@@ -11,41 +11,91 @@ defmodule TripleStore do
       # Open a store
       {:ok, store} = TripleStore.open("./data")
 
-      # Load RDF data
+      # Load RDF data from file
       {:ok, count} = TripleStore.load(store, "ontology.ttl")
+
+      # Or insert triples directly
+      {:ok, 1} = TripleStore.insert(store, {~I<http://ex.org/alice>, ~I<http://ex.org/knows>, ~I<http://ex.org/bob>})
 
       # Query with SPARQL
       {:ok, results} = TripleStore.query(store, "SELECT ?s WHERE { ?s a foaf:Person }")
 
-      # Enable reasoning
+      # Update with SPARQL UPDATE
+      {:ok, count} = TripleStore.update(store, "INSERT DATA { <http://ex.org/new> <http://ex.org/p> 'value' }")
+
+      # Enable OWL 2 RL reasoning
       {:ok, stats} = TripleStore.materialize(store, profile: :owl2rl)
 
-      # Check health
+      # Export data
+      {:ok, graph} = TripleStore.export(store, :graph)
+
+      # Backup and restore
+      {:ok, metadata} = TripleStore.backup(store, "/backups/mydb")
+
+      # Check health and stats
       {:ok, health} = TripleStore.health(store)
+      {:ok, stats} = TripleStore.stats(store)
 
       # Close when done
       :ok = TripleStore.close(store)
 
+  ## Public API Reference
+
+  ### Store Lifecycle
+  - `open/2` - Open or create a triple store
+  - `close/1` - Close the store and release resources
+
+  ### Data Loading
+  - `load/2` - Load RDF from a file (Turtle, N-Triples, etc.)
+  - `load_graph/3` - Load an `RDF.Graph` directly
+  - `load_string/4` - Load RDF from a string
+
+  ### Triple Operations
+  - `insert/2` - Insert one or more triples
+  - `delete/2` - Delete one or more triples
+
+  ### Querying
+  - `query/2` - Execute SPARQL SELECT/ASK/CONSTRUCT queries
+  - `update/2` - Execute SPARQL UPDATE operations
+
+  ### Data Export
+  - `export/2` - Export triples to graph, file, or string
+
+  ### Reasoning
+  - `materialize/2` - Compute OWL 2 RL inferences
+  - `reasoning_status/1` - Get reasoning subsystem status
+
+  ### Operations
+  - `backup/2` - Create a backup of the store
+  - `restore/2` - Restore from a backup
+
+  ### Monitoring
+  - `health/1` - Get health status
+  - `stats/1` - Get store statistics
+
   ## Architecture
 
   The triple store uses:
-  - RocksDB for persistent storage via Rustler NIFs
-  - Dictionary encoding for compact term representation
-  - SPO/POS/OSP indices for efficient pattern matching
-  - Forward-chaining materialization for OWL 2 RL reasoning
+  - **RocksDB** for persistent storage via Rustler NIFs
+  - **Dictionary encoding** for compact term representation (64-bit IDs)
+  - **SPO/POS/OSP indices** for O(log n) pattern matching
+  - **Forward-chaining materialization** for OWL 2 RL reasoning
+  - **Semi-naive evaluation** for efficient fixpoint computation
 
   ## Store Handle
 
-  The store handle returned by `open/2` contains:
-  - Database reference for RocksDB operations
-  - Dictionary manager for term encoding/decoding
-  - Transaction manager for coordinated updates
+  The store handle returned by `open/2` is a map containing:
+  - `:db` - Database reference for RocksDB operations
+  - `:dict_manager` - Dictionary manager PID for term encoding/decoding
+  - `:transaction` - Transaction manager (if active)
+  - `:path` - Path to the database directory
 
   ## Thread Safety
 
-  - Reads can be executed concurrently
-  - Writes are serialized through the Transaction manager
-  - Snapshot isolation ensures consistent reads during writes
+  - **Reads** can be executed concurrently from multiple processes
+  - **Writes** are serialized through the Transaction manager
+  - **Snapshot isolation** ensures consistent reads during writes
+  - The store handle can be safely shared between processes
 
   ## Error Handling
 
@@ -58,6 +108,33 @@ defmodule TripleStore do
   - `:parse_error` - Invalid SPARQL syntax
   - `:timeout` - Query exceeded time limit
   - `:file_not_found` - RDF file does not exist
+  - `:path_traversal_attempt` - Security: path contains `..`
+
+  ## Supported RDF Formats
+
+  The following formats are supported for loading and exporting:
+  - **Turtle** (`.ttl`) - Recommended for human-readable RDF
+  - **N-Triples** (`.nt`) - Line-based format for streaming
+  - **N-Quads** (`.nq`) - N-Triples with named graphs (default graph only)
+  - **TriG** (`.trig`) - Turtle with named graphs (default graph only)
+  - **RDF/XML** (`.rdf`) - XML-based format (requires optional dependency)
+  - **JSON-LD** (`.jsonld`) - JSON-based format (requires optional dependency)
+
+  ## SPARQL Support
+
+  Full SPARQL 1.1 Query and Update support including:
+  - SELECT, ASK, CONSTRUCT, DESCRIBE queries
+  - INSERT DATA, DELETE DATA, INSERT/DELETE WHERE updates
+  - FILTER, OPTIONAL, UNION, MINUS, VALUES
+  - Aggregates (COUNT, SUM, AVG, MIN, MAX, GROUP_CONCAT)
+  - Subqueries and property paths
+
+  ## Reasoning Profiles
+
+  Available reasoning profiles for `materialize/2`:
+  - `:rdfs` - RDFS entailment rules (subclass, subproperty, domain, range)
+  - `:owl2rl` - OWL 2 RL profile (includes RDFS plus OWL rules)
+  - `:all` - All available reasoning rules
   """
 
   alias TripleStore.Backend.RocksDB.NIF
