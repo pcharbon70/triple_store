@@ -100,14 +100,14 @@ Configure compression per column family.
 
 ### 5.2.3 Compaction Configuration
 
-- [ ] **Task 5.2.3 Complete**
+- [x] **Task 5.2.3 Complete**
 
 Configure compaction for balanced performance.
 
-- [ ] 5.2.3.1 Set level compaction with appropriate level sizes
-- [ ] 5.2.3.2 Configure rate limiting to bound I/O impact
-- [ ] 5.2.3.3 Schedule background compaction appropriately
-- [ ] 5.2.3.4 Monitor compaction lag metrics
+- [x] 5.2.3.1 Set level compaction with appropriate level sizes
+- [x] 5.2.3.2 Configure rate limiting to bound I/O impact
+- [x] 5.2.3.3 Schedule background compaction appropriately
+- [x] 5.2.3.4 Monitor compaction lag metrics
 
 ### 5.2.4 Column Family Tuning
 
