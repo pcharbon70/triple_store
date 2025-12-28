@@ -542,4 +542,88 @@ defmodule TripleStore.Query.CacheTest do
       assert executions <= 50
     end
   end
+
+  describe "telemetry events" do
+    setup do
+      name = unique_name()
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100, max_result_size: 1000, ttl_ms: 50)
+      on_exit(fn -> safe_stop(pid) end)
+      %{name: name}
+    end
+
+    test "emits hit event on cache hit", %{name: name} do
+      test_pid = self()
+      handler_id = "cache-hit-test-#{:erlang.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :cache, :query, :hit],
+        fn event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      query = "SELECT ?s WHERE { ?s ?p ?o }"
+
+      # First call - miss
+      Cache.get_or_execute(query, fn -> {:ok, [1]} end, name: name)
+
+      # Second call - should be hit
+      Cache.get_or_execute(query, fn -> {:ok, [2]} end, name: name)
+
+      assert_receive {:telemetry, [:triple_store, :cache, :query, :hit], %{count: 1}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+
+    test "emits miss event on cache miss", %{name: name} do
+      test_pid = self()
+      handler_id = "cache-miss-test-#{:erlang.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :cache, :query, :miss],
+        fn event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      Cache.get_or_execute("uncached_query", fn -> {:ok, [1]} end, name: name)
+
+      assert_receive {:telemetry, [:triple_store, :cache, :query, :miss], %{count: 1}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+
+    test "emits expired event when entry has expired", %{name: name} do
+      test_pid = self()
+      handler_id = "cache-expired-test-#{:erlang.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :cache, :query, :expired],
+        fn event, measurements, metadata, _config ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      query = "SELECT ?s WHERE { ?s ?p ?o }"
+
+      # Cache the query
+      Cache.get_or_execute(query, fn -> {:ok, [1]} end, name: name)
+
+      # Wait for expiration
+      Process.sleep(60)
+
+      # Should get expired event
+      Cache.get_or_execute(query, fn -> {:ok, [2]} end, name: name)
+
+      assert_receive {:telemetry, [:triple_store, :cache, :query, :expired], %{count: 1}, %{}}
+
+      :telemetry.detach(handler_id)
+    end
+  end
 end

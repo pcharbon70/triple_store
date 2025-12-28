@@ -180,9 +180,12 @@ defmodule TripleStore.Query.Cache do
 
     case GenServer.call(name, {:get, key}) do
       {:hit, result} ->
+        emit_cache_hit()
         {:ok, result}
 
       :miss ->
+        emit_cache_miss()
+
         case execute_fn.() do
           {:ok, result} = success ->
             GenServer.cast(name, {:put, key, result, predicates})
@@ -193,6 +196,8 @@ defmodule TripleStore.Query.Cache do
         end
 
       :expired ->
+        emit_cache_expired()
+
         case execute_fn.() do
           {:ok, result} = success ->
             GenServer.cast(name, {:put, key, result, predicates})
@@ -663,5 +668,33 @@ defmodule TripleStore.Query.Cache do
     end)
 
     length(expired_entries)
+  end
+
+  # ===========================================================================
+  # Telemetry
+  # ===========================================================================
+
+  defp emit_cache_hit do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :hit],
+      %{count: 1},
+      %{}
+    )
+  end
+
+  defp emit_cache_miss do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :miss],
+      %{count: 1},
+      %{}
+    )
+  end
+
+  defp emit_cache_expired do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :expired],
+      %{count: 1},
+      %{}
+    )
   end
 end

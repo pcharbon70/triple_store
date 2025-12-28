@@ -150,14 +150,14 @@ Implement query result caching.
 
 ### 5.3.2 Cache Invalidation
 
-- [ ] **Task 5.3.2 Complete**
+- [x] **Task 5.3.2 Complete**
 
 Implement intelligent cache invalidation.
 
-- [ ] 5.3.2.1 Track predicates accessed by each cached query
-- [ ] 5.3.2.2 Invalidate queries touching updated predicates
-- [ ] 5.3.2.3 Full invalidation fallback for complex updates
-- [ ] 5.3.2.4 Report cache hit/miss rates via telemetry
+- [x] 5.3.2.1 Track predicates accessed by each cached query
+- [x] 5.3.2.2 Invalidate queries touching updated predicates
+- [x] 5.3.2.3 Full invalidation fallback for complex updates
+- [x] 5.3.2.4 Report cache hit/miss rates via telemetry
 
 ### 5.3.3 Cache Warming
 

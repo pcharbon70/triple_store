@@ -39,6 +39,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
+  alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Parser
 
@@ -139,6 +140,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       %{duration: duration, triple_count: triple_count},
       %{operation_count: operation_count, status: status}
     )
+
+    # Invalidate query cache after successful update
+    if status == :ok and triple_count > 0 do
+      invalidate_cache_for_operations(operations)
+    end
 
     result
   end
@@ -741,5 +747,180 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
          :ok <- if(puts == [], do: :ok, else: NIF.write_batch(db, puts)) do
       :ok
     end
+  end
+
+  # ===========================================================================
+  # Cache Invalidation
+  # ===========================================================================
+
+  @doc false
+  @spec invalidate_cache_for_operations([term()]) :: :ok
+  def invalidate_cache_for_operations(operations) do
+    # Skip if cache is not running
+    unless cache_running?() do
+      :ok
+    else
+      predicates = extract_predicates_from_operations(operations)
+
+      if predicates == :full_invalidation do
+        # Complex operation - invalidate everything
+        emit_full_invalidation()
+        QueryCache.invalidate()
+      else
+        case MapSet.size(predicates) do
+          0 ->
+            # No predicates extracted - skip invalidation
+            :ok
+
+          _n ->
+            # Targeted invalidation based on predicates
+            emit_predicate_invalidation(predicates)
+            QueryCache.invalidate_predicates(predicates)
+        end
+      end
+    end
+  end
+
+  defp cache_running? do
+    case Process.whereis(TripleStore.Query.Cache) do
+      nil -> false
+      pid when is_pid(pid) -> Process.alive?(pid)
+    end
+  end
+
+  # Extracts predicates from update operations
+  # Returns :full_invalidation for complex operations we can't analyze
+  defp extract_predicates_from_operations(operations) do
+    Enum.reduce_while(operations, MapSet.new(), fn op, acc ->
+      case extract_predicates_from_operation(op) do
+        :full_invalidation -> {:halt, :full_invalidation}
+        predicates -> {:cont, MapSet.union(acc, predicates)}
+      end
+    end)
+  end
+
+  defp extract_predicates_from_operation({:insert_data, quads}) do
+    extract_predicates_from_quads(quads)
+  end
+
+  defp extract_predicates_from_operation({:delete_data, quads}) do
+    extract_predicates_from_quads(quads)
+  end
+
+  defp extract_predicates_from_operation({:delete_insert, props}) when is_list(props) do
+    delete_template = Keyword.get(props, :delete, [])
+    insert_template = Keyword.get(props, :insert, [])
+    pattern = Keyword.get(props, :pattern)
+
+    # Extract predicates from templates and pattern
+    predicates =
+      MapSet.new()
+      |> MapSet.union(extract_predicates_from_template(delete_template))
+      |> MapSet.union(extract_predicates_from_template(insert_template))
+      |> MapSet.union(extract_predicates_from_pattern(pattern))
+
+    predicates
+  end
+
+  defp extract_predicates_from_operation({:clear, _props}) do
+    # CLEAR invalidates everything
+    :full_invalidation
+  end
+
+  defp extract_predicates_from_operation({:load, _props}) do
+    # LOAD invalidates everything
+    :full_invalidation
+  end
+
+  defp extract_predicates_from_operation({:drop, _props}) do
+    # DROP invalidates everything
+    :full_invalidation
+  end
+
+  defp extract_predicates_from_operation({:create, _props}) do
+    # CREATE doesn't affect data
+    MapSet.new()
+  end
+
+  defp extract_predicates_from_operation(_op) do
+    # Unknown operation - full invalidation to be safe
+    :full_invalidation
+  end
+
+  # Extract predicates from quads (INSERT DATA, DELETE DATA)
+  defp extract_predicates_from_quads(quads) do
+    Enum.reduce(quads, MapSet.new(), fn quad, acc ->
+      case extract_predicate_from_quad(quad) do
+        nil -> acc
+        pred -> MapSet.put(acc, pred)
+      end
+    end)
+  end
+
+  defp extract_predicate_from_quad({:quad, _s, p, _o, _graph}), do: ast_term_to_rdf(p)
+  defp extract_predicate_from_quad({:triple, _s, p, _o}), do: ast_term_to_rdf(p)
+  defp extract_predicate_from_quad({_s, p, _o}), do: ast_term_to_rdf(p)
+  defp extract_predicate_from_quad(_), do: nil
+
+  # Extract predicates from template patterns (DELETE/INSERT WHERE)
+  defp extract_predicates_from_template(template) when is_list(template) do
+    Enum.reduce(template, MapSet.new(), fn pattern, acc ->
+      MapSet.union(acc, extract_predicates_from_pattern(pattern))
+    end)
+  end
+
+  defp extract_predicates_from_template(_), do: MapSet.new()
+
+  # Extract predicates from WHERE patterns
+  defp extract_predicates_from_pattern({:bgp, triples}) when is_list(triples) do
+    Enum.reduce(triples, MapSet.new(), fn triple, acc ->
+      case triple do
+        {:triple, _s, p, _o} ->
+          case ast_term_to_rdf(p) do
+            nil -> acc
+            pred -> MapSet.put(acc, pred)
+          end
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp extract_predicates_from_pattern({:triple, _s, p, _o}) do
+    case ast_term_to_rdf(p) do
+      nil -> MapSet.new()
+      pred -> MapSet.new([pred])
+    end
+  end
+
+  defp extract_predicates_from_pattern(nil), do: MapSet.new()
+
+  defp extract_predicates_from_pattern(_pattern) do
+    # Complex patterns (OPTIONAL, UNION, FILTER, etc.) - can't analyze
+    # Return empty and let caller decide
+    MapSet.new()
+  end
+
+  # Convert AST term to RDF term (only for ground terms)
+  defp ast_term_to_rdf({:named_node, iri}), do: RDF.iri(iri)
+  defp ast_term_to_rdf({:variable, _name}), do: nil
+  defp ast_term_to_rdf(_), do: nil
+
+  # Telemetry for cache invalidation
+  defp emit_full_invalidation do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :invalidate],
+      %{count: 1},
+      %{type: :full}
+    )
+  end
+
+  defp emit_predicate_invalidation(predicates) do
+    :telemetry.execute(
+      [:triple_store, :cache, :query, :invalidate],
+      %{count: 1, predicate_count: MapSet.size(predicates)},
+      %{type: :predicate}
+    )
   end
 end
