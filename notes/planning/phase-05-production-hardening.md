@@ -72,7 +72,7 @@ Define and validate performance targets.
 
 ## 5.2 RocksDB Tuning
 
-- [ ] **Section 5.2 Complete**
+- [x] **Section 5.2 Complete**
 
 This section implements RocksDB configuration tuning for production workloads, with documentation of tuning rationale.
 
@@ -122,12 +122,12 @@ Tune individual column families for their access patterns.
 
 ### 5.2.5 Unit Tests
 
-- [ ] **Task 5.2.5 Complete**
+- [x] **Task 5.2.5 Complete**
 
-- [ ] Test configuration loads without errors
-- [ ] Test bloom filters reduce negative lookups
-- [ ] Test compression achieves expected ratio
-- [ ] Test compaction completes without errors
+- [x] Test configuration loads without errors
+- [x] Test bloom filters reduce negative lookups
+- [x] Test compression achieves expected ratio
+- [x] Test compaction completes without errors
 
 ---
 
