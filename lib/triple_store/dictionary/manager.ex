@@ -131,6 +131,25 @@ defmodule TripleStore.Dictionary.Manager do
     GenServer.stop(manager, :normal)
   end
 
+  @doc """
+  Gets the sequence counter reference from the manager.
+
+  This is useful for backup/restore operations that need to export or
+  import counter state.
+
+  ## Arguments
+
+  - `manager` - Manager process reference
+
+  ## Returns
+
+  - `{:ok, counter}` - Sequence counter process reference
+  """
+  @spec get_counter(manager()) :: {:ok, SequenceCounter.counter()}
+  def get_counter(manager) do
+    GenServer.call(manager, :get_counter)
+  end
+
   # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
@@ -182,6 +201,11 @@ defmodule TripleStore.Dictionary.Manager do
   @impl true
   def handle_call(:get_db, _from, state) do
     {:reply, {:ok, state.db}, state}
+  end
+
+  @impl true
+  def handle_call(:get_counter, _from, state) do
+    {:reply, {:ok, state.counter}, state}
   end
 
   @impl true

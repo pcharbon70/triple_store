@@ -175,6 +175,142 @@ defmodule TripleStore.Dictionary.SequenceCounter do
     GenServer.stop(counter, :normal)
   end
 
+  @doc """
+  Exports current counter values for backup purposes.
+
+  Returns a map of counter types to their current sequence values.
+  This can be used to persist counter state to a backup file.
+
+  ## Examples
+
+      {:ok, state} = SequenceCounter.export(counter)
+      # => {:ok, %{uri: 1234, bnode: 567, literal: 8901}}
+
+  """
+  @spec export(counter()) :: {:ok, map()} | {:error, term()}
+  def export(counter) do
+    GenServer.call(counter, :export)
+  end
+
+  @doc """
+  Imports counter values, typically after restoring from backup.
+
+  Sets the counter values to at least the provided values (plus safety margin).
+  This ensures no ID reuse after restore.
+
+  ## Arguments
+
+  - `counter` - Counter reference
+  - `values` - Map of counter types to sequence values
+
+  ## Examples
+
+      :ok = SequenceCounter.import(counter, %{uri: 1234, bnode: 567, literal: 8901})
+
+  """
+  @spec import_values(counter(), map()) :: :ok | {:error, term()}
+  def import_values(counter, values) when is_map(values) do
+    GenServer.call(counter, {:import, values})
+  end
+
+  @doc """
+  Exports counter state to a file.
+
+  Creates a binary file containing the current counter values that can be
+  used for backup restoration.
+
+  ## Arguments
+
+  - `counter` - Counter reference
+  - `path` - File path to write counter state
+
+  ## Examples
+
+      :ok = SequenceCounter.export_to_file(counter, "/backups/counters.bin")
+
+  """
+  @spec export_to_file(counter(), Path.t()) :: :ok | {:error, term()}
+  def export_to_file(counter, path) do
+    with {:ok, values} <- export(counter) do
+      content = :erlang.term_to_binary(%{
+        version: 1,
+        counters: values,
+        exported_at: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+      File.write(path, content)
+    end
+  end
+
+  @doc """
+  Imports counter state from a file.
+
+  Reads counter values from a backup file and initializes the counters
+  to those values plus a safety margin.
+
+  ## Arguments
+
+  - `counter` - Counter reference
+  - `path` - File path to read counter state from
+
+  ## Examples
+
+      :ok = SequenceCounter.import_from_file(counter, "/backups/counters.bin")
+
+  """
+  @spec import_from_file(counter(), Path.t()) :: :ok | {:error, term()}
+  def import_from_file(counter, path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, data} <- safe_binary_to_term(content),
+         :ok <- validate_counter_file(data) do
+      import_values(counter, data.counters)
+    end
+  end
+
+  @doc """
+  Reads counter values from a file without applying them.
+
+  Useful for inspecting backup state before restoration.
+
+  ## Arguments
+
+  - `path` - File path to read counter state from
+
+  ## Examples
+
+      {:ok, values} = SequenceCounter.read_from_file("/backups/counters.bin")
+      # => {:ok, %{uri: 1234, bnode: 567, literal: 8901}}
+
+  """
+  @spec read_from_file(Path.t()) :: {:ok, map()} | {:error, term()}
+  def read_from_file(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, data} <- safe_binary_to_term(content),
+         :ok <- validate_counter_file(data) do
+      {:ok, data.counters}
+    end
+  end
+
+  # Safely decode binary to term
+  defp safe_binary_to_term(content) do
+    try do
+      {:ok, :erlang.binary_to_term(content, [:safe])}
+    rescue
+      ArgumentError -> {:error, :invalid_format}
+    end
+  end
+
+  # Validate counter file structure
+  defp validate_counter_file(%{version: 1, counters: counters}) when is_map(counters) do
+    required_keys = [:uri, :bnode, :literal]
+    if Enum.all?(required_keys, &Map.has_key?(counters, &1)) do
+      :ok
+    else
+      {:error, :missing_counter_types}
+    end
+  end
+
+  defp validate_counter_file(_), do: {:error, :invalid_format}
+
   # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
@@ -277,6 +413,35 @@ defmodule TripleStore.Dictionary.SequenceCounter do
 
         {:reply, error, state}
     end
+  end
+
+  @impl true
+  def handle_call(:export, _from, state) do
+    values = %{
+      uri: :atomics.get(state.counter_ref, @type_indices[:uri]),
+      bnode: :atomics.get(state.counter_ref, @type_indices[:bnode]),
+      literal: :atomics.get(state.counter_ref, @type_indices[:literal])
+    }
+    {:reply, {:ok, values}, state}
+  end
+
+  @impl true
+  def handle_call({:import, values}, _from, state) do
+    # For each counter type, set to max of (current value, imported value + safety margin)
+    for type <- [:uri, :bnode, :literal] do
+      type_index = @type_indices[type]
+      current = :atomics.get(state.counter_ref, type_index)
+      imported = Map.get(values, type, 0) + Dictionary.safety_margin()
+      new_value = max(current, imported)
+      :atomics.put(state.counter_ref, type_index, new_value)
+
+      # Also persist to RocksDB
+      persist_counter(state.db, type, new_value)
+    end
+
+    Logger.info("Imported counter values: #{inspect(values)}")
+
+    {:reply, :ok, state}
   end
 
   @impl true

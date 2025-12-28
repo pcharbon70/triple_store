@@ -323,7 +323,14 @@ Implement restore from backup.
 - [x] 5.5.2.1 Implement `TripleStore.restore(backup_path, target_path)`
 - [x] 5.5.2.2 Validate backup before restore
 - [x] 5.5.2.3 Support restore to different location
-- [ ] 5.5.2.4 Handle atomics counter restoration
+- [x] 5.5.2.4 Handle atomics counter restoration
+
+Note: Task 5.5.2.4 implemented sequence counter export/import for backup/restore.
+- Added `SequenceCounter.export/import_values` and file-based persistence
+- Backup creates `.counter_state` file with counter values
+- Restore applies counters with safety margin to prevent ID collisions
+- Backward compatible with legacy backups (no counter file)
+See `notes/summaries/task-5.5.2.4-atomics-counter-restoration.md` for details.
 
 ### 5.5.3 Scheduled Backups
 

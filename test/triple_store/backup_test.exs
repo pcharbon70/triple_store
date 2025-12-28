@@ -291,4 +291,117 @@ defmodule TripleStore.BackupTest do
       assert {:error, :not_a_backup} = Backup.delete(invalid_path)
     end
   end
+
+  describe "counter state persistence" do
+    test "backup includes counter state file", %{store: store, backup_dir: backup_dir} do
+      backup_path = Path.join(backup_dir, "counter_backup")
+
+      # Insert data to advance counters
+      turtle = """
+      @prefix ex: <http://example.org/> .
+      ex:a ex:b ex:c .
+      ex:d ex:e ex:f .
+      """
+      {:ok, _} = TripleStore.load_string(store, turtle, :turtle)
+
+      {:ok, _} = Backup.create(store, backup_path)
+
+      # Counter state file should exist
+      counter_file = Path.join(backup_path, ".counter_state")
+      assert File.exists?(counter_file)
+    end
+
+    test "restore applies counter state from backup", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+      backup_path = Path.join(backup_dir, "restore_counter")
+      restore_path = Path.join(test_dir, "restored_counter")
+
+      # Insert significant data to advance counters beyond safety margin
+      turtle = """
+      @prefix ex: <http://example.org/> .
+      """
+      # Generate many unique subjects to advance URI counter
+      turtle = turtle <> Enum.map_join(1..100, "\n", fn i -> "ex:s#{i} ex:p ex:o#{i} ." end)
+      {:ok, _} = TripleStore.load_string(store, turtle, :turtle)
+
+      # Get counter state before backup
+      {:ok, counter} = TripleStore.Dictionary.Manager.get_counter(store.dict_manager)
+      {:ok, original_counters} = TripleStore.Dictionary.SequenceCounter.export(counter)
+
+      # Create backup
+      {:ok, _} = Backup.create(store, backup_path)
+      TripleStore.close(store)
+
+      # Restore
+      {:ok, restored_store} = Backup.restore(backup_path, restore_path)
+
+      # Get restored counter state
+      {:ok, restored_counter} = TripleStore.Dictionary.Manager.get_counter(restored_store.dict_manager)
+      {:ok, restored_counters} = TripleStore.Dictionary.SequenceCounter.export(restored_counter)
+
+      # Restored counters should be at least original + safety_margin
+      safety = TripleStore.Dictionary.safety_margin()
+      assert restored_counters.uri >= original_counters.uri + safety
+      assert restored_counters.bnode >= original_counters.bnode + safety
+      assert restored_counters.literal >= original_counters.literal + safety
+
+      TripleStore.close(restored_store)
+    end
+
+    test "restore works without counter file (legacy backup)", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+      backup_path = Path.join(backup_dir, "legacy_backup")
+      restore_path = Path.join(test_dir, "restored_legacy")
+
+      # Create backup
+      {:ok, _} = Backup.create(store, backup_path)
+
+      # Remove counter file to simulate legacy backup
+      File.rm(Path.join(backup_path, ".counter_state"))
+
+      TripleStore.close(store)
+
+      # Restore should still work
+      assert {:ok, restored_store} = Backup.restore(backup_path, restore_path)
+
+      # Should be able to insert new data
+      turtle = "@prefix ex: <http://example.org/> . ex:new ex:data ex:here ."
+      assert {:ok, _} = TripleStore.load_string(restored_store, turtle, :turtle)
+
+      TripleStore.close(restored_store)
+    end
+
+    test "new data after restore gets unique IDs", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+      backup_path = Path.join(backup_dir, "id_uniqueness")
+      restore_path = Path.join(test_dir, "restored_ids")
+
+      # Insert initial data
+      turtle1 = """
+      @prefix ex: <http://example.org/> .
+      ex:original1 ex:pred ex:obj1 .
+      ex:original2 ex:pred ex:obj2 .
+      """
+      {:ok, _} = TripleStore.load_string(store, turtle1, :turtle)
+
+      # Create backup
+      {:ok, _} = Backup.create(store, backup_path)
+      TripleStore.close(store)
+
+      # Restore
+      {:ok, restored_store} = Backup.restore(backup_path, restore_path)
+
+      # Insert new data
+      turtle2 = """
+      @prefix ex: <http://example.org/> .
+      ex:new1 ex:pred ex:newobj1 .
+      ex:new2 ex:pred ex:newobj2 .
+      """
+      {:ok, _} = TripleStore.load_string(restored_store, turtle2, :turtle)
+
+      # Query should return all data (original + new)
+      query = "SELECT * WHERE { ?s <http://example.org/pred> ?o }"
+      results = TripleStore.query(restored_store, query)
+      assert length(results) == 4
+
+      TripleStore.close(restored_store)
+    end
+  end
 end

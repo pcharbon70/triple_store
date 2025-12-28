@@ -58,9 +58,14 @@ defmodule TripleStore.Backup do
   """
 
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.SequenceCounter
   alias TripleStore.Telemetry
 
   require Logger
+
+  # Counter state file name within backup directory
+  @counter_file ".counter_state"
 
   # ===========================================================================
   # Types
@@ -298,10 +303,37 @@ defmodule TripleStore.Backup do
       with {:ok, :valid} <- verify(backup_path),
            :ok <- validate_restore_path(restore_path, overwrite),
            {:ok, _} <- copy_directory(backup_path, restore_path),
-           {:ok, store} <- TripleStore.open(restore_path) do
+           {:ok, store} <- TripleStore.open(restore_path),
+           :ok <- restore_counter_state(backup_path, store) do
         {{:ok, store}, %{}}
       end
     end)
+  end
+
+  # Restore sequence counter state from backup
+  defp restore_counter_state(backup_path, %{dict_manager: dict_manager}) do
+    counter_path = Path.join(backup_path, @counter_file)
+
+    if File.exists?(counter_path) do
+      with {:ok, counter} <- Manager.get_counter(dict_manager),
+           :ok <- SequenceCounter.import_from_file(counter, counter_path) do
+        Logger.info("Restored counter state from backup")
+        :ok
+      else
+        {:error, reason} ->
+          Logger.warning("Failed to restore counter state: #{inspect(reason)}")
+          # Don't fail the restore - the counters in RocksDB will be used with safety margin
+          :ok
+      end
+    else
+      # No counter file in backup - legacy backup, use RocksDB counters
+      Logger.debug("No counter state file in backup, using RocksDB counters")
+      :ok
+    end
+  end
+
+  defp restore_counter_state(_backup_path, _store) do
+    :ok
   end
 
   @doc """
@@ -538,7 +570,7 @@ defmodule TripleStore.Backup do
     end)
   end
 
-  defp write_metadata(backup_path, source_path, _store) do
+  defp write_metadata(backup_path, source_path, store) do
     metadata = %{
       source_path: source_path,
       created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
@@ -549,13 +581,38 @@ defmodule TripleStore.Backup do
     metadata_path = Path.join(backup_path, ".backup_metadata")
     content = :erlang.term_to_binary(metadata)
 
-    case File.write(metadata_path, content) do
-      :ok -> :ok
+    with :ok <- File.write(metadata_path, content),
+         :ok <- save_counter_state(backup_path, store) do
+      :ok
+    else
       {:error, reason} -> {:error, {:metadata_write_failed, reason}}
     end
   end
 
-  defp write_incremental_metadata(backup_path, source_path, base_backup, _store) do
+  # Save sequence counter state to backup directory
+  defp save_counter_state(backup_path, %{dict_manager: dict_manager}) do
+    counter_path = Path.join(backup_path, @counter_file)
+
+    with {:ok, counter} <- Manager.get_counter(dict_manager),
+         :ok <- SequenceCounter.export_to_file(counter, counter_path) do
+      :ok
+    else
+      {:error, reason} ->
+        Logger.warning("Failed to save counter state to backup: #{inspect(reason)}")
+        # Don't fail the backup if counter export fails - the counters are still in RocksDB
+        :ok
+    end
+  end
+
+  defp save_counter_state(_backup_path, _store) do
+    # Store doesn't have dict_manager (shouldn't happen but be safe)
+    :ok
+  end
+
+  defp write_incremental_metadata(backup_path, source_path, base_backup, store) do
+    # Also save counter state for incremental backups
+    save_counter_state(backup_path, store)
+
     metadata = %{
       source_path: source_path,
       created_at: DateTime.utc_now() |> DateTime.to_iso8601(),

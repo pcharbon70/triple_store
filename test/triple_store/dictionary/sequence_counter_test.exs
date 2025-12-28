@@ -384,6 +384,142 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
     end
   end
 
+  describe "export/1" do
+    test "exports current counter values", %{db: db} do
+      {:ok, counter} = SequenceCounter.start_link(db: db)
+
+      # Generate some IDs
+      for _ <- 1..10, do: SequenceCounter.next_id(counter, :uri)
+      for _ <- 1..20, do: SequenceCounter.next_id(counter, :bnode)
+      for _ <- 1..30, do: SequenceCounter.next_id(counter, :literal)
+
+      {:ok, exported} = SequenceCounter.export(counter)
+
+      assert Map.has_key?(exported, :uri)
+      assert Map.has_key?(exported, :bnode)
+      assert Map.has_key?(exported, :literal)
+
+      # Values should match current
+      {:ok, uri_current} = SequenceCounter.current(counter, :uri)
+      {:ok, bnode_current} = SequenceCounter.current(counter, :bnode)
+      {:ok, literal_current} = SequenceCounter.current(counter, :literal)
+
+      assert exported.uri == uri_current
+      assert exported.bnode == bnode_current
+      assert exported.literal == literal_current
+
+      SequenceCounter.stop(counter)
+    end
+  end
+
+  describe "import_values/2" do
+    test "imports counter values with safety margin", %{db: db} do
+      {:ok, counter} = SequenceCounter.start_link(db: db)
+
+      # Import values
+      values = %{uri: 5000, bnode: 3000, literal: 8000}
+      :ok = SequenceCounter.import_values(counter, values)
+
+      # Current values should be imported + safety margin
+      {:ok, uri_current} = SequenceCounter.current(counter, :uri)
+      {:ok, bnode_current} = SequenceCounter.current(counter, :bnode)
+      {:ok, literal_current} = SequenceCounter.current(counter, :literal)
+
+      assert uri_current == 5000 + Dictionary.safety_margin()
+      assert bnode_current == 3000 + Dictionary.safety_margin()
+      assert literal_current == 8000 + Dictionary.safety_margin()
+
+      SequenceCounter.stop(counter)
+    end
+
+    test "takes max of current and imported values", %{db: db} do
+      {:ok, counter} = SequenceCounter.start_link(db: db)
+
+      # Generate many IDs so counter is high
+      for _ <- 1..3000, do: SequenceCounter.next_id(counter, :uri)
+      {:ok, before_import} = SequenceCounter.current(counter, :uri)
+
+      # Import a lower value - should not decrease
+      :ok = SequenceCounter.import_values(counter, %{uri: 100, bnode: 0, literal: 0})
+
+      {:ok, after_import} = SequenceCounter.current(counter, :uri)
+      assert after_import == before_import
+
+      SequenceCounter.stop(counter)
+    end
+  end
+
+  describe "export_to_file/2 and import_from_file/2" do
+    test "round-trips counter state through file", %{db: db} do
+      {:ok, counter1} = SequenceCounter.start_link(db: db)
+
+      # Generate some IDs
+      for _ <- 1..100, do: SequenceCounter.next_id(counter1, :uri)
+      for _ <- 1..200, do: SequenceCounter.next_id(counter1, :bnode)
+      for _ <- 1..300, do: SequenceCounter.next_id(counter1, :literal)
+
+      {:ok, original} = SequenceCounter.export(counter1)
+
+      # Export to file
+      path = Path.join(System.tmp_dir!(), "counter_test_#{:erlang.unique_integer([:positive])}.bin")
+      :ok = SequenceCounter.export_to_file(counter1, path)
+      SequenceCounter.stop(counter1)
+
+      # Create new counter and import
+      {:ok, counter2} = SequenceCounter.start_link(db: db)
+      :ok = SequenceCounter.import_from_file(counter2, path)
+
+      # Values should be imported + safety margin
+      {:ok, uri_after} = SequenceCounter.current(counter2, :uri)
+      {:ok, bnode_after} = SequenceCounter.current(counter2, :bnode)
+      {:ok, literal_after} = SequenceCounter.current(counter2, :literal)
+
+      assert uri_after == original.uri + Dictionary.safety_margin()
+      assert bnode_after == original.bnode + Dictionary.safety_margin()
+      assert literal_after == original.literal + Dictionary.safety_margin()
+
+      SequenceCounter.stop(counter2)
+      File.rm(path)
+    end
+
+    test "import_from_file returns error for invalid file", %{db: db} do
+      {:ok, counter} = SequenceCounter.start_link(db: db)
+
+      # Non-existent file
+      assert {:error, :enoent} = SequenceCounter.import_from_file(counter, "/nonexistent/path")
+
+      # Create invalid file
+      path = Path.join(System.tmp_dir!(), "invalid_counter_#{:erlang.unique_integer([:positive])}.bin")
+      File.write!(path, "invalid binary data")
+      assert {:error, :invalid_format} = SequenceCounter.import_from_file(counter, path)
+      File.rm(path)
+
+      SequenceCounter.stop(counter)
+    end
+  end
+
+  describe "read_from_file/1" do
+    test "reads counter values without applying them", %{db: db} do
+      {:ok, counter} = SequenceCounter.start_link(db: db)
+
+      # Generate some IDs
+      for _ <- 1..100, do: SequenceCounter.next_id(counter, :uri)
+      {:ok, original} = SequenceCounter.export(counter)
+
+      # Export to file
+      path = Path.join(System.tmp_dir!(), "read_test_#{:erlang.unique_integer([:positive])}.bin")
+      :ok = SequenceCounter.export_to_file(counter, path)
+
+      # Read from file
+      {:ok, read_values} = SequenceCounter.read_from_file(path)
+
+      assert read_values == original
+
+      SequenceCounter.stop(counter)
+      File.rm(path)
+    end
+  end
+
   describe "overflow protection" do
     test "returns error when sequence counter approaches max", %{db: db} do
       # Pre-seed the counter to near max value
