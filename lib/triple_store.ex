@@ -365,6 +365,169 @@ defmodule TripleStore do
   end
 
   # ===========================================================================
+  # Triple Operations
+  # ===========================================================================
+
+  @doc """
+  Inserts RDF triples into the store.
+
+  Accepts either a single RDF triple or a list of triples. Triples are
+  dictionary-encoded and indexed in all three indices (SPO, POS, OSP).
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `triples` - A single triple or list of triples
+
+  ## Triple Formats
+
+  Triples can be provided as:
+  - 3-tuples: `{subject, predicate, object}`
+  - RDF.Description structs
+  - RDF.Graph structs
+
+  Where subject, predicate, and object are RDF.ex terms:
+  - IRIs: `~I<http://example.org/resource>`
+  - Blank nodes: `~B<b1>`
+  - Literals: `~L"value"` or `RDF.literal("value", datatype: XSD.string)`
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples inserted
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Single triple
+      {:ok, 1} = TripleStore.insert(store, {~I<http://ex.org/s>, ~I<http://ex.org/p>, ~L"value"})
+
+      # Multiple triples
+      triples = [
+        {~I<http://ex.org/s1>, ~I<http://ex.org/p>, ~L"value1"},
+        {~I<http://ex.org/s2>, ~I<http://ex.org/p>, ~L"value2"}
+      ]
+      {:ok, 2} = TripleStore.insert(store, triples)
+
+      # From RDF.Graph
+      graph = RDF.Graph.new([{~I<http://ex.org/s>, ~I<http://ex.org/p>, ~L"value"}])
+      {:ok, 1} = TripleStore.insert(store, graph)
+
+  """
+  @spec insert(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def insert(%{db: db, dict_manager: dict_manager}, triples) do
+    Loader.insert(db, dict_manager, triples)
+  end
+
+  @doc """
+  Deletes RDF triples from the store.
+
+  Removes triples matching the given patterns from all indices.
+  Accepts the same formats as `insert/2`.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `triples` - A single triple or list of triples to delete
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples deleted
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Delete single triple
+      {:ok, 1} = TripleStore.delete(store, {~I<http://ex.org/s>, ~I<http://ex.org/p>, ~L"value"})
+
+      # Delete multiple triples
+      {:ok, count} = TripleStore.delete(store, triples)
+
+  ## Note
+
+  Deleting triples does not automatically update materialized inferences.
+  Call `materialize/2` to recompute the closure after significant deletions.
+
+  """
+  @spec delete(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def delete(%{db: db, dict_manager: dict_manager}, triples) do
+    Loader.delete(db, dict_manager, triples)
+  end
+
+  # ===========================================================================
+  # Data Export
+  # ===========================================================================
+
+  @doc """
+  Exports triples from the store.
+
+  Supports exporting to RDF.Graph, files, or strings in various RDF formats.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `target` - Export target (see below)
+
+  ## Targets
+
+  - `:graph` - Returns an RDF.Graph with all triples
+  - `{:file, path, format}` - Writes to file in specified format
+  - `{:string, format}` - Returns serialized string
+
+  ## Formats
+
+  - `:turtle` - Turtle format (.ttl)
+  - `:ntriples` - N-Triples format (.nt)
+  - `:nquads` - N-Quads format (.nq)
+
+  ## Options
+
+  - `:pattern` - Triple pattern to filter exports (default: all)
+  - `:prefixes` - Prefix map for serialization
+  - `:base_iri` - Base IRI for relative URIs
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - For `:graph` target
+  - `{:ok, count}` - For file targets (number of triples exported)
+  - `{:ok, string}` - For string targets
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Export as graph
+      {:ok, graph} = TripleStore.export(store, :graph)
+
+      # Export to file
+      {:ok, count} = TripleStore.export(store, {:file, "data.ttl", :turtle})
+
+      # Export as string
+      {:ok, ttl} = TripleStore.export(store, {:string, :turtle})
+
+      # Export with pattern filter
+      {:ok, graph} = TripleStore.export(store, :graph, pattern: {:var, {:bound, pred_id}, :var})
+
+  """
+  @spec export(store(), :graph | {:file, Path.t(), atom()} | {:string, atom()}, keyword()) ::
+          {:ok, RDF.Graph.t() | non_neg_integer() | String.t()} | {:error, term()}
+  def export(store, target, opts \\ [])
+
+  def export(%{db: db}, :graph, opts) do
+    pattern = Keyword.get(opts, :pattern, {:var, :var, :var})
+    graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
+    TripleStore.Exporter.export_graph(db, pattern, graph_opts)
+  end
+
+  def export(%{db: db}, {:file, path, format}, opts) do
+    TripleStore.Exporter.export_file(db, path, format, opts)
+  end
+
+  def export(%{db: db}, {:string, format}, opts) do
+    TripleStore.Exporter.export_string(db, format, opts)
+  end
+
+  # ===========================================================================
   # Reasoning
   # ===========================================================================
 
@@ -425,6 +588,86 @@ defmodule TripleStore do
         {:error, _} = error ->
           error
       end
+    end
+  end
+
+  @doc """
+  Returns the current reasoning status.
+
+  Provides information about the reasoning subsystem including:
+  - Active profile and mode
+  - Derived triple counts
+  - Materialization history
+  - Whether rematerialization is needed
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+
+  ## Returns
+
+  - `{:ok, status}` - Reasoning status map
+  - `{:error, reason}` - On failure
+
+  ## Status Fields
+
+  - `:state` - Current state (`:initialized`, `:materialized`, `:stale`, `:error`)
+  - `:profile` - Active reasoning profile (`:rdfs`, `:owl2rl`, etc.)
+  - `:mode` - Reasoning mode (`:materialized`, `:hybrid`, etc.)
+  - `:derived_count` - Number of derived triples
+  - `:explicit_count` - Number of explicit triples
+  - `:total_count` - Total triple count
+  - `:last_materialization` - Timestamp of last materialization
+  - `:needs_rematerialization` - Whether rematerialization is needed
+
+  ## Examples
+
+      {:ok, status} = TripleStore.reasoning_status(store)
+      # => {:ok, %{
+      #      state: :materialized,
+      #      profile: :owl2rl,
+      #      derived_count: 1500,
+      #      explicit_count: 5000,
+      #      total_count: 6500,
+      #      last_materialization: ~U[2025-12-28 10:00:00Z],
+      #      needs_rematerialization: false
+      #    }}
+
+  """
+  @spec reasoning_status(store()) :: {:ok, map()} | {:error, term()}
+  def reasoning_status(%{path: path}) do
+    # Use path-based key for status lookup
+    key = path_to_status_key(path)
+
+    case TripleStore.Reasoner.ReasoningStatus.load(key) do
+      {:ok, status} ->
+        summary = TripleStore.Reasoner.ReasoningStatus.summary(status)
+
+        result =
+          Map.put(
+            summary,
+            :needs_rematerialization,
+            TripleStore.Reasoner.ReasoningStatus.needs_rematerialization?(status)
+          )
+
+        {:ok, result}
+
+      {:error, :not_found} ->
+        # No status stored yet - return default
+        {:ok,
+         %{
+           state: :initialized,
+           profile: nil,
+           mode: nil,
+           derived_count: 0,
+           explicit_count: 0,
+           total_count: 0,
+           last_materialization: nil,
+           materialization_count: 0,
+           last_materialization_stats: nil,
+           needs_rematerialization: false,
+           error: nil
+         }}
     end
   end
 
@@ -614,4 +857,11 @@ defmodule TripleStore do
   defp result_type(result) when is_boolean(result), do: :ask
   defp result_type(%RDF.Graph{}), do: :graph
   defp result_type(_), do: :unknown
+
+  # Convert a store path to an atom key for status lookup.
+  # Uses a hash of the path to avoid creating too many atoms.
+  defp path_to_status_key(path) when is_binary(path) do
+    hash = :erlang.phash2(path)
+    String.to_atom("triple_store_#{hash}")
+  end
 end

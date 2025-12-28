@@ -391,17 +391,21 @@ This section finalizes the public API with clean documentation and usage example
 
 ### 5.6.1 API Design
 
-- [ ] **Task 5.6.1 Complete**
+- [x] **Task 5.6.1 Complete** (2025-12-28)
 
 Finalize the public module interface.
 
-- [ ] 5.6.1.1 Define `TripleStore.open/2` and `TripleStore.close/1`
-- [ ] 5.6.1.2 Define `TripleStore.load/2` and `TripleStore.export/2`
-- [ ] 5.6.1.3 Define `TripleStore.insert/2` and `TripleStore.delete/2`
-- [ ] 5.6.1.4 Define `TripleStore.query/2` and `TripleStore.update/2`
-- [ ] 5.6.1.5 Define `TripleStore.materialize/2` and `TripleStore.reasoning_status/1`
-- [ ] 5.6.1.6 Define `TripleStore.backup/2` and `TripleStore.restore/2`
-- [ ] 5.6.1.7 Define `TripleStore.stats/1` and `TripleStore.health/1`
+- [x] 5.6.1.1 Define `TripleStore.open/2` and `TripleStore.close/1` (already existed)
+- [x] 5.6.1.2 Define `TripleStore.load/2` and `TripleStore.export/2` (export/2 added)
+- [x] 5.6.1.3 Define `TripleStore.insert/2` and `TripleStore.delete/2` (added)
+- [x] 5.6.1.4 Define `TripleStore.query/2` and `TripleStore.update/2` (already existed)
+- [x] 5.6.1.5 Define `TripleStore.materialize/2` and `TripleStore.reasoning_status/1` (reasoning_status/1 added)
+- [x] 5.6.1.6 Define `TripleStore.backup/2` and `TripleStore.restore/2` (already existed)
+- [x] 5.6.1.7 Define `TripleStore.stats/1` and `TripleStore.health/1` (already existed)
+
+Note: Added `insert/2`, `delete/2`, `export/2`, and `reasoning_status/1` to complete the public API.
+Also added `Loader.insert/3` and `Loader.delete/3` for underlying implementation.
+See `notes/summaries/task-5.6.1-api-design.md` for details.
 
 ### 5.6.2 Documentation
 

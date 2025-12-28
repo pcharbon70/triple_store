@@ -316,6 +316,143 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Public API - Insert/Delete
+  # ===========================================================================
+
+  @doc """
+  Inserts RDF triples into the store.
+
+  Accepts a single triple, a list of triples, an RDF.Description, or
+  an RDF.Graph. Triples are dictionary-encoded and indexed.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `manager` - Dictionary manager process
+  - `input` - Triple(s) to insert
+
+  ## Input Formats
+
+  - Single triple: `{subject, predicate, object}`
+  - List of triples: `[{s, p, o}, ...]`
+  - RDF.Description: All triples from the description
+  - RDF.Graph: All triples from the graph
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples inserted
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Single triple
+      {:ok, 1} = Loader.insert(db, manager, {~I<http://ex.org/s>, ~I<http://ex.org/p>, "value"})
+
+      # Multiple triples
+      {:ok, 2} = Loader.insert(db, manager, [
+        {~I<http://ex.org/s1>, ~I<http://ex.org/p>, "v1"},
+        {~I<http://ex.org/s2>, ~I<http://ex.org/p>, "v2"}
+      ])
+
+      # From RDF.Graph
+      {:ok, count} = Loader.insert(db, manager, graph)
+  """
+  @spec insert(db_ref(), manager(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def insert(db, manager, %RDF.Graph{} = graph) do
+    triples = RDF.Graph.triples(graph)
+    insert_triples(db, manager, triples)
+  end
+
+  def insert(db, manager, %RDF.Description{} = description) do
+    triples = RDF.Description.triples(description)
+    insert_triples(db, manager, triples)
+  end
+
+  def insert(db, manager, triples) when is_list(triples) do
+    insert_triples(db, manager, triples)
+  end
+
+  def insert(db, manager, {_s, _p, _o} = triple) do
+    insert_triples(db, manager, [triple])
+  end
+
+  defp insert_triples(_db, _manager, []), do: {:ok, 0}
+
+  defp insert_triples(db, manager, triples) do
+    case Adapter.from_rdf_triples(manager, triples) do
+      {:ok, internal_triples} ->
+        case Index.insert_triples(db, internal_triples) do
+          :ok -> {:ok, length(internal_triples)}
+          {:error, _} = error -> error
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Deletes RDF triples from the store.
+
+  Accepts the same input formats as `insert/3`.
+  Removes matching triples from all indices.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `manager` - Dictionary manager process
+  - `input` - Triple(s) to delete
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples deleted
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Single triple
+      {:ok, 1} = Loader.delete(db, manager, {~I<http://ex.org/s>, ~I<http://ex.org/p>, "value"})
+
+      # Multiple triples
+      {:ok, count} = Loader.delete(db, manager, triples)
+  """
+  @spec delete(db_ref(), manager(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def delete(db, manager, %RDF.Graph{} = graph) do
+    triples = RDF.Graph.triples(graph)
+    delete_triples(db, manager, triples)
+  end
+
+  def delete(db, manager, %RDF.Description{} = description) do
+    triples = RDF.Description.triples(description)
+    delete_triples(db, manager, triples)
+  end
+
+  def delete(db, manager, triples) when is_list(triples) do
+    delete_triples(db, manager, triples)
+  end
+
+  def delete(db, manager, {_s, _p, _o} = triple) do
+    delete_triples(db, manager, [triple])
+  end
+
+  defp delete_triples(_db, _manager, []), do: {:ok, 0}
+
+  defp delete_triples(db, manager, triples) do
+    case Adapter.from_rdf_triples(manager, triples) do
+      {:ok, internal_triples} ->
+        case Index.delete_triples(db, internal_triples) do
+          :ok -> {:ok, length(internal_triples)}
+          {:error, _} = error -> error
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # ===========================================================================
   # Private - Core Loading Logic
   # ===========================================================================
 
