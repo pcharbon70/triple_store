@@ -31,6 +31,8 @@ defmodule TripleStore.Telemetry do
 
   - `[:triple_store, :cache, :plan, :hit | :miss]`
   - `[:triple_store, :cache, :stats, :hit | :miss]`
+  - `[:triple_store, :cache, :query, :hit | :miss | :expired]`
+  - `[:triple_store, :cache, :query, :persist | :warm]`
 
   ### Reasoner Events
 
@@ -307,10 +309,18 @@ defmodule TripleStore.Telemetry do
   @spec cache_events() :: [[atom()]]
   def cache_events do
     [
+      # Plan cache events
       @prefix ++ [:cache, :plan, :hit],
       @prefix ++ [:cache, :plan, :miss],
+      # Stats cache events
       @prefix ++ [:cache, :stats, :hit],
-      @prefix ++ [:cache, :stats, :miss]
+      @prefix ++ [:cache, :stats, :miss],
+      # Query result cache events
+      @prefix ++ [:cache, :query, :hit],
+      @prefix ++ [:cache, :query, :miss],
+      @prefix ++ [:cache, :query, :expired],
+      @prefix ++ [:cache, :query, :persist],
+      @prefix ++ [:cache, :query, :warm]
     ]
   end
 

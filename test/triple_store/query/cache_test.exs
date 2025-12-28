@@ -870,4 +870,216 @@ defmodule TripleStore.Query.CacheTest do
       :telemetry.detach(handler_id)
     end
   end
+
+  describe "path traversal protection" do
+    test "blocks path traversal when allowed_persistence_dir is set" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      allowed_dir = Path.join(temp_dir, "cache_allowed_#{:erlang.unique_integer([:positive])}")
+      File.mkdir_p!(allowed_dir)
+
+      {:ok, pid} = Cache.start_link(
+        name: name,
+        max_entries: 100,
+        allowed_persistence_dir: allowed_dir
+      )
+
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm_rf!(allowed_dir)
+      end)
+
+      Cache.put("query1", [1], name: name)
+
+      # Path within allowed dir should work
+      allowed_path = Path.join(allowed_dir, "cache.bin")
+      assert {:ok, 1} = Cache.persist_to_file(allowed_path, name: name)
+      assert File.exists?(allowed_path)
+
+      # Path outside allowed dir should be blocked
+      outside_path = Path.join(temp_dir, "outside_cache.bin")
+      assert {:error, :path_not_allowed} = Cache.persist_to_file(outside_path, name: name)
+      refute File.exists?(outside_path)
+
+      # Path traversal attempt should be blocked
+      traversal_path = Path.join(allowed_dir, "../traversal_cache.bin")
+      assert {:error, :path_not_allowed} = Cache.persist_to_file(traversal_path, name: name)
+    end
+
+    test "allows any path when allowed_persistence_dir is not set" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "unrestricted_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+
+      Cache.put("query1", [1], name: name)
+      assert {:ok, 1} = Cache.persist_to_file(cache_file, name: name)
+      assert File.exists?(cache_file)
+    end
+  end
+
+  describe "memory-based limits" do
+    test "tracks memory usage in stats" do
+      name = unique_name()
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+      on_exit(fn -> safe_stop(pid) end)
+
+      Cache.put("query1", [1, 2, 3], name: name)
+
+      stats = Cache.stats(name: name)
+      assert stats.memory_bytes > 0
+    end
+
+    test "evicts when memory limit is exceeded" do
+      name = unique_name()
+      # Set a very low memory limit to force eviction
+      {:ok, pid} = Cache.start_link(
+        name: name,
+        max_entries: 1000,
+        max_memory_bytes: 500
+      )
+      on_exit(fn -> safe_stop(pid) end)
+
+      # Add entries until we exceed memory limit
+      Cache.put("query1", Enum.to_list(1..50), name: name)
+      Cache.put("query2", Enum.to_list(1..50), name: name)
+      Cache.put("query3", Enum.to_list(1..50), name: name)
+
+      stats = Cache.stats(name: name)
+      # Should have evicted some entries
+      assert stats.memory_bytes <= 500 or stats.evictions > 0
+    end
+
+    test "config includes memory settings" do
+      name = unique_name()
+      {:ok, pid} = Cache.start_link(
+        name: name,
+        max_entries: 100,
+        max_memory_bytes: 1_000_000
+      )
+      on_exit(fn -> safe_stop(pid) end)
+
+      config = Cache.config(name: name)
+      assert config.max_memory_bytes == 1_000_000
+    end
+  end
+
+  describe "predicate index optimization" do
+    test "invalidate_predicates uses reverse index efficiently" do
+      name = unique_name()
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 1000)
+      on_exit(fn -> safe_stop(pid) end)
+
+      # Add many entries with different predicates
+      for i <- 1..100 do
+        pred = :"pred_#{rem(i, 10)}"
+        Cache.put("query_#{i}", [i], name: name, predicates: [pred])
+      end
+
+      assert Cache.size(name: name) == 100
+
+      # Invalidate one predicate - should be fast (O(1) per predicate)
+      Cache.invalidate_predicates([:pred_0], name: name)
+
+      # Should have removed 10 entries (those with pred_0)
+      assert Cache.size(name: name) == 90
+    end
+  end
+
+  describe "safe deserialization" do
+    test "rejects invalid cache file structure" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "invalid_cache_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+
+      # Write invalid cache data (entries is not a list)
+      invalid_data = :erlang.term_to_binary(%{version: 1, entries: "not_a_list"})
+      File.write!(cache_file, invalid_data)
+
+      # Should handle gracefully - invalid structure is filtered to empty entries
+      result = Cache.warm_from_file(cache_file, name: name)
+      # The validate_cache_data function returns %{version: 0, entries: []} for invalid data
+      # which then fails with :unsupported_version, so we expect an error
+      assert {:error, {:unsupported_version, 0}} = result
+    end
+
+    test "filters out invalid entries" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "mixed_cache_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+
+      # Mix of valid and invalid entries
+      cache_data = %{
+        version: 1,
+        timestamp: System.os_time(:second),
+        entry_count: 3,
+        entries: [
+          %{key: Cache.compute_key("valid1"), result: [1], result_size: 1, predicates: [:p1]},
+          %{invalid_key: "bad", result: [2], result_size: 1, predicates: []},  # Missing key field
+          %{key: Cache.compute_key("valid2"), result: [3], result_size: 1, predicates: [:p2]}
+        ]
+      }
+      File.write!(cache_file, :erlang.term_to_binary(cache_data, [:compressed]))
+
+      assert {:ok, 2} = Cache.warm_from_file(cache_file, name: name)
+      assert Cache.size(name: name) == 2
+    end
+  end
+
+  describe "terminate callback" do
+    test "persists cache on shutdown when persistence_path is set" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "shutdown_cache_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} = Cache.start_link(
+        name: name,
+        max_entries: 100,
+        persistence_path: cache_file
+      )
+
+      Cache.put("query1", [1, 2, 3], name: name)
+      Cache.put("query2", [4, 5, 6], name: name)
+
+      # Stop the GenServer - should trigger persist
+      GenServer.stop(pid)
+
+      # Give it a moment to write
+      Process.sleep(50)
+
+      # File should exist with our data
+      assert File.exists?(cache_file)
+
+      # Start new cache and verify data was persisted
+      name2 = unique_name()
+      {:ok, pid2} = Cache.start_link(
+        name: name2,
+        max_entries: 100,
+        persistence_path: cache_file,
+        warm_on_start: true
+      )
+
+      assert Cache.size(name: name2) == 2
+
+      safe_stop(pid2)
+      File.rm(cache_file)
+    end
+  end
 end

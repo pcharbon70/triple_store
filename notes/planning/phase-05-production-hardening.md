@@ -133,7 +133,7 @@ Tune individual column families for their access patterns.
 
 ## 5.3 Query Caching
 
-- [ ] **Section 5.3 Complete**
+- [x] **Section 5.3 Complete**
 
 This section implements result caching for frequently executed queries, with intelligent invalidation on updates.
 
@@ -171,12 +171,26 @@ Support cache warming on startup.
 
 ### 5.3.4 Unit Tests
 
-- [ ] **Task 5.3.4 Complete**
+- [x] **Task 5.3.4 Complete**
 
-- [ ] Test cache stores and retrieves results
-- [ ] Test cache evicts LRU entries at capacity
-- [ ] Test cache invalidates on update
-- [ ] Test cache hit rate reporting
+- [x] Test cache stores and retrieves results
+- [x] Test cache evicts LRU entries at capacity
+- [x] Test cache invalidates on update
+- [x] Test cache hit rate reporting
+
+### 5.3.5 Review Fixes
+
+- [x] **Task 5.3.5 Complete** (Post-review hardening)
+
+Security and performance fixes from comprehensive review:
+
+- [x] 5.3.5.1 Safe deserialization with structure validation
+- [x] 5.3.5.2 Path traversal prevention with `allowed_persistence_dir` option
+- [x] 5.3.5.3 Memory-based cache limits with `max_memory_bytes` option
+- [x] 5.3.5.4 Predicate reverse index for O(1) invalidation
+- [x] 5.3.5.5 Graceful shutdown with automatic persist via `terminate/2`
+- [x] 5.3.5.6 Query cache events registered in `TripleStore.Telemetry`
+- [x] 5.3.5.7 Tests for security features (55 tests total)
 
 ---
 
