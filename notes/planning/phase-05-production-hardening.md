@@ -216,14 +216,17 @@ and added 27 comprehensive tests for the telemetry API.
 
 ### 5.4.2 Metrics Collection
 
-- [ ] **Task 5.4.2 Complete**
+- [x] **Task 5.4.2 Complete**
 
 Implement metrics collection and aggregation.
 
-- [ ] 5.4.2.1 Collect query duration histogram
-- [ ] 5.4.2.2 Collect insert/delete throughput
-- [ ] 5.4.2.3 Collect cache hit rate
-- [ ] 5.4.2.4 Collect reasoning iteration count
+- [x] 5.4.2.1 Collect query duration histogram
+- [x] 5.4.2.2 Collect insert/delete throughput
+- [x] 5.4.2.3 Collect cache hit rate
+- [x] 5.4.2.4 Collect reasoning iteration count
+
+Note: Implemented `TripleStore.Metrics` GenServer that attaches to telemetry events
+and provides aggregated statistics with 23 comprehensive tests.
 
 ### 5.4.3 Health Checks
 
