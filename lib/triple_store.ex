@@ -73,6 +73,15 @@ defmodule TripleStore do
   - `health/1` - Get health status
   - `stats/1` - Get store statistics
 
+  ### Bang Variants
+  All functions that return `{:ok, result}` or `{:error, reason}` have
+  corresponding `!` variants that return the result directly or raise
+  `TripleStore.Error`:
+  - `open!/2`, `load!/3`, `query!/3`, `update!/2`
+  - `insert!/2`, `delete!/2`, `export!/3`
+  - `materialize!/2`, `reasoning_status!/1`
+  - `health!/1`, `stats!/1`, `backup!/3`, `restore!/3`
+
   ## Architecture
 
   The triple store uses:
@@ -927,6 +936,300 @@ defmodule TripleStore do
   end
 
   # ===========================================================================
+  # Bang Variants (raise on error)
+  # ===========================================================================
+
+  @doc """
+  Opens a triple store, raising on error.
+
+  See `open/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      store = TripleStore.open!("./data")
+
+  """
+  @spec open!(Path.t(), open_opts()) :: store()
+  def open!(path, opts \\ []) do
+    case open(path, opts) do
+      {:ok, store} -> store
+      {:error, reason} -> raise error_for(reason, :database_open_failed, path: path)
+    end
+  end
+
+  @doc """
+  Loads RDF data from a file, raising on error.
+
+  See `load/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.load!(store, "data.ttl")
+
+  """
+  @spec load!(store(), Path.t(), load_opts()) :: non_neg_integer()
+  def load!(store, path, opts \\ []) do
+    case load(store, path, opts) do
+      {:ok, count} -> count
+      {:error, reason} -> raise error_for(reason, :validation_file_not_found, path: path)
+    end
+  end
+
+  @doc """
+  Executes a SPARQL query, raising on error.
+
+  See `query/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      results = TripleStore.query!(store, "SELECT * WHERE { ?s ?p ?o } LIMIT 10")
+
+  """
+  @spec query!(store(), String.t(), query_opts()) :: term()
+  def query!(store, sparql, opts \\ []) do
+    case query(store, sparql, opts) do
+      {:ok, results} -> results
+      {:error, reason} -> raise error_for(reason, :query_parse_error)
+    end
+  end
+
+  @doc """
+  Executes a SPARQL UPDATE, raising on error.
+
+  See `update/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.update!(store, "INSERT DATA { <s> <p> 'o' }")
+
+  """
+  @spec update!(store(), String.t()) :: non_neg_integer()
+  def update!(store, sparql) do
+    case update(store, sparql) do
+      {:ok, count} -> count
+      {:error, reason} -> raise error_for(reason, :query_parse_error)
+    end
+  end
+
+  @doc """
+  Inserts triples, raising on error.
+
+  See `insert/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.insert!(store, {~I<http://ex.org/s>, ~I<http://ex.org/p>, ~L"value"})
+
+  """
+  @spec insert!(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          non_neg_integer()
+  def insert!(store, triples) do
+    case insert(store, triples) do
+      {:ok, count} -> count
+      {:error, reason} -> raise error_for(reason, :validation_invalid_input)
+    end
+  end
+
+  @doc """
+  Deletes triples, raising on error.
+
+  See `delete/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      count = TripleStore.delete!(store, {~I<http://ex.org/s>, ~I<http://ex.org/p>, ~L"value"})
+
+  """
+  @spec delete!(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+          non_neg_integer()
+  def delete!(store, triples) do
+    case delete(store, triples) do
+      {:ok, count} -> count
+      {:error, reason} -> raise error_for(reason, :validation_invalid_input)
+    end
+  end
+
+  @doc """
+  Exports triples, raising on error.
+
+  See `export/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      graph = TripleStore.export!(store, :graph)
+      count = TripleStore.export!(store, {:file, "data.ttl", :turtle})
+
+  """
+  @spec export!(store(), :graph | {:file, Path.t(), atom()} | {:string, atom()}, keyword()) ::
+          RDF.Graph.t() | non_neg_integer() | String.t()
+  def export!(store, target, opts \\ []) do
+    case export(store, target, opts) do
+      {:ok, result} -> result
+      {:error, reason} -> raise error_for(reason, :database_io_error)
+    end
+  end
+
+  @doc """
+  Materializes inferences, raising on error.
+
+  See `materialize/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      stats = TripleStore.materialize!(store, profile: :owl2rl)
+
+  """
+  @spec materialize!(store(), materialize_opts()) :: map()
+  def materialize!(store, opts \\ []) do
+    case materialize(store, opts) do
+      {:ok, stats} -> stats
+      {:error, reason} -> raise error_for(reason, :reasoning_rule_error)
+    end
+  end
+
+  @doc """
+  Gets reasoning status, raising on error.
+
+  See `reasoning_status/1` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      status = TripleStore.reasoning_status!(store)
+
+  """
+  @spec reasoning_status!(store()) :: map()
+  def reasoning_status!(store) do
+    case reasoning_status(store) do
+      {:ok, status} -> status
+      {:error, reason} -> raise error_for(reason, :system_internal_error)
+    end
+  end
+
+  @doc """
+  Gets health status, raising on error.
+
+  See `health/1` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      health = TripleStore.health!(store)
+
+  """
+  @spec health!(store()) :: health_result()
+  def health!(store) do
+    case health(store) do
+      {:ok, health} -> health
+      {:error, reason} -> raise error_for(reason, :system_internal_error)
+    end
+  end
+
+  @doc """
+  Gets store statistics, raising on error.
+
+  See `stats/1` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      stats = TripleStore.stats!(store)
+
+  """
+  @spec stats!(store()) :: map()
+  def stats!(store) do
+    case stats(store) do
+      {:ok, stats} -> stats
+      {:error, reason} -> raise error_for(reason, :system_internal_error)
+    end
+  end
+
+  @doc """
+  Creates a backup, raising on error.
+
+  See `backup/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      metadata = TripleStore.backup!(store, "/backups/mydb")
+
+  """
+  @spec backup!(store(), Path.t(), keyword()) :: TripleStore.Backup.backup_metadata()
+  def backup!(store, backup_path, opts \\ []) do
+    case backup(store, backup_path, opts) do
+      {:ok, metadata} -> metadata
+      {:error, reason} -> raise error_for(reason, :database_io_error, path: backup_path)
+    end
+  end
+
+  @doc """
+  Restores from backup, raising on error.
+
+  See `restore/2` for details.
+
+  ## Raises
+
+  - `TripleStore.Error` on failure
+
+  ## Examples
+
+      store = TripleStore.restore!("/backups/mydb", "./restored")
+
+  """
+  @spec restore!(Path.t(), Path.t(), keyword()) :: store()
+  def restore!(backup_path, restore_path, opts \\ []) do
+    case restore(backup_path, restore_path, opts) do
+      {:ok, store} -> store
+      {:error, reason} -> raise error_for(reason, :database_io_error, path: backup_path)
+    end
+  end
+
+  # ===========================================================================
   # Private Helpers
   # ===========================================================================
 
@@ -940,5 +1243,37 @@ defmodule TripleStore do
   defp path_to_status_key(path) when is_binary(path) do
     hash = :erlang.phash2(path)
     String.to_atom("triple_store_#{hash}")
+  end
+
+  # Convert raw error reasons to structured TripleStore.Error exceptions
+  defp error_for(reason, default_category, opts \\ [])
+
+  defp error_for(%TripleStore.Error{} = error, _default, _opts), do: error
+
+  defp error_for(:timeout, _default, _opts) do
+    TripleStore.Error.new(:query_timeout, "Query timed out")
+  end
+
+  defp error_for(:database_closed, _default, _opts) do
+    TripleStore.Error.database_closed()
+  end
+
+  defp error_for(:file_not_found, _default, opts) do
+    path = Keyword.get(opts, :path, "unknown")
+    TripleStore.Error.file_not_found(path)
+  end
+
+  defp error_for({:parse_error, details}, _default, _opts) do
+    TripleStore.Error.query_parse_error("Parse error: #{inspect(details)}")
+  end
+
+  defp error_for(reason, default_category, opts) when is_atom(reason) do
+    message = "#{reason}"
+    TripleStore.Error.new(default_category, message, details: Enum.into(opts, %{}))
+  end
+
+  defp error_for(reason, default_category, opts) do
+    message = inspect(reason)
+    TripleStore.Error.new(default_category, message, details: Enum.into(opts, %{}))
   end
 end
