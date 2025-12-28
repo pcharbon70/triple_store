@@ -196,7 +196,7 @@ Security and performance fixes from comprehensive review:
 
 ## 5.4 Telemetry Integration
 
-- [ ] **Section 5.4 Complete**
+- [x] **Section 5.4 Complete**
 
 This section implements comprehensive telemetry for operational visibility using Elixir's Telemetry library.
 
@@ -244,23 +244,35 @@ Note: Enhanced `TripleStore.Health` module with `get_index_sizes/1`, `estimate_m
 
 ### 5.4.4 Prometheus Integration
 
-- [ ] **Task 5.4.4 Complete**
+- [x] **Task 5.4.4 Complete**
 
 Support Prometheus metrics export.
 
-- [ ] 5.4.4.1 Define Prometheus metric specifications
-- [ ] 5.4.4.2 Implement telemetry handlers updating Prometheus metrics
-- [ ] 5.4.4.3 Document Grafana dashboard setup
-- [ ] 5.4.4.4 Provide example alerting rules
+- [x] 5.4.4.1 Define Prometheus metric specifications
+- [x] 5.4.4.2 Implement telemetry handlers updating Prometheus metrics
+- [x] 5.4.4.3 Document Grafana dashboard setup
+- [x] 5.4.4.4 Provide example alerting rules
+
+Note: Implemented `TripleStore.Prometheus` GenServer with 19 metric definitions (counters,
+histograms, gauges), telemetry event handlers, Prometheus text exposition format output,
+and comprehensive documentation with Grafana dashboard JSON and 8 alerting rules.
+Added 25 tests.
 
 ### 5.4.5 Unit Tests
 
-- [ ] **Task 5.4.5 Complete**
+- [x] **Task 5.4.5 Complete**
 
-- [ ] Test telemetry events emitted for queries
-- [ ] Test telemetry events emitted for updates
-- [ ] Test health check returns accurate status
-- [ ] Test Prometheus metrics update correctly
+- [x] Test telemetry events emitted for queries
+- [x] Test telemetry events emitted for updates
+- [x] Test health check returns accurate status
+- [x] Test Prometheus metrics update correctly
+
+Note: All telemetry-related tests are covered across Tasks 5.4.1-5.4.4:
+- Task 5.4.1: 27 telemetry API tests
+- Task 5.4.2: 23 metrics collection tests
+- Task 5.4.3: 32 health check tests
+- Task 5.4.4: 25 Prometheus tests
+Total: 107 tests for Section 5.4
 
 ---
 
