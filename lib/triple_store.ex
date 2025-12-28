@@ -338,10 +338,10 @@ defmodule TripleStore do
     Telemetry.span(:query, :execute, telemetry_metadata, fn ->
       case Query.query(ctx, sparql, opts) do
         {:ok, result} ->
-          {result, %{result_type: result_type(result)}}
+          {{:ok, result}, %{result_type: result_type(result)}}
 
         {:error, _} = error ->
-          error
+          {error, %{}}
       end
     end)
   end

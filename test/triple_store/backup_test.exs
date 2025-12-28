@@ -124,7 +124,7 @@ defmodule TripleStore.BackupTest do
 
       # Verify data is present
       query = "SELECT * WHERE { ?s ?p ?o }"
-      results = TripleStore.query(restored_store, query)
+      {:ok, results} = TripleStore.query(restored_store, query)
       assert length(results) >= 2
 
       TripleStore.close(restored_store)
@@ -199,7 +199,7 @@ defmodule TripleStore.BackupTest do
 
       # Verify we can query the restored database
       query = "SELECT * WHERE { ?s ?p ?o }"
-      results = TripleStore.query(restored_store, query)
+      {:ok, results} = TripleStore.query(restored_store, query)
       assert length(results) >= 2
 
       TripleStore.close(restored_store)
@@ -398,7 +398,7 @@ defmodule TripleStore.BackupTest do
 
       # Query should return all data (original + new)
       query = "SELECT * WHERE { ?s <http://example.org/pred> ?o }"
-      results = TripleStore.query(restored_store, query)
+      {:ok, results} = TripleStore.query(restored_store, query)
       assert length(results) == 4
 
       TripleStore.close(restored_store)
@@ -466,7 +466,7 @@ defmodule TripleStore.BackupTest do
 
       # Query should work
       query = "SELECT * WHERE { ?s ?p ?o }"
-      results = TripleStore.query(restored_store, query)
+      {:ok, results} = TripleStore.query(restored_store, query)
       assert length(results) == 1
 
       TripleStore.close(restored_store)

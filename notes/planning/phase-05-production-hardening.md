@@ -385,7 +385,7 @@ See `notes/summaries/section-5.5-review-fixes.md` for full details.
 
 ## 5.6 Public API Finalization
 
-- [ ] **Section 5.6 Complete**
+- [x] **Section 5.6 Complete**
 
 This section finalizes the public API with clean documentation and usage examples.
 
@@ -440,12 +440,14 @@ See `notes/summaries/task-5.6.3-error-handling.md` for details.
 
 ### 5.6.4 Unit Tests
 
-- [ ] **Task 5.6.4 Complete**
+- [x] **Task 5.6.4 Complete**
 
-- [ ] Test all public functions have documentation
-- [ ] Test all public functions have specs
-- [ ] Test error handling returns correct types
-- [ ] Test bang functions raise appropriate errors
+- [x] Test all public functions have documentation
+- [x] Test all public functions have specs
+- [x] Test error handling returns correct types
+- [x] Test bang functions raise appropriate errors
+
+See `notes/summaries/task-5.6.4-unit-tests.md` for details.
 
 ---
 
