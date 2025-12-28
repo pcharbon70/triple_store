@@ -89,14 +89,14 @@ Configure memory allocation for optimal performance.
 
 ### 5.2.2 Compression Configuration
 
-- [ ] **Task 5.2.2 Complete**
+- [x] **Task 5.2.2 Complete**
 
 Configure compression per column family.
 
-- [ ] 5.2.2.1 Use LZ4 for frequently accessed data (indices)
-- [ ] 5.2.2.2 Use Zstd for archival data (derived facts)
-- [ ] 5.2.2.3 Benchmark compression ratio vs speed tradeoffs
-- [ ] 5.2.2.4 Document compression settings
+- [x] 5.2.2.1 Use LZ4 for frequently accessed data (indices)
+- [x] 5.2.2.2 Use Zstd for archival data (derived facts)
+- [x] 5.2.2.3 Benchmark compression ratio vs speed tradeoffs
+- [x] 5.2.2.4 Document compression settings
 
 ### 5.2.3 Compaction Configuration
 
