@@ -2,6 +2,8 @@ defmodule TripleStore.Config.Compaction do
   @moduledoc """
   Compaction configuration for RocksDB.
 
+  See `TripleStore.Config.Helpers` for shared utilities (format_bytes, validation helpers).
+
   This module provides configuration for RocksDB's LSM-tree compaction process,
   which is critical for maintaining read performance and managing disk space.
 
@@ -102,6 +104,8 @@ defmodule TripleStore.Config.Compaction do
   # ===========================================================================
   # Constants
   # ===========================================================================
+
+  alias TripleStore.Config.Helpers
 
   # Default level multiplier (each level is 10x larger)
   @default_level_multiplier 10.0
@@ -314,6 +318,31 @@ defmodule TripleStore.Config.Compaction do
   end
 
   @doc """
+  Creates a custom compaction configuration with validation.
+
+  Same as `custom/1` but validates the configuration and raises on error.
+
+  ## Examples
+
+      # Valid configuration
+      config = TripleStore.Config.Compaction.custom!(rate_limit_bytes_per_sec: 50 * 1024 * 1024)
+
+      # Invalid configuration raises
+      TripleStore.Config.Compaction.custom!(max_background_compactions: -1)
+      # => ** (ArgumentError) max_background_compactions must be a positive integer
+
+  """
+  @spec custom!(keyword()) :: t()
+  def custom!(opts \\ []) do
+    config = custom(opts)
+
+    case validate(config) do
+      :ok -> config
+      {:error, reason} -> raise ArgumentError, reason
+    end
+  end
+
+  @doc """
   Calculates the size of each level based on configuration.
 
   Returns a map with the target size for each level.
@@ -437,32 +466,20 @@ defmodule TripleStore.Config.Compaction do
   """
   @spec validate(t()) :: :ok | {:error, String.t()}
   def validate(config) do
-    validations = [
-      validate_style(config.style),
-      validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base"),
-      validate_positive(config.num_levels, "num_levels"),
-      validate_positive(config.level0_file_num_compaction_trigger, "level0_file_num_compaction_trigger"),
-      validate_l0_triggers(config),
-      validate_non_negative(config.rate_limit_bytes_per_sec, "rate_limit_bytes_per_sec"),
-      validate_positive(config.max_background_compactions, "max_background_compactions"),
-      validate_positive(config.max_background_flushes, "max_background_flushes"),
-      validate_positive(config.target_file_size_base, "target_file_size_base")
-    ]
-
-    case Enum.find(validations, &match?({:error, _}, &1)) do
-      nil -> :ok
-      error -> error
+    with :ok <- validate_style(config.style),
+         :ok <- Helpers.validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base"),
+         :ok <- Helpers.validate_positive(config.num_levels, "num_levels"),
+         :ok <- Helpers.validate_positive(config.level0_file_num_compaction_trigger, "level0_file_num_compaction_trigger"),
+         :ok <- validate_l0_triggers(config),
+         :ok <- Helpers.validate_non_negative(config.rate_limit_bytes_per_sec, "rate_limit_bytes_per_sec"),
+         :ok <- Helpers.validate_positive(config.max_background_compactions, "max_background_compactions"),
+         :ok <- Helpers.validate_positive(config.max_background_flushes, "max_background_flushes") do
+      Helpers.validate_positive(config.target_file_size_base, "target_file_size_base")
     end
   end
 
   defp validate_style(style) when style in [:level, :universal, :fifo], do: :ok
   defp validate_style(style), do: {:error, "invalid compaction style: #{inspect(style)}"}
-
-  defp validate_positive(value, _name) when is_integer(value) and value > 0, do: :ok
-  defp validate_positive(_, name), do: {:error, "#{name} must be a positive integer"}
-
-  defp validate_non_negative(value, _name) when is_integer(value) and value >= 0, do: :ok
-  defp validate_non_negative(_, name), do: {:error, "#{name} must be a non-negative integer"}
 
   defp validate_l0_triggers(config) do
     cond do
@@ -703,26 +720,14 @@ defmodule TripleStore.Config.Compaction do
   end
 
   # ===========================================================================
-  # Private Functions
+  # Shared Helpers
   # ===========================================================================
 
-  defp format_bytes(bytes) when bytes >= 1024 * 1024 * 1024 * 1024 do
-    :io_lib.format("~.2f TB", [bytes / (1024 * 1024 * 1024 * 1024)]) |> to_string()
-  end
+  @doc """
+  Formats a byte count as a human-readable string.
 
-  defp format_bytes(bytes) when bytes >= 1024 * 1024 * 1024 do
-    :io_lib.format("~.2f GB", [bytes / (1024 * 1024 * 1024)]) |> to_string()
-  end
-
-  defp format_bytes(bytes) when bytes >= 1024 * 1024 do
-    :io_lib.format("~.2f MB", [bytes / (1024 * 1024)]) |> to_string()
-  end
-
-  defp format_bytes(bytes) when bytes >= 1024 do
-    :io_lib.format("~.2f KB", [bytes / 1024]) |> to_string()
-  end
-
-  defp format_bytes(bytes) do
-    "#{bytes} B"
-  end
+  Delegated to `TripleStore.Config.Helpers.format_bytes/1`.
+  """
+  @spec format_bytes(non_neg_integer()) :: String.t()
+  defdelegate format_bytes(bytes), to: Helpers
 end

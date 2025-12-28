@@ -2,6 +2,8 @@ defmodule TripleStore.Config.RocksDB do
   @moduledoc """
   RocksDB memory configuration for production workloads.
 
+  See `TripleStore.Config.Helpers` for shared utilities.
+
   This module provides intelligent memory tuning for RocksDB based on
   available system RAM and workload characteristics.
 
@@ -65,7 +67,12 @@ defmodule TripleStore.Config.RocksDB do
   # Constants
   # ===========================================================================
 
-  # Number of column families in the triple store
+  # Import shared helpers
+  import TripleStore.Config.Helpers, only: [clamp: 3]
+  alias TripleStore.Config.Helpers
+
+  # Number of column families (matching TripleStore.Config.ColumnFamily.column_family_names())
+  # Used for memory calculations. This should stay in sync with the ColumnFamily module.
   @num_column_families 6
 
   # Minimum and maximum block cache sizes
@@ -363,21 +370,7 @@ defmodule TripleStore.Config.RocksDB do
 
   """
   @spec format_bytes(non_neg_integer()) :: String.t()
-  def format_bytes(bytes) when bytes >= 1024 * 1024 * 1024 do
-    :io_lib.format("~.2f GB", [bytes / (1024 * 1024 * 1024)]) |> to_string()
-  end
-
-  def format_bytes(bytes) when bytes >= 1024 * 1024 do
-    :io_lib.format("~.2f MB", [bytes / (1024 * 1024)]) |> to_string()
-  end
-
-  def format_bytes(bytes) when bytes >= 1024 do
-    :io_lib.format("~.2f KB", [bytes / 1024]) |> to_string()
-  end
-
-  def format_bytes(bytes) do
-    "#{bytes} B"
-  end
+  defdelegate format_bytes(bytes), to: Helpers
 
   @doc """
   Generates a human-readable summary of a configuration.
@@ -420,29 +413,22 @@ defmodule TripleStore.Config.RocksDB do
   """
   @spec validate(t()) :: :ok | {:error, String.t()}
   def validate(config) do
-    validations = [
-      validate_non_neg_integer(config.block_cache_size, "block_cache_size"),
-      validate_pos_integer(config.write_buffer_size, "write_buffer_size"),
-      validate_min_integer(config.max_write_buffer_number, 1, "max_write_buffer_number"),
-      validate_integer(config.max_open_files, "max_open_files"),
-      validate_pos_integer(config.target_file_size_base, "target_file_size_base"),
-      validate_pos_integer(config.max_bytes_for_level_base, "max_bytes_for_level_base")
-    ]
-
-    case Enum.find(validations, &match?({:error, _}, &1)) do
-      nil -> :ok
-      error -> error
+    with :ok <- Helpers.validate_non_negative(config.block_cache_size, "block_cache_size"),
+         :ok <- Helpers.validate_positive(config.write_buffer_size, "write_buffer_size"),
+         :ok <- Helpers.validate_min(config.max_write_buffer_number, 1, "max_write_buffer_number"),
+         :ok <- validate_integer(config.max_open_files, "max_open_files"),
+         :ok <- Helpers.validate_positive(config.target_file_size_base, "target_file_size_base") do
+      Helpers.validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base")
     end
   end
 
-  defp validate_non_neg_integer(value, _name) when is_integer(value) and value >= 0, do: :ok
-  defp validate_non_neg_integer(_, name), do: {:error, "#{name} must be a non-negative integer"}
+  @doc """
+  Returns the number of column families used for memory calculations.
 
-  defp validate_pos_integer(value, _name) when is_integer(value) and value > 0, do: :ok
-  defp validate_pos_integer(_, name), do: {:error, "#{name} must be a positive integer"}
-
-  defp validate_min_integer(value, min, _name) when is_integer(value) and value >= min, do: :ok
-  defp validate_min_integer(_, min, name), do: {:error, "#{name} must be at least #{min}"}
+  This value should match `length(ColumnFamily.column_family_names())`.
+  """
+  @spec num_column_families() :: pos_integer()
+  def num_column_families, do: @num_column_families
 
   defp validate_integer(value, _name) when is_integer(value), do: :ok
   defp validate_integer(_, name), do: {:error, "#{name} must be an integer"}
@@ -479,12 +465,6 @@ defmodule TripleStore.Config.RocksDB do
       write_buffer_size: clamped_buffer,
       max_write_buffer_number: buffer_count
     }
-  end
-
-  defp clamp(value, min_val, max_val) do
-    value
-    |> max(min_val)
-    |> min(max_val)
   end
 
   defp memsup_available? do

@@ -237,7 +237,7 @@ defmodule TripleStore.Config.RocksDBTest do
     end
 
     test "formats kilobytes" do
-      assert RocksDB.format_bytes(512 * 1024) == "512.00 KB"
+      assert RocksDB.format_bytes(512 * 1024) == "512 KB"
     end
 
     test "formats bytes" do

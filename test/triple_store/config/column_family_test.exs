@@ -327,7 +327,7 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.access_pattern == :point_lookup
       assert String.contains?(rationale.bloom_filter_rationale, "12 bits/key")
       assert String.contains?(rationale.prefix_extractor_rationale, "Disabled")
-      assert String.contains?(rationale.block_size_rationale, "4KB")
+      assert String.contains?(rationale.block_size_rationale, "4 KB")
     end
 
     test "returns rationale for index CFs" do
@@ -338,7 +338,7 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.access_pattern == :prefix_scan
       assert String.contains?(rationale.bloom_filter_rationale, "10 bits/key")
       assert String.contains?(rationale.prefix_extractor_rationale, "8-byte prefix")
-      assert String.contains?(rationale.block_size_rationale, "4KB")
+      assert String.contains?(rationale.block_size_rationale, "4 KB")
     end
 
     test "returns rationale for derived CF" do
@@ -349,7 +349,7 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.access_pattern == :bulk
       assert String.contains?(rationale.bloom_filter_rationale, "Disabled")
       assert String.contains?(rationale.prefix_extractor_rationale, "Disabled")
-      assert String.contains?(rationale.block_size_rationale, "16KB")
+      assert String.contains?(rationale.block_size_rationale, "16 KB")
     end
 
     test "index rationale includes index name" do

@@ -2,6 +2,8 @@ defmodule TripleStore.Config.ColumnFamily do
   @moduledoc """
   Column family tuning configuration for RocksDB.
 
+  See `TripleStore.Config.Helpers` for shared utilities (format_bytes, validation helpers).
+
   This module provides per-column-family configuration optimized for the
   specific access patterns of each column family in the triple store:
 
@@ -50,6 +52,8 @@ defmodule TripleStore.Config.ColumnFamily do
       config = ColumnFamily.for_cf(:spo, block_size: 8192)
 
   """
+
+  alias TripleStore.Config.Helpers
 
   # Default bloom filter bits per key (10 bits = ~1% false positive rate)
   @default_bloom_bits_per_key 10
@@ -707,9 +711,5 @@ defmodule TripleStore.Config.ColumnFamily do
     "~#{Float.round(fpr * 100, 2)}%"
   end
 
-  defp format_bytes(bytes) when bytes >= 1024 do
-    "#{div(bytes, 1024)}KB"
-  end
-
-  defp format_bytes(bytes), do: "#{bytes}B"
+  defp format_bytes(bytes), do: Helpers.format_bytes(bytes)
 end

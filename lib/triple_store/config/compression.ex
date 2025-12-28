@@ -85,6 +85,9 @@ defmodule TripleStore.Config.Compression do
           level_3_plus: algorithm()
         }
 
+  @typedoc "Preset name"
+  @type preset_name :: :default | :fast | :compact | :none
+
   # ===========================================================================
   # Constants
   # ===========================================================================
@@ -360,6 +363,31 @@ defmodule TripleStore.Config.Compression do
   end
 
   @doc """
+  Creates a custom compression configuration with validation.
+
+  Same as `custom/1` but validates the configuration and raises on error.
+
+  ## Examples
+
+      # Valid configuration
+      config = TripleStore.Config.Compression.custom!(index_algorithm: :zstd, zstd_level: 6)
+
+      # Invalid configuration raises
+      TripleStore.Config.Compression.custom!(index_algorithm: :invalid)
+      # => ** (ArgumentError) spo: unknown algorithm: :invalid
+
+  """
+  @spec custom!(keyword()) :: %{column_family() => compression_config()}
+  def custom!(opts \\ []) do
+    config = custom(opts)
+
+    case validate_all(config) do
+      :ok -> config
+      {:error, reason} -> raise ArgumentError, reason
+    end
+  end
+
+  @doc """
   Returns preset compression configurations.
 
   Available presets:
@@ -374,7 +402,7 @@ defmodule TripleStore.Config.Compression do
       config = TripleStore.Config.Compression.preset(:fast)
 
   """
-  @spec preset(atom()) :: %{column_family() => compression_config()}
+  @spec preset(preset_name()) :: %{column_family() => compression_config()}
   def preset(:default), do: @cf_compression
 
   def preset(:fast) do
