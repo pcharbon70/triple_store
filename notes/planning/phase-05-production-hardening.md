@@ -111,14 +111,14 @@ Configure compaction for balanced performance.
 
 ### 5.2.4 Column Family Tuning
 
-- [ ] **Task 5.2.4 Complete**
+- [x] **Task 5.2.4 Complete**
 
 Tune individual column families for their access patterns.
 
-- [ ] 5.2.4.1 Add bloom filters to dictionary column families
-- [ ] 5.2.4.2 Set prefix extractors for index column families
-- [ ] 5.2.4.3 Configure block sizes per access pattern
-- [ ] 5.2.4.4 Document per-CF tuning rationale
+- [x] 5.2.4.1 Add bloom filters to dictionary column families
+- [x] 5.2.4.2 Set prefix extractors for index column families
+- [x] 5.2.4.3 Configure block sizes per access pattern
+- [x] 5.2.4.4 Document per-CF tuning rationale
 
 ### 5.2.5 Unit Tests
 
