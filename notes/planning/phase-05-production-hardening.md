@@ -230,14 +230,17 @@ and provides aggregated statistics with 23 comprehensive tests.
 
 ### 5.4.3 Health Checks
 
-- [ ] **Task 5.4.3 Complete**
+- [x] **Task 5.4.3 Complete**
 
 Implement health check endpoint.
 
-- [ ] 5.4.3.1 Implement `TripleStore.health(db)` returning health status
-- [ ] 5.4.3.2 Report triple count and index sizes
-- [ ] 5.4.3.3 Report compaction status and lag
-- [ ] 5.4.3.4 Report memory usage estimates
+- [x] 5.4.3.1 Implement `TripleStore.health(db)` returning health status
+- [x] 5.4.3.2 Report triple count and index sizes
+- [x] 5.4.3.3 Report compaction status and lag
+- [x] 5.4.3.4 Report memory usage estimates
+
+Note: Enhanced `TripleStore.Health` module with `get_index_sizes/1`, `estimate_memory/1`,
+`get_compaction_status/0`, and integration with Metrics. Added 32 comprehensive tests.
 
 ### 5.4.4 Prometheus Integration
 
