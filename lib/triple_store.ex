@@ -974,6 +974,54 @@ defmodule TripleStore do
     TripleStore.Backup.restore(backup_path, restore_path, opts)
   end
 
+  @doc """
+  Starts scheduled periodic backups for a store.
+
+  Creates a background process that runs backups at regular intervals,
+  automatically rotating old backups beyond the specified limit.
+
+  See `TripleStore.ScheduledBackup` for full documentation.
+
+  ## Arguments
+
+  - `store` - Store handle from `TripleStore.open/2`
+  - `backup_dir` - Directory to store backups
+  - `opts` - Scheduling options
+
+  ## Options
+
+  - `:interval` - Backup interval in milliseconds (default: 1 hour)
+  - `:max_backups` - Maximum backups to keep (default: 5)
+  - `:prefix` - Backup name prefix (default: "scheduled")
+  - `:run_immediately` - Run first backup immediately (default: false)
+
+  ## Returns
+
+  - `{:ok, pid}` - Scheduler process started
+  - `{:error, reason}` - Failed to start scheduler
+
+  ## Examples
+
+      # Start hourly backups, keeping last 24
+      {:ok, scheduler} = TripleStore.schedule_backup(store, "/backups/mydb",
+        interval: :timer.hours(1),
+        max_backups: 24
+      )
+
+      # Check scheduler status
+      {:ok, status} = TripleStore.ScheduledBackup.status(scheduler)
+
+      # Stop scheduled backups
+      :ok = TripleStore.ScheduledBackup.stop(scheduler)
+
+  """
+  @spec schedule_backup(store(), Path.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def schedule_backup(store, backup_dir, opts \\ []) do
+    TripleStore.ScheduledBackup.start_link(
+      Keyword.merge(opts, store: store, backup_dir: backup_dir)
+    )
+  end
+
   # ===========================================================================
   # Bang Variants (raise on error)
   # ===========================================================================

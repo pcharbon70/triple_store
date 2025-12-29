@@ -376,7 +376,9 @@ defmodule TripleStore.Telemetry do
       @prefix ++ [:backup, :restore, :stop],
       @prefix ++ [:backup, :restore, :exception],
       @prefix ++ [:backup, :verify, :start],
-      @prefix ++ [:backup, :verify, :stop]
+      @prefix ++ [:backup, :verify, :stop],
+      @prefix ++ [:scheduled_backup, :tick],
+      @prefix ++ [:scheduled_backup, :error]
     ]
   end
 

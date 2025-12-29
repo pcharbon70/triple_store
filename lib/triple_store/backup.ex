@@ -467,9 +467,12 @@ defmodule TripleStore.Backup do
     max_backups = Keyword.get(opts, :max_backups, 5)
     prefix = Keyword.get(opts, :prefix, "backup")
 
-    # Create timestamped backup name
-    timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d_%H%M%S")
-    backup_name = "#{prefix}_#{timestamp}"
+    # Create timestamped backup name with milliseconds for uniqueness
+    now = DateTime.utc_now()
+    timestamp = Calendar.strftime(now, "%Y%m%d_%H%M%S")
+    # Add milliseconds to ensure uniqueness for rapid backups
+    ms = now.microsecond |> elem(0) |> div(1000)
+    backup_name = "#{prefix}_#{timestamp}_#{String.pad_leading(to_string(ms), 3, "0")}"
     backup_path = Path.join(backup_dir, backup_name)
 
     with {:ok, metadata} <- create(store, backup_path, opts),

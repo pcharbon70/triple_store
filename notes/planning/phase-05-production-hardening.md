@@ -334,14 +334,24 @@ See `notes/summaries/task-5.5.2.4-atomics-counter-restoration.md` for details.
 
 ### 5.5.3 Scheduled Backups
 
-- [ ] **Task 5.5.3 Complete** (Partial - rotation implemented, scheduling deferred)
+- [x] **Task 5.5.3 Complete** (2025-12-29)
 
 Support scheduled periodic backups.
 
-- [ ] 5.5.3.1 Implement `TripleStore.schedule_backup(db, interval, path)` (deferred)
+- [x] 5.5.3.1 Implement `TripleStore.schedule_backup(db, interval, path)`
 - [x] 5.5.3.2 Implement backup rotation (keep N most recent)
 - [x] 5.5.3.3 Report backup status via telemetry
 - [x] 5.5.3.4 Handle backup failures gracefully
+
+Implemented `TripleStore.ScheduledBackup` GenServer with:
+- Configurable backup intervals (default: 1 hour)
+- Automatic rotation via `Backup.rotate/3`
+- Status reporting (`status/1`)
+- Manual trigger support (`trigger_backup/1`)
+- Telemetry events for monitoring (`scheduled_backup.tick`, `scheduled_backup.error`)
+- Millisecond timestamps to prevent backup collisions during rapid backups
+
+See `notes/summaries/task-5.5.3-scheduled-backups.md` for details.
 
 ### 5.5.4 Unit Tests
 
@@ -349,8 +359,10 @@ Support scheduled periodic backups.
 
 - [x] Test backup creates valid checkpoint
 - [x] Test restore produces identical database
-- [ ] Test scheduled backup runs at interval (deferred with 5.5.3.1)
+- [x] Test scheduled backup runs at interval
 - [x] Test backup rotation deletes old backups
+
+Added 15 tests for scheduled backup functionality in `test/triple_store/scheduled_backup_test.exs`.
 
 ### Section 5.5 Review Fixes
 
