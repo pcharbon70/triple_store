@@ -524,14 +524,22 @@ See `notes/summaries/task-5.7.2-benchmark-validation.md` for details.
 
 ### 5.7.3 Operational Testing
 
-- [ ] **Task 5.7.3 Complete**
+- [x] **Task 5.7.3 Complete** (2025-12-29)
 
 Test operational features.
 
-- [ ] 5.7.3.1 Test backup/restore cycle preserves all data
-- [ ] 5.7.3.2 Test telemetry integration with Prometheus
-- [ ] 5.7.3.3 Test health check under various conditions
-- [ ] 5.7.3.4 Test graceful shutdown and restart
+- [x] 5.7.3.1 Test backup/restore cycle preserves all data
+- [x] 5.7.3.2 Test telemetry integration with Prometheus
+- [x] 5.7.3.3 Test health check under various conditions
+- [x] 5.7.3.4 Test graceful shutdown and restart
+
+Implemented 23 operational tests in `test/triple_store/operational_testing_test.exs`:
+- Backup/restore cycle tests with rotation and snapshot verification
+- Telemetry/Prometheus integration with event capture verification
+- Health checks under various conditions including concurrent operations
+- Graceful shutdown/restart with data persistence verification
+
+See `notes/summaries/task-5.7.3-operational-testing.md` for details.
 
 ### 5.7.4 API Testing
 
