@@ -10,59 +10,38 @@ defmodule TripleStore.OperationalTestingTest do
 
   These are integration tests that verify the complete operational
   workflow works correctly in realistic scenarios.
+
+  ## Timeout Configuration
+
+  Default timeout: 120 seconds (2 minutes)
+  Rationale: Operational tests involve backup/restore cycles and multiple
+  store open/close operations which can be slow on CI systems.
   """
 
   use ExUnit.Case, async: false
+
+  import TripleStore.Test.IntegrationHelpers,
+    only: [
+      create_test_store: 0,
+      create_test_store: 1,
+      cleanup_test_store: 2,
+      cleanup_test_path: 1,
+      open_with_retry: 1,
+      wait_for_lock_release: 0,
+      wait_for_lock_release: 1,
+      load_test_data: 2,
+      get_triple_count: 1,
+      ensure_prometheus_started: 0
+    ]
 
   alias TripleStore.Backup
   alias TripleStore.Health
   alias TripleStore.Prometheus
   alias TripleStore.Metrics
-  alias TripleStore.Telemetry
 
   @moduletag :integration
+  # 2 minute timeout for operational tests (backup/restore, multiple open/close cycles)
   @moduletag timeout: 120_000
-
-  # ===========================================================================
-  # Setup Helpers
-  # ===========================================================================
-
-  defp create_temp_store do
-    path = Path.join(System.tmp_dir!(), "ops_test_#{:rand.uniform(1_000_000)}")
-    {:ok, store} = TripleStore.open(path)
-    {store, path}
-  end
-
-  defp cleanup_store(store, path) do
-    try do
-      TripleStore.close(store)
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
-
-    File.rm_rf!(path)
-  end
-
-  defp cleanup_path(path) do
-    File.rm_rf!(path)
-  end
-
-  defp load_test_data(store, count \\ 100) do
-    triples =
-      for i <- 1..count do
-        {
-          RDF.iri("http://example.org/item#{i}"),
-          RDF.iri("http://example.org/value"),
-          RDF.literal(i)
-        }
-      end
-
-    graph = RDF.Graph.new(triples)
-    {:ok, loaded} = TripleStore.load_graph(store, graph)
-    loaded
-  end
 
   # ===========================================================================
   # 5.7.3.1: Backup/Restore Cycle Preserves All Data
@@ -70,7 +49,7 @@ defmodule TripleStore.OperationalTestingTest do
 
   describe "5.7.3.1: backup/restore cycle preserves all data" do
     test "full backup and restore preserves all triples" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_backup")
       backup_path = Path.join(System.tmp_dir!(), "backup_test_#{:rand.uniform(1_000_000)}")
 
       try do
@@ -107,16 +86,16 @@ defmodule TripleStore.OperationalTestingTest do
           assert length(specific) == 1
         after
           TripleStore.close(restored_store)
-          cleanup_path(restore_path)
+          cleanup_test_path(restore_path)
         end
       after
-        cleanup_path(path)
-        cleanup_path(backup_path)
+        cleanup_test_path(path)
+        cleanup_test_path(backup_path)
       end
     end
 
     test "backup preserves data with unique markers" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_marker")
       backup_path = Path.join(System.tmp_dir!(), "marker_backup_#{:rand.uniform(1_000_000)}")
 
       try do
@@ -149,16 +128,16 @@ defmodule TripleStore.OperationalTestingTest do
           assert result_value != nil
         after
           TripleStore.close(restored)
-          cleanup_path(restore_path)
+          cleanup_test_path(restore_path)
         end
       after
-        cleanup_path(path)
-        cleanup_path(backup_path)
+        cleanup_test_path(path)
+        cleanup_test_path(backup_path)
       end
     end
 
     test "backup rotation keeps only N most recent backups" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_rotation")
       backup_dir = Path.join(System.tmp_dir!(), "rotation_test_#{:rand.uniform(1_000_000)}")
       File.mkdir_p!(backup_dir)
 
@@ -166,31 +145,41 @@ defmodule TripleStore.OperationalTestingTest do
         load_test_data(store, 50)
 
         # Create multiple rotating backups with proper timing
-        successful_backups = 0
-        for i <- 1..5 do
-          # rotate auto-generates unique timestamped paths
-          result = Backup.rotate(store, backup_dir, max_backups: 3)
-          case result do
-            {:ok, _} -> :ok
-            {:error, _} -> :ok  # May fail due to timing
-          end
-          Process.sleep(1100)  # Delay > 1 second to ensure different timestamps
-        end
+        # Track successful backups to verify rotation is working
+        successful_count =
+          Enum.reduce(1..5, 0, fn _i, acc ->
+            # rotate auto-generates unique timestamped paths
+            case Backup.rotate(store, backup_dir, max_backups: 3) do
+              {:ok, _} ->
+                acc + 1
 
-        # List backups - may have fewer due to rotation
+              {:error, reason} ->
+                # Log but don't fail - timing issues can cause transient failures
+                require Logger
+                Logger.warning("Backup rotation attempt failed: #{inspect(reason)}")
+                acc
+            end
+            |> tap(fn _ -> Process.sleep(1100) end)  # Delay > 1 second for unique timestamps
+          end)
+
+        # At least some backups should have succeeded
+        assert successful_count >= 3, "Expected at least 3 successful backups, got #{successful_count}"
+
+        # List backups - rotation should limit to max_backups
         {:ok, backups} = Backup.list(backup_dir)
 
-        # Should have at most 3 backups (max_backups: 3)
-        assert length(backups) <= 3
-        assert length(backups) >= 1  # At least one backup should exist
+        # Should have exactly 3 backups if rotation worked correctly
+        # Allow 2-3 for edge cases with timing
+        assert length(backups) >= 2 and length(backups) <= 3,
+               "Expected 2-3 backups after rotation, got #{length(backups)}"
       after
-        cleanup_store(store, path)
-        cleanup_path(backup_dir)
+        cleanup_test_store(store, path)
+        cleanup_test_path(backup_dir)
       end
     end
 
     test "backup creates restorable snapshot" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_snapshot")
       backup_path = Path.join(System.tmp_dir!(), "snapshot_test_#{:rand.uniform(1_000_000)}")
 
       try do
@@ -229,11 +218,11 @@ defmodule TripleStore.OperationalTestingTest do
           assert length(results) == 1
         after
           TripleStore.close(restored)
-          cleanup_path(restore_path)
+          cleanup_test_path(restore_path)
         end
       after
-        cleanup_path(path)
-        cleanup_path(backup_path)
+        cleanup_test_path(path)
+        cleanup_test_path(backup_path)
       end
     end
   end
@@ -244,7 +233,7 @@ defmodule TripleStore.OperationalTestingTest do
 
   describe "5.7.3.2: telemetry integration with Prometheus" do
     test "Prometheus metrics are collected for queries" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_prom")
 
       try do
         # Start Prometheus if not already started
@@ -264,12 +253,12 @@ defmodule TripleStore.OperationalTestingTest do
         assert String.contains?(metrics, "triple_store_query_total")
         assert String.contains?(metrics, "triple_store_query_duration_seconds")
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "Prometheus metrics are collected for inserts" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         ensure_prometheus_started()
@@ -289,12 +278,12 @@ defmodule TripleStore.OperationalTestingTest do
         # Should contain insert metrics
         assert String.contains?(metrics, "triple_store_insert_total")
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "Prometheus format is valid exposition format" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         ensure_prometheus_started()
@@ -325,12 +314,12 @@ defmodule TripleStore.OperationalTestingTest do
           assert length(parts) >= 2, "Invalid metric line: #{line}"
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "Metrics GenServer collects and aggregates telemetry events" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         # Start metrics collector with unique name
@@ -352,12 +341,12 @@ defmodule TripleStore.OperationalTestingTest do
 
         GenServer.stop(metrics_name)
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "telemetry events are emitted for all operations" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         # Attach telemetry handler to capture events
@@ -411,7 +400,7 @@ defmodule TripleStore.OperationalTestingTest do
           :ets.delete(events_received)
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -422,7 +411,7 @@ defmodule TripleStore.OperationalTestingTest do
 
   describe "5.7.3.3: health check under various conditions" do
     test "store returns health status" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 50)
@@ -435,12 +424,12 @@ defmodule TripleStore.OperationalTestingTest do
         assert health.dict_manager_alive == true
         assert health.triple_count == 50
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "liveness check is fast and simple" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         # Liveness should be very fast
@@ -452,12 +441,12 @@ defmodule TripleStore.OperationalTestingTest do
         # Should complete in under 10ms
         assert duration < 10_000, "Liveness check too slow: #{duration}µs"
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "readiness check returns ready for healthy store" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 10)
@@ -465,12 +454,12 @@ defmodule TripleStore.OperationalTestingTest do
         {:ok, status} = Health.readiness(store)
         assert status == :ready
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check reports triple count accurately" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         # Empty store
@@ -498,12 +487,12 @@ defmodule TripleStore.OperationalTestingTest do
         {:ok, health3} = Health.health(store)
         assert health3.triple_count == 100  # 75 + 25 = 100
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check works during concurrent operations" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 100)
@@ -529,12 +518,12 @@ defmodule TripleStore.OperationalTestingTest do
         # All health checks should succeed (may be :healthy or :degraded during load)
         assert Enum.all?(health_results, &(&1 in [:healthy, :degraded]))
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check with include_all option provides extra details" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 50)
@@ -549,12 +538,12 @@ defmodule TripleStore.OperationalTestingTest do
         assert Map.has_key?(health, :database_open)
         assert Map.has_key?(health, :dict_manager_alive)
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check returns index sizes" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 100)
@@ -572,12 +561,12 @@ defmodule TripleStore.OperationalTestingTest do
         assert sizes.pos >= 0
         assert sizes.osp >= 0
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check returns memory estimate" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 100)
@@ -594,7 +583,7 @@ defmodule TripleStore.OperationalTestingTest do
         assert memory.beam_mb > 0
         assert memory.estimated_total_mb > 0
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -625,7 +614,7 @@ defmodule TripleStore.OperationalTestingTest do
         :erlang.garbage_collect()
 
         # Reopen (with retry for lock release)
-        result = retry_open(path)
+        result = open_with_retry(path)
         assert match?({:ok, _}, result), "Failed to reopen store after close: #{inspect(result)}"
         {:ok, store2} = result
 
@@ -636,12 +625,12 @@ defmodule TripleStore.OperationalTestingTest do
           TripleStore.close(store2)
         end
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
     end
 
     test "pending operations complete before shutdown" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         # Start multiple insert operations
@@ -667,7 +656,7 @@ defmodule TripleStore.OperationalTestingTest do
         Process.sleep(200)
 
         # Reopen and verify all data was persisted
-        {:ok, store2} = retry_open(path)
+        {:ok, store2} = open_with_retry(path)
 
         try do
           # 5 batches * 2 items = 10 triples
@@ -676,12 +665,12 @@ defmodule TripleStore.OperationalTestingTest do
           TripleStore.close(store2)
         end
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
     end
 
     test "second close returns already_closed error" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "ops_test")
 
       try do
         load_test_data(store, 10)
@@ -691,7 +680,7 @@ defmodule TripleStore.OperationalTestingTest do
         result = TripleStore.close(store)
         assert result == {:error, :already_closed}
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
     end
 
@@ -708,7 +697,7 @@ defmodule TripleStore.OperationalTestingTest do
         Process.sleep(300)
 
         # Second session - add 50 MORE unique items
-        {:ok, store2} = retry_open(path)
+        {:ok, store2} = open_with_retry(path)
 
         extra_triples =
           for i <- 1..50 do
@@ -726,7 +715,7 @@ defmodule TripleStore.OperationalTestingTest do
         Process.sleep(300)
 
         # Third session - verify cumulative data
-        {:ok, store3} = retry_open(path)
+        {:ok, store3} = open_with_retry(path)
 
         try do
           assert get_triple_count(store3) == 100
@@ -734,7 +723,7 @@ defmodule TripleStore.OperationalTestingTest do
           TripleStore.close(store3)
         end
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
     end
 
@@ -750,10 +739,10 @@ defmodule TripleStore.OperationalTestingTest do
         assert stats1.triple_count == 75
 
         :ok = TripleStore.close(store1)
-        Process.sleep(200)
+        wait_for_lock_release()
 
         # Reopen and check stats
-        {:ok, store2} = retry_open(path)
+        {:ok, store2} = open_with_retry(path)
 
         try do
           {:ok, stats2} = TripleStore.stats(store2)
@@ -762,7 +751,7 @@ defmodule TripleStore.OperationalTestingTest do
           TripleStore.close(store2)
         end
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
     end
 
@@ -777,7 +766,7 @@ defmodule TripleStore.OperationalTestingTest do
         Process.sleep(300)
 
         # Reopen
-        {:ok, store2} = retry_open(path)
+        {:ok, store2} = open_with_retry(path)
 
         try do
           # Health check should work immediately
@@ -789,47 +778,8 @@ defmodule TripleStore.OperationalTestingTest do
           TripleStore.close(store2)
         end
       after
-        cleanup_path(path)
+        cleanup_test_path(path)
       end
-    end
-  end
-
-  # ===========================================================================
-  # Helper Functions
-  # ===========================================================================
-
-  defp get_triple_count(store) do
-    {:ok, stats} = TripleStore.stats(store)
-    stats.triple_count
-  end
-
-  defp retry_open(path, retries \\ 10) do
-    case TripleStore.open(path) do
-      {:ok, store} ->
-        {:ok, store}
-
-      {:error, _} when retries > 0 ->
-        Process.sleep(500)
-        retry_open(path, retries - 1)
-
-      error ->
-        error
-    end
-  end
-
-  defp extract_value(%RDF.Literal{} = literal), do: RDF.Literal.value(literal) |> to_string()
-  defp extract_value({:literal, :typed, value, _type}), do: to_string(value)
-  defp extract_value({:literal, value, _type}), do: to_string(value)
-  defp extract_value(value) when is_binary(value), do: value
-  defp extract_value(value), do: to_string(value)
-
-  defp ensure_prometheus_started do
-    case Process.whereis(TripleStore.Prometheus) do
-      nil ->
-        {:ok, _} = Prometheus.start_link([])
-        :ok
-      _pid ->
-        :ok
     end
   end
 end

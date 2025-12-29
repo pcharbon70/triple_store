@@ -17,34 +17,29 @@ defmodule TripleStore.BenchmarkValidationTest do
 
   Note: Tests use smaller datasets (1K-10K triples) for fast CI runs.
   Full validation with 1M triples requires the :benchmark tag.
+
+  ## Timeout Configuration
+
+  Default timeout: 300 seconds (5 minutes)
+  Rationale: Benchmark tests with :benchmark tag may run full-scale tests
+  that load and query large datasets. Small-scale CI tests complete faster
+  but we keep the timeout high for consistency.
   """
 
   use ExUnit.Case, async: false
 
+  import TripleStore.Test.IntegrationHelpers,
+    only: [
+      create_test_store: 0,
+      create_test_store: 1,
+      cleanup_test_store: 2
+    ]
+
   alias TripleStore.Benchmark.{Runner, Targets, LUBM, BSBM}
 
   @moduletag :integration
+  # 5 minute timeout for benchmarks (may run large-scale tests with :benchmark tag)
   @moduletag timeout: 300_000
-
-  # ===========================================================================
-  # Setup Helpers
-  # ===========================================================================
-
-  defp create_temp_store do
-    path = Path.join(System.tmp_dir!(), "benchmark_validation_#{:rand.uniform(1_000_000)}")
-    {:ok, store} = TripleStore.open(path)
-    {store, path}
-  end
-
-  defp cleanup_store(store, path) do
-    try do
-      TripleStore.close(store)
-    rescue
-      _ -> :ok
-    end
-
-    File.rm_rf!(path)
-  end
 
   # ===========================================================================
   # 5.7.2.1: LUBM Benchmark Validation
@@ -54,7 +49,7 @@ defmodule TripleStore.BenchmarkValidationTest do
     @tag :benchmark
     @tag timeout: 600_000
     test "LUBM benchmark meets performance targets on scaled dataset" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Generate LUBM data at scale 1 (approximately 100K triples)
@@ -87,20 +82,24 @@ defmodule TripleStore.BenchmarkValidationTest do
           IO.puts("  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}")
         end
 
-        # Validate targets
+        # Validate targets and assert they pass
         {:ok, validation} = Targets.validate(results)
         Targets.print_report(validation)
+
+        # Assert validation passed - this is the primary goal of benchmark tests
+        assert validation.passed,
+               "LUBM benchmark did not meet all performance targets: #{inspect(validation)}"
 
         # Store detailed metrics for documentation
         assert is_list(results.query_results)
         assert length(results.query_results) > 0
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "LUBM queries execute correctly on small dataset" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Use small scale for fast CI (1 university)
@@ -127,12 +126,12 @@ defmodule TripleStore.BenchmarkValidationTest do
           assert qr.p95_us >= qr.p50_us
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "LUBM simple BGP queries are fast" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         graph = LUBM.generate(1)
@@ -152,7 +151,7 @@ defmodule TripleStore.BenchmarkValidationTest do
           assert qr.p95_us < 100_000, "Query #{qr.query_id} p95 too slow: #{qr.p95_us}µs"
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -165,7 +164,7 @@ defmodule TripleStore.BenchmarkValidationTest do
     @tag :benchmark
     @tag timeout: 600_000
     test "BSBM benchmark meets performance targets on scaled dataset" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Generate BSBM data (e-commerce simulation)
@@ -198,19 +197,23 @@ defmodule TripleStore.BenchmarkValidationTest do
           IO.puts("  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}")
         end
 
-        # Validate targets
+        # Validate targets and assert they pass
         {:ok, validation} = Targets.validate(results)
         Targets.print_report(validation)
+
+        # Assert validation passed - this is the primary goal of benchmark tests
+        assert validation.passed,
+               "BSBM benchmark did not meet all performance targets: #{inspect(validation)}"
 
         # Store results
         assert results.aggregate.p95_us > 0
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "BSBM queries execute correctly on small dataset" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Small scale for fast CI
@@ -234,12 +237,12 @@ defmodule TripleStore.BenchmarkValidationTest do
           assert qr.p95_us >= 0
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "BSBM e-commerce query patterns complete" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         graph = BSBM.generate(50)
@@ -259,7 +262,7 @@ defmodule TripleStore.BenchmarkValidationTest do
         assert results.aggregate.total_queries > 0
         assert results.aggregate.queries_per_sec > 0
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -270,7 +273,7 @@ defmodule TripleStore.BenchmarkValidationTest do
 
   describe "5.7.2.3: profiling and bottleneck identification" do
     test "bulk load throughput measurement" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Generate varying sizes to measure throughput scaling
@@ -301,12 +304,12 @@ defmodule TripleStore.BenchmarkValidationTest do
           assert tps > 1000, "Throughput too low for #{size} triples: #{tps}"
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "query latency distribution analysis" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Load test data
@@ -352,12 +355,12 @@ defmodule TripleStore.BenchmarkValidationTest do
         assert p50 < p95, "P50 should be less than P95"
         assert p95 < p99 or p95 == p99, "P95 should be <= P99"
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "concurrent query performance" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Load test data
@@ -406,7 +409,7 @@ defmodule TripleStore.BenchmarkValidationTest do
         assert concurrent_duration < single_duration * 2,
                "Concurrent queries too slow: #{concurrent_duration}µs vs #{single_duration}µs"
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -417,7 +420,7 @@ defmodule TripleStore.BenchmarkValidationTest do
 
   describe "5.7.2.4: performance characteristics documentation" do
     test "generates performance report" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Load representative dataset
@@ -455,7 +458,7 @@ defmodule TripleStore.BenchmarkValidationTest do
         IO.puts("\n=== Performance Report (CSV) ===")
         IO.puts(csv_report)
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
@@ -484,7 +487,7 @@ defmodule TripleStore.BenchmarkValidationTest do
     end
 
     test "bulk load target validation" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "bench_test")
 
       try do
         # Generate test data
@@ -516,7 +519,7 @@ defmodule TripleStore.BenchmarkValidationTest do
         assert is_map(validation)
         assert Map.has_key?(validation, :passed)
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end

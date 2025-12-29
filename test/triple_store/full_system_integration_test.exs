@@ -11,32 +11,30 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
   These tests use the public TripleStore API exclusively to ensure the
   complete system works correctly end-to-end.
+
+  ## Timeout Configuration
+
+  Default timeout: 120 seconds (2 minutes)
+  Rationale: Full system tests may involve multiple store lifecycle operations
+  (open/close/reopen), concurrent workloads, and recovery scenarios.
   """
 
   use ExUnit.Case, async: false
 
+  import TripleStore.Test.IntegrationHelpers,
+    only: [
+      create_test_store: 0,
+      create_test_store: 1,
+      cleanup_test_store: 2,
+      cleanup_test_path: 1,
+      open_with_retry: 1,
+      wait_for_lock_release: 0,
+      extract_value: 1
+    ]
+
   @moduletag :integration
+  # 2 minute timeout for full system tests (concurrent workloads, recovery scenarios)
   @moduletag timeout: 120_000
-
-  # ===========================================================================
-  # Helper Functions
-  # ===========================================================================
-
-  # Extract value from either RDF.Literal or AST tuple format
-  defp extract_value(%RDF.Literal{} = lit), do: RDF.Literal.value(lit)
-  defp extract_value({:literal, :simple, value}), do: value
-  defp extract_value({:literal, :typed, value, _datatype}), do: parse_typed_value(value)
-  defp extract_value({:literal, :lang, value, _lang}), do: value
-  defp extract_value(value), do: value
-
-  defp parse_typed_value(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {int, ""} -> int
-      _ -> value
-    end
-  end
-
-  defp parse_typed_value(value), do: value
 
   # Sample Turtle data for testing
   @sample_turtle """
@@ -65,32 +63,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
   """
 
   # ===========================================================================
-  # Setup Helpers
-  # ===========================================================================
-
-  defp create_temp_store do
-    path = Path.join(System.tmp_dir!(), "triple_store_integration_#{:rand.uniform(1_000_000)}")
-    {:ok, store} = TripleStore.open(path)
-    {store, path}
-  end
-
-  defp cleanup_store(store, path) do
-    try do
-      TripleStore.close(store)
-    rescue
-      _ -> :ok
-    end
-
-    File.rm_rf!(path)
-  end
-
-  # ===========================================================================
   # 5.7.1.1: Load -> Query -> Update -> Query Cycle Tests
   # ===========================================================================
 
   describe "5.7.1.1: load -> query -> update -> query cycle" do
     test "complete CRUD cycle with Turtle data" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # 1. Load initial data
@@ -159,12 +137,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         refute Enum.member?(person_uris, "http://example.org/bob")
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "load from RDF.Graph, query, insert, query cycle" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # 1. Create and load an RDF.Graph
@@ -213,12 +191,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         total = results2 |> hd() |> Map.get("total") |> extract_value()
         assert total == 600
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "multiple update cycles maintain data integrity" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Perform 10 insert cycles
@@ -273,13 +251,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         count2 = results2 |> hd() |> Map.get("count") |> extract_value()
         assert count2 == 5
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "query results are consistent after export and reimport" do
-      {store1, path1} = create_temp_store()
-      {store2, path2} = create_temp_store()
+      {store1, path1} = create_test_store(prefix: "fsi_export1")
+      {store2, path2} = create_test_store(prefix: "fsi_export2")
 
       try do
         # Load data into first store
@@ -310,8 +288,8 @@ defmodule TripleStore.FullSystemIntegrationTest do
         names2 = Enum.map(results2, fn r -> Map.get(r, "name") |> extract_value() end)
         assert names1 == names2
       after
-        cleanup_store(store1, path1)
-        cleanup_store(store2, path2)
+        cleanup_test_store(store1, path1)
+        cleanup_test_store(store2, path2)
       end
     end
   end
@@ -322,7 +300,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
   describe "5.7.1.2: concurrent read/write workload" do
     test "concurrent readers don't block each other" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Load some data first
@@ -350,12 +328,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         counts = Enum.map(results, fn {_i, count} -> count end)
         assert Enum.all?(counts, &(&1 == 3))
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "concurrent writes are serialized correctly" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Spawn 10 concurrent writers, each adding unique data
@@ -397,12 +375,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         count = query_results |> hd() |> Map.get("count") |> extract_value()
         assert count == 10
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "mixed read/write workload maintains consistency" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Load initial data
@@ -466,12 +444,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         count = query_results |> hd() |> Map.get("count") |> extract_value()
         assert count == 25
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "health check works during concurrent operations" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         {:ok, _} = TripleStore.load_string(store, @sample_turtle, :turtle)
@@ -505,7 +483,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
           _ -> false
         end)
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -517,7 +495,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
   describe "5.7.1.3: system under memory pressure" do
     @tag :large_dataset
     test "handles large dataset loading" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Generate a moderate-sized dataset (1000 triples)
@@ -548,13 +526,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         {:ok, stats} = TripleStore.stats(store)
         assert stats.triple_count >= 1000
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     @tag :large_dataset
     test "query with large result set completes" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Generate dataset
@@ -581,12 +559,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         assert length(results) == 500
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "operations complete under repeated allocation" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Perform many small operations to stress memory
@@ -611,12 +589,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         {:ok, stats} = TripleStore.stats(store)
         assert stats.triple_count >= 500
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
 
     test "query timeout is respected" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Load some data
@@ -632,7 +610,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
           {:error, reason} -> flunk("Unexpected error: #{inspect(reason)}")
         end
       after
-        cleanup_store(store, path)
+        cleanup_test_store(store, path)
       end
     end
   end
@@ -655,43 +633,31 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         :ok = TripleStore.close(store1)
 
-        # Try to reopen with retries - RocksDB lock release can take time
-        store2 =
-          Enum.reduce_while(1..10, nil, fn attempt, _acc ->
-            Process.sleep(100 * attempt)
+        # Wait for RocksDB lock release
+        wait_for_lock_release()
 
-            case TripleStore.open(path) do
-              {:ok, store} -> {:halt, store}
-              {:error, _} when attempt < 10 -> {:cont, nil}
-              {:error, reason} -> {:halt, {:error, reason}}
-            end
-          end)
+        # Reopen with retry logic for lock contention
+        {:ok, store2} = open_with_retry(path)
 
-        case store2 do
-          {:error, reason} ->
-            # If we still can't open after retries, skip the test
-            # This can happen on systems with slow lock release
-            IO.puts("Skipping persistence verification: #{inspect(reason)}")
+        try do
+          {:ok, stats2} = TripleStore.stats(store2)
+          assert stats2.triple_count == original_count
 
-          store2 ->
-            {:ok, stats2} = TripleStore.stats(store2)
-            assert stats2.triple_count == original_count
-
-            {:ok, results} = TripleStore.query(store2, """
-              PREFIX ex: <http://example.org/>
-              SELECT ?person WHERE { ?person a ex:Person }
-            """)
-            assert length(results) == 3
-
-            :ok = TripleStore.close(store2)
+          {:ok, results} = TripleStore.query(store2, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?person WHERE { ?person a ex:Person }
+          """)
+          assert length(results) == 3
+        after
+          :ok = TripleStore.close(store2)
         end
       after
-        File.rm_rf!(path)
+        cleanup_test_path(path)
       end
     end
 
     test "backup and restore preserves all data" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
       backup_path = Path.join(System.tmp_dir!(), "backup_#{:rand.uniform(1_000_000)}")
       restore_path = Path.join(System.tmp_dir!(), "restore_#{:rand.uniform(1_000_000)}")
 
@@ -733,14 +699,16 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         :ok = TripleStore.close(restored_store)
       after
-        cleanup_store(store, path)
-        File.rm_rf!(backup_path)
-        File.rm_rf!(restore_path)
+        cleanup_test_store(store, path)
+        cleanup_test_path(backup_path)
+        cleanup_test_path(restore_path)
       end
     end
 
-    test "store recovers from abrupt dictionary manager termination" do
-      {store, path} = create_temp_store()
+    test "store recovers data after close and reopen cycle" do
+      # Note: This tests graceful close/reopen recovery, not abrupt termination.
+      # True crash recovery testing requires process killing which is complex in ExUnit.
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         # Load initial data
@@ -761,7 +729,8 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         # Close properly and reopen to simulate recovery
         :ok = TripleStore.close(store)
-        {:ok, store2} = TripleStore.open(path)
+        wait_for_lock_release()
+        {:ok, store2} = open_with_retry(path)
 
         # Query should still work after recovery
         {:ok, results2} = TripleStore.query(store2, """
@@ -772,12 +741,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         :ok = TripleStore.close(store2)
       after
-        File.rm_rf!(path)
+        cleanup_test_path(path)
       end
     end
 
     test "sequential close attempts are handled gracefully" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         {:ok, _} = TripleStore.load_string(store, @sample_turtle, :turtle)
@@ -790,12 +759,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         result2 = TripleStore.close(store)
         assert result2 == {:error, :already_closed}
       after
-        File.rm_rf!(path)
+        cleanup_test_path(path)
       end
     end
 
     test "insert operations after close are rejected" do
-      {store, path} = create_temp_store()
+      {store, path} = create_test_store(prefix: "fsi_test")
 
       try do
         {:ok, _} = TripleStore.load_string(store, @sample_turtle, :turtle)
@@ -818,7 +787,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
         # Should return an error in some form
         assert match?({:error, _}, result)
       after
-        File.rm_rf!(path)
+        cleanup_test_path(path)
       end
     end
   end
