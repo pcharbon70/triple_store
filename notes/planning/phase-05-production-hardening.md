@@ -505,14 +505,22 @@ See `notes/summaries/task-5.7.1-full-system-integration.md` for details.
 
 ### 5.7.2 Benchmark Validation
 
-- [ ] **Task 5.7.2 Complete**
+- [x] **Task 5.7.2 Complete** (2025-12-29)
 
 Validate performance targets are met.
 
-- [ ] 5.7.2.1 Run LUBM benchmark, verify targets met
-- [ ] 5.7.2.2 Run BSBM benchmark, verify targets met
-- [ ] 5.7.2.3 Profile and identify remaining bottlenecks
-- [ ] 5.7.2.4 Document achieved performance characteristics
+- [x] 5.7.2.1 Run LUBM benchmark, verify targets met
+- [x] 5.7.2.2 Run BSBM benchmark, verify targets met
+- [x] 5.7.2.3 Profile and identify remaining bottlenecks
+- [x] 5.7.2.4 Document achieved performance characteristics
+
+Implemented 12 benchmark validation tests in `test/triple_store/benchmark_validation_test.exs`:
+- LUBM benchmark tests with target validation
+- BSBM benchmark tests for e-commerce query patterns
+- Profiling tests for throughput scaling, latency distribution, and concurrency
+- Documentation tests for JSON/CSV reports and target definitions
+
+See `notes/summaries/task-5.7.2-benchmark-validation.md` for details.
 
 ### 5.7.3 Operational Testing
 
