@@ -544,64 +544,73 @@ Total: 39 tests (20 for Statistics + 19 for Cache)
 
 ## 1.7 Phase 1 Integration Tests
 
-- [ ] **Section 1.7 Complete**
+- [x] **Section 1.7 Complete**
 
 Integration tests validate the complete storage layer working together, including database lifecycle, dictionary encoding, triple indexing, and RDF.ex integration.
 
+Tests located in `test/triple_store/integration/`:
+- `database_lifecycle_test.exs` - 17 tests
+- `dictionary_consistency_test.exs` - 16 tests
+- `index_consistency_test.exs` - 16 tests
+- `bulk_loading_test.exs` - 16 tests
+- `rdf_roundtrip_test.exs` - 16 tests
+
+Total: 81 integration tests
+
 ### 1.7.1 Database Lifecycle Testing
 
-- [ ] **Task 1.7.1 Complete**
+- [x] **Task 1.7.1 Complete**
 
 Test complete database lifecycle from open through heavy usage to close.
 
-- [ ] 1.7.1.1 Test open database, insert triples, close, reopen, verify data persisted
-- [ ] 1.7.1.2 Test concurrent read operations during writes
-- [ ] 1.7.1.3 Test database recovery after simulated crash
-- [ ] 1.7.1.4 Test multiple database instances in same process
+- [x] 1.7.1.1 Test open database, insert triples, close, reopen, verify data persisted
+- [x] 1.7.1.2 Test concurrent read operations during writes
+- [x] 1.7.1.3 Test database recovery after simulated crash
+- [x] 1.7.1.4 Test multiple database instances in same process
 
 ### 1.7.2 Dictionary Consistency Testing
 
-- [ ] **Task 1.7.2 Complete**
+- [x] **Task 1.7.2 Complete**
 
 Test dictionary encoding maintains consistency across operations.
 
-- [ ] 1.7.2.1 Test same term always gets same ID
-- [ ] 1.7.2.2 Test ID-to-term and term-to-ID are inverse operations
-- [ ] 1.7.2.3 Test inline-encoded values compare correctly
-- [ ] 1.7.2.4 Test dictionary handles Unicode terms correctly
+- [x] 1.7.2.1 Test same term always gets same ID
+- [x] 1.7.2.2 Test ID-to-term and term-to-ID are inverse operations
+- [x] 1.7.2.3 Test inline-encoded values compare correctly
+- [x] 1.7.2.4 Test dictionary handles Unicode terms correctly
 
 ### 1.7.3 Index Consistency Testing
 
-- [ ] **Task 1.7.3 Complete**
+- [x] **Task 1.7.3 Complete**
 
 Test all three indices remain consistent through insert/delete cycles.
 
-- [ ] 1.7.3.1 Test triple found via all applicable patterns after insert
-- [ ] 1.7.3.2 Test triple not found via any pattern after delete
-- [ ] 1.7.3.3 Test index consistency after interleaved inserts and deletes
-- [ ] 1.7.3.4 Test batch operations maintain cross-index consistency
+- [x] 1.7.3.1 Test triple found via all applicable patterns after insert
+- [x] 1.7.3.2 Test triple not found via any pattern after delete
+- [x] 1.7.3.3 Test index consistency after interleaved inserts and deletes
+- [x] 1.7.3.4 Test batch operations maintain cross-index consistency
 
 ### 1.7.4 Bulk Loading Testing
 
-- [ ] **Task 1.7.4 Complete**
+- [x] **Task 1.7.4 Complete**
 
 Test bulk loading performance and correctness with large datasets.
 
-- [ ] 1.7.4.1 Test loading 100K triples maintains index consistency
-- [ ] 1.7.4.2 Test loading 1M triples completes in <30 seconds
-- [ ] 1.7.4.3 Test memory usage stays bounded during bulk load
-- [ ] 1.7.4.4 Test loading LUBM(1) dataset (~100K triples)
+- [x] 1.7.4.1 Test loading 100K triples maintains index consistency
+- [x] 1.7.4.2 Test loading 1M triples completes in <30 seconds (via :large_dataset tag)
+- [x] 1.7.4.3 Test memory usage stays bounded during bulk load
+- [x] 1.7.4.4 Test loading LUBM(1) dataset (~100K triples)
 
 ### 1.7.5 RDF.ex Roundtrip Testing
 
-- [ ] **Task 1.7.5 Complete**
+- [x] **Task 1.7.5 Complete**
 
 Test complete roundtrip from RDF.ex through storage and back.
 
-- [ ] 1.7.5.1 Test load RDF.Graph, export, compare equality
-- [ ] 1.7.5.2 Test load Turtle file, export to N-Triples, verify content
-- [ ] 1.7.5.3 Test complex literals (language tags, datatypes) roundtrip
-- [ ] 1.7.5.4 Test blank node identity preservation within graph
+- [x] 1.7.5.1 Test load RDF.Graph, export, compare equality
+- [x] 1.7.5.2 Test load Turtle file, export to N-Triples, verify content
+- [x] 1.7.5.3 Test complex literals (language tags, datatypes) roundtrip
+- [x] 1.7.5.4 Test blank node identity preservation within graph
 
 ---
 
