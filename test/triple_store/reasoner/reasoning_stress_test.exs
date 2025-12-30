@@ -83,18 +83,26 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
         |> MapSet.new()
 
       # Add properties to first entity
-      properties = MapSet.new([
-        {ex_iri("e0"), rdf_type(), ex_iri("Person")},
-        {ex_iri("e0"), ex_iri("hasAge"), {:literal, "25", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}},
-        {ex_iri("e0"), ex_iri("knows"), ex_iri("friend1")}
-      ])
+      properties =
+        MapSet.new([
+          {ex_iri("e0"), rdf_type(), ex_iri("Person")},
+          {ex_iri("e0"), ex_iri("hasAge"),
+           {:literal, "25", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}},
+          {ex_iri("e0"), ex_iri("knows"), ex_iri("friend1")}
+        ])
 
       facts = MapSet.union(chain_facts, properties)
       result = materialize(facts)
 
       # Last entity (e29) should have all properties
       assert has_triple?(result, {ex_iri("e29"), rdf_type(), ex_iri("Person")})
-      assert has_triple?(result, {ex_iri("e29"), ex_iri("hasAge"), {:literal, "25", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}})
+
+      assert has_triple?(
+               result,
+               {ex_iri("e29"), ex_iri("hasAge"),
+                {:literal, "25", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}}
+             )
+
       assert has_triple?(result, {ex_iri("e29"), ex_iri("knows"), ex_iri("friend1")})
     end
   end
@@ -132,10 +140,11 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
     @tag :benchmark
     test "multiple transitive properties with 50-hop chains each" do
       # Two separate transitive properties with independent chains
-      tbox = MapSet.new([
-        {ex_iri("partOf"), rdf_type(), owl_TransitiveProperty()},
-        {ex_iri("locatedIn"), rdf_type(), owl_TransitiveProperty()}
-      ])
+      tbox =
+        MapSet.new([
+          {ex_iri("partOf"), rdf_type(), owl_TransitiveProperty()},
+          {ex_iri("locatedIn"), rdf_type(), owl_TransitiveProperty()}
+        ])
 
       # partOf chain: p0 -> p1 -> ... -> p50
       part_chain =
@@ -223,10 +232,11 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
     @tag :benchmark
     test "symmetric property creates complete graph for 20 entities" do
       # knows is symmetric, create a chain that will expand to complete graph
-      tbox = MapSet.new([
-        {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
-        {ex_iri("knows"), rdf_type(), owl_TransitiveProperty()}
-      ])
+      tbox =
+        MapSet.new([
+          {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
+          {ex_iri("knows"), rdf_type(), owl_TransitiveProperty()}
+        ])
 
       # Chain: e0 knows e1 knows e2 ... knows e19
       chain_facts =
@@ -247,9 +257,10 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
 
     @tag timeout: 30_000
     test "inverse property chain with 30 entities" do
-      tbox = MapSet.new([
-        {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")}
-      ])
+      tbox =
+        MapSet.new([
+          {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")}
+        ])
 
       # parentOf chain: p0 parentOf p1 parentOf ... parentOf p29
       parent_chain =
@@ -278,15 +289,17 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
         |> MapSet.new()
 
       # Top property has domain and range
-      domain_range = MapSet.new([
-        {ex_iri("prop5"), rdfs_domain(), ex_iri("Agent")},
-        {ex_iri("prop5"), rdfs_range(), ex_iri("Resource")}
-      ])
+      domain_range =
+        MapSet.new([
+          {ex_iri("prop5"), rdfs_domain(), ex_iri("Agent")},
+          {ex_iri("prop5"), rdfs_range(), ex_iri("Resource")}
+        ])
 
       # Use bottom property
-      instance_facts = MapSet.new([
-        {ex_iri("alice"), ex_iri("prop1"), ex_iri("resource1")}
-      ])
+      instance_facts =
+        MapSet.new([
+          {ex_iri("alice"), ex_iri("prop1"), ex_iri("resource1")}
+        ])
 
       facts = MapSet.union(property_hierarchy, MapSet.union(domain_range, instance_facts))
       result = materialize(facts, :rdfs)
@@ -340,10 +353,12 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
     @tag timeout: 30_000
     test "iteration count scales reasonably with data size" do
       # Small dataset
-      small_facts = MapSet.new([
-        {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
-        {ex_iri("x"), rdf_type(), ex_iri("A")}
-      ])
+      small_facts =
+        MapSet.new([
+          {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
+          {ex_iri("x"), rdf_type(), ex_iri("A")}
+        ])
+
       {_, small_stats} = materialize_with_stats(small_facts, :rdfs)
 
       # Medium dataset (10-level hierarchy)
@@ -352,6 +367,7 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
           {ex_iri("C#{i}"), rdfs_subClassOf(), ex_iri("C#{i + 1}")}
         end
         |> MapSet.new()
+
       medium_facts = MapSet.put(medium_hierarchy, {ex_iri("y"), rdf_type(), ex_iri("C1")})
       {_, medium_stats} = materialize_with_stats(medium_facts, :rdfs)
 

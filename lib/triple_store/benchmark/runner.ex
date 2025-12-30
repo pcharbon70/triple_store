@@ -176,7 +176,8 @@ defmodule TripleStore.Benchmark.Runner do
   """
   @spec to_csv(benchmark_result()) :: String.t()
   def to_csv(result) do
-    header = "query_id,query_name,iterations,p50_us,p95_us,p99_us,min_us,max_us,mean_us,std_dev_us,queries_per_sec,result_count\n"
+    header =
+      "query_id,query_name,iterations,p50_us,p95_us,p99_us,min_us,max_us,mean_us,std_dev_us,queries_per_sec,result_count\n"
 
     rows =
       Enum.map_join(result.query_results, "\n", fn qr ->
@@ -263,9 +264,19 @@ defmodule TripleStore.Benchmark.Runner do
 
     for qr <- result.query_results do
       IO.puts("#{qr.query_id}: #{qr.query_name}")
-      IO.puts("  p50: #{format_duration(qr.p50_us)}, p95: #{format_duration(qr.p95_us)}, p99: #{format_duration(qr.p99_us)}")
-      IO.puts("  min: #{format_duration(qr.min_us)}, max: #{format_duration(qr.max_us)}, mean: #{format_duration(trunc(qr.mean_us))}")
-      IO.puts("  QPS: #{Float.round(qr.queries_per_sec, 1)}, results: #{format_result_count(qr.result_count)}")
+
+      IO.puts(
+        "  p50: #{format_duration(qr.p50_us)}, p95: #{format_duration(qr.p95_us)}, p99: #{format_duration(qr.p99_us)}"
+      )
+
+      IO.puts(
+        "  min: #{format_duration(qr.min_us)}, max: #{format_duration(qr.max_us)}, mean: #{format_duration(trunc(qr.mean_us))}"
+      )
+
+      IO.puts(
+        "  QPS: #{Float.round(qr.queries_per_sec, 1)}, results: #{format_result_count(qr.result_count)}"
+      )
+
       IO.puts("")
     end
 
@@ -274,7 +285,10 @@ defmodule TripleStore.Benchmark.Runner do
     IO.puts("  Total queries: #{result.aggregate.total_queries}")
     IO.puts("  Total time: #{format_duration(result.aggregate.total_time_us)}")
     IO.puts("  Overall QPS: #{Float.round(result.aggregate.queries_per_sec, 1)}")
-    IO.puts("  p50: #{format_duration(result.aggregate.p50_us)}, p95: #{format_duration(result.aggregate.p95_us)}, p99: #{format_duration(result.aggregate.p99_us)}")
+
+    IO.puts(
+      "  p50: #{format_duration(result.aggregate.p50_us)}, p95: #{format_duration(result.aggregate.p95_us)}, p99: #{format_duration(result.aggregate.p99_us)}"
+    )
 
     :ok
   end
@@ -395,7 +409,8 @@ defmodule TripleStore.Benchmark.Runner do
   # Private: Statistics Calculation
   # ===========================================================================
 
-  defp calculate_stats([]), do: %{p50: 0, p95: 0, p99: 0, min: 0, max: 0, mean: 0.0, std_dev: 0.0, qps: 0.0}
+  defp calculate_stats([]),
+    do: %{p50: 0, p95: 0, p99: 0, min: 0, max: 0, mean: 0.0, std_dev: 0.0, qps: 0.0}
 
   defp calculate_stats(latencies) do
     sorted = Enum.sort(latencies)

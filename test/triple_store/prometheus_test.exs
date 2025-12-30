@@ -82,6 +82,7 @@ defmodule TripleStore.PrometheusTest do
       bucket_keys = Map.keys(metrics.histograms.query_duration.buckets)
       # The histogram should have exactly the custom buckets
       assert length(bucket_keys) == length(buckets)
+
       Enum.each(buckets, fn b ->
         assert b in bucket_keys, "Expected bucket #{b} not found in #{inspect(bucket_keys)}"
       end)
@@ -376,8 +377,8 @@ defmodule TripleStore.PrometheusTest do
 
       send(
         pid,
-        {:telemetry_event, [:triple_store, :reasoner, :materialize, :stop], %{duration: 5_000_000},
-         %{iterations: 3, total_derived: 500}}
+        {:telemetry_event, [:triple_store, :reasoner, :materialize, :stop],
+         %{duration: 5_000_000}, %{iterations: 3, total_derived: 500}}
       )
 
       :timer.sleep(10)

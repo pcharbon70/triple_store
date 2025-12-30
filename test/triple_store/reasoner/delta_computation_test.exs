@@ -43,16 +43,18 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
   describe "apply_rule_delta/5" do
     test "applies rule with delta facts and derives new triples" do
       # Setup: class hierarchy Person -> Animal -> Thing
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-        {iri("Animal"), rdfs_subClassOf(), iri("Thing")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
+          {iri("Animal"), rdfs_subClassOf(), iri("Thing")}
+        ])
 
       # Delta: alice is a Person
-      delta = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       # Existing facts (empty - we want to see derivations)
       existing = MapSet.new()
@@ -60,41 +62,46 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       lookup = make_lookup(all_facts)
       rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: alice rdf:type Animal
       assert MapSet.member?(new_facts, {iri("alice"), rdf_type(), iri("Animal")})
     end
 
     test "filters out existing facts from derivations" do
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
-      delta = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       # alice is already known to be an Animal
-      existing = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Animal")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Animal")}
+        ])
 
       lookup = make_lookup(all_facts)
       rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should not include already existing fact
       refute MapSet.member?(new_facts, {iri("alice"), rdf_type(), iri("Animal")})
@@ -102,25 +109,29 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     end
 
     test "returns empty set when no rules fire" do
-      all_facts = MapSet.new([
-        {iri("alice"), iri("name"), iri("Alice")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), iri("name"), iri("Alice")}
+        ])
 
-      delta = MapSet.new([
-        {iri("alice"), iri("name"), iri("Alice")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), iri("name"), iri("Alice")}
+        ])
 
       existing = MapSet.new()
 
       lookup = make_lookup(all_facts)
-      rule = Rules.cax_sco()  # Requires rdf:type and rdfs:subClassOf patterns
+      # Requires rdf:type and rdfs:subClassOf patterns
+      rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       assert Enum.empty?(new_facts)
     end
@@ -133,12 +144,13 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       delta = MapSet.new()
       existing = MapSet.new()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       assert Enum.empty?(new_facts)
     end
@@ -155,13 +167,14 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       lookup = make_lookup(all_facts)
       rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing,
-        max_derivations: 50
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing,
+          max_derivations: 50
+        )
 
       # Should be limited to 50 derivations
       assert MapSet.size(new_facts) <= 50
@@ -174,28 +187,31 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   describe "transitive rule application" do
     test "applies subClassOf transitivity rule" do
-      all_facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("D")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("D")}
+        ])
 
       # Delta: A subClassOf B (new fact)
-      delta = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")}
+        ])
 
       existing = MapSet.new()
 
       lookup = make_lookup(all_facts)
       rule = Rules.scm_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: A subClassOf C (via A->B->C)
       assert MapSet.member?(new_facts, {iri("A"), rdfs_subClassOf(), iri("C")})
@@ -204,27 +220,30 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     test "handles transitive property rule (prp_trp)" do
       prop = iri("contains")
 
-      all_facts = MapSet.new([
-        {prop, rdf_type(), owl_TransitiveProperty()},
-        {iri("box1"), prop, iri("box2")},
-        {iri("box2"), prop, iri("box3")}
-      ])
+      all_facts =
+        MapSet.new([
+          {prop, rdf_type(), owl_TransitiveProperty()},
+          {iri("box1"), prop, iri("box2")},
+          {iri("box2"), prop, iri("box3")}
+        ])
 
-      delta = MapSet.new([
-        {iri("box1"), prop, iri("box2")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("box1"), prop, iri("box2")}
+        ])
 
       existing = MapSet.new()
 
       lookup = make_lookup(all_facts)
       rule = Rules.prp_trp()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: box1 contains box3
       assert MapSet.member?(new_facts, {iri("box1"), prop, iri("box3")})
@@ -237,51 +256,57 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   describe "sameAs rule application" do
     test "applies sameAs symmetry rule" do
-      all_facts = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("alice_smith")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("alice_smith")}
+        ])
 
-      delta = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("alice_smith")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("alice_smith")}
+        ])
 
       existing = MapSet.new()
 
       lookup = make_lookup(all_facts)
       rule = Rules.eq_sym()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: alice_smith sameAs alice
       assert MapSet.member?(new_facts, {iri("alice_smith"), owl_sameAs(), iri("alice")})
     end
 
     test "applies sameAs transitivity rule" do
-      all_facts = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")},
-        {iri("bob"), owl_sameAs(), iri("charlie")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")},
+          {iri("bob"), owl_sameAs(), iri("charlie")}
+        ])
 
-      delta = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")}
+        ])
 
       existing = MapSet.new()
 
       lookup = make_lookup(all_facts)
       rule = Rules.eq_trans()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: alice sameAs charlie
       assert MapSet.member?(new_facts, {iri("alice"), owl_sameAs(), iri("charlie")})
@@ -294,10 +319,11 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   describe "generate_bindings/6" do
     test "generates bindings for single pattern" do
-      facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")}
+        ])
 
       delta = facts
       delta_index = DeltaComputation.index_by_predicate(delta)
@@ -306,14 +332,17 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
       lookup = make_lookup(facts)
 
-      bindings = DeltaComputation.generate_bindings(
-        lookup,
-        patterns,
-        delta,
-        delta_index,
-        0,  # delta position
-        []  # no conditions
-      )
+      bindings =
+        DeltaComputation.generate_bindings(
+          lookup,
+          patterns,
+          delta,
+          delta_index,
+          # delta position
+          0,
+          # no conditions
+          []
+        )
 
       assert length(bindings) == 2
 
@@ -323,14 +352,17 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     end
 
     test "generates bindings with join between patterns" do
-      facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
-      delta = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
+
       delta_index = DeltaComputation.index_by_predicate(delta)
 
       patterns = [
@@ -340,14 +372,17 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
       lookup = make_lookup(facts)
 
-      bindings = DeltaComputation.generate_bindings(
-        lookup,
-        patterns,
-        delta,
-        delta_index,
-        0,  # delta position
-        []  # no conditions
-      )
+      bindings =
+        DeltaComputation.generate_bindings(
+          lookup,
+          patterns,
+          delta,
+          delta_index,
+          # delta position
+          0,
+          # no conditions
+          []
+        )
 
       assert length(bindings) == 1
       binding = hd(bindings)
@@ -357,10 +392,13 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     end
 
     test "applies conditions to filter bindings" do
-      facts = MapSet.new([
-        {iri("alice"), iri("knows"), iri("alice")},  # self-loop
-        {iri("alice"), iri("knows"), iri("bob")}     # different entities
-      ])
+      facts =
+        MapSet.new([
+          # self-loop
+          {iri("alice"), iri("knows"), iri("alice")},
+          # different entities
+          {iri("alice"), iri("knows"), iri("bob")}
+        ])
 
       delta = facts
       delta_index = DeltaComputation.index_by_predicate(delta)
@@ -370,14 +408,15 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
       lookup = make_lookup(facts)
 
-      bindings = DeltaComputation.generate_bindings(
-        lookup,
-        patterns,
-        delta,
-        delta_index,
-        0,
-        conditions
-      )
+      bindings =
+        DeltaComputation.generate_bindings(
+          lookup,
+          patterns,
+          delta,
+          delta_index,
+          0,
+          conditions
+        )
 
       # Only alice->bob should survive (x != y)
       assert length(bindings) == 1
@@ -403,7 +442,8 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
     test "returns nil for incomplete binding" do
       head = Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c"))
-      binding = %{"x" => iri("alice")}  # missing "c"
+      # missing "c"
+      binding = %{"x" => iri("alice")}
 
       result = DeltaComputation.instantiate_head(head, binding)
 
@@ -426,11 +466,12 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   describe "index_by_predicate/1" do
     test "groups facts by predicate" do
-      facts = MapSet.new([
-        {iri("a"), rdf_type(), iri("Person")},
-        {iri("b"), rdf_type(), iri("Animal")},
-        {iri("a"), iri("knows"), iri("b")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("a"), rdf_type(), iri("Person")},
+          {iri("b"), rdf_type(), iri("Animal")},
+          {iri("a"), iri("knows"), iri("b")}
+        ])
 
       index = DeltaComputation.index_by_predicate(facts)
 
@@ -472,14 +513,16 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   describe "filter_existing/2" do
     test "removes existing facts from derived set" do
-      derived = MapSet.new([
-        {iri("a"), iri("p"), iri("b")},
-        {iri("c"), iri("p"), iri("d")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("a"), iri("p"), iri("b")},
+          {iri("c"), iri("p"), iri("d")}
+        ])
 
-      existing = MapSet.new([
-        {iri("a"), iri("p"), iri("b")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("a"), iri("p"), iri("b")}
+        ])
 
       result = DeltaComputation.filter_existing(derived, existing)
 
@@ -511,28 +554,31 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       # Facts for both patterns of cax_sco:
       # Pattern 1: ?x rdf:type ?c1
       # Pattern 2: ?c1 rdfs:subClassOf ?c2
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       # Delta includes both a type assertion and a subclass assertion
-      delta = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       existing = MapSet.new()
       lookup = make_lookup(all_facts)
       rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive alice rdf:type Person (and possibly bob too depending on positions)
       assert MapSet.member?(new_facts, {iri("alice"), rdf_type(), iri("Person")})
@@ -549,26 +595,29 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       owl_hasValue = {:iri, @owl <> "hasValue"}
       owl_onProperty = {:iri, @owl <> "onProperty"}
 
-      all_facts = MapSet.new([
-        {iri("john"), rdf_type(), iri("EmployedPerson")},
-        {iri("EmployedPerson"), owl_hasValue, iri("Company")},
-        {iri("EmployedPerson"), owl_onProperty, iri("worksFor")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("john"), rdf_type(), iri("EmployedPerson")},
+          {iri("EmployedPerson"), owl_hasValue, iri("Company")},
+          {iri("EmployedPerson"), owl_onProperty, iri("worksFor")}
+        ])
 
-      delta = MapSet.new([
-        {iri("john"), rdf_type(), iri("EmployedPerson")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("john"), rdf_type(), iri("EmployedPerson")}
+        ])
 
       existing = MapSet.new()
       lookup = make_lookup(all_facts)
       rule = Rules.cls_hv1()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should derive: john worksFor Company
       assert MapSet.member?(new_facts, {iri("john"), iri("worksFor"), iri("Company")})

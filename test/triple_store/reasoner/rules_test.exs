@@ -532,12 +532,13 @@ defmodule TripleStore.Reasoner.RulesTest do
       # 4. r owl:onProperty p
       assert length(patterns) == 4
 
-      predicates = Enum.map(patterns, fn {:pattern, [_, p, _]} ->
-        case p do
-          {:iri, iri} -> iri
-          {:var, _} -> :variable
-        end
-      end)
+      predicates =
+        Enum.map(patterns, fn {:pattern, [_, p, _]} ->
+          case p do
+            {:iri, iri} -> iri
+            {:var, _} -> :variable
+          end
+        end)
 
       assert "#{@rdf}type" in predicates
       assert "#{@owl}someValuesFrom" in predicates
@@ -568,12 +569,13 @@ defmodule TripleStore.Reasoner.RulesTest do
       patterns = Rule.body_patterns(rule)
 
       # Find the someValuesFrom pattern
-      svf_pattern = Enum.find(patterns, fn {:pattern, [_, p, _]} ->
-        case p do
-          {:iri, iri} -> iri == "#{@owl}someValuesFrom"
-          _ -> false
-        end
-      end)
+      svf_pattern =
+        Enum.find(patterns, fn {:pattern, [_, p, _]} ->
+          case p do
+            {:iri, iri} -> iri == "#{@owl}someValuesFrom"
+            _ -> false
+          end
+        end)
 
       assert {:pattern, [_, _, {:iri, owl_thing}]} = svf_pattern
       assert owl_thing == "#{@owl}Thing"
@@ -669,11 +671,12 @@ defmodule TripleStore.Reasoner.RulesTest do
 
       head = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "http://example.org/alice"},
-        {:iri, "#{@rdf}type"},
-        {:iri, "http://example.org/Agent"}
-      ]} = head
+      assert {:pattern,
+              [
+                {:iri, "http://example.org/alice"},
+                {:iri, "#{@rdf}type"},
+                {:iri, "http://example.org/Agent"}
+              ]} = head
 
       assert Rule.ground?(head)
     end
@@ -690,11 +693,12 @@ defmodule TripleStore.Reasoner.RulesTest do
 
       head = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "http://example.org/a"},
-        {:iri, "http://example.org/contains"},
-        {:iri, "http://example.org/c"}
-      ]} = head
+      assert {:pattern,
+              [
+                {:iri, "http://example.org/a"},
+                {:iri, "http://example.org/contains"},
+                {:iri, "http://example.org/c"}
+              ]} = head
 
       assert Rule.ground?(head)
     end

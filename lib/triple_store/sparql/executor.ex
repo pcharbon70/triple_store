@@ -56,7 +56,6 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.SPARQL.PropertyPath
   alias TripleStore.SPARQL.Term
 
-
   # ===========================================================================
   # Types
   # ===========================================================================
@@ -93,9 +92,6 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Maximum number of triples to collect in DESCRIBE (blank node following)
   @max_describe_triples 10_000
-
-  # Hash join size limit to prevent hash collision DoS
-  @max_hash_table_size 1_000_000
 
   # ===========================================================================
   # BGP Execution (Task 2.4.1)
@@ -818,6 +814,7 @@ defmodule TripleStore.SPARQL.Executor do
   @spec union_all([Enumerable.t()]) :: binding_stream()
   def union_all([]), do: empty_stream()
   def union_all([single]), do: single
+
   def union_all(branches) do
     Enum.reduce(branches, fn branch, acc ->
       Stream.concat(acc, branch)
@@ -1273,6 +1270,7 @@ defmodule TripleStore.SPARQL.Executor do
             %{limit: @max_distinct_size},
             %{}
           )
+
           raise TripleStore.SPARQL.LimitExceededError,
             message: "DISTINCT limit exceeded: more than #{@max_distinct_size} unique bindings",
             limit: @max_distinct_size,
@@ -1737,6 +1735,7 @@ defmodule TripleStore.SPARQL.Executor do
     |> Enum.reduce(%{}, fn binding, groups ->
       key = extract_group_key(binding, group_var_names)
       key_binding = build_key_binding(binding, group_var_names)
+
       Map.update(groups, key, {key_binding, [binding]}, fn {kb, bindings} ->
         {kb, [binding | bindings]}
       end)
@@ -1817,7 +1816,9 @@ defmodule TripleStore.SPARQL.Executor do
   defp compute_aggregate({:sample, expr, _distinct?}, bindings) do
     # SAMPLE returns an arbitrary value from the group
     case bindings do
-      [] -> :unbound
+      [] ->
+        :unbound
+
       [first | _] ->
         case evaluate_expression(expr, first) do
           {:ok, value} -> value
@@ -1951,7 +1952,9 @@ defmodule TripleStore.SPARQL.Executor do
   defp extract_numeric({:literal, :simple, str}) when is_binary(str) do
     # Try to parse as number
     case Integer.parse(str) do
-      {n, ""} -> {:integer, n}
+      {n, ""} ->
+        {:integer, n}
+
       _ ->
         case Float.parse(str) do
           {n, ""} -> {:double, n}
@@ -1965,7 +1968,7 @@ defmodule TripleStore.SPARQL.Executor do
   defp extract_numeric_from_type(str, type) do
     cond do
       String.contains?(type, "integer") or String.contains?(type, "int") or
-          String.contains?(type, "long") or String.contains?(type, "short") or
+        String.contains?(type, "long") or String.contains?(type, "short") or
           String.contains?(type, "byte") ->
         case Integer.parse(str) do
           {n, ""} -> {:integer, n}
@@ -2007,7 +2010,8 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp format_numeric(value, :integer) when is_float(value) do
-    {:literal, :typed, Integer.to_string(round(value)), "http://www.w3.org/2001/XMLSchema#integer"}
+    {:literal, :typed, Integer.to_string(round(value)),
+     "http://www.w3.org/2001/XMLSchema#integer"}
   end
 
   defp format_numeric(value, :decimal) do
@@ -2322,6 +2326,7 @@ defmodule TripleStore.SPARQL.Executor do
         %{limit: @max_describe_triples, triple_count: length(triples)},
         %{}
       )
+
       # Return what we have - partial result
       triples
     else
@@ -2368,7 +2373,7 @@ defmodule TripleStore.SPARQL.Executor do
   defp blank_node_id?(id) when is_integer(id) do
     # Blank nodes have type tag 1 in high bits
     import Bitwise
-    (id >>> 60) == 1
+    id >>> 60 == 1
   end
 
   defp blank_node_id?(_), do: false
@@ -2388,6 +2393,7 @@ defmodule TripleStore.SPARQL.Executor do
           %{limit: limit},
           %{}
         )
+
         raise TripleStore.SPARQL.LimitExceededError,
           message: "#{operation} limit exceeded: more than #{limit} bindings",
           limit: limit,

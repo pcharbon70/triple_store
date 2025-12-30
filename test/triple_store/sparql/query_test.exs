@@ -59,8 +59,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} = Query.query(ctx, "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
 
@@ -78,7 +87,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, results} = Query.query(ctx, "SELECT * WHERE { ?s <http://ex.org/name> ?name }")
 
@@ -107,8 +120,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -133,7 +155,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, result} = Query.query(ctx, "ASK { ?s <http://ex.org/name> ?name }")
 
@@ -157,7 +183,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, result} = Query.query(ctx, "ASK { <http://ex.org/Alice> ?p ?o }")
 
@@ -176,7 +206,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, graph} =
         Query.query(ctx, """
@@ -216,8 +250,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
 
       {:ok, graph} = Query.query(ctx, "DESCRIBE ?s WHERE { ?s <http://ex.org/name> ?name }")
 
@@ -346,8 +389,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Add triples that will produce duplicate bindings
-      add_triple(db, manager, {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/s2"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s2"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
 
       {:ok, results} =
         Query.query(ctx, "SELECT DISTINCT ?type WHERE { ?s <http://ex.org/type> ?type }")
@@ -409,9 +461,23 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Create a small graph
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -432,8 +498,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/s2"), iri("http://ex.org/kind"), iri("http://ex.org/Animal")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s2"), iri("http://ex.org/kind"), iri("http://ex.org/Animal")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -453,9 +528,24 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
       # Bob has no age
 
       {:ok, results} =
@@ -485,10 +575,20 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
-      {:ok, stream} = Query.stream_query(ctx, "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
 
       # Verify it's a stream (enumerable)
       assert is_function(stream) or is_struct(stream, Stream)
@@ -527,7 +627,8 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      {:ok, stream} = Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/nonexistent> ?o }")
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT ?s WHERE { ?s <http://ex.org/nonexistent> ?o }")
 
       results = Enum.to_list(stream)
       assert results == []
@@ -577,9 +678,16 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
-      {:ok, stream} = Query.stream_query(ctx, "SELECT * WHERE { ?s <http://ex.org/name> ?name }", variables: ["name"])
+      {:ok, stream} =
+        Query.stream_query(ctx, "SELECT * WHERE { ?s <http://ex.org/name> ?name }",
+          variables: ["name"]
+        )
 
       [result] = Enum.to_list(stream)
       assert Map.has_key?(result, "name")
@@ -697,8 +805,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Add triples that will produce duplicate type bindings
-      add_triple(db, manager, {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/s2"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s1"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/s2"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
 
       {:ok, stream} =
         Query.stream_query(ctx, "SELECT DISTINCT ?type WHERE { ?s <http://ex.org/type> ?type }")
@@ -892,7 +1009,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?name WHERE { ?s <http://ex.org/name> ?name }")
       {:ok, results} = Query.execute(ctx, prepared)
@@ -907,8 +1028,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
 
@@ -929,7 +1059,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/name> $name }")
 
@@ -943,11 +1077,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
 
-      {:ok, results} = Query.execute(ctx, prepared, %{"person" => {:named_node, "http://ex.org/Alice"}})
+      {:ok, results} =
+        Query.execute(ctx, prepared, %{"person" => {:named_node, "http://ex.org/Alice"}})
+
       assert length(results) == 1
 
       cleanup({db, manager})
@@ -957,7 +1097,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s <http://ex.org/name> $name }")
 
@@ -1013,7 +1157,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
 
@@ -1050,7 +1198,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       prepared = Query.prepare!("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
       results = Query.execute!(ctx, prepared, %{"person" => "http://ex.org/Alice"})
@@ -1080,7 +1232,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("ASK { $person <http://ex.org/name> ?name }")
       assert prepared.query_type == :ask
@@ -1098,7 +1254,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} =
         Query.prepare("""
@@ -1175,7 +1335,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       {:ok, prepared} = Query.prepare("SELECT ?name WHERE { $person <http://ex.org/name> ?name }")
 
@@ -1245,7 +1409,8 @@ defmodule TripleStore.SPARQL.QueryTest do
           """
         )
 
-      assert length(results) >= 0  # Query executes without error
+      # Query executes without error
+      assert length(results) >= 0
       cleanup({db, manager})
     end
   end
@@ -1260,9 +1425,23 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Add triples with different names that will sort alphabetically
-      add_triple(db, manager, {iri("http://ex.org/Carol"), iri("http://ex.org/name"), literal("Carol")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Carol"), iri("http://ex.org/name"), literal("Carol")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} =
         Query.query(
@@ -1281,9 +1460,23 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Carol"), iri("http://ex.org/name"), literal("Carol")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Carol"), iri("http://ex.org/name"), literal("Carol")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} =
         Query.query(
@@ -1351,8 +1544,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
 
       {:ok, prepared} = Query.prepare("DESCRIBE <http://ex.org/Alice>")
       {:ok, graph} = Query.execute(ctx, prepared, %{})
@@ -1458,16 +1660,42 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
 
-    test "2.7.1.2 - SELECT with star query (multiple patterns on same subject)", %{tmp_dir: tmp_dir} do
+    test "2.7.1.2 - SELECT with star query (multiple patterns on same subject)", %{
+      tmp_dir: tmp_dir
+    } do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Add multiple properties for same subject
-      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/age"), literal("30")})
-      add_triple(db, manager, {iri("http://ex.org/person1"), iri("http://ex.org/email"), literal("alice@ex.org")})
-      add_triple(db, manager, {iri("http://ex.org/person2"), iri("http://ex.org/name"), literal("Bob")})
-      add_triple(db, manager, {iri("http://ex.org/person2"), iri("http://ex.org/age"), literal("25")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/person1"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/person1"), iri("http://ex.org/age"), literal("30")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/person1"), iri("http://ex.org/email"), literal("alice@ex.org")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/person2"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/person2"), iri("http://ex.org/age"), literal("25")}
+      )
 
       # Star query: get all properties for subjects that have both name and age
       {:ok, results} =
@@ -1495,9 +1723,23 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Alice has email, Bob doesn't
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -1526,9 +1768,23 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Different predicates for different types
-      add_triple(db, manager, {iri("http://ex.org/e1"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/e2"), iri("http://ex.org/rdf_type"), iri("http://ex.org/Animal")})
-      add_triple(db, manager, {iri("http://ex.org/e3"), iri("http://ex.org/type"), iri("http://ex.org/Place")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/e1"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/e2"), iri("http://ex.org/rdf_type"), iri("http://ex.org/Animal")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/e3"), iri("http://ex.org/type"), iri("http://ex.org/Place")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -1561,11 +1817,13 @@ defmodule TripleStore.SPARQL.QueryTest do
         iri("http://ex.org/price"),
         {:literal, :typed, "50", "http://www.w3.org/2001/XMLSchema#integer"}
       })
+
       add_typed_triple(db, manager, {
         iri("http://ex.org/product2"),
         iri("http://ex.org/price"),
         {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
       })
+
       add_typed_triple(db, manager, {
         iri("http://ex.org/product3"),
         iri("http://ex.org/price"),
@@ -1602,7 +1860,8 @@ defmodule TripleStore.SPARQL.QueryTest do
         add_typed_triple(db, manager, {
           iri("http://ex.org/item#{i}"),
           iri("http://ex.org/value"),
-          {:literal, :typed, Integer.to_string(i * 10), "http://www.w3.org/2001/XMLSchema#integer"}
+          {:literal, :typed, Integer.to_string(i * 10),
+           "http://www.w3.org/2001/XMLSchema#integer"}
         })
       end
 
@@ -1621,10 +1880,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) == 3
 
       # Should be 80, 70, 60 (items 8, 7, 6)
-      values = Enum.map(results, fn r ->
-        {:literal, :typed, v, _} = r["value"]
-        String.to_integer(v)
-      end)
+      values =
+        Enum.map(results, fn r ->
+          {:literal, :typed, v, _} = r["value"]
+          String.to_integer(v)
+        end)
 
       # Verify they're in descending order
       assert values == Enum.sort(values, :desc)
@@ -1656,10 +1916,29 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Create a small social network
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/knows"), iri("http://ex.org/Carol")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/knows"), iri("http://ex.org/Carol")}
+      )
 
       # CONSTRUCT a new graph transforming the data
       {:ok, graph} =
@@ -1697,8 +1976,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Simple data
-      add_triple(db, manager, {iri("http://ex.org/item1"), iri("http://ex.org/value"), literal("100")})
-      add_triple(db, manager, {iri("http://ex.org/item2"), iri("http://ex.org/value"), literal("200")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/item1"), iri("http://ex.org/value"), literal("100")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/item2"), iri("http://ex.org/value"), literal("200")}
+      )
 
       # CONSTRUCT with a fixed predicate transformation
       {:ok, graph} =
@@ -1727,8 +2015,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Add some data
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
 
       # ASK with a pattern that matches
       {:ok, result} =
@@ -1749,8 +2046,17 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Create a chain of relationships
-      add_triple(db, manager, {iri("http://ex.org/A"), iri("http://ex.org/knows"), iri("http://ex.org/B")})
-      add_triple(db, manager, {iri("http://ex.org/B"), iri("http://ex.org/knows"), iri("http://ex.org/C")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/A"), iri("http://ex.org/knows"), iri("http://ex.org/B")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/B"), iri("http://ex.org/knows"), iri("http://ex.org/C")}
+      )
 
       # ASK for a 2-hop path
       {:ok, result} =
@@ -1771,7 +2077,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Add data that won't match the query
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
 
       # ASK for something that doesn't exist
       {:ok, result} =
@@ -1807,12 +2117,36 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Create a resource with multiple properties
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/email"), literal("alice@ex.org")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/knows"), iri("http://ex.org/Bob")}
+      )
+
       # Bob's data (should NOT be included in Alice's CBD)
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
 
       {:ok, graph} =
         Query.query(ctx, "DESCRIBE <http://ex.org/Alice>")
@@ -1837,12 +2171,41 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Multiple people
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/type"), iri("http://ex.org/Person")})
-      add_triple(db, manager, {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")})
-      add_triple(db, manager, {iri("http://ex.org/Cat"), iri("http://ex.org/type"), iri("http://ex.org/Animal")})
-      add_triple(db, manager, {iri("http://ex.org/Cat"), iri("http://ex.org/name"), literal("Whiskers")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/type"), iri("http://ex.org/Person")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Cat"), iri("http://ex.org/type"), iri("http://ex.org/Animal")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Cat"), iri("http://ex.org/name"), literal("Whiskers")}
+      )
 
       # DESCRIBE only persons
       {:ok, graph} =
@@ -1856,7 +2219,9 @@ defmodule TripleStore.SPARQL.QueryTest do
       # Should describe Alice and Bob, not Cat
       subjects = graph |> RDF.Graph.triples() |> Enum.map(fn {s, _p, _o} -> s end) |> Enum.uniq()
 
-      assert RDF.iri("http://ex.org/Alice") in subjects or RDF.iri("http://ex.org/Bob") in subjects
+      assert RDF.iri("http://ex.org/Alice") in subjects or
+               RDF.iri("http://ex.org/Bob") in subjects
+
       # Cat should not be described (it's an Animal, not a Person)
       refute RDF.iri("http://ex.org/Cat") in subjects
 
@@ -1872,12 +2237,44 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Products in different categories
-      add_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
-      add_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
-      add_triple(db, manager, {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod1"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod2"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod3"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -1891,20 +2288,26 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) == 3
 
       # Convert to map for easier assertion
-      counts = Map.new(results, fn binding ->
-        category = Map.get(binding, "category")
-        count = Map.get(binding, "count")
-        {category, count}
-      end)
+      counts =
+        Map.new(results, fn binding ->
+          category = Map.get(binding, "category")
+          count = Map.get(binding, "count")
+          {category, count}
+        end)
 
       electronics = {:named_node, "http://ex.org/Electronics"}
       books = {:named_node, "http://ex.org/Books"}
       clothing = {:named_node, "http://ex.org/Clothing"}
 
       # Aggregate values are returned as typed literals
-      assert Map.get(counts, electronics) == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(counts, books) == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(counts, clothing) == {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(counts, electronics) ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(counts, books) ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(counts, clothing) ==
+               {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
 
       cleanup({db, manager})
     end
@@ -1914,14 +2317,53 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Orders with year and status
-      add_triple(db, manager, {iri("http://ex.org/order1"), iri("http://ex.org/year"), literal("2023")})
-      add_triple(db, manager, {iri("http://ex.org/order1"), iri("http://ex.org/status"), literal("completed")})
-      add_triple(db, manager, {iri("http://ex.org/order2"), iri("http://ex.org/year"), literal("2023")})
-      add_triple(db, manager, {iri("http://ex.org/order2"), iri("http://ex.org/status"), literal("completed")})
-      add_triple(db, manager, {iri("http://ex.org/order3"), iri("http://ex.org/year"), literal("2023")})
-      add_triple(db, manager, {iri("http://ex.org/order3"), iri("http://ex.org/status"), literal("pending")})
-      add_triple(db, manager, {iri("http://ex.org/order4"), iri("http://ex.org/year"), literal("2024")})
-      add_triple(db, manager, {iri("http://ex.org/order4"), iri("http://ex.org/status"), literal("completed")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order1"), iri("http://ex.org/year"), literal("2023")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order1"), iri("http://ex.org/status"), literal("completed")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order2"), iri("http://ex.org/year"), literal("2023")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order2"), iri("http://ex.org/status"), literal("completed")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order3"), iri("http://ex.org/year"), literal("2023")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order3"), iri("http://ex.org/status"), literal("pending")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order4"), iri("http://ex.org/year"), literal("2024")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/order4"), iri("http://ex.org/status"), literal("completed")}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -1944,12 +2386,44 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Sales by region
-      add_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/amount"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/amount"), {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/amount"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale1"), iri("http://ex.org/amount"),
+         {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale2"), iri("http://ex.org/amount"),
+         {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale3"), iri("http://ex.org/amount"),
+         {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -1964,18 +2438,22 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) == 2
 
       # Convert to map for easier assertion
-      totals = Map.new(results, fn binding ->
-        region = Map.get(binding, "region")
-        total = Map.get(binding, "total")
-        {region, total}
-      end)
+      totals =
+        Map.new(results, fn binding ->
+          region = Map.get(binding, "region")
+          total = Map.get(binding, "total")
+          {region, total}
+        end)
 
       north = {:literal, :simple, "North"}
       south = {:literal, :simple, "South"}
 
       # Aggregate values are returned as typed literals
-      assert Map.get(totals, north) == {:literal, :typed, "250", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(totals, south) == {:literal, :typed, "200", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(totals, north) ==
+               {:literal, :typed, "250", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(totals, south) ==
+               {:literal, :typed, "200", "http://www.w3.org/2001/XMLSchema#integer"}
 
       cleanup({db, manager})
     end
@@ -1985,16 +2463,70 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Student scores by subject
-      add_triple(db, manager, {iri("http://ex.org/score1"), iri("http://ex.org/subject"), literal("Math")})
-      add_typed_triple(db, manager, {iri("http://ex.org/score1"), iri("http://ex.org/score"), {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/score2"), iri("http://ex.org/subject"), literal("Math")})
-      add_typed_triple(db, manager, {iri("http://ex.org/score2"), iri("http://ex.org/score"), {:literal, :typed, 90, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/score3"), iri("http://ex.org/subject"), literal("Math")})
-      add_typed_triple(db, manager, {iri("http://ex.org/score3"), iri("http://ex.org/score"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/score4"), iri("http://ex.org/subject"), literal("Science")})
-      add_typed_triple(db, manager, {iri("http://ex.org/score4"), iri("http://ex.org/score"), {:literal, :typed, 70, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/score5"), iri("http://ex.org/subject"), literal("Science")})
-      add_typed_triple(db, manager, {iri("http://ex.org/score5"), iri("http://ex.org/score"), {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score1"), iri("http://ex.org/subject"), literal("Math")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score1"), iri("http://ex.org/score"),
+         {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score2"), iri("http://ex.org/subject"), literal("Math")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score2"), iri("http://ex.org/score"),
+         {:literal, :typed, 90, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score3"), iri("http://ex.org/subject"), literal("Math")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score3"), iri("http://ex.org/score"),
+         {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score4"), iri("http://ex.org/subject"), literal("Science")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score4"), iri("http://ex.org/score"),
+         {:literal, :typed, 70, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score5"), iri("http://ex.org/subject"), literal("Science")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/score5"), iri("http://ex.org/score"),
+         {:literal, :typed, 80, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -2009,11 +2541,12 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) == 2
 
       # Convert to map for easier assertion
-      averages = Map.new(results, fn binding ->
-        subject = Map.get(binding, "subject")
-        avg = Map.get(binding, "avg_score")
-        {subject, avg}
-      end)
+      averages =
+        Map.new(results, fn binding ->
+          subject = Map.get(binding, "subject")
+          avg = Map.get(binding, "avg_score")
+          {subject, avg}
+        end)
 
       math = {:literal, :simple, "Math"}
       science = {:literal, :simple, "Science"}
@@ -2021,8 +2554,11 @@ defmodule TripleStore.SPARQL.QueryTest do
       # Math: (80 + 90 + 100) / 3 = 90
       # Science: (70 + 80) / 2 = 75
       # AVG returns decimal type per SPARQL spec
-      assert Map.get(averages, math) == {:literal, :typed, "90.0", "http://www.w3.org/2001/XMLSchema#decimal"}
-      assert Map.get(averages, science) == {:literal, :typed, "75.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+      assert Map.get(averages, math) ==
+               {:literal, :typed, "90.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+
+      assert Map.get(averages, science) ==
+               {:literal, :typed, "75.0", "http://www.w3.org/2001/XMLSchema#decimal"}
 
       cleanup({db, manager})
     end
@@ -2032,12 +2568,44 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Products by category (same as COUNT test)
-      add_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/category"), iri("http://ex.org/Electronics")})
-      add_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
-      add_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")})
-      add_triple(db, manager, {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod1"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod2"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod3"), iri("http://ex.org/category"),
+         iri("http://ex.org/Electronics")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod4"), iri("http://ex.org/category"), iri("http://ex.org/Books")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod5"), iri("http://ex.org/category"), iri("http://ex.org/Books")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod6"), iri("http://ex.org/category"), iri("http://ex.org/Clothing")}
+      )
 
       # Only return categories with more than 2 products
       {:ok, results} =
@@ -2055,7 +2623,9 @@ defmodule TripleStore.SPARQL.QueryTest do
 
       [result] = results
       assert Map.get(result, "category") == {:named_node, "http://ex.org/Electronics"}
-      assert Map.get(result, "count") == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(result, "count") ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
 
       cleanup({db, manager})
     end
@@ -2065,14 +2635,57 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Sales by region
-      add_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale1"), iri("http://ex.org/amount"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale2"), iri("http://ex.org/amount"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale3"), iri("http://ex.org/amount"), {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_triple(db, manager, {iri("http://ex.org/sale4"), iri("http://ex.org/region"), literal("East")})
-      add_typed_triple(db, manager, {iri("http://ex.org/sale4"), iri("http://ex.org/amount"), {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale1"), iri("http://ex.org/region"), literal("North")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale1"), iri("http://ex.org/amount"),
+         {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale2"), iri("http://ex.org/region"), literal("North")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale2"), iri("http://ex.org/amount"),
+         {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale3"), iri("http://ex.org/region"), literal("South")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale3"), iri("http://ex.org/amount"),
+         {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale4"), iri("http://ex.org/region"), literal("East")}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/sale4"), iri("http://ex.org/amount"),
+         {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
 
       # Only return regions with total sales >= 100 AND at least 1 sale
       {:ok, results} =
@@ -2105,11 +2718,40 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Multiple products with prices
-      add_typed_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/price"), {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/price"), {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/price"), {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod4"), iri("http://ex.org/price"), {:literal, :typed, 400, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod5"), iri("http://ex.org/price"), {:literal, :typed, 500, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod1"), iri("http://ex.org/price"),
+         {:literal, :typed, 100, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod2"), iri("http://ex.org/price"),
+         {:literal, :typed, 200, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod3"), iri("http://ex.org/price"),
+         {:literal, :typed, 300, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod4"), iri("http://ex.org/price"),
+         {:literal, :typed, 400, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod5"), iri("http://ex.org/price"),
+         {:literal, :typed, 500, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
 
       # Aggregate without GROUP BY = implicit grouping
       {:ok, results} =
@@ -2126,9 +2768,14 @@ defmodule TripleStore.SPARQL.QueryTest do
       [result] = results
       # Aggregate values are returned as typed literals
       # AVG returns decimal type per SPARQL spec
-      assert Map.get(result, "total_products") == {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(result, "total_value") == {:literal, :typed, "1500", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(result, "avg_price") == {:literal, :typed, "300.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+      assert Map.get(result, "total_products") ==
+               {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(result, "total_value") ==
+               {:literal, :typed, "1500", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(result, "avg_price") ==
+               {:literal, :typed, "300.0", "http://www.w3.org/2001/XMLSchema#decimal"}
 
       cleanup({db, manager})
     end
@@ -2138,9 +2785,26 @@ defmodule TripleStore.SPARQL.QueryTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Setup: Products with prices
-      add_typed_triple(db, manager, {iri("http://ex.org/prod1"), iri("http://ex.org/price"), {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod2"), iri("http://ex.org/price"), {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}})
-      add_typed_triple(db, manager, {iri("http://ex.org/prod3"), iri("http://ex.org/price"), {:literal, :typed, 75, "http://www.w3.org/2001/XMLSchema#integer"}})
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod1"), iri("http://ex.org/price"),
+         {:literal, :typed, 50, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod2"), iri("http://ex.org/price"),
+         {:literal, :typed, 150, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
+
+      add_typed_triple(
+        db,
+        manager,
+        {iri("http://ex.org/prod3"), iri("http://ex.org/price"),
+         {:literal, :typed, 75, "http://www.w3.org/2001/XMLSchema#integer"}}
+      )
 
       {:ok, results} =
         Query.query(ctx, """
@@ -2154,8 +2818,11 @@ defmodule TripleStore.SPARQL.QueryTest do
 
       [result] = results
       # Aggregate values are returned as typed literals
-      assert Map.get(result, "min_price") == {:literal, :typed, "50", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert Map.get(result, "max_price") == {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert Map.get(result, "min_price") ==
+               {:literal, :typed, "50", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(result, "max_price") ==
+               {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
 
       cleanup({db, manager})
     end

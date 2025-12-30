@@ -69,31 +69,35 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
   describe "delta computation finds new facts only" do
     test "apply_rule_delta excludes facts already in existing set" do
       # Setup facts
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-        {iri("Animal"), rdfs_subClassOf(), iri("Thing")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
+          {iri("Animal"), rdfs_subClassOf(), iri("Thing")}
+        ])
 
       # Delta is the type assertion
-      delta = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       # Existing already has alice as Animal
-      existing = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Animal")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Animal")}
+        ])
 
       lookup = make_lookup(all_facts)
       rule = Rules.cax_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # The result should NOT include alice:Animal (already exists)
       refute MapSet.member?(new_facts, {iri("alice"), rdf_type(), iri("Animal")})
@@ -103,40 +107,45 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
     end
 
     test "apply_rule_delta only returns facts not in delta or existing" do
-      all_facts = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")}
+        ])
 
-      delta = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")}
-      ])
+      delta =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")}
+        ])
 
       # Simulate a->c already being known
-      existing = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("a"), rdfs_subClassOf(), iri("c")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("a"), rdfs_subClassOf(), iri("c")}
+        ])
 
       lookup = make_lookup(all_facts)
       rule = Rules.scm_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       # Should NOT contain a->c (already in existing)
       refute MapSet.member?(new_facts, {iri("a"), rdfs_subClassOf(), iri("c")})
     end
 
     test "empty delta produces no new facts" do
-      all_facts = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")}
+        ])
 
       delta = MapSet.new()
       existing = MapSet.new()
@@ -144,12 +153,13 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
       lookup = make_lookup(all_facts)
       rule = Rules.scm_sco()
 
-      {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        lookup,
-        rule,
-        delta,
-        existing
-      )
+      {:ok, new_facts} =
+        DeltaComputation.apply_rule_delta(
+          lookup,
+          rule,
+          delta,
+          existing
+        )
 
       assert MapSet.size(new_facts) == 0
     end
@@ -173,10 +183,11 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "terminates when no more facts can be derived" do
       # Simple hierarchy that reaches fixpoint
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -192,11 +203,12 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "terminates with cyclic dependencies" do
       # Create a cycle: A -> B -> C -> A
-      initial = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("A")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("A")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -209,11 +221,12 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "terminates with sameAs reflexive facts" do
       # sameAs can create many derivations with symmetry/transitivity
-      initial = MapSet.new([
-        {iri("a"), owl_sameAs(), iri("b")},
-        {iri("b"), owl_sameAs(), iri("c")},
-        {iri("c"), owl_sameAs(), iri("d")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), owl_sameAs(), iri("b")},
+          {iri("b"), owl_sameAs(), iri("c")},
+          {iri("c"), owl_sameAs(), iri("d")}
+        ])
 
       rules = [Rules.eq_sym(), Rules.eq_trans()]
 
@@ -225,9 +238,10 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "max_iterations option prevents infinite execution" do
       # Create a chain that would take many iterations
-      chain = for i <- 1..20 do
-        {iri("n#{i}"), rdfs_subClassOf(), iri("n#{i + 1}")}
-      end
+      chain =
+        for i <- 1..20 do
+          {iri("n#{i}"), rdfs_subClassOf(), iri("n#{i + 1}")}
+        end
 
       initial = MapSet.new(chain)
       rules = [Rules.scm_sco()]
@@ -252,12 +266,13 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
   describe "fixpoint produces complete inference closure" do
     test "computes full transitive closure of linear chain" do
       # Chain: A -> B -> C -> D -> E
-      initial = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("D")},
-        {iri("D"), rdfs_subClassOf(), iri("E")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("D")},
+          {iri("D"), rdfs_subClassOf(), iri("E")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -283,16 +298,17 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "computes complete type inference through hierarchy" do
       # Type hierarchy with multiple instances
-      initial = MapSet.new([
-        # Instances
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Teacher")},
-        # Hierarchy
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Teacher"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")},
-        {iri("Agent"), rdfs_subClassOf(), iri("Thing")}
-      ])
+      initial =
+        MapSet.new([
+          # Instances
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Teacher")},
+          # Hierarchy
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Teacher"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")},
+          {iri("Agent"), rdfs_subClassOf(), iri("Thing")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
@@ -311,10 +327,11 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
     test "computes complete sameAs equivalence closure" do
       # Full equivalence relation properties
-      initial = MapSet.new([
-        {iri("a"), owl_sameAs(), iri("b")},
-        {iri("b"), owl_sameAs(), iri("c")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), owl_sameAs(), iri("b")},
+          {iri("b"), owl_sameAs(), iri("c")}
+        ])
 
       rules = [Rules.eq_sym(), Rules.eq_trans()]
 
@@ -332,13 +349,14 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
     test "computes complete transitive property closure" do
       contains = iri("contains")
 
-      initial = MapSet.new([
-        {contains, rdf_type(), owl_TransitiveProperty()},
-        {iri("box1"), contains, iri("box2")},
-        {iri("box2"), contains, iri("box3")},
-        {iri("box3"), contains, iri("box4")},
-        {iri("box4"), contains, iri("box5")}
-      ])
+      initial =
+        MapSet.new([
+          {contains, rdf_type(), owl_TransitiveProperty()},
+          {iri("box1"), contains, iri("box2")},
+          {iri("box2"), contains, iri("box3")},
+          {iri("box3"), contains, iri("box4")},
+          {iri("box4"), contains, iri("box5")}
+        ])
 
       rules = [Rules.prp_trp()]
 
@@ -360,11 +378,12 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
   describe "parallel evaluation produces same results as sequential" do
     test "simple hierarchy same results" do
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
@@ -378,18 +397,19 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
     end
 
     test "complex multi-rule interaction same results" do
-      initial = MapSet.new([
-        # Type hierarchy
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")},
-        # sameAs
-        {iri("alice"), owl_sameAs(), iri("alice2")},
-        # Transitive property
-        {iri("partOf"), rdf_type(), owl_TransitiveProperty()},
-        {iri("hand"), iri("partOf"), iri("arm")},
-        {iri("arm"), iri("partOf"), iri("body")}
-      ])
+      initial =
+        MapSet.new([
+          # Type hierarchy
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")},
+          # sameAs
+          {iri("alice"), owl_sameAs(), iri("alice2")},
+          # Transitive property
+          {iri("partOf"), rdf_type(), owl_TransitiveProperty()},
+          {iri("hand"), iri("partOf"), iri("arm")},
+          {iri("arm"), iri("partOf"), iri("body")}
+        ])
 
       rules = [
         Rules.scm_sco(),
@@ -400,8 +420,11 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
       ]
 
       # Run both modes
-      {:ok, seq_facts, seq_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: false)
-      {:ok, par_facts, par_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+      {:ok, seq_facts, seq_stats} =
+        SemiNaive.materialize_in_memory(rules, initial, parallel: false)
+
+      {:ok, par_facts, par_stats} =
+        SemiNaive.materialize_in_memory(rules, initial, parallel: true)
 
       # Facts must be identical
       assert seq_facts == par_facts
@@ -411,21 +434,23 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
     end
 
     test "parallel deterministic across multiple runs" do
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")},
-        {iri("x"), rdf_type(), iri("a")},
-        {iri("y"), rdf_type(), iri("b")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")},
+          {iri("x"), rdf_type(), iri("a")},
+          {iri("y"), rdf_type(), iri("b")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
       # Run 10 times
-      results = for _ <- 1..10 do
-        {:ok, facts, _} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
-        facts
-      end
+      results =
+        for _ <- 1..10 do
+          {:ok, facts, _} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+          facts
+        end
 
       # All results should be identical
       first = hd(results)
@@ -435,11 +460,12 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
     test "materialize_parallel function works correctly" do
       {:ok, store_agent} = Agent.start_link(fn -> MapSet.new() end)
 
-      initial = MapSet.new([
-        {iri("x"), rdf_type(), iri("A")},
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("x"), rdf_type(), iri("A")},
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       Agent.update(store_agent, fn _ -> initial end)
 
@@ -586,7 +612,8 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
       try do
         # Insert various derived facts
-        :ok = DerivedStore.insert_derived(db, [{1, 1, 1}, {2, 2, 2}, {3, 3, 3}, {4, 4, 4}, {5, 5, 5}])
+        :ok =
+          DerivedStore.insert_derived(db, [{1, 1, 1}, {2, 2, 2}, {3, 3, 3}, {4, 4, 4}, {5, 5, 5}])
 
         # Clear should return 5
         assert {:ok, 5} = DerivedStore.clear_all(db)
@@ -659,20 +686,22 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
       b = iri("b")
       c = iri("c")
 
-      initial = MapSet.new([
-        {a, parent, b},
-        {b, parent, c}
-      ])
+      initial =
+        MapSet.new([
+          {a, parent, b},
+          {b, parent, c}
+        ])
 
       # Define a simple transitive rule
-      rule = TripleStore.Reasoner.Rule.new(
-        :ancestor,
-        [
-          {:pattern, [{:var, :x}, parent, {:var, :y}]},
-          {:pattern, [{:var, :y}, parent, {:var, :z}]}
-        ],
-        {:pattern, [{:var, :x}, ancestor, {:var, :z}]}
-      )
+      rule =
+        TripleStore.Reasoner.Rule.new(
+          :ancestor,
+          [
+            {:pattern, [{:var, :x}, parent, {:var, :y}]},
+            {:pattern, [{:var, :y}, parent, {:var, :z}]}
+          ],
+          {:pattern, [{:var, :x}, ancestor, {:var, :z}]}
+        )
 
       # Run in-memory materialization
       {:ok, all_facts, stats} = SemiNaive.materialize_in_memory([rule], initial)
@@ -698,6 +727,7 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
           {a_id, parent_id, b_id},
           {b_id, parent_id, c_id}
         ]
+
         :ok = Index.insert_triples(db, explicit_facts)
 
         # Create store function that persists to derived column family

@@ -302,12 +302,21 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       common = {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}
 
       rules = [
-        Rule.new(:r1, [common, {:pattern, [{:var, "a"}, {:iri, "p1"}, {:var, "b"}]}],
-          {:pattern, [{:var, "x"}, {:iri, "out1"}, {:var, "c"}]}),
-        Rule.new(:r2, [common, {:pattern, [{:var, "c"}, {:iri, "p2"}, {:var, "d"}]}],
-          {:pattern, [{:var, "x"}, {:iri, "out2"}, {:var, "d"}]}),
-        Rule.new(:r3, [{:pattern, [{:var, "z"}, {:iri, "p3"}, {:var, "w"}]}],
-          {:pattern, [{:var, "z"}, {:iri, "out3"}, {:var, "w"}]})
+        Rule.new(
+          :r1,
+          [common, {:pattern, [{:var, "a"}, {:iri, "p1"}, {:var, "b"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "out1"}, {:var, "c"}]}
+        ),
+        Rule.new(
+          :r2,
+          [common, {:pattern, [{:var, "c"}, {:iri, "p2"}, {:var, "d"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "out2"}, {:var, "d"}]}
+        ),
+        Rule.new(
+          :r3,
+          [{:pattern, [{:var, "z"}, {:iri, "p3"}, {:var, "w"}]}],
+          {:pattern, [{:var, "z"}, {:iri, "out3"}, {:var, "w"}]}
+        )
       ]
 
       shareable = RuleOptimizer.find_shareable_rules(rules)
@@ -323,10 +332,16 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
 
     test "returns empty list when no shared patterns" do
       rules = [
-        Rule.new(:r1, [{:pattern, [{:var, "a"}, {:iri, "p1"}, {:var, "b"}]}],
-          {:pattern, [{:var, "a"}, {:iri, "out1"}, {:var, "b"}]}),
-        Rule.new(:r2, [{:pattern, [{:var, "x"}, {:iri, "p2"}, {:var, "y"}]}],
-          {:pattern, [{:var, "x"}, {:iri, "out2"}, {:var, "y"}]})
+        Rule.new(
+          :r1,
+          [{:pattern, [{:var, "a"}, {:iri, "p1"}, {:var, "b"}]}],
+          {:pattern, [{:var, "a"}, {:iri, "out1"}, {:var, "b"}]}
+        ),
+        Rule.new(
+          :r2,
+          [{:pattern, [{:var, "x"}, {:iri, "p2"}, {:var, "y"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "out2"}, {:var, "y"}]}
+        )
       ]
 
       shareable = RuleOptimizer.find_shareable_rules(rules)
@@ -344,16 +359,22 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       schema_info = %{transitive_properties: []}
 
       rules = [
-        Rule.new(:prp_trp,
-          [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]},
-           {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
-           {:pattern, [{:var, "y"}, {:var, "p"}, {:var, "z"}]}],
+        Rule.new(
+          :prp_trp,
+          [
+            {:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]},
+            {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:var, "p"}, {:var, "z"}]}
+          ],
           {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]},
           profile: :owl2rl
         ),
-        Rule.new(:cax_sco,
-          [{:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
-           {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}],
+        Rule.new(
+          :cax_sco,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
+            {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c2"}]},
           profile: :rdfs
         )
@@ -369,15 +390,21 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       schema_info = %{has_subclass: false}
 
       rules = [
-        Rule.new(:scm_sco,
-          [{:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]},
-           {:pattern, [{:var, "c2"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c3"}]}],
+        Rule.new(
+          :scm_sco,
+          [
+            {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]},
+            {:pattern, [{:var, "c2"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c3"}]}
+          ],
           {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c3"}]},
           profile: :rdfs
         ),
-        Rule.new(:cax_sco,
-          [{:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
-           {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}],
+        Rule.new(
+          :cax_sco,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
+            {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c2"}]},
           profile: :rdfs
         )
@@ -395,14 +422,18 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       schema_info = %{has_sameas: false}
 
       rules = [
-        Rule.new(:eq_sym,
+        Rule.new(
+          :eq_sym,
           [{:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]}],
           {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "x"}]},
           profile: :owl2rl
         ),
-        Rule.new(:eq_trans,
-          [{:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]},
-           {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "z"}]}],
+        Rule.new(
+          :eq_trans,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "z"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "z"}]},
           profile: :owl2rl
         )
@@ -420,15 +451,21 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
 
       rules = [
         # Specialized for a property that exists
-        Rule.new(:prp_trp_transitive_contains,
-          [{:pattern, [{:var, "x"}, {:iri, "http://example.org/contains"}, {:var, "y"}]},
-           {:pattern, [{:var, "y"}, {:iri, "http://example.org/contains"}, {:var, "z"}]}],
+        Rule.new(
+          :prp_trp_transitive_contains,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "http://example.org/contains"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:iri, "http://example.org/contains"}, {:var, "z"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "http://example.org/contains"}, {:var, "z"}]}
         ),
         # Specialized for a property that doesn't exist
-        Rule.new(:prp_trp_transitive_ancestor,
-          [{:pattern, [{:var, "x"}, {:iri, "http://example.org/ancestor"}, {:var, "y"}]},
-           {:pattern, [{:var, "y"}, {:iri, "http://example.org/ancestor"}, {:var, "z"}]}],
+        Rule.new(
+          :prp_trp_transitive_ancestor,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "http://example.org/ancestor"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:iri, "http://example.org/ancestor"}, {:var, "z"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "http://example.org/ancestor"}, {:var, "z"}]}
         )
       ]
@@ -449,19 +486,26 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       }
 
       rules = [
-        Rule.new(:cax_sco,
-          [{:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
-           {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}],
+        Rule.new(
+          :cax_sco,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c1"}]},
+            {:pattern, [{:var, "c1"}, {:iri, "#{@rdfs}subClassOf"}, {:var, "c2"}]}
+          ],
           {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c2"}]}
         ),
-        Rule.new(:eq_sym,
+        Rule.new(
+          :eq_sym,
           [{:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]}],
           {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "x"}]}
         ),
-        Rule.new(:prp_trp,
-          [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]},
-           {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
-           {:pattern, [{:var, "y"}, {:var, "p"}, {:var, "z"}]}],
+        Rule.new(
+          :prp_trp,
+          [
+            {:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]},
+            {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:var, "p"}, {:var, "z"}]}
+          ],
           {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]}
         )
       ]
@@ -477,10 +521,12 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
     test "returns true for dead rule" do
       schema_info = %{transitive_properties: []}
 
-      rule = Rule.new(:prp_trp,
-        [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]}],
-        {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]}
-      )
+      rule =
+        Rule.new(
+          :prp_trp,
+          [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]}],
+          {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]}
+        )
 
       assert RuleOptimizer.rule_dead?(rule, schema_info)
     end
@@ -488,10 +534,12 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
     test "returns false for active rule" do
       schema_info = %{transitive_properties: ["http://ex.org/contains"]}
 
-      rule = Rule.new(:prp_trp,
-        [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]}],
-        {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]}
-      )
+      rule =
+        Rule.new(
+          :prp_trp,
+          [{:pattern, [{:var, "p"}, {:iri, "#{@rdf}type"}, {:iri, "#{@owl}TransitiveProperty"}]}],
+          {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "z"}]}
+        )
 
       refute RuleOptimizer.rule_dead?(rule, schema_info)
     end
@@ -499,10 +547,12 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
     test "unknown rules are not dead by default" do
       schema_info = %{}
 
-      rule = Rule.new(:custom_rule,
-        [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :custom_rule,
+          [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
+        )
 
       refute RuleOptimizer.rule_dead?(rule, schema_info)
     end
@@ -527,11 +577,12 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
     end
 
     test "handles rule with only conditions" do
-      rule = Rule.new(
-        :conditions_only,
-        [{:not_equal, {:var, "x"}, {:var, "y"}}],
-        {:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :conditions_only,
+          [{:not_equal, {:var, "x"}, {:var, "y"}}],
+          {:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}
+        )
 
       optimized = RuleOptimizer.optimize_rule(rule)
       assert length(optimized.body) == 1
@@ -543,21 +594,24 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
         has_subclass: nil
       }
 
-      rule = Rule.new(:prp_trp,
-        [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :prp_trp,
+          [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
+        )
 
       # Should not crash
       assert RuleOptimizer.rule_dead?(rule, schema_info)
     end
 
     test "handles single-pattern rule" do
-      rule = Rule.new(
-        :single,
-        [{:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}],
-        {:pattern, [{:var, "x"}, {:iri, "out"}, {:var, "c"}]}
-      )
+      rule =
+        Rule.new(
+          :single,
+          [{:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "out"}, {:var, "c"}]}
+        )
 
       optimized = RuleOptimizer.optimize_rule(rule)
       assert length(Rule.body_patterns(optimized)) == 1

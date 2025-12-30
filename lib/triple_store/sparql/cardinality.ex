@@ -546,7 +546,8 @@ defmodule TripleStore.SPARQL.Cardinality do
   # Get the ID from a constant term
   @spec get_constant_id(term()) :: non_neg_integer() | nil
   defp get_constant_id(id) when is_integer(id), do: id
-  defp get_constant_id({:named_node, _}), do: nil  # Would need dictionary lookup
+  # Would need dictionary lookup
+  defp get_constant_id({:named_node, _}), do: nil
   defp get_constant_id({:literal, _, _}), do: nil
   defp get_constant_id({:blank_node, _}), do: nil
   defp get_constant_id(_), do: nil

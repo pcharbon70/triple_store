@@ -22,17 +22,20 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
   describe "delete_in_memory/5 - basic deletion" do
     test "empty deletion returns unchanged facts" do
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")}
+        ])
+
       derived_facts = MapSet.new()
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [],
-        all_facts,
-        derived_facts,
-        []
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [],
+          all_facts,
+          derived_facts,
+          []
+        )
 
       assert result.final_facts == all_facts
       assert MapSet.size(result.explicit_deleted) == 0
@@ -48,12 +51,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       all_facts = MapSet.new([alice_student, bob_student])
       derived_facts = MapSet.new()
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        []
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          []
+        )
 
       assert MapSet.member?(result.explicit_deleted, alice_student)
       refute MapSet.member?(result.final_facts, alice_student)
@@ -68,12 +72,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       all_facts = MapSet.new([alice_student])
       derived_facts = MapSet.new()
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [nonexistent],
-        all_facts,
-        derived_facts,
-        []
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [nonexistent],
+          all_facts,
+          derived_facts,
+          []
+        )
 
       # Alice is still there
       assert MapSet.member?(result.final_facts, alice_student)
@@ -99,12 +104,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice rdf:type Person should be deleted (no alternative derivation)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -122,23 +128,26 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       gradstudent_subclass = {iri("GradStudent"), rdfs_subClassOf(), iri("Person")}
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_gradstudent,
-        student_subclass,
-        gradstudent_subclass,
-        alice_person
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_gradstudent,
+          student_subclass,
+          gradstudent_subclass,
+          alice_person
+        ])
+
       derived_facts = MapSet.new([alice_person])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice rdf:type Person should be kept (via GradStudent)
       assert MapSet.member?(result.derived_kept, alice_person)
@@ -157,12 +166,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_person],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_person],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Derived fact was deleted directly
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -184,23 +194,26 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       alice_agent = {iri("alice"), rdf_type(), iri("Agent")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        student_person,
-        person_agent,
-        alice_person,
-        alice_agent
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          student_person,
+          person_agent,
+          alice_person,
+          alice_agent
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_agent])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Both derived types should be deleted
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -220,25 +233,28 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       alice_agent = {iri("alice"), rdf_type(), iri("Agent")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_employee,
-        student_person,
-        person_agent,
-        employee_agent,
-        alice_person,
-        alice_agent
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_employee,
+          student_person,
+          person_agent,
+          employee_agent,
+          alice_person,
+          alice_agent
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_agent])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Person should be deleted (no alternative)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -264,12 +280,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.eq_sym()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_bob],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_bob],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # bob sameAs alice should be deleted
       assert MapSet.member?(result.derived_deleted, bob_alice)
@@ -288,12 +305,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.eq_sym()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_bob],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_bob],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # bob sameAs alice is explicit, so not in derived_deleted
       assert MapSet.member?(result.final_facts, bob_alice)
@@ -312,12 +330,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.eq_trans()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [bob_charlie],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [bob_charlie],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice sameAs charlie should be deleted
       assert MapSet.member?(result.derived_deleted, alice_charlie)
@@ -341,23 +360,26 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       aliceJr_alice = {iri("aliceJr"), owl_sameAs(), iri("alice")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        student_person,
-        alice_aliceJr,
-        alice_person,
-        aliceJr_alice
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          student_person,
+          alice_aliceJr,
+          alice_person,
+          aliceJr_alice
+        ])
+
       derived_facts = MapSet.new([alice_person, aliceJr_alice])
 
       rules = [Rules.cax_sco(), Rules.eq_sym()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice rdf:type Person deleted
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -379,12 +401,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       all_facts = MapSet.new([alice_student, bob_student, charlie_student])
       derived_facts = MapSet.new()
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student, bob_student],
-        all_facts,
-        derived_facts,
-        []
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student, bob_student],
+          all_facts,
+          derived_facts,
+          []
+        )
 
       refute MapSet.member?(result.final_facts, alice_student)
       refute MapSet.member?(result.final_facts, bob_student)
@@ -404,25 +427,28 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       bob_person = {iri("bob"), rdf_type(), iri("Person")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_gradstudent,
-        bob_student,
-        student_person,
-        gradstudent_person,
-        alice_person,
-        bob_person
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_gradstudent,
+          bob_student,
+          student_person,
+          gradstudent_person,
+          alice_person,
+          bob_person
+        ])
+
       derived_facts = MapSet.new([alice_person, bob_person])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student, bob_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student, bob_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice Person kept (via GradStudent)
       assert MapSet.member?(result.derived_kept, alice_person)
@@ -447,29 +473,34 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       bob_person = {iri("bob"), rdf_type(), iri("Person")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_gradstudent,
-        bob_student,
-        student_person,
-        gradstudent_person,
-        alice_person,
-        bob_person
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_gradstudent,
+          bob_student,
+          student_person,
+          gradstudent_person,
+          alice_person,
+          bob_person
+        ])
+
       derived_facts = MapSet.new([alice_person, bob_person])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student, bob_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student, bob_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       assert result.stats.explicit_deleted == 2
-      assert result.stats.derived_deleted == 1  # bob_person
-      assert result.stats.derived_kept == 1     # alice_person
+      # bob_person
+      assert result.stats.derived_deleted == 1
+      # alice_person
+      assert result.stats.derived_kept == 1
       assert result.stats.potentially_invalid_count >= 2
       assert result.stats.duration_ms >= 0
     end
@@ -490,12 +521,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, {explicit_deleted, derived_deleted}} = DeleteWithReasoning.preview_delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, {explicit_deleted, derived_deleted}} =
+        DeleteWithReasoning.preview_delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       assert MapSet.member?(explicit_deleted, alice_student)
       assert MapSet.member?(derived_deleted, alice_person)
@@ -517,12 +549,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student, student_person],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student, student_person],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice_person should be deleted (no more Student subClassOf Person)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -540,12 +573,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [thing_thing],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [thing_thing],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Should complete without issues
       assert MapSet.member?(result.explicit_deleted, thing_thing)
@@ -563,12 +597,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [student_person],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [student_person],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice Person deleted (no more Student subClassOf Person)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -593,21 +628,31 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
       alice_d = {iri("alice"), rdf_type(), iri("D")}
       alice_e = {iri("alice"), rdf_type(), iri("E")}
 
-      all_facts = MapSet.new([
-        alice_a, a_b, b_c, c_d, d_e,
-        alice_b, alice_c, alice_d, alice_e
-      ])
+      all_facts =
+        MapSet.new([
+          alice_a,
+          a_b,
+          b_c,
+          c_d,
+          d_e,
+          alice_b,
+          alice_c,
+          alice_d,
+          alice_e
+        ])
+
       derived_facts = MapSet.new([alice_b, alice_c, alice_d, alice_e])
 
       rules = [Rules.cax_sco()]
 
       # Normal deletion should cascade all the way
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_a],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_a],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # All derived should be deleted without alternative paths
       assert result.stats.derived_deleted == 4

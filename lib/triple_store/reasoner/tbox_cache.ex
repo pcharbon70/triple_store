@@ -120,21 +120,21 @@ defmodule TripleStore.Reasoner.TBoxCache do
 
   # TBox-modifying predicates (computed at compile time for efficiency)
   @tbox_predicates MapSet.new([
-    {:iri, Namespaces.rdfs_subClassOf()},
-    {:iri, Namespaces.rdfs_subPropertyOf()},
-    {:iri, Namespaces.rdf_type()},
-    {:iri, Namespaces.owl_inverseOf()},
-    {:iri, Namespaces.rdfs_domain()},
-    {:iri, Namespaces.rdfs_range()}
-  ])
+                     {:iri, Namespaces.rdfs_subClassOf()},
+                     {:iri, Namespaces.rdfs_subPropertyOf()},
+                     {:iri, Namespaces.rdf_type()},
+                     {:iri, Namespaces.owl_inverseOf()},
+                     {:iri, Namespaces.rdfs_domain()},
+                     {:iri, Namespaces.rdfs_range()}
+                   ])
 
   # OWL property characteristic types (computed at compile time)
   @property_characteristic_types MapSet.new([
-    {:iri, Namespaces.owl_TransitiveProperty()},
-    {:iri, Namespaces.owl_SymmetricProperty()},
-    {:iri, Namespaces.owl_FunctionalProperty()},
-    {:iri, Namespaces.owl_InverseFunctionalProperty()}
-  ])
+                                   {:iri, Namespaces.owl_TransitiveProperty()},
+                                   {:iri, Namespaces.owl_SymmetricProperty()},
+                                   {:iri, Namespaces.owl_FunctionalProperty()},
+                                   {:iri, Namespaces.owl_InverseFunctionalProperty()}
+                                 ])
 
   # ============================================================================
   # In-Memory API
@@ -1091,33 +1091,37 @@ defmodule TripleStore.Reasoner.TBoxCache do
     range = {:iri, Namespaces.rdfs_range()}
     char_types = property_characteristic_types()
 
-    Enum.reduce(triples, %{
-      class_hierarchy: [],
-      property_hierarchy: [],
-      property_characteristics: [],
-      inverse_properties: [],
-      domain_range: []
-    }, fn {_s, p, o} = triple, acc ->
-      cond do
-        p == subclass_of ->
-          %{acc | class_hierarchy: [triple | acc.class_hierarchy]}
+    Enum.reduce(
+      triples,
+      %{
+        class_hierarchy: [],
+        property_hierarchy: [],
+        property_characteristics: [],
+        inverse_properties: [],
+        domain_range: []
+      },
+      fn {_s, p, o} = triple, acc ->
+        cond do
+          p == subclass_of ->
+            %{acc | class_hierarchy: [triple | acc.class_hierarchy]}
 
-        p == subprop_of ->
-          %{acc | property_hierarchy: [triple | acc.property_hierarchy]}
+          p == subprop_of ->
+            %{acc | property_hierarchy: [triple | acc.property_hierarchy]}
 
-        p == rdf_type and MapSet.member?(char_types, o) ->
-          %{acc | property_characteristics: [triple | acc.property_characteristics]}
+          p == rdf_type and MapSet.member?(char_types, o) ->
+            %{acc | property_characteristics: [triple | acc.property_characteristics]}
 
-        p == inverse_of ->
-          %{acc | inverse_properties: [triple | acc.inverse_properties]}
+          p == inverse_of ->
+            %{acc | inverse_properties: [triple | acc.inverse_properties]}
 
-        p == domain or p == range ->
-          %{acc | domain_range: [triple | acc.domain_range]}
+          p == domain or p == range ->
+            %{acc | domain_range: [triple | acc.domain_range]}
 
-        true ->
-          acc
+          true ->
+            acc
+        end
       end
-    end)
+    )
   end
 
   # ============================================================================
@@ -1219,32 +1223,35 @@ defmodule TripleStore.Reasoner.TBoxCache do
     tbox_triples = filter_tbox_triples(modified_triples)
 
     if Enum.empty?(tbox_triples) do
-      {:ok, %{
-        tbox_modified: false,
-        invalidated: %{class_hierarchy: false, property_hierarchy: false},
-        recomputed: nil
-      }}
+      {:ok,
+       %{
+         tbox_modified: false,
+         invalidated: %{class_hierarchy: false, property_hierarchy: false},
+         recomputed: nil
+       }}
     else
       invalidated = invalidate_affected(tbox_triples, key)
 
       if recompute and (invalidated.class_hierarchy or invalidated.property_hierarchy) do
         case recompute_hierarchies(current_facts, key) do
           {:ok, stats} ->
-            {:ok, %{
-              tbox_modified: true,
-              invalidated: invalidated,
-              recomputed: stats
-            }}
+            {:ok,
+             %{
+               tbox_modified: true,
+               invalidated: invalidated,
+               recomputed: stats
+             }}
 
           {:error, _} = error ->
             error
         end
       else
-        {:ok, %{
-          tbox_modified: true,
-          invalidated: invalidated,
-          recomputed: nil
-        }}
+        {:ok,
+         %{
+           tbox_modified: true,
+           invalidated: invalidated,
+           recomputed: nil
+         }}
       end
     end
   end

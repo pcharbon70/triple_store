@@ -29,9 +29,13 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert MapSet.size(result.keep) == 0
       assert MapSet.size(result.delete) == 0
@@ -40,16 +44,23 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
 
     test "returns statistics" do
       potentially_invalid = MapSet.new([{iri("alice"), rdf_type(), iri("Person")}])
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert is_integer(result.rederivation_count)
       assert is_integer(result.facts_checked)
@@ -70,27 +81,34 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # - GradStudent subClassOf Person
       # - alice type Person (potentially invalid, but can be re-derived via GradStudent)
 
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("alice"), rdf_type(), iri("GradStudent")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("alice"), rdf_type(), iri("GradStudent")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # alice type Person can be re-derived via GradStudent
       assert MapSet.member?(result.keep, {iri("alice"), rdf_type(), iri("Person")})
@@ -103,27 +121,35 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # If we delete B sco C, A sco C cannot be re-derived
       # But A sco D can still be derived
 
-      potentially_invalid = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("C")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("C")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},  # Being deleted
-        {iri("B"), rdfs_subClassOf(), iri("D")},
-        {iri("A"), rdfs_subClassOf(), iri("C")},
-        {iri("A"), rdfs_subClassOf(), iri("D")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          # Being deleted
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("B"), rdfs_subClassOf(), iri("D")},
+          {iri("A"), rdfs_subClassOf(), iri("C")},
+          {iri("A"), rdfs_subClassOf(), iri("D")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       rules = [Rules.scm_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # A sco C cannot be re-derived (only path was through B sco C)
       assert MapSet.member?(result.delete, {iri("A"), rdfs_subClassOf(), iri("C")})
@@ -141,25 +167,32 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # - Student subClassOf Person
       # - alice type Person (potentially invalid, no alternative)
 
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # alice type Person cannot be re-derived
       assert MapSet.member?(result.delete, {iri("alice"), rdf_type(), iri("Person")})
@@ -167,20 +200,27 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     end
 
     test "deletes all facts when no rules match" do
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       deleted = MapSet.new()
-      rules = []  # No rules
+      # No rules
+      rules = []
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert MapSet.member?(result.delete, {iri("alice"), rdf_type(), iri("Person")})
     end
@@ -195,31 +235,38 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # alice type Student -> alice type Person (can be re-derived via GradStudent)
       # bob type Student -> bob type Person (cannot be re-derived)
 
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("alice"), rdf_type(), iri("GradStudent")},
-        {iri("bob"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("alice"), rdf_type(), iri("GradStudent")},
+          {iri("bob"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Student")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Student")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # alice type Person can be re-derived via GradStudent
       assert MapSet.member?(result.keep, {iri("alice"), rdf_type(), iri("Person")})
@@ -232,28 +279,35 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # Delete alice type A
       # alice type B and alice type C should both be deleted
 
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("B")},
-        {iri("alice"), rdf_type(), iri("C")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("B")},
+          {iri("alice"), rdf_type(), iri("C")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("A")},
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("alice"), rdf_type(), iri("B")},
-        {iri("alice"), rdf_type(), iri("C")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("A")},
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("alice"), rdf_type(), iri("B")},
+          {iri("alice"), rdf_type(), iri("C")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("A")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("A")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # Both should be deleted as they depend on alice type A
       assert MapSet.member?(result.delete, {iri("alice"), rdf_type(), iri("B")})
@@ -273,24 +327,31 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # Actually if we delete alice sameAs bob, bob sameAs alice was derived from it
       # So it should be deleted
 
-      potentially_invalid = MapSet.new([
-        {iri("bob"), owl_sameAs(), iri("alice")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("bob"), owl_sameAs(), iri("alice")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")},
-        {iri("bob"), owl_sameAs(), iri("alice")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")},
+          {iri("bob"), owl_sameAs(), iri("alice")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")}
+        ])
 
       rules = [Rules.eq_sym()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # bob sameAs alice cannot be re-derived (the source alice sameAs bob is deleted)
       assert MapSet.member?(result.delete, {iri("bob"), owl_sameAs(), iri("alice")})
@@ -301,27 +362,34 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
       # alice sameAs carol also via alice sameAs dave, dave sameAs carol
       # Delete bob sameAs carol
 
-      potentially_invalid = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("carol")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("carol")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")},
-        {iri("bob"), owl_sameAs(), iri("carol")},
-        {iri("alice"), owl_sameAs(), iri("dave")},
-        {iri("dave"), owl_sameAs(), iri("carol")},
-        {iri("alice"), owl_sameAs(), iri("carol")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")},
+          {iri("bob"), owl_sameAs(), iri("carol")},
+          {iri("alice"), owl_sameAs(), iri("dave")},
+          {iri("dave"), owl_sameAs(), iri("carol")},
+          {iri("alice"), owl_sameAs(), iri("carol")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("bob"), owl_sameAs(), iri("carol")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("bob"), owl_sameAs(), iri("carol")}
+        ])
 
       rules = [Rules.eq_trans()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # alice sameAs carol can be re-derived via dave
       assert MapSet.member?(result.keep, {iri("alice"), owl_sameAs(), iri("carol")})
@@ -336,10 +404,11 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "returns true when re-derivation is possible" do
       fact = {iri("alice"), rdf_type(), iri("Person")}
 
-      valid_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      valid_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -349,10 +418,12 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "returns false when re-derivation is not possible" do
       fact = {iri("alice"), rdf_type(), iri("Person")}
 
-      valid_facts = MapSet.new([
-        {iri("bob"), rdf_type(), iri("Student")},  # Wrong subject
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      valid_facts =
+        MapSet.new([
+          # Wrong subject
+          {iri("bob"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -362,11 +433,13 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "returns false when no rules can derive the fact" do
       fact = {iri("alice"), iri("knows"), iri("bob")}
 
-      valid_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      valid_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      rules = [Rules.cax_sco()]  # Only handles class hierarchy
+      # Only handles class hierarchy
+      rules = [Rules.cax_sco()]
 
       refute ForwardRederive.can_rederive?(fact, valid_facts, rules)
     end
@@ -374,10 +447,11 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "returns true for subclass transitivity" do
       fact = {iri("A"), rdfs_subClassOf(), iri("C")}
 
-      valid_facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      valid_facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -387,9 +461,10 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "returns true for sameAs symmetry" do
       fact = {iri("bob"), owl_sameAs(), iri("alice")}
 
-      valid_facts = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")}
-      ])
+      valid_facts =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")}
+        ])
 
       rules = [Rules.eq_sym()]
 
@@ -403,25 +478,32 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
 
   describe "partition_invalid/4" do
     test "returns tuple of keep and delete sets" do
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {keep, delete} = ForwardRederive.partition_invalid(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {keep, delete} =
+        ForwardRederive.partition_invalid(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert is_struct(keep, MapSet)
       assert is_struct(delete, MapSet)
@@ -436,40 +518,52 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
   describe "edge cases" do
     test "handles facts not in all_facts" do
       # A fact marked as potentially invalid that doesn't exist in all_facts
-      potentially_invalid = MapSet.new([
-        {iri("ghost"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("ghost"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # Cannot be re-derived
       assert MapSet.member?(result.delete, {iri("ghost"), rdf_type(), iri("Person")})
     end
 
     test "handles empty rules list" do
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       deleted = MapSet.new()
       rules = []
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # All should be deleted (no rules to derive anything)
       assert MapSet.size(result.keep) == 0
@@ -477,24 +571,30 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     end
 
     test "handles all facts being deleted" do
-      potentially_invalid = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       # Delete all facts
       deleted = all_facts
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # Cannot re-derive with no remaining facts
       assert MapSet.size(result.keep) == 0
@@ -503,21 +603,27 @@ defmodule TripleStore.Reasoner.ForwardRederiveTest do
     test "handles self-referential rules correctly" do
       # Reflexive property: x sameAs x
       # But eq_ref isn't typically used in testing
-      potentially_invalid = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("alice")}
-      ])
+      potentially_invalid =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("alice")}
+        ])
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("alice"), owl_sameAs(), iri("alice")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("alice"), owl_sameAs(), iri("alice")}
+        ])
 
       deleted = MapSet.new()
       rules = [Rules.eq_ref()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid, all_facts, deleted, rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       # eq_ref derives x sameAs x for any x
       # Since alice exists in the data, this should be re-derivable

@@ -26,11 +26,12 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   describe "materialize_in_memory/3" do
     test "materializes simple class hierarchy" do
       # Person -> Animal -> LivingThing
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-        {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
+          {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -46,10 +47,11 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
     test "reaches fixpoint and terminates" do
       # Simple hierarchy that reaches fixpoint quickly
-      initial = MapSet.new([
-        {iri("bob"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("bob"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -72,9 +74,10 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "handles empty rules" do
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = []
 
@@ -86,11 +89,12 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "returns derivations_per_iteration statistics" do
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -109,12 +113,13 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   describe "transitive closure" do
     test "computes full transitive closure of subClassOf" do
       # Chain: A -> B -> C -> D -> E
-      initial = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("D")},
-        {iri("D"), rdfs_subClassOf(), iri("E")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("D")},
+          {iri("D"), rdfs_subClassOf(), iri("E")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -132,12 +137,13 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     test "computes transitive property closure" do
       prop = iri("contains")
 
-      initial = MapSet.new([
-        {prop, rdf_type(), owl_TransitiveProperty()},
-        {iri("box1"), prop, iri("box2")},
-        {iri("box2"), prop, iri("box3")},
-        {iri("box3"), prop, iri("box4")}
-      ])
+      initial =
+        MapSet.new([
+          {prop, rdf_type(), owl_TransitiveProperty()},
+          {iri("box1"), prop, iri("box2")},
+          {iri("box2"), prop, iri("box3")},
+          {iri("box3"), prop, iri("box4")}
+        ])
 
       rules = [Rules.prp_trp()]
 
@@ -156,14 +162,15 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
   describe "multiple rule interaction" do
     test "applies multiple rules together" do
-      initial = MapSet.new([
-        # Type hierarchy
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")},
-        # Class hierarchy
-        {iri("Agent"), rdfs_subClassOf(), iri("Entity")}
-      ])
+      initial =
+        MapSet.new([
+          # Type hierarchy
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")},
+          # Class hierarchy
+          {iri("Agent"), rdfs_subClassOf(), iri("Entity")}
+        ])
 
       # Use both scm_sco (subclass transitivity) and cax_sco (type through subclass)
       rules = [Rules.scm_sco(), Rules.cax_sco()]
@@ -181,10 +188,11 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "applies sameAs rules for equality propagation" do
-      initial = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("alice_smith")},
-        {iri("alice_smith"), owl_sameAs(), iri("alice_jones")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("alice_smith")},
+          {iri("alice_smith"), owl_sameAs(), iri("alice_jones")}
+        ])
 
       rules = [Rules.eq_sym(), Rules.eq_trans()]
 
@@ -207,11 +215,12 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   describe "limits" do
     test "respects max_iterations limit" do
       # Create a scenario that would take many iterations
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -257,7 +266,8 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
       result = SemiNaive.materialize_in_memory(rules, initial, max_facts: 20)
 
       assert {:ok, facts, stats} = result
-      assert MapSet.size(facts) == 11  # 5 entities + 1 hierarchy + 5 derived Entity types
+      # 5 entities + 1 hierarchy + 5 derived Entity types
+      assert MapSet.size(facts) == 11
       assert stats.total_derived == 5
     end
   end
@@ -269,16 +279,18 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   describe "statistics" do
     test "compute_stats calculates correct values" do
       initial_count = 5
-      all_facts = MapSet.new([
-        {iri("a"), iri("p"), iri("b")},
-        {iri("b"), iri("p"), iri("c")},
-        {iri("c"), iri("p"), iri("d")},
-        {iri("d"), iri("p"), iri("e")},
-        {iri("e"), iri("p"), iri("f")},
-        # Derived
-        {iri("a"), iri("q"), iri("c")},
-        {iri("a"), iri("q"), iri("d")}
-      ])
+
+      all_facts =
+        MapSet.new([
+          {iri("a"), iri("p"), iri("b")},
+          {iri("b"), iri("p"), iri("c")},
+          {iri("c"), iri("p"), iri("d")},
+          {iri("d"), iri("p"), iri("e")},
+          {iri("e"), iri("p"), iri("f")},
+          # Derived
+          {iri("a"), iri("q"), iri("c")},
+          {iri("a"), iri("q"), iri("d")}
+        ])
 
       stats = SemiNaive.compute_stats(all_facts, initial_count)
 
@@ -331,10 +343,11 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
       {:ok, store_agent} = Agent.start_link(fn -> MapSet.new() end)
       {:ok, lookup_calls} = Agent.start_link(fn -> [] end)
 
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
       # Initialize store with initial facts
       Agent.update(store_agent, fn _ -> initial end)
@@ -397,13 +410,14 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
       #   Agent   Physical
       #      \     /
       #       Robot
-      initial = MapSet.new([
-        {iri("Robot"), rdfs_subClassOf(), iri("Agent")},
-        {iri("Robot"), rdfs_subClassOf(), iri("Physical")},
-        {iri("Agent"), rdfs_subClassOf(), iri("Thing")},
-        {iri("Physical"), rdfs_subClassOf(), iri("Thing")},
-        {iri("r2d2"), rdf_type(), iri("Robot")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("Robot"), rdfs_subClassOf(), iri("Agent")},
+          {iri("Robot"), rdfs_subClassOf(), iri("Physical")},
+          {iri("Agent"), rdfs_subClassOf(), iri("Thing")},
+          {iri("Physical"), rdfs_subClassOf(), iri("Thing")},
+          {iri("r2d2"), rdf_type(), iri("Robot")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
@@ -419,14 +433,15 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "handles multiple instances with shared hierarchy" do
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Student")},
-        {iri("charlie"), rdf_type(), iri("Professor")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Professor"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Student")},
+          {iri("charlie"), rdf_type(), iri("Professor")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Professor"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
@@ -446,21 +461,24 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
   describe "parallel evaluation" do
     test "parallel produces same results as sequential" do
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Teacher")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Teacher"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Teacher")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Teacher"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
       # Run sequential
-      {:ok, seq_facts, seq_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: false)
+      {:ok, seq_facts, seq_stats} =
+        SemiNaive.materialize_in_memory(rules, initial, parallel: false)
 
       # Run parallel
-      {:ok, par_facts, par_stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+      {:ok, par_facts, par_stats} =
+        SemiNaive.materialize_in_memory(rules, initial, parallel: true)
 
       # Results should be identical
       assert seq_facts == par_facts
@@ -468,20 +486,22 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "parallel with max_concurrency option" do
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")}
+        ])
 
       rules = [Rules.scm_sco()]
 
-      {:ok, _facts, stats} = SemiNaive.materialize_in_memory(
-        rules,
-        initial,
-        parallel: true,
-        max_concurrency: 2
-      )
+      {:ok, _facts, stats} =
+        SemiNaive.materialize_in_memory(
+          rules,
+          initial,
+          parallel: true,
+          max_concurrency: 2
+        )
 
       assert stats.total_derived > 0
     end
@@ -489,10 +509,11 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     test "materialize_parallel convenience function works" do
       {:ok, store_agent} = Agent.start_link(fn -> MapSet.new() end)
 
-      initial = MapSet.new([
-        {iri("x"), rdf_type(), iri("A")},
-        {iri("A"), rdfs_subClassOf(), iri("B")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("x"), rdf_type(), iri("A")},
+          {iri("A"), rdfs_subClassOf(), iri("B")}
+        ])
 
       Agent.update(store_agent, fn _ -> initial end)
 
@@ -526,13 +547,14 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
     test "parallel handles many rules efficiently" do
       # Create a larger set of rules to test parallelism
-      initial = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")},
-        {iri("Agent"), rdfs_subClassOf(), iri("Entity")},
-        {iri("alice"), owl_sameAs(), iri("alice2")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")},
+          {iri("Agent"), rdfs_subClassOf(), iri("Entity")},
+          {iri("alice"), owl_sameAs(), iri("alice2")}
+        ])
 
       # Use multiple rules that can run in parallel
       rules = [
@@ -549,20 +571,22 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
     end
 
     test "parallel is deterministic across multiple runs" do
-      initial = MapSet.new([
-        {iri("a"), rdfs_subClassOf(), iri("b")},
-        {iri("b"), rdfs_subClassOf(), iri("c")},
-        {iri("c"), rdfs_subClassOf(), iri("d")},
-        {iri("x"), rdf_type(), iri("a")}
-      ])
+      initial =
+        MapSet.new([
+          {iri("a"), rdfs_subClassOf(), iri("b")},
+          {iri("b"), rdfs_subClassOf(), iri("c")},
+          {iri("c"), rdfs_subClassOf(), iri("d")},
+          {iri("x"), rdf_type(), iri("a")}
+        ])
 
       rules = [Rules.scm_sco(), Rules.cax_sco()]
 
       # Run multiple times and ensure same result
-      results = for _ <- 1..5 do
-        {:ok, facts, _stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
-        facts
-      end
+      results =
+        for _ <- 1..5 do
+          {:ok, facts, _stats} = SemiNaive.materialize_in_memory(rules, initial, parallel: true)
+          facts
+        end
 
       # All results should be identical
       first = hd(results)

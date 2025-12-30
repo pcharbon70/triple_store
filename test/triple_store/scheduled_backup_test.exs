@@ -61,11 +61,12 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval
+          )
 
         assert Process.alive?(pid)
         :ok = ScheduledBackup.stop(pid)
@@ -136,11 +137,12 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval
+          )
 
         assert Process.alive?(pid)
         :ok = ScheduledBackup.stop(pid)
@@ -162,13 +164,14 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval,
-          max_backups: 3,
-          prefix: "test"
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval,
+            max_backups: 3,
+            prefix: "test"
+          )
 
         {:ok, status} = ScheduledBackup.status(pid)
 
@@ -193,11 +196,12 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval
+          )
 
         :ok = ScheduledBackup.stop(pid)
         assert {:error, :not_running} = ScheduledBackup.status(pid)
@@ -219,16 +223,18 @@ defmodule TripleStore.ScheduledBackupTest do
 
       try do
         # Add some data
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval,
-          max_backups: 5
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval,
+            max_backups: 5
+          )
 
         # Wait for at least one backup to run
         Process.sleep(@test_interval * 2)
@@ -254,12 +260,14 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: :timer.hours(1),  # Long interval
-          run_immediately: true
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            # Long interval
+            interval: :timer.hours(1),
+            run_immediately: true
+          )
 
         # Give it time to complete the backup
         Process.sleep(500)
@@ -280,12 +288,13 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval,
-          max_backups: 10
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval,
+            max_backups: 10
+          )
 
         # Wait for multiple backups (add extra time for execution)
         Process.sleep(@test_interval * 8)
@@ -312,11 +321,13 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: :timer.hours(1)  # Long interval - won't trigger automatically
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            # Long interval - won't trigger automatically
+            interval: :timer.hours(1)
+          )
 
         {:ok, status_before} = ScheduledBackup.status(pid)
         assert status_before.backup_count == 0
@@ -340,13 +351,15 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        interval = 500  # 500ms interval
+        # 500ms interval
+        interval = 500
 
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: interval
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: interval
+          )
 
         # Trigger backup after half the interval
         Process.sleep(div(interval, 2))
@@ -378,13 +391,14 @@ defmodule TripleStore.ScheduledBackupTest do
       try do
         max_backups = 3
 
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval,
-          max_backups: max_backups,
-          prefix: "rotation_test"
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval,
+            max_backups: max_backups,
+            prefix: "rotation_test"
+          )
 
         # Wait for more backups than max (need at least max_backups + 1)
         Process.sleep(@test_interval * 12)
@@ -396,9 +410,11 @@ defmodule TripleStore.ScheduledBackupTest do
 
         # But only max_backups should exist
         {:ok, backups} = Backup.list(backup_dir)
-        matching = Enum.filter(backups, fn b ->
-          Path.basename(b.path) |> String.starts_with?("rotation_test")
-        end)
+
+        matching =
+          Enum.filter(backups, fn b ->
+            Path.basename(b.path) |> String.starts_with?("rotation_test")
+          end)
 
         assert length(matching) <= max_backups,
                "Expected <= #{max_backups} backups, found #{length(matching)}"
@@ -432,11 +448,12 @@ defmodule TripleStore.ScheduledBackupTest do
           nil
         )
 
-        {:ok, pid} = ScheduledBackup.start_link(
-          store: store,
-          backup_dir: backup_dir,
-          interval: @test_interval
-        )
+        {:ok, pid} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: @test_interval
+          )
 
         # Wait for backup
         Process.sleep(@test_interval * 2)
@@ -465,10 +482,11 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, scheduler} = TripleStore.schedule_backup(store, backup_dir,
-          interval: @test_interval,
-          max_backups: 5
-        )
+        {:ok, scheduler} =
+          TripleStore.schedule_backup(store, backup_dir,
+            interval: @test_interval,
+            max_backups: 5
+          )
 
         assert Process.alive?(scheduler)
 
@@ -488,10 +506,11 @@ defmodule TripleStore.ScheduledBackupTest do
       backup_dir = create_test_backup_dir()
 
       try do
-        {:ok, scheduler} = TripleStore.schedule_backup(store, backup_dir,
-          interval: :timer.hours(1),
-          run_immediately: true
-        )
+        {:ok, scheduler} =
+          TripleStore.schedule_backup(store, backup_dir,
+            interval: :timer.hours(1),
+            run_immediately: true
+          )
 
         # Wait for immediate backup
         Process.sleep(500)

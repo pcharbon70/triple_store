@@ -59,9 +59,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
   # ===========================================================================
 
   defp insert_triples(ctx, triples) do
-    rdf_triples = Enum.map(triples, fn {s, p, o} ->
-      {RDF.iri(s), RDF.iri(p), to_rdf_term(o)}
-    end)
+    rdf_triples =
+      Enum.map(triples, fn {s, p, o} ->
+        {RDF.iri(s), RDF.iri(p), to_rdf_term(o)}
+      end)
+
     {:ok, _count} = Update.insert(ctx, rdf_triples)
   end
 
@@ -72,6 +74,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       RDF.literal(term)
     end
   end
+
   defp to_rdf_term(term), do: term
 
   # extract_iris/2, get_iri/1, get_literal/1 imported from IntegrationHelpers
@@ -281,7 +284,8 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
       assert MapSet.member?(people, "#{@ex}alice")
       assert MapSet.member?(people, "#{@ex}charlie")
-      assert MapSet.member?(people, "#{@ex}dave")  # via alice
+      # via alice
+      assert MapSet.member?(people, "#{@ex}dave")
     end
 
     test "finds shortest path existence between two people", %{ctx: ctx} do
@@ -321,9 +325,11 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
     test "handles large friend network", %{ctx: ctx} do
       # Create a network of 50 people in a chain
-      triples = for i <- 1..49 do
-        {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{i + 1}"}
-      end
+      triples =
+        for i <- 1..49 do
+          {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{i + 1}"}
+        end
+
       insert_triples(ctx, triples)
 
       # Find all reachable from person1
@@ -335,7 +341,8 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
       {:ok, results} = Query.query(ctx, sparql)
       count = extract_count(hd(results)["count"])
-      assert count == 49  # Can reach person2 through person50
+      # Can reach person2 through person50
+      assert count == 49
     end
   end
 
@@ -441,12 +448,14 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       {:ok, results} = Query.query(ctx, sparql)
 
       # Group results by person
-      alice_types = results
+      alice_types =
+        results
         |> Enum.filter(&(get_iri(&1["person"]) == "#{@ex}alice"))
         |> Enum.map(&get_iri(&1["type"]))
         |> MapSet.new()
 
-      bob_types = results
+      bob_types =
+        results
         |> Enum.filter(&(get_iri(&1["person"]) == "#{@ex}bob"))
         |> Enum.map(&get_iri(&1["type"]))
         |> MapSet.new()
@@ -509,8 +518,10 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       {:ok, results} = Query.query(ctx, sparql)
       people = extract_iris(results, "person")
 
-      assert MapSet.member?(people, "#{@ex}bob")     # knows
-      assert MapSet.member?(people, "#{@ex}charlie") # same company
+      # knows
+      assert MapSet.member?(people, "#{@ex}bob")
+      # same company
+      assert MapSet.member?(people, "#{@ex}charlie")
     end
 
     test "negated property set in path", %{ctx: ctx} do
@@ -552,7 +563,8 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       siblings = extract_iris(results, "sibling")
 
       assert MapSet.member?(siblings, "#{@ex}bob")
-      refute MapSet.member?(siblings, "#{@ex}charlie")  # different parent
+      # different parent
+      refute MapSet.member?(siblings, "#{@ex}charlie")
     end
   end
 
@@ -564,19 +576,22 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
     @tag timeout: @benchmark_timeout
     test "deep class hierarchy (100 levels)", %{ctx: ctx} do
       # Create a 100-level deep hierarchy
-      triples = for i <- 1..99 do
-        {"#{@ex}Class#{i}", "#{@rdfs}subClassOf", "#{@ex}Class#{i + 1}"}
-      end
+      triples =
+        for i <- 1..99 do
+          {"#{@ex}Class#{i}", "#{@rdfs}subClassOf", "#{@ex}Class#{i + 1}"}
+        end
+
       insert_triples(ctx, triples)
 
       # Time finding all superclasses from bottom
-      {time_us, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?superclass WHERE {
-            <#{@ex}Class1> <#{@rdfs}subClassOf>* ?superclass
-          }
-        """)
-      end)
+      {time_us, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?superclass WHERE {
+              <#{@ex}Class1> <#{@rdfs}subClassOf>* ?superclass
+            }
+          """)
+        end)
 
       superclasses = extract_iris(results, "superclass")
 
@@ -585,30 +600,34 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       IO.puts("\n  Deep hierarchy (100 levels) traversal: #{time_us / 1000}ms")
 
       # Reasonable performance expectation (10x buffer over typical ~5ms)
-      assert time_us < @performance_threshold_ms * 1000, "Deep hierarchy traversal took too long: #{time_us / 1000}ms"
+      assert time_us < @performance_threshold_ms * 1000,
+             "Deep hierarchy traversal took too long: #{time_us / 1000}ms"
     end
 
     @tag timeout: @benchmark_timeout
     test "wide hierarchy (50 classes at each level)", %{ctx: ctx} do
       # Create 3 levels with 50 classes each
-      level1_triples = for i <- 1..50 do
-        {"#{@ex}L1_#{i}", "#{@rdfs}subClassOf", "#{@ex}Root"}
-      end
+      level1_triples =
+        for i <- 1..50 do
+          {"#{@ex}L1_#{i}", "#{@rdfs}subClassOf", "#{@ex}Root"}
+        end
 
-      level2_triples = for i <- 1..50, j <- 1..2 do
-        {"#{@ex}L2_#{i}_#{j}", "#{@rdfs}subClassOf", "#{@ex}L1_#{i}"}
-      end
+      level2_triples =
+        for i <- 1..50, j <- 1..2 do
+          {"#{@ex}L2_#{i}_#{j}", "#{@rdfs}subClassOf", "#{@ex}L1_#{i}"}
+        end
 
       insert_triples(ctx, level1_triples ++ level2_triples)
 
       # Find all subclasses of Root
-      {time_us, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?subclass WHERE {
-            ?subclass <#{@rdfs}subClassOf>+ <#{@ex}Root>
-          }
-        """)
-      end)
+      {time_us, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?subclass WHERE {
+              ?subclass <#{@rdfs}subClassOf>+ <#{@ex}Root>
+            }
+          """)
+        end)
 
       subclasses = extract_iris(results, "subclass")
 
@@ -617,26 +636,30 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       IO.puts("\n  Wide hierarchy (150 classes) traversal: #{time_us / 1000}ms")
 
       # Reasonable performance expectation (10x buffer)
-      assert time_us < @performance_threshold_ms * 1000, "Wide hierarchy traversal took too long: #{time_us / 1000}ms"
+      assert time_us < @performance_threshold_ms * 1000,
+             "Wide hierarchy traversal took too long: #{time_us / 1000}ms"
     end
 
     @tag timeout: @benchmark_timeout
     test "social network with cycles (100 nodes)", %{ctx: ctx} do
       # Create a circular network of 100 people
-      triples = for i <- 1..100 do
-        next = if i == 100, do: 1, else: i + 1
-        {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{next}"}
-      end
+      triples =
+        for i <- 1..100 do
+          next = if i == 100, do: 1, else: i + 1
+          {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{next}"}
+        end
+
       insert_triples(ctx, triples)
 
       # Find all reachable from person1 (should find all 100)
-      {time_us, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?person WHERE {
-            <#{@ex}person1> <#{@foaf}knows>+ ?person
-          }
-        """)
-      end)
+      {time_us, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?person WHERE {
+              <#{@ex}person1> <#{@foaf}knows>+ ?person
+            }
+          """)
+        end)
 
       people = extract_iris(results, "person")
 
@@ -645,25 +668,29 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       IO.puts("\n  Circular network (100 nodes) traversal: #{time_us / 1000}ms")
 
       # Reasonable performance expectation (10x buffer)
-      assert time_us < @performance_threshold_ms * 1000, "Circular network traversal took too long: #{time_us / 1000}ms"
+      assert time_us < @performance_threshold_ms * 1000,
+             "Circular network traversal took too long: #{time_us / 1000}ms"
     end
 
     @tag timeout: @benchmark_timeout
     test "dense graph (complete graph of 20 nodes)", %{ctx: ctx} do
       # Create complete graph: everyone knows everyone
-      triples = for i <- 1..20, j <- 1..20, i != j do
-        {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{j}"}
-      end
+      triples =
+        for i <- 1..20, j <- 1..20, i != j do
+          {"#{@ex}person#{i}", "#{@foaf}knows", "#{@ex}person#{j}"}
+        end
+
       insert_triples(ctx, triples)
 
       # Find all reachable from person1
-      {time_us, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?person WHERE {
-            <#{@ex}person1> <#{@foaf}knows>+ ?person
-          }
-        """)
-      end)
+      {time_us, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?person WHERE {
+              <#{@ex}person1> <#{@foaf}knows>+ ?person
+            }
+          """)
+        end)
 
       people = extract_iris(results, "person")
 
@@ -672,33 +699,38 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       IO.puts("\n  Complete graph (20 nodes, 380 edges) traversal: #{time_us / 1000}ms")
 
       # Reasonable performance expectation (10x buffer)
-      assert time_us < @performance_threshold_ms * 1000, "Complete graph traversal took too long: #{time_us / 1000}ms"
+      assert time_us < @performance_threshold_ms * 1000,
+             "Complete graph traversal took too long: #{time_us / 1000}ms"
     end
 
     @tag timeout: @benchmark_timeout
     test "binary tree hierarchy (7 levels, 127 nodes)", %{ctx: ctx} do
       # Create a binary tree with 7 levels
       # Level 0: 1 node, Level 1: 2 nodes, ... Level 6: 64 nodes = 127 total
-      triples = for level <- 0..5, i <- 0..(round(:math.pow(2, level)) - 1) do
-        parent = "#{@ex}node_#{level}_#{i}"
-        left_child = "#{@ex}node_#{level + 1}_#{i * 2}"
-        right_child = "#{@ex}node_#{level + 1}_#{i * 2 + 1}"
-        [
-          {left_child, "#{@rdfs}subClassOf", parent},
-          {right_child, "#{@rdfs}subClassOf", parent}
-        ]
-      end |> List.flatten()
+      triples =
+        for level <- 0..5, i <- 0..(round(:math.pow(2, level)) - 1) do
+          parent = "#{@ex}node_#{level}_#{i}"
+          left_child = "#{@ex}node_#{level + 1}_#{i * 2}"
+          right_child = "#{@ex}node_#{level + 1}_#{i * 2 + 1}"
+
+          [
+            {left_child, "#{@rdfs}subClassOf", parent},
+            {right_child, "#{@rdfs}subClassOf", parent}
+          ]
+        end
+        |> List.flatten()
 
       insert_triples(ctx, triples)
 
       # Find all descendants of root
-      {time_us, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?node WHERE {
-            ?node <#{@rdfs}subClassOf>+ <#{@ex}node_0_0>
-          }
-        """)
-      end)
+      {time_us, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?node WHERE {
+              ?node <#{@rdfs}subClassOf>+ <#{@ex}node_0_0>
+            }
+          """)
+        end)
 
       nodes = extract_iris(results, "node")
 
@@ -707,43 +739,52 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       IO.puts("\n  Binary tree (127 nodes) traversal: #{time_us / 1000}ms")
 
       # Reasonable performance expectation (10x buffer)
-      assert time_us < @performance_threshold_ms * 1000, "Binary tree traversal took too long: #{time_us / 1000}ms"
+      assert time_us < @performance_threshold_ms * 1000,
+             "Binary tree traversal took too long: #{time_us / 1000}ms"
     end
 
     @tag timeout: @benchmark_timeout
     test "compare zero-or-more vs one-or-more performance", %{ctx: ctx} do
       # Create chain of 50 nodes
-      triples = for i <- 1..49 do
-        {"#{@ex}node#{i}", "#{@ex}next", "#{@ex}node#{i + 1}"}
-      end
+      triples =
+        for i <- 1..49 do
+          {"#{@ex}node#{i}", "#{@ex}next", "#{@ex}node#{i + 1}"}
+        end
+
       insert_triples(ctx, triples)
 
       # Zero-or-more
-      {time_star, {:ok, results_star}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?node WHERE {
-            <#{@ex}node1> <#{@ex}next>* ?node
-          }
-        """)
-      end)
+      {time_star, {:ok, results_star}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?node WHERE {
+              <#{@ex}node1> <#{@ex}next>* ?node
+            }
+          """)
+        end)
 
       # One-or-more
-      {time_plus, {:ok, results_plus}} = :timer.tc(fn ->
-        Query.query(ctx, """
-          SELECT ?node WHERE {
-            <#{@ex}node1> <#{@ex}next>+ ?node
-          }
-        """)
-      end)
+      {time_plus, {:ok, results_plus}} =
+        :timer.tc(fn ->
+          Query.query(ctx, """
+            SELECT ?node WHERE {
+              <#{@ex}node1> <#{@ex}next>+ ?node
+            }
+          """)
+        end)
 
       star_count = length(results_star)
       plus_count = length(results_plus)
 
       # Star includes self, plus does not
-      assert star_count == 50  # node1 through node50
-      assert plus_count == 49  # node2 through node50
+      # node1 through node50
+      assert star_count == 50
+      # node2 through node50
+      assert plus_count == 49
 
-      IO.puts("\n  50-node chain: * = #{time_star / 1000}ms (#{star_count} results), + = #{time_plus / 1000}ms (#{plus_count} results)")
+      IO.puts(
+        "\n  50-node chain: * = #{time_star / 1000}ms (#{star_count} results), + = #{time_plus / 1000}ms (#{plus_count} results)"
+      )
     end
   end
 
@@ -781,7 +822,8 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       """
 
       {:ok, results} = Query.query(ctx, sparql)
-      assert length(results) >= 1  # At least Thing
+      # At least Thing
+      assert length(results) >= 1
     end
 
     test "path with no matching triples returns empty for one-or-more", %{ctx: ctx} do
@@ -802,7 +844,8 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
     test "self-loop is handled correctly", %{ctx: ctx} do
       insert_triples(ctx, [
-        {"#{@ex}alice", "#{@foaf}knows", "#{@ex}alice"}  # Self-loop
+        # Self-loop
+        {"#{@ex}alice", "#{@foaf}knows", "#{@ex}alice"}
       ])
 
       # One-or-more with self-loop

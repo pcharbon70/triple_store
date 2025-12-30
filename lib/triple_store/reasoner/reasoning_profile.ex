@@ -229,7 +229,13 @@ defmodule TripleStore.Reasoner.ReasoningProfile do
       description: "OWL 2 RL full - complete OWL 2 RL rule set",
       rule_count: length(all_rules),
       rule_names: all_rules,
-      categories: [:schema_hierarchy, :domain_range, :property_characteristics, :equality, :restrictions]
+      categories: [
+        :schema_hierarchy,
+        :domain_range,
+        :property_characteristics,
+        :equality,
+        :restrictions
+      ]
     }
   end
 

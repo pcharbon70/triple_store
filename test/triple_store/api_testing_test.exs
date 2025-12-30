@@ -51,6 +51,7 @@ defmodule TripleStore.APITestingTest do
           RDF.iri("http://ex.org/knows"),
           RDF.iri("http://ex.org/bob")
         }
+
         {:ok, count} = TripleStore.insert(store, triple)
         assert count == 1
 
@@ -59,7 +60,11 @@ defmodule TripleStore.APITestingTest do
         assert length(results) == 1
 
         # Update with SPARQL UPDATE
-        {:ok, _} = TripleStore.update(store, "INSERT DATA { <http://ex.org/new> <http://ex.org/p> 'value' }")
+        {:ok, _} =
+          TripleStore.update(
+            store,
+            "INSERT DATA { <http://ex.org/new> <http://ex.org/p> 'value' }"
+          )
 
         # Check stats
         {:ok, stats} = TripleStore.stats(store)
@@ -108,13 +113,14 @@ defmodule TripleStore.APITestingTest do
 
       try do
         # Load some data first
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA {
-            ex:alice ex:knows ex:bob .
-            ex:bob ex:knows ex:charlie .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA {
+              ex:alice ex:knows ex:bob .
+              ex:bob ex:knows ex:charlie .
+            }
+          """)
 
         # SELECT query from docs
         {:ok, results} = TripleStore.query(store, "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10")
@@ -129,18 +135,21 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-          PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-          INSERT DATA {
-            <http://example.org/alice> rdf:type foaf:Person .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+            INSERT DATA {
+              <http://example.org/alice> rdf:type foaf:Person .
+            }
+          """)
 
-        {:ok, exists} = TripleStore.query(store, """
-          PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-          ASK { ?s a foaf:Person }
-        """)
+        {:ok, exists} =
+          TripleStore.query(store, """
+            PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+            ASK { ?s a foaf:Person }
+          """)
+
         assert exists == true
       after
         cleanup_test_store(store, path)
@@ -151,9 +160,10 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.update(store, """
-          INSERT DATA { <http://ex.org/s> <http://ex.org/p> "o" }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            INSERT DATA { <http://ex.org/s> <http://ex.org/p> "o" }
+          """)
 
         {:ok, results} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }", timeout: 5000)
         assert length(results) == 1
@@ -166,9 +176,12 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        graph = RDF.Graph.new([
-          {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("object")}
-        ])
+        graph =
+          RDF.Graph.new([
+            {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
+             RDF.literal("object")}
+          ])
+
         {:ok, 1} = TripleStore.load_graph(store, graph)
 
         {:ok, stats} = TripleStore.stats(store)
@@ -186,6 +199,7 @@ defmodule TripleStore.APITestingTest do
         @prefix ex: <http://example.org/> .
         ex:alice ex:knows ex:bob .
         """
+
         {:ok, 1} = TripleStore.load_string(store, ttl, :turtle)
 
         {:ok, stats} = TripleStore.stats(store)
@@ -204,6 +218,7 @@ defmodule TripleStore.APITestingTest do
           RDF.iri("http://example.org/p"),
           RDF.literal("value")
         }
+
         {:ok, 1} = TripleStore.insert(store, triple)
 
         {:ok, stats} = TripleStore.stats(store)
@@ -222,6 +237,7 @@ defmodule TripleStore.APITestingTest do
           {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal(2)},
           {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"), RDF.literal(3)}
         ]
+
         {:ok, 3} = TripleStore.insert(store, triples)
 
         {:ok, stats} = TripleStore.stats(store)
@@ -240,6 +256,7 @@ defmodule TripleStore.APITestingTest do
           RDF.iri("http://example.org/p"),
           RDF.literal("value")
         }
+
         {:ok, 1} = TripleStore.insert(store, triple)
         {:ok, 1} = TripleStore.delete(store, triple)
 
@@ -254,7 +271,11 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.update(store, "INSERT DATA { <http://ex.org/new> <http://ex.org/p> 'value' }")
+        {:ok, _} =
+          TripleStore.update(
+            store,
+            "INSERT DATA { <http://ex.org/new> <http://ex.org/p> 'value' }"
+          )
 
         {:ok, stats} = TripleStore.stats(store)
         assert stats.triple_count == 1
@@ -267,8 +288,11 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.update(store, "INSERT DATA { <http://ex.org/s> <http://ex.org/p> 'value' }")
-        {:ok, _} = TripleStore.update(store, "DELETE DATA { <http://ex.org/s> <http://ex.org/p> 'value' }")
+        {:ok, _} =
+          TripleStore.update(store, "INSERT DATA { <http://ex.org/s> <http://ex.org/p> 'value' }")
+
+        {:ok, _} =
+          TripleStore.update(store, "DELETE DATA { <http://ex.org/s> <http://ex.org/p> 'value' }")
 
         {:ok, stats} = TripleStore.stats(store)
         assert stats.triple_count == 0
@@ -281,12 +305,13 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.update(store, """
-          INSERT DATA {
-            <http://ex.org/s1> <http://ex.org/p> "v1" .
-            <http://ex.org/s2> <http://ex.org/p> "v2" .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            INSERT DATA {
+              <http://ex.org/s1> <http://ex.org/p> "v1" .
+              <http://ex.org/s2> <http://ex.org/p> "v2" .
+            }
+          """)
 
         {:ok, graph} = TripleStore.export(store, :graph)
         assert RDF.Graph.triple_count(graph) == 2
@@ -325,9 +350,10 @@ defmodule TripleStore.APITestingTest do
       backup_path = Path.join(System.tmp_dir!(), "backup_api_#{:rand.uniform(1_000_000)}")
 
       try do
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
         {:ok, metadata} = TripleStore.backup(store, backup_path)
         assert metadata.path == backup_path
@@ -344,9 +370,10 @@ defmodule TripleStore.APITestingTest do
       restore_path = Path.join(System.tmp_dir!(), "restored_api_#{:rand.uniform(1_000_000)}")
 
       try do
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
         {:ok, _} = TripleStore.backup(store, backup_path)
         :ok = TripleStore.close(store)
@@ -384,6 +411,7 @@ defmodule TripleStore.APITestingTest do
 
         # Verify error has meaningful content (not just generic :error)
         error_string = inspect(reason)
+
         assert String.length(error_string) > 5,
                "Error should have meaningful content, got: #{error_string}"
       after
@@ -398,7 +426,7 @@ defmodule TripleStore.APITestingTest do
         {:error, reason} = TripleStore.load(store, "/nonexistent/path/to/file.ttl")
         # Should indicate file not found
         assert reason == :file_not_found or
-               (is_tuple(reason) and elem(reason, 0) == :file_not_found)
+                 (is_tuple(reason) and elem(reason, 0) == :file_not_found)
       after
         cleanup_test_store(store, path)
       end
@@ -448,6 +476,7 @@ defmodule TripleStore.APITestingTest do
 
         # Verify the error has actionable content
         error_string = inspect(reason)
+
         assert String.length(error_string) > 3,
                "Error should have meaningful content, got: #{error_string}"
       after
@@ -477,7 +506,9 @@ defmodule TripleStore.APITestingTest do
     test "very long path is handled gracefully" do
       # Create a very long path (1000 characters)
       long_segment = String.duplicate("a", 250)
-      long_path = Path.join([System.tmp_dir!(), long_segment, long_segment, long_segment, long_segment])
+
+      long_path =
+        Path.join([System.tmp_dir!(), long_segment, long_segment, long_segment, long_segment])
 
       result = TripleStore.open(long_path)
       # Should either succeed or return a clear error, not crash
@@ -489,6 +520,7 @@ defmodule TripleStore.APITestingTest do
         {:ok, store} ->
           TripleStore.close(store)
           File.rm_rf!(long_path)
+
         _ ->
           :ok
       end
@@ -533,9 +565,10 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
         {:ok, results} = TripleStore.query(store, "SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
 
@@ -555,9 +588,10 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
         {:ok, result} = TripleStore.query(store, "ASK { ?s ?p ?o }")
         assert is_boolean(result)
@@ -574,10 +608,11 @@ defmodule TripleStore.APITestingTest do
       {store, path} = create_test_store(prefix: "api_test")
 
       try do
-        graph = RDF.Graph.new([
-          {RDF.iri("http://ex.org/s1"), RDF.iri("http://ex.org/p"), RDF.literal("v1")},
-          {RDF.iri("http://ex.org/s2"), RDF.iri("http://ex.org/p"), RDF.literal("v2")}
-        ])
+        graph =
+          RDF.Graph.new([
+            {RDF.iri("http://ex.org/s1"), RDF.iri("http://ex.org/p"), RDF.literal("v1")},
+            {RDF.iri("http://ex.org/s2"), RDF.iri("http://ex.org/p"), RDF.literal("v2")}
+          ])
 
         {:ok, count} = TripleStore.load_graph(store, graph)
 
@@ -695,19 +730,24 @@ defmodule TripleStore.APITestingTest do
 
       try do
         # Insert returns {:ok, count}
-        {:ok, count} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, count} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
+
         assert is_integer(count)
 
         # Delete returns {:ok, count}
-        {:ok, count} = TripleStore.delete(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, count} =
+          TripleStore.delete(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
+
         assert is_integer(count)
 
         # Update returns {:ok, result}
-        {:ok, _} = TripleStore.update(store, "INSERT DATA { <http://ex.org/s> <http://ex.org/p> 'v' }")
+        {:ok, _} =
+          TripleStore.update(store, "INSERT DATA { <http://ex.org/s> <http://ex.org/p> 'v' }")
       after
         cleanup_test_store(store, path)
       end
@@ -736,7 +776,10 @@ defmodule TripleStore.APITestingTest do
         {:ok, _} = TripleStore.load_graph(store, graph, batch_size: 100)
 
         # load_string with batch_size
-        {:ok, _} = TripleStore.load_string(store, "@prefix ex: <http://ex.org/> .", :turtle, batch_size: 100)
+        {:ok, _} =
+          TripleStore.load_string(store, "@prefix ex: <http://ex.org/> .", :turtle,
+            batch_size: 100
+          )
       after
         cleanup_test_store(store, path)
       end
@@ -752,9 +795,11 @@ defmodule TripleStore.APITestingTest do
         {:ok, _} = TripleStore.stats(store)
 
         # Store remains valid after operations
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
+
         {:ok, _} = TripleStore.stats(store)
         {:ok, _} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }")
       after
@@ -767,24 +812,26 @@ defmodule TripleStore.APITestingTest do
 
       try do
         # Load initial data
-        {:ok, _} = TripleStore.insert(store, [
-          {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
-        ])
+        {:ok, _} =
+          TripleStore.insert(store, [
+            {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"), RDF.literal("v")}
+          ])
 
         # Run concurrent queries
-        tasks = for _i <- 1..10 do
-          Task.async(fn ->
-            TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }")
-          end)
-        end
+        tasks =
+          for _i <- 1..10 do
+            Task.async(fn ->
+              TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }")
+            end)
+          end
 
         results = Task.await_many(tasks, 30_000)
 
         # All queries should succeed
         assert Enum.all?(results, fn
-          {:ok, _} -> true
-          _ -> false
-        end)
+                 {:ok, _} -> true
+                 _ -> false
+               end)
       after
         cleanup_test_store(store, path)
       end
@@ -877,51 +924,60 @@ defmodule TripleStore.APITestingTest do
 
       try do
         # Load test data
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-          INSERT DATA {
-            ex:alice rdf:type ex:Person .
-            ex:alice ex:name "Alice" .
-            ex:alice ex:age 30 .
-            ex:bob rdf:type ex:Person .
-            ex:bob ex:name "Bob" .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            INSERT DATA {
+              ex:alice rdf:type ex:Person .
+              ex:alice ex:name "Alice" .
+              ex:alice ex:age 30 .
+              ex:bob rdf:type ex:Person .
+              ex:bob ex:name "Bob" .
+            }
+          """)
 
         # FILTER works
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?name WHERE {
-            ?s ex:name ?name .
-            FILTER(STRLEN(?name) > 3)
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?name WHERE {
+              ?s ex:name ?name .
+              FILTER(STRLEN(?name) > 3)
+            }
+          """)
+
         assert length(results) == 1
 
         # OPTIONAL works
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?name ?age WHERE {
-            ?s ex:name ?name .
-            OPTIONAL { ?s ex:age ?age }
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?name ?age WHERE {
+              ?s ex:name ?name .
+              OPTIONAL { ?s ex:age ?age }
+            }
+          """)
+
         assert length(results) == 2
 
         # ORDER BY works
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?name WHERE { ?s ex:name ?name } ORDER BY ?name
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?name WHERE { ?s ex:name ?name } ORDER BY ?name
+          """)
+
         assert length(results) == 2
 
         # COUNT works
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?s) as ?count) WHERE { ?s rdf:type ex:Person }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?s) as ?count) WHERE { ?s rdf:type ex:Person }
+          """)
+
         assert length(results) == 1
       after
         cleanup_test_store(store, path)
@@ -941,20 +997,24 @@ defmodule TripleStore.APITestingTest do
         ex:item1 ex:value 100 .
         ex:item2 ex:value 200 .
         """
+
         {:ok, 2} = TripleStore.load_string(store, ttl, :turtle)
 
         # 3. Query data
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?item ?val WHERE { ?item ex:value ?val }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?item ?val WHERE { ?item ex:value ?val }
+          """)
+
         assert length(results) == 2
 
         # 4. Update data
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA { ex:item3 ex:value 300 }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA { ex:item3 ex:value 300 }
+          """)
 
         # 5. Verify update
         {:ok, stats} = TripleStore.stats(store)

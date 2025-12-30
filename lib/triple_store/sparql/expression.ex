@@ -45,7 +45,6 @@ defmodule TripleStore.SPARQL.Expression do
   # Security limits
   @regex_timeout_ms 1000
   @max_regex_pattern_length 1000
-  @max_integer_digits 100
 
   @type rdf_term ::
           {:variable, String.t()}
@@ -285,10 +284,17 @@ defmodule TripleStore.SPARQL.Expression do
   def evaluate({:function_call, "DATATYPE", [arg]}, bindings) do
     with {:ok, val} <- evaluate(arg, bindings) do
       case val do
-        {:literal, :simple, _} -> {:ok, {:named_node, @xsd_string}}
-        {:literal, :typed, _, dt} -> {:ok, {:named_node, dt}}
-        {:literal, :lang, _, _} -> {:ok, {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"}}
-        _ -> :error
+        {:literal, :simple, _} ->
+          {:ok, {:named_node, @xsd_string}}
+
+        {:literal, :typed, _, dt} ->
+          {:ok, {:named_node, dt}}
+
+        {:literal, :lang, _, _} ->
+          {:ok, {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"}}
+
+        _ ->
+          :error
       end
     end
   end
@@ -352,10 +358,12 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate({:function_call, "ISNUMERIC", [arg]}, bindings) do
     with {:ok, val} <- evaluate(arg, bindings) do
-      is_num = case to_numeric(val) do
-        {:ok, _, _} -> true
-        _ -> false
-      end
+      is_num =
+        case to_numeric(val) do
+          {:ok, _, _} -> true
+          _ -> false
+        end
+
       {:ok, make_boolean(is_num)}
     end
   end
@@ -458,10 +466,12 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, match_val} <- evaluate(match_arg, bindings),
          {:ok, str} <- to_string_value(str_val),
          {:ok, match} <- to_string_value(match_val) do
-      result = case String.split(str, match, parts: 2) do
-        [before, _] -> before
-        _ -> ""
-      end
+      result =
+        case String.split(str, match, parts: 2) do
+          [before, _] -> before
+          _ -> ""
+        end
+
       {:ok, make_string_result(result, str_val)}
     else
       _ -> :error
@@ -473,10 +483,12 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, match_val} <- evaluate(match_arg, bindings),
          {:ok, str} <- to_string_value(str_val),
          {:ok, match} <- to_string_value(match_val) do
-      result = case String.split(str, match, parts: 2) do
-        [_, after_] -> after_
-        _ -> ""
-      end
+      result =
+        case String.split(str, match, parts: 2) do
+          [_, after_] -> after_
+          _ -> ""
+        end
+
       {:ok, make_string_result(result, str_val)}
     else
       _ -> :error
@@ -493,12 +505,13 @@ defmodule TripleStore.SPARQL.Expression do
   end
 
   def evaluate({:function_call, "CONCAT", args}, bindings) when is_list(args) do
-    results = Enum.map(args, fn arg ->
-      with {:ok, val} <- evaluate(arg, bindings),
-           {:ok, str} <- to_string_value(val) do
-        {:ok, str}
-      end
-    end)
+    results =
+      Enum.map(args, fn arg ->
+        with {:ok, val} <- evaluate(arg, bindings),
+             {:ok, str} <- to_string_value(val) do
+          {:ok, str}
+        end
+      end)
 
     if Enum.all?(results, &match?({:ok, _}, &1)) do
       strs = Enum.map(results, fn {:ok, s} -> s end)
@@ -513,12 +526,14 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, pattern_val} <- evaluate(pattern_arg, bindings),
          {:ok, lang} <- to_string_value(lang_val),
          {:ok, pattern} <- to_string_value(pattern_val) do
-      result = cond do
-        pattern == "*" -> lang != ""
-        String.downcase(lang) == String.downcase(pattern) -> true
-        String.starts_with?(String.downcase(lang), String.downcase(pattern) <> "-") -> true
-        true -> false
-      end
+      result =
+        cond do
+          pattern == "*" -> lang != ""
+          String.downcase(lang) == String.downcase(pattern) -> true
+          String.starts_with?(String.downcase(lang), String.downcase(pattern) <> "-") -> true
+          true -> false
+        end
+
       {:ok, make_boolean(result)}
     else
       _ -> :error
@@ -538,13 +553,16 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, flags} <- to_string_value(flags_val),
          :ok <- validate_regex_pattern(pattern) do
       regex_opts = parse_regex_flags(flags)
+
       case Regex.compile(pattern, regex_opts) do
         {:ok, regex} ->
           case safe_regex_match(regex, str) do
             {:ok, result} -> {:ok, make_boolean(result)}
             {:error, :timeout} -> :error
           end
-        {:error, _} -> :error
+
+        {:error, _} ->
+          :error
       end
     else
       _ -> :error
@@ -552,10 +570,17 @@ defmodule TripleStore.SPARQL.Expression do
   end
 
   def evaluate({:function_call, "REPLACE", [str_arg, pattern_arg, replacement_arg]}, bindings) do
-    evaluate({:function_call, "REPLACE", [str_arg, pattern_arg, replacement_arg, {:literal, :simple, ""}]}, bindings)
+    evaluate(
+      {:function_call, "REPLACE",
+       [str_arg, pattern_arg, replacement_arg, {:literal, :simple, ""}]},
+      bindings
+    )
   end
 
-  def evaluate({:function_call, "REPLACE", [str_arg, pattern_arg, replacement_arg, flags_arg]}, bindings) do
+  def evaluate(
+        {:function_call, "REPLACE", [str_arg, pattern_arg, replacement_arg, flags_arg]},
+        bindings
+      ) do
     with {:ok, str_val} <- evaluate(str_arg, bindings),
          {:ok, pattern_val} <- evaluate(pattern_arg, bindings),
          {:ok, replacement_val} <- evaluate(replacement_arg, bindings),
@@ -566,13 +591,16 @@ defmodule TripleStore.SPARQL.Expression do
          {:ok, flags} <- to_string_value(flags_val),
          :ok <- validate_regex_pattern(pattern) do
       regex_opts = parse_regex_flags(flags)
+
       case Regex.compile(pattern, regex_opts) do
         {:ok, regex} ->
           case safe_regex_replace(regex, str, replacement) do
             {:ok, result} -> {:ok, make_string_result(result, str_val)}
             {:error, :timeout} -> :error
           end
-        {:error, _} -> :error
+
+        {:error, _} ->
+          :error
       end
     else
       _ -> :error
@@ -793,12 +821,14 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate({:in_expr, needle_expr, haystack}, bindings) when is_list(haystack) do
     with {:ok, needle} <- evaluate(needle_expr, bindings) do
-      result = Enum.any?(haystack, fn hay_expr ->
-        case evaluate(hay_expr, bindings) do
-          {:ok, hay} -> rdf_equal?(needle, hay)
-          :error -> false
-        end
-      end)
+      result =
+        Enum.any?(haystack, fn hay_expr ->
+          case evaluate(hay_expr, bindings) do
+            {:ok, hay} -> rdf_equal?(needle, hay)
+            :error -> false
+          end
+        end)
+
       {:ok, make_boolean(result)}
     else
       _ -> :error
@@ -849,6 +879,7 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate_aggregate({:sum, expr, distinct?}, solutions) do
     values = collect_numeric_values(expr, solutions, distinct?)
+
     if values == [] do
       {:ok, {:literal, :typed, "0", @xsd_integer}}
     else
@@ -860,6 +891,7 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate_aggregate({:avg, expr, distinct?}, solutions) do
     values = collect_numeric_values(expr, solutions, distinct?)
+
     if values == [] do
       {:ok, {:literal, :typed, "0", @xsd_decimal}}
     else
@@ -871,6 +903,7 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate_aggregate({:min, expr, _distinct?}, solutions) do
     values = collect_values(expr, solutions, false)
+
     if values == [] do
       :error
     else
@@ -881,6 +914,7 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate_aggregate({:max, expr, _distinct?}, solutions) do
     values = collect_values(expr, solutions, false)
+
     if values == [] do
       :error
     else
@@ -898,7 +932,9 @@ defmodule TripleStore.SPARQL.Expression do
 
   def evaluate_aggregate({:sample, expr, _distinct?}, solutions) do
     case solutions do
-      [] -> :error
+      [] ->
+        :error
+
       [first | _] ->
         case evaluate(expr, first) do
           {:ok, val} -> {:ok, val}
@@ -1054,8 +1090,13 @@ defmodule TripleStore.SPARQL.Expression do
   defp rdf_equal?({:named_node, a}, {:named_node, b}), do: a == b
   defp rdf_equal?({:blank_node, a}, {:blank_node, b}), do: a == b
   defp rdf_equal?({:literal, :simple, a}, {:literal, :simple, b}), do: a == b
-  defp rdf_equal?({:literal, :lang, va, la}, {:literal, :lang, vb, lb}), do: va == vb and String.downcase(la) == String.downcase(lb)
-  defp rdf_equal?({:literal, :typed, va, ta}, {:literal, :typed, vb, tb}), do: va == vb and ta == tb
+
+  defp rdf_equal?({:literal, :lang, va, la}, {:literal, :lang, vb, lb}),
+    do: va == vb and String.downcase(la) == String.downcase(lb)
+
+  defp rdf_equal?({:literal, :typed, va, ta}, {:literal, :typed, vb, tb}),
+    do: va == vb and ta == tb
+
   # Cross-type numeric comparison
   defp rdf_equal?(a, b) do
     case {to_numeric(a), to_numeric(b)} do
@@ -1073,6 +1114,7 @@ defmodule TripleStore.SPARQL.Expression do
           na > nb -> {:ok, :gt}
           true -> {:ok, :eq}
         end
+
       _ ->
         # String comparison for literals
         with {:ok, sa} <- to_string_value(a),
@@ -1095,6 +1137,7 @@ defmodule TripleStore.SPARQL.Expression do
   defp effective_boolean_value({:literal, :typed, "0", @xsd_boolean}), do: {:ok, false}
   defp effective_boolean_value({:literal, :simple, s}), do: {:ok, s != ""}
   defp effective_boolean_value({:literal, :typed, s, @xsd_string}), do: {:ok, s != ""}
+
   defp effective_boolean_value(term) do
     case to_numeric(term) do
       {:ok, n, _} -> {:ok, n != 0}
@@ -1146,20 +1189,25 @@ defmodule TripleStore.SPARQL.Expression do
 
   # Collect values for aggregates
   defp collect_values(expr, solutions, distinct?) do
-    values = solutions
-    |> Enum.map(fn bindings -> evaluate(expr, bindings) end)
-    |> Enum.filter(&match?({:ok, _}, &1))
-    |> Enum.map(fn {:ok, v} -> v end)
+    values =
+      solutions
+      |> Enum.map(fn bindings -> evaluate(expr, bindings) end)
+      |> Enum.filter(&match?({:ok, _}, &1))
+      |> Enum.map(fn {:ok, v} -> v end)
 
     if distinct?, do: Enum.uniq(values), else: values
   end
 
   # Collect numeric values for aggregates
   defp collect_numeric_values(expr, solutions, distinct?) do
-    values = collect_values(expr, solutions, distinct?)
-    |> Enum.map(fn v -> {to_numeric(v), v} end)
-    |> Enum.filter(fn {{:ok, _, _}, _} -> true; _ -> false end)
-    |> Enum.map(fn {{:ok, n, t}, _} -> {n, t} end)
+    values =
+      collect_values(expr, solutions, distinct?)
+      |> Enum.map(fn v -> {to_numeric(v), v} end)
+      |> Enum.filter(fn
+        {{:ok, _, _}, _} -> true
+        _ -> false
+      end)
+      |> Enum.map(fn {{:ok, n, t}, _} -> {n, t} end)
 
     if distinct?, do: Enum.uniq(values), else: values
   end
@@ -1213,11 +1261,13 @@ defmodule TripleStore.SPARQL.Expression do
 
       nil ->
         Task.shutdown(task, :brutal_kill)
+
         :telemetry.execute(
           [:triple_store, :sparql, :expression, :regex_timeout],
           %{pattern: regex.source, string_length: byte_size(string)},
           %{}
         )
+
         {:error, :timeout}
     end
   end
@@ -1232,13 +1282,14 @@ defmodule TripleStore.SPARQL.Expression do
 
       nil ->
         Task.shutdown(task, :brutal_kill)
+
         :telemetry.execute(
           [:triple_store, :sparql, :expression, :regex_timeout],
           %{pattern: regex.source, string_length: byte_size(string)},
           %{}
         )
+
         {:error, :timeout}
     end
   end
-
 end

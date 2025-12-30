@@ -199,13 +199,14 @@ defmodule TripleStore.Reasoner.DeltaComputation do
         substituted_pattern = {:pattern, substituted_terms}
 
         # Get matching facts from delta or full database
-        matching_facts = get_matching_facts(
-          lookup_fn,
-          substituted_pattern,
-          delta,
-          delta_index,
-          use_delta
-        )
+        matching_facts =
+          get_matching_facts(
+            lookup_fn,
+            substituted_pattern,
+            delta,
+            delta_index,
+            use_delta
+          )
 
         # Extend binding for each match
         matching_facts
@@ -335,14 +336,15 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     conditions = Rule.body_conditions(rule)
 
     # Generate all bindings using delta at specified position
-    bindings = generate_bindings(
-      lookup_fn,
-      patterns,
-      delta,
-      delta_index,
-      delta_pos,
-      conditions
-    )
+    bindings =
+      generate_bindings(
+        lookup_fn,
+        patterns,
+        delta,
+        delta_index,
+        delta_pos,
+        conditions
+      )
 
     # Instantiate head for each binding
     bindings

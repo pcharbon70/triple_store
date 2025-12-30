@@ -123,12 +123,6 @@ defmodule TripleStore.Backup do
           prefix: String.t()
         ]
 
-  # Default maximum backup size (10 GB)
-  @default_max_backup_bytes 10 * 1024 * 1024 * 1024
-
-  # Default maximum file count in backup
-  @default_max_file_count 100_000
-
   # ===========================================================================
   # Backup Operations
   # ===========================================================================
@@ -639,7 +633,7 @@ defmodule TripleStore.Backup do
     initial_stats = %{files_copied: 0, files_linked: 0, bytes_copied: 0}
 
     Enum.reduce_while(source_files, {:ok, initial_stats}, fn {src_path, src_stat},
-                                                              {:ok, acc_stats} ->
+                                                             {:ok, acc_stats} ->
       rel_path = Path.relative_to(src_path, source)
       dest_path = Path.join(destination, rel_path)
       File.mkdir_p!(Path.dirname(dest_path))

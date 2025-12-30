@@ -204,7 +204,11 @@ defmodule TripleStore.Metrics do
     state = initial_state(buckets)
 
     # Attach telemetry handlers using shared utility
-    handlers = TripleStore.Telemetry.attach_metrics_handlers(self(), "triple_store_metrics_#{inspect(self())}")
+    handlers =
+      TripleStore.Telemetry.attach_metrics_handlers(
+        self(),
+        "triple_store_metrics_#{inspect(self())}"
+      )
 
     {:ok, Map.put(state, :handlers, handlers)}
   end
@@ -263,7 +267,12 @@ defmodule TripleStore.Metrics do
   # Event Handling
   # ===========================================================================
 
-  defp handle_telemetry_event([:triple_store, :query, :execute, :stop], measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :query, :execute, :stop],
+         measurements,
+         _metadata,
+         state
+       ) do
     duration_ms = get_duration_ms(measurements)
     update_query_metrics(state, duration_ms)
   end
@@ -286,22 +295,42 @@ defmodule TripleStore.Metrics do
     update_insert_metrics(state, count, duration_ms)
   end
 
-  defp handle_telemetry_event([:triple_store, :cache, cache_type, :hit], _measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :cache, cache_type, :hit],
+         _measurements,
+         _metadata,
+         state
+       ) do
     update_cache_hit(state, cache_type)
   end
 
-  defp handle_telemetry_event([:triple_store, :cache, cache_type, :miss], _measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :cache, cache_type, :miss],
+         _measurements,
+         _metadata,
+         state
+       ) do
     update_cache_miss(state, cache_type)
   end
 
-  defp handle_telemetry_event([:triple_store, :reasoner, :materialize, :stop], measurements, metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :reasoner, :materialize, :stop],
+         measurements,
+         metadata,
+         state
+       ) do
     duration_ms = get_duration_ms(measurements)
     iterations = Map.get(metadata, :iterations, 0)
     derived = Map.get(metadata, :total_derived, 0)
     update_materialization_metrics(state, duration_ms, iterations, derived)
   end
 
-  defp handle_telemetry_event([:triple_store, :reasoner, :materialize, :iteration], measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :reasoner, :materialize, :iteration],
+         measurements,
+         _metadata,
+         state
+       ) do
     derivations = Map.get(measurements, :derivations, 0)
     update_iteration_metrics(state, derivations)
   end

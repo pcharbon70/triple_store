@@ -79,7 +79,9 @@ defmodule TripleStore.BenchmarkValidationTest do
         IO.puts("Queries/sec: #{Float.round(results.aggregate.queries_per_sec, 1)}")
 
         for qr <- results.query_results do
-          IO.puts("  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}")
+          IO.puts(
+            "  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}"
+          )
         end
 
         # Validate targets and assert they pass
@@ -107,12 +109,13 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         # Run subset of LUBM queries
-        {:ok, results} = Runner.run(store, :lubm,
-          scale: 1,
-          warmup: 1,
-          iterations: 3,
-          queries: [:q1, :q3, :q14]
-        )
+        {:ok, results} =
+          Runner.run(store, :lubm,
+            scale: 1,
+            warmup: 1,
+            iterations: 3,
+            queries: [:q1, :q3, :q14]
+          )
 
         # Verify queries executed
         assert length(results.query_results) == 3
@@ -138,12 +141,14 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         # Run simple queries (single triple pattern)
-        {:ok, results} = Runner.run(store, :lubm,
-          scale: 1,
-          warmup: 2,
-          iterations: 5,
-          queries: [:q3, :q14]  # Simple BGP queries
-        )
+        {:ok, results} =
+          Runner.run(store, :lubm,
+            scale: 1,
+            warmup: 2,
+            iterations: 5,
+            # Simple BGP queries
+            queries: [:q3, :q14]
+          )
 
         # Simple queries should complete quickly
         for qr <- results.query_results do
@@ -194,7 +199,9 @@ defmodule TripleStore.BenchmarkValidationTest do
         IO.puts("Queries/sec: #{Float.round(results.aggregate.queries_per_sec, 1)}")
 
         for qr <- results.query_results do
-          IO.puts("  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}")
+          IO.puts(
+            "  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}"
+          )
         end
 
         # Validate targets and assert they pass
@@ -221,12 +228,13 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         # Run BSBM queries
-        {:ok, results} = Runner.run(store, :bsbm,
-          scale: 1,
-          warmup: 1,
-          iterations: 3,
-          queries: [:q1, :q2, :q7]
-        )
+        {:ok, results} =
+          Runner.run(store, :bsbm,
+            scale: 1,
+            warmup: 1,
+            iterations: 3,
+            queries: [:q1, :q2, :q7]
+          )
 
         # Verify queries executed
         assert length(results.query_results) == 3
@@ -249,11 +257,12 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         # Test key BSBM query types
-        {:ok, results} = Runner.run(store, :bsbm,
-          scale: 1,
-          warmup: 1,
-          iterations: 3
-        )
+        {:ok, results} =
+          Runner.run(store, :bsbm,
+            scale: 1,
+            warmup: 1,
+            iterations: 3
+          )
 
         # Should have multiple query types
         assert length(results.query_results) > 0
@@ -428,12 +437,13 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _loaded} = TripleStore.load_graph(store, graph)
 
         # Run benchmarks
-        {:ok, lubm_results} = Runner.run(store, :lubm,
-          scale: 1,
-          warmup: 2,
-          iterations: 5,
-          queries: [:q1, :q3, :q14]
-        )
+        {:ok, lubm_results} =
+          Runner.run(store, :lubm,
+            scale: 1,
+            warmup: 2,
+            iterations: 5,
+            queries: [:q1, :q3, :q14]
+          )
 
         # Generate reports
         json_report = Runner.to_json(lubm_results)
@@ -449,7 +459,8 @@ defmodule TripleStore.BenchmarkValidationTest do
         # Verify CSV report
         assert is_binary(csv_report)
         lines = String.split(csv_report, "\n")
-        assert length(lines) >= 2  # Header + at least 1 row
+        # Header + at least 1 row
+        assert length(lines) >= 2
         assert String.contains?(hd(lines), "query_id")
 
         IO.puts("\n=== Performance Report (JSON) ===")

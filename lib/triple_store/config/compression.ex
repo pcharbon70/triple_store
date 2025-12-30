@@ -545,6 +545,7 @@ defmodule TripleStore.Config.Compression do
         algo_name = @algorithm_specs[config.algorithm].name
         level_str = if config.algorithm == :zstd, do: " (level #{config.level})", else: ""
         ratio = estimated_ratio(config.algorithm)
+
         "  #{String.pad_trailing(to_string(cf), 10)} #{String.pad_trailing(algo_name <> level_str, 20)} ~#{ratio}x ratio"
       end)
 

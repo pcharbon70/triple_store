@@ -108,11 +108,12 @@ defmodule TripleStore.Config.CompactionTest do
     end
 
     test "allows multiple overrides" do
-      config = Compaction.custom(
-        rate_limit_bytes_per_sec: 50 * 1024 * 1024,
-        max_background_compactions: 2,
-        level0_file_num_compaction_trigger: 2
-      )
+      config =
+        Compaction.custom(
+          rate_limit_bytes_per_sec: 50 * 1024 * 1024,
+          max_background_compactions: 2,
+          level0_file_num_compaction_trigger: 2
+        )
 
       assert config.rate_limit_bytes_per_sec == 50 * 1024 * 1024
       assert config.max_background_compactions == 2
@@ -269,10 +270,12 @@ defmodule TripleStore.Config.CompactionTest do
     end
 
     test "rejects invalid L0 trigger order" do
-      config = %{Compaction.default() |
-        level0_file_num_compaction_trigger: 10,
-        level0_slowdown_writes_trigger: 5
+      config = %{
+        Compaction.default()
+        | level0_file_num_compaction_trigger: 10,
+          level0_slowdown_writes_trigger: 5
       }
+
       assert {:error, _} = Compaction.validate(config)
     end
   end

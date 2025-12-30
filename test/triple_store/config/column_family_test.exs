@@ -357,9 +357,20 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       pos_rationale = ColumnFamily.tuning_rationale(:pos)
       osp_rationale = ColumnFamily.tuning_rationale(:osp)
 
-      assert String.contains?(spo_rationale.prefix_extractor_rationale, "Subject-Predicate-Object")
-      assert String.contains?(pos_rationale.prefix_extractor_rationale, "Predicate-Object-Subject")
-      assert String.contains?(osp_rationale.prefix_extractor_rationale, "Object-Subject-Predicate")
+      assert String.contains?(
+               spo_rationale.prefix_extractor_rationale,
+               "Subject-Predicate-Object"
+             )
+
+      assert String.contains?(
+               pos_rationale.prefix_extractor_rationale,
+               "Predicate-Object-Subject"
+             )
+
+      assert String.contains?(
+               osp_rationale.prefix_extractor_rationale,
+               "Object-Subject-Predicate"
+             )
     end
   end
 

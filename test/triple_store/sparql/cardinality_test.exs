@@ -77,6 +77,7 @@ defmodule TripleStore.SPARQL.CardinalityTest do
         distinct_predicates: 10_000,
         distinct_objects: 10_000
       }
+
       # All positions bound - very selective
       pattern = triple(1, 2, 3)
 
@@ -373,9 +374,12 @@ defmodule TripleStore.SPARQL.CardinalityTest do
 
     test "two patterns with shared variable" do
       stats = default_stats()
+
       patterns = [
-        triple(var("s"), 42, var("y")),  # 500 results
-        triple(var("y"), 43, var("o"))   # 1500 results
+        # 500 results
+        triple(var("s"), 42, var("y")),
+        # 1500 results
+        triple(var("y"), 43, var("o"))
       ]
 
       card = Cardinality.estimate_multi_pattern(patterns, stats)
@@ -387,9 +391,12 @@ defmodule TripleStore.SPARQL.CardinalityTest do
 
     test "two patterns without shared variable (cartesian)" do
       stats = default_stats()
+
       patterns = [
-        triple(var("a"), 42, var("b")),  # 500 results
-        triple(var("c"), 43, var("d"))   # 1500 results
+        # 500 results
+        triple(var("a"), 42, var("b")),
+        # 1500 results
+        triple(var("c"), 43, var("d"))
       ]
 
       card = Cardinality.estimate_multi_pattern(patterns, stats)
@@ -400,10 +407,14 @@ defmodule TripleStore.SPARQL.CardinalityTest do
 
     test "three pattern chain" do
       stats = default_stats()
+
       patterns = [
-        triple(var("a"), 42, var("b")),  # 500
-        triple(var("b"), 43, var("c")),  # 1500
-        triple(var("c"), 44, var("d"))   # 100
+        # 500
+        triple(var("a"), 42, var("b")),
+        # 1500
+        triple(var("b"), 43, var("c")),
+        # 100
+        triple(var("c"), 44, var("d"))
       ]
 
       card = Cardinality.estimate_multi_pattern(patterns, stats)
@@ -415,10 +426,14 @@ defmodule TripleStore.SPARQL.CardinalityTest do
 
     test "star pattern (shared subject)" do
       stats = default_stats()
+
       patterns = [
-        triple(var("s"), 42, var("a")),  # 500
-        triple(var("s"), 43, var("b")),  # 1500
-        triple(var("s"), 44, var("c"))   # 100
+        # 500
+        triple(var("s"), 42, var("a")),
+        # 1500
+        triple(var("s"), 43, var("b")),
+        # 100
+        triple(var("s"), 44, var("c"))
       ]
 
       card = Cardinality.estimate_multi_pattern(patterns, stats)
@@ -543,26 +558,35 @@ defmodule TripleStore.SPARQL.CardinalityTest do
         distinct_predicates: 20,
         distinct_objects: 15_000,
         predicate_histogram: %{
-          1 => 10_000,  # rdf:type
-          2 => 5_000,   # ub:takesCourse
-          3 => 1_000,   # ub:teacherOf
-          4 => 10_000,  # ub:memberOf
-          5 => 500      # ub:headOf
+          # rdf:type
+          1 => 10_000,
+          # ub:takesCourse
+          2 => 5_000,
+          # ub:teacherOf
+          3 => 1_000,
+          # ub:memberOf
+          4 => 10_000,
+          # ub:headOf
+          5 => 500
         }
       }
 
       # Query: ?x type Student, ?x takesCourse ?y, ?y teacherOf ?z
       patterns = [
-        triple(var("x"), 1, 100),        # ?x type Student (100 = Student class ID)
-        triple(var("x"), 2, var("y")),   # ?x takesCourse ?y
-        triple(var("y"), 3, var("z"))    # ?y teacherOf ?z
+        # ?x type Student (100 = Student class ID)
+        triple(var("x"), 1, 100),
+        # ?x takesCourse ?y
+        triple(var("x"), 2, var("y")),
+        # ?y teacherOf ?z
+        triple(var("y"), 3, var("z"))
       ]
 
       card = Cardinality.estimate_multi_pattern(patterns, stats)
 
       # Should produce a reasonable estimate
       assert card >= 1.0
-      assert card < 100_000 * 5_000 * 1_000  # Much less than full product
+      # Much less than full product
+      assert card < 100_000 * 5_000 * 1_000
     end
 
     test "star query pattern" do

@@ -117,7 +117,10 @@ defmodule TripleStore.Benchmark.LUBMQueriesTest do
     test "all queries have valid SPARQL PREFIX declarations" do
       for query <- LUBMQueries.all() do
         assert String.contains?(query.sparql, "PREFIX")
-        assert String.contains?(query.sparql, "SELECT") or String.contains?(query.sparql, "CONSTRUCT")
+
+        assert String.contains?(query.sparql, "SELECT") or
+                 String.contains?(query.sparql, "CONSTRUCT")
+
         assert String.contains?(query.sparql, "WHERE")
       end
     end

@@ -313,7 +313,9 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
         best_plan_with_cartesian =
           permutations(indices)
           |> Stream.map(fn order ->
-            build_left_deep_plan(order, indexed_patterns, join_graph, stats, allow_cartesian: true)
+            build_left_deep_plan(order, indexed_patterns, join_graph, stats,
+              allow_cartesian: true
+            )
           end)
           |> Enum.min_by(fn plan -> plan.cost.total end, fn -> nil end)
 
@@ -366,7 +368,10 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
             else
               join_vars =
                 shared_variables_between_sets(
-                  Map.values(indexed_patterns) |> Enum.sort_by(fn p -> Map.keys(indexed_patterns) |> Enum.find(&(Map.get(indexed_patterns, &1) == p)) end),
+                  Map.values(indexed_patterns)
+                  |> Enum.sort_by(fn p ->
+                    Map.keys(indexed_patterns) |> Enum.find(&(Map.get(indexed_patterns, &1) == p))
+                  end),
                   acc.pattern_set,
                   right_set
                 )
@@ -380,7 +385,8 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
                 CostModel.select_join_strategy(acc.cardinality, right_card, join_vars, stats)
 
               # Calculate output cardinality
-              output_card = Cardinality.estimate_join(acc.cardinality, right_card, join_vars, stats)
+              output_card =
+                Cardinality.estimate_join(acc.cardinality, right_card, join_vars, stats)
 
               # Build join node
               right_node = {:scan, pattern}
@@ -439,7 +445,8 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
         |> Enum.reduce(initial_memo, fn size, memo ->
           enumerate_subsets_of_size(full_set, size)
           |> Enum.reduce(memo, fn subset, memo ->
-            best_plan = find_best_plan_for_subset(subset, memo, join_graph, indexed_patterns, stats)
+            best_plan =
+              find_best_plan_for_subset(subset, memo, join_graph, indexed_patterns, stats)
 
             if best_plan do
               Map.put(memo, subset, best_plan)
@@ -520,7 +527,12 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
 
     # Select join strategy
     {strategy, join_cost} =
-      CostModel.select_join_strategy(left_plan.cardinality, right_plan.cardinality, join_vars, stats)
+      CostModel.select_join_strategy(
+        left_plan.cardinality,
+        right_plan.cardinality,
+        join_vars,
+        stats
+      )
 
     # Calculate output cardinality
     output_card =

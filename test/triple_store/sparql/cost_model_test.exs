@@ -89,7 +89,8 @@ defmodule TripleStore.SPARQL.CostModelTest do
     test "handles large inputs" do
       cost = CostModel.nested_loop_cost(100_000, 50_000)
       assert cost.cpu > 0
-      assert cost.total > cost.cpu  # Memory adds to total
+      # Memory adds to total
+      assert cost.total > cost.cpu
     end
   end
 
@@ -143,7 +144,8 @@ defmodule TripleStore.SPARQL.CostModelTest do
 
       # Hash join should be much cheaper
       assert hj_cost.total < nl_cost.total
-      assert hj_cost.total < nl_cost.total / 100  # At least 100x cheaper
+      # At least 100x cheaper
+      assert hj_cost.total < nl_cost.total / 100
     end
 
     test "similar to nested loop for tiny inputs" do
@@ -233,9 +235,12 @@ defmodule TripleStore.SPARQL.CostModelTest do
     test "point lookup has fixed low cost" do
       cost = CostModel.index_scan_cost(:point_lookup, 1, @small_stats)
 
-      assert cost.io > 0  # Seek cost
-      assert cost.cpu > 0  # Comparison cost
-      assert cost.memory > 0  # Minimal memory
+      # Seek cost
+      assert cost.io > 0
+      # Comparison cost
+      assert cost.cpu > 0
+      # Minimal memory
+      assert cost.memory > 0
     end
 
     test "prefix scan cost scales with results" do
@@ -277,13 +282,16 @@ defmodule TripleStore.SPARQL.CostModelTest do
 
     test "partially bound patterns are prefix scan" do
       # S bound
-      assert CostModel.pattern_scan_type({:triple, 1, {:variable, "p"}, {:variable, "o"}}) == :prefix_scan
+      assert CostModel.pattern_scan_type({:triple, 1, {:variable, "p"}, {:variable, "o"}}) ==
+               :prefix_scan
 
       # P bound
-      assert CostModel.pattern_scan_type({:triple, {:variable, "s"}, 2, {:variable, "o"}}) == :prefix_scan
+      assert CostModel.pattern_scan_type({:triple, {:variable, "s"}, 2, {:variable, "o"}}) ==
+               :prefix_scan
 
       # O bound
-      assert CostModel.pattern_scan_type({:triple, {:variable, "s"}, {:variable, "p"}, 3}) == :prefix_scan
+      assert CostModel.pattern_scan_type({:triple, {:variable, "s"}, {:variable, "p"}, 3}) ==
+               :prefix_scan
 
       # SP bound
       assert CostModel.pattern_scan_type({:triple, 1, 2, {:variable, "o"}}) == :prefix_scan
@@ -390,11 +398,12 @@ defmodule TripleStore.SPARQL.CostModelTest do
 
     test "considers pattern cardinalities" do
       # With high cardinalities, Leapfrog may be better
-      result_large = CostModel.should_use_leapfrog?(
-        [10_000, 10_000, 10_000, 10_000],
-        ["x", "y", "z"],
-        @medium_stats
-      )
+      result_large =
+        CostModel.should_use_leapfrog?(
+          [10_000, 10_000, 10_000, 10_000],
+          ["x", "y", "z"],
+          @medium_stats
+        )
 
       # The result depends on the actual cost comparison
       assert is_boolean(result_large)
@@ -484,7 +493,8 @@ defmodule TripleStore.SPARQL.CostModelTest do
 
       # For small inputs, difference shouldn't be dramatic
       ratio = nl.total / hj.total
-      assert ratio < 10  # Within an order of magnitude
+      # Within an order of magnitude
+      assert ratio < 10
     end
   end
 
@@ -538,7 +548,8 @@ defmodule TripleStore.SPARQL.CostModelTest do
 
       # Compare pairwise hash join cascade vs Leapfrog
       hj1 = CostModel.hash_join_cost(p1_card, p2_card)
-      intermediate_card = 1500  # Estimated join result
+      # Estimated join result
+      intermediate_card = 1500
       hj2 = CostModel.hash_join_cost(intermediate_card, p3_card)
       cascade_total = CostModel.total_plan_cost([hj1, hj2])
 

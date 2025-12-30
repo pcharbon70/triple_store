@@ -183,8 +183,10 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
     end
 
     test "selective pattern cheaper than general pattern" do
-      selective = {:triple, 1, 2, var("o")}  # Two bound positions
-      general = {:triple, var("s"), var("p"), var("o")}  # No bound positions
+      # Two bound positions
+      selective = {:triple, 1, 2, var("o")}
+      # No bound positions
+      general = {:triple, var("s"), var("p"), var("o")}
 
       selective_cost = CostModel.pattern_cost(selective, @medium_stats)
       general_cost = CostModel.pattern_cost(general, @medium_stats)
@@ -259,8 +261,10 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
     test "enumeration prefers selective patterns first" do
       # Pattern with predicate 3 has fewer triples (50) than predicate 5 (500)
       patterns = [
-        {:triple, var("x"), 5, var("y")},  # 500 triples
-        {:triple, var("y"), 3, var("z")}   # 50 triples
+        # 500 triples
+        {:triple, var("x"), 5, var("y")},
+        # 50 triples
+        {:triple, var("y"), 3, var("z")}
       ]
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
@@ -366,18 +370,28 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
       compute_count = :counters.new(1, [:atomics])
 
       # First call computes
-      plan1 = PlanCache.get_or_compute(patterns, fn ->
-        :counters.add(compute_count, 1, 1)
-        {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-        result
-      end, name: name)
+      plan1 =
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            :counters.add(compute_count, 1, 1)
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: name
+        )
 
       # Second call uses cache
-      plan2 = PlanCache.get_or_compute(patterns, fn ->
-        :counters.add(compute_count, 1, 1)
-        {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-        result
-      end, name: name)
+      plan2 =
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            :counters.add(compute_count, 1, 1)
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: name
+        )
 
       assert plan1 == plan2
       assert :counters.get(compute_count, 1) == 1
@@ -387,15 +401,25 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
       patterns1 = [{:triple, var("x"), 1, var("y")}]
       patterns2 = [{:triple, var("x"), 2, var("y")}]
 
-      plan1 = PlanCache.get_or_compute(patterns1, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
-        result
-      end, name: name)
+      plan1 =
+        PlanCache.get_or_compute(
+          patterns1,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
+            result
+          end,
+          name: name
+        )
 
-      plan2 = PlanCache.get_or_compute(patterns2, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
-        result
-      end, name: name)
+      plan2 =
+        PlanCache.get_or_compute(
+          patterns2,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
+            result
+          end,
+          name: name
+        )
 
       # Different predicates = different cardinality
       refute plan1.cardinality == plan2.cardinality
@@ -408,17 +432,25 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
 
       compute_count = :counters.new(1, [:atomics])
 
-      PlanCache.get_or_compute(patterns1, fn ->
-        :counters.add(compute_count, 1, 1)
-        {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns1,
+        fn ->
+          :counters.add(compute_count, 1, 1)
+          {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
+          result
+        end,
+        name: name
+      )
 
-      PlanCache.get_or_compute(patterns2, fn ->
-        :counters.add(compute_count, 1, 1)
-        {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns2,
+        fn ->
+          :counters.add(compute_count, 1, 1)
+          {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
+          result
+        end,
+        name: name
+      )
 
       # Should only compute once due to normalization
       assert :counters.get(compute_count, 1) == 1
@@ -428,17 +460,25 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
       patterns = [{:triple, var("x"), 1, var("y")}]
 
       # First access (miss)
-      PlanCache.get_or_compute(patterns, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns,
+        fn ->
+          {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+          result
+        end,
+        name: name
+      )
 
       # 9 more accesses (hits)
       for _ <- 1..9 do
-        PlanCache.get_or_compute(patterns, fn ->
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-          result
-        end, name: name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: name
+        )
       end
 
       stats = PlanCache.stats(name: name)
@@ -461,15 +501,23 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
       patterns2 = [{:triple, var("a"), 2, var("b")}]
 
       # Cache two plans
-      PlanCache.get_or_compute(patterns1, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns1,
+        fn ->
+          {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
+          result
+        end,
+        name: name
+      )
 
-      PlanCache.get_or_compute(patterns2, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns2,
+        fn ->
+          {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
+          result
+        end,
+        name: name
+      )
 
       assert PlanCache.size(name: name) == 2
 
@@ -510,15 +558,23 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
       patterns2 = [{:triple, var("a"), 2, var("b")}]
 
       # Cache two plans
-      PlanCache.get_or_compute(patterns1, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns1,
+        fn ->
+          {:ok, result} = JoinEnumeration.enumerate(patterns1, @small_stats)
+          result
+        end,
+        name: name
+      )
 
-      PlanCache.get_or_compute(patterns2, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
-        result
-      end, name: name)
+      PlanCache.get_or_compute(
+        patterns2,
+        fn ->
+          {:ok, result} = JoinEnumeration.enumerate(patterns2, @small_stats)
+          result
+        end,
+        name: name
+      )
 
       # Invalidate only patterns1
       PlanCache.invalidate(patterns1, name: name)
@@ -549,10 +605,15 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
         {:triple, var("x"), 3, var("w")}
       ]
 
-      plan = PlanCache.get_or_compute(patterns, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-        result
-      end, name: name)
+      plan =
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+            result
+          end,
+          name: name
+        )
 
       # Verify plan structure
       assert plan.cardinality > 0
@@ -571,10 +632,15 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
         {:triple, var("z"), 3, var("w")}
       ]
 
-      plan = PlanCache.get_or_compute(patterns, fn ->
-        {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-        result
-      end, name: name)
+      plan =
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+            result
+          end,
+          name: name
+        )
 
       # Verify plan includes all join variables
       assert plan.cardinality > 0
@@ -631,9 +697,10 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
         {:triple, var("z"), 3, var("w")}
       ]
 
-      {time, {:ok, _plan}} = :timer.tc(fn ->
-        JoinEnumeration.enumerate(patterns, @medium_stats)
-      end)
+      {time, {:ok, _plan}} =
+        :timer.tc(fn ->
+          JoinEnumeration.enumerate(patterns, @medium_stats)
+        end)
 
       # Should complete in < 100ms
       assert time < 100_000
@@ -645,9 +712,10 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
           {:triple, var("x"), i, var("y#{i}")}
         end
 
-      {time, {:ok, _plan}} = :timer.tc(fn ->
-        JoinEnumeration.enumerate(patterns, @medium_stats)
-      end)
+      {time, {:ok, _plan}} =
+        :timer.tc(fn ->
+          JoinEnumeration.enumerate(patterns, @medium_stats)
+        end)
 
       # Should complete in < 500ms
       assert time < 500_000
@@ -661,20 +729,29 @@ defmodule TripleStore.SPARQL.CostOptimizerIntegrationTest do
         patterns = [{:triple, var("x"), 1, var("y")}]
 
         # Populate cache
-        PlanCache.get_or_compute(patterns, fn ->
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-          result
-        end, name: name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+            result
+          end,
+          name: name
+        )
 
         # Time cache hit
-        {time, _plan} = :timer.tc(fn ->
-          for _ <- 1..1000 do
-            PlanCache.get_or_compute(patterns, fn ->
-              {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-              result
-            end, name: name)
-          end
-        end)
+        {time, _plan} =
+          :timer.tc(fn ->
+            for _ <- 1..1000 do
+              PlanCache.get_or_compute(
+                patterns,
+                fn ->
+                  {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+                  result
+                end,
+                name: name
+              )
+            end
+          end)
 
         # 1000 cache hits should complete in < 100ms (100us per hit)
         assert time < 100_000

@@ -183,21 +183,26 @@ defmodule TripleStore.TelemetryTest do
         nil
       )
 
-      result = Telemetry.span(:test, :operation, %{key: "value"}, fn ->
-        Process.sleep(10)
-        :ok
-      end)
+      result =
+        Telemetry.span(:test, :operation, %{key: "value"}, fn ->
+          Process.sleep(10)
+          :ok
+        end)
 
       :telemetry.detach(handler_id)
 
       assert result == :ok
 
-      assert_receive {:telemetry, [:triple_store, :test, :operation, :start], measurements, metadata}
+      assert_receive {:telemetry, [:triple_store, :test, :operation, :start], measurements,
+                      metadata}
+
       assert is_integer(measurements.system_time)
       assert is_integer(measurements.monotonic_time)
       assert metadata.key == "value"
 
-      assert_receive {:telemetry, [:triple_store, :test, :operation, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:triple_store, :test, :operation, :stop], measurements,
+                      metadata}
+
       assert is_integer(measurements.duration)
       assert measurements.duration > 0
       assert is_integer(metadata.duration_ms)
@@ -225,7 +230,9 @@ defmodule TripleStore.TelemetryTest do
 
       :telemetry.detach(handler_id)
 
-      assert_receive {:telemetry, [:triple_store, :test, :failing, :exception], measurements, metadata}
+      assert_receive {:telemetry, [:triple_store, :test, :failing, :exception], measurements,
+                      metadata}
+
       assert is_integer(measurements.duration)
       assert metadata.kind == :error
       # Exception telemetry is sanitized - no raw exception or stacktrace
@@ -279,7 +286,9 @@ defmodule TripleStore.TelemetryTest do
 
       :telemetry.detach(handler_id)
 
-      assert_receive {:telemetry, [:triple_store, :cache, :test_cache, :hit], %{count: 1}, metadata}
+      assert_receive {:telemetry, [:triple_store, :cache, :test_cache, :hit], %{count: 1},
+                      metadata}
+
       assert metadata.key == "test_key"
     end
   end
@@ -302,7 +311,9 @@ defmodule TripleStore.TelemetryTest do
 
       :telemetry.detach(handler_id)
 
-      assert_receive {:telemetry, [:triple_store, :cache, :test_cache, :miss], %{count: 1}, metadata}
+      assert_receive {:telemetry, [:triple_store, :cache, :test_cache, :miss], %{count: 1},
+                      metadata}
+
       assert metadata.key == "test_key"
     end
   end
@@ -372,7 +383,9 @@ defmodule TripleStore.TelemetryTest do
       handler_id = "duplicate-test-#{:erlang.unique_integer([:positive])}"
 
       assert :ok = Telemetry.attach_handler(handler_id, fn _, _, _, _ -> :ok end)
-      assert {:error, :already_exists} = Telemetry.attach_handler(handler_id, fn _, _, _, _ -> :ok end)
+
+      assert {:error, :already_exists} =
+               Telemetry.attach_handler(handler_id, fn _, _, _, _ -> :ok end)
 
       :telemetry.detach(handler_id)
     end

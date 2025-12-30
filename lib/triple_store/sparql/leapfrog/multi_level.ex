@@ -379,7 +379,12 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
       |> Enum.filter(&PatternUtils.pattern_contains_variable?(&1, variable))
 
     # Create iterators
-    case create_iterators_for_variable(exec.db, containing_patterns, variable, exec.current_bindings) do
+    case create_iterators_for_variable(
+           exec.db,
+           containing_patterns,
+           variable,
+           exec.current_bindings
+         ) do
       {:ok, iterators} when iterators != [] ->
         case Leapfrog.new(iterators, max_iterations: exec.max_iterations) do
           {:ok, lf} ->
@@ -395,7 +400,12 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
                 }
 
                 new_bindings = Map.put(exec.current_bindings, variable, value)
-                new_exec = %{exec | levels: [new_level | exec.levels], current_bindings: new_bindings}
+
+                new_exec = %{
+                  exec
+                  | levels: [new_level | exec.levels],
+                    current_bindings: new_bindings
+                }
 
                 {:ok, new_exec}
 

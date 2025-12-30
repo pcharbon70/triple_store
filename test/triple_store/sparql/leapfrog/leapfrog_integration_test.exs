@@ -160,12 +160,18 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
       # Star query: ?x connected to ?a, ?b, ?c, ?d, ?e, ?f via different predicates
 
       # Create a complete star for node 1
-      insert_triple(db, 1, 10, 100)  # ?a = 100
-      insert_triple(db, 1, 20, 200)  # ?b = 200
-      insert_triple(db, 1, 30, 300)  # ?c = 300
-      insert_triple(db, 1, 40, 400)  # ?d = 400
-      insert_triple(db, 1, 50, 500)  # ?e = 500
-      insert_triple(db, 1, 60, 600)  # ?f = 600
+      # ?a = 100
+      insert_triple(db, 1, 10, 100)
+      # ?b = 200
+      insert_triple(db, 1, 20, 200)
+      # ?c = 300
+      insert_triple(db, 1, 30, 300)
+      # ?d = 400
+      insert_triple(db, 1, 40, 400)
+      # ?e = 500
+      insert_triple(db, 1, 50, 500)
+      # ?f = 600
+      insert_triple(db, 1, 60, 600)
 
       # Create a complete star for node 2
       insert_triple(db, 2, 10, 101)
@@ -613,8 +619,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
       stats = %{
         triple_count: 1_000_000,
-        predicate_counts:
-          Enum.into(1..8, %{}, fn i -> {i * 10, 10000} end)
+        predicate_counts: Enum.into(1..8, %{}, fn i -> {i * 10, 10000} end)
       }
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, stats)
@@ -685,14 +690,17 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
       insert_triple(db, 1, 50, 500)
 
       insert_triple(db, 2, 10, 100)
-      insert_triple(db, 2, 20, 201)  # Different
+      # Different
+      insert_triple(db, 2, 20, 201)
       insert_triple(db, 2, 30, 300)
       insert_triple(db, 2, 40, 400)
       insert_triple(db, 2, 50, 500)
 
       patterns = [
-        triple(var("x"), 10, 100),     # Bound object
-        triple(var("x"), 20, 200),     # Bound object (only node 1 has this)
+        # Bound object
+        triple(var("x"), 10, 100),
+        # Bound object (only node 1 has this)
+        triple(var("x"), 20, 200),
         triple(var("x"), 30, var("a")),
         triple(var("x"), 40, var("b")),
         triple(var("x"), 50, var("c"))

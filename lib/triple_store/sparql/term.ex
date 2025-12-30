@@ -218,7 +218,8 @@ defmodule TripleStore.SPARQL.Term do
   - `{:error, reason}` - On failure
 
   """
-  @spec lookup_term_id(GenServer.server(), term()) :: {:ok, integer()} | :not_found | {:error, term()}
+  @spec lookup_term_id(GenServer.server(), term()) ::
+          {:ok, integer()} | :not_found | {:error, term()}
   def lookup_term_id(dict_manager, rdf_term) do
     case GenServer.call(dict_manager, :get_db) do
       {:ok, db} ->

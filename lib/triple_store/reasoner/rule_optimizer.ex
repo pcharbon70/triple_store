@@ -275,8 +275,11 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
         schema_info[:has_subproperty] == false
 
       # Rules requiring domain/range
-      :prp_dom -> schema_info[:has_domain] == false
-      :prp_rng -> schema_info[:has_range] == false
+      :prp_dom ->
+        schema_info[:has_domain] == false
+
+      :prp_rng ->
+        schema_info[:has_range] == false
 
       # Rules requiring sameAs
       name when name in [:eq_sym, :eq_trans, :eq_rep_s, :eq_rep_p, :eq_rep_o] ->

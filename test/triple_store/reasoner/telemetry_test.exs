@@ -145,11 +145,15 @@ defmodule TripleStore.Reasoner.TelemetryTest do
     test "does not emit events when emit_telemetry: false", %{test_id: test_id} do
       pid = self()
 
-      attach_handler(test_id, [
-        [:triple_store, :reasoner, :materialize, :start],
-        [:triple_store, :reasoner, :materialize, :stop],
-        [:triple_store, :reasoner, :materialize, :iteration]
-      ], pid)
+      attach_handler(
+        test_id,
+        [
+          [:triple_store, :reasoner, :materialize, :start],
+          [:triple_store, :reasoner, :materialize, :stop],
+          [:triple_store, :reasoner, :materialize, :iteration]
+        ],
+        pid
+      )
 
       on_exit(fn -> detach_handler(test_id) end)
 
@@ -177,7 +181,9 @@ defmodule TripleStore.Reasoner.TelemetryTest do
       rules = [Rules.scm_sco()]
 
       # Set max_iterations very low
-      result = SemiNaive.materialize_in_memory(rules, initial, max_iterations: 1, emit_telemetry: true)
+      result =
+        SemiNaive.materialize_in_memory(rules, initial, max_iterations: 1, emit_telemetry: true)
+
       assert {:error, :max_iterations_exceeded} = result
 
       assert_receive {:telemetry_event, event, _measurements, metadata}, 1000
@@ -215,16 +221,21 @@ defmodule TripleStore.Reasoner.TelemetryTest do
     test "emits start and stop events", %{test_id: test_id} do
       pid = self()
 
-      attach_handler(test_id, [
-        [:triple_store, :reasoner, :test_event, :start],
-        [:triple_store, :reasoner, :test_event, :stop]
-      ], pid)
+      attach_handler(
+        test_id,
+        [
+          [:triple_store, :reasoner, :test_event, :start],
+          [:triple_store, :reasoner, :test_event, :stop]
+        ],
+        pid
+      )
 
       on_exit(fn -> detach_handler(test_id) end)
 
-      result = Telemetry.span(:test_event, %{profile: :owl2rl}, fn ->
-        %{result: :success, count: 10}
-      end)
+      result =
+        Telemetry.span(:test_event, %{profile: :owl2rl}, fn ->
+          %{result: :success, count: 10}
+        end)
 
       assert result == %{result: :success, count: 10}
 
@@ -243,9 +254,13 @@ defmodule TripleStore.Reasoner.TelemetryTest do
     test "emits exception event on error", %{test_id: test_id} do
       pid = self()
 
-      attach_handler(test_id, [
-        [:triple_store, :reasoner, :test_event, :exception]
-      ], pid)
+      attach_handler(
+        test_id,
+        [
+          [:triple_store, :reasoner, :test_event, :exception]
+        ],
+        pid
+      )
 
       on_exit(fn -> detach_handler(test_id) end)
 

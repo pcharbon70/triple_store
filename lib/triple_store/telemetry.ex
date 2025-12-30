@@ -252,7 +252,8 @@ defmodule TripleStore.Telemetry do
 
   """
   @spec emit_cache_miss(atom(), map()) :: :ok
-  def emit_cache_miss(cache_type, metadata \\ %{}) when is_atom(cache_type) and is_map(metadata) do
+  def emit_cache_miss(cache_type, metadata \\ %{})
+      when is_atom(cache_type) and is_map(metadata) do
     :telemetry.execute(
       @prefix ++ [:cache, cache_type, :miss],
       %{count: 1},
@@ -475,7 +476,8 @@ defmodule TripleStore.Telemetry do
 
   """
   @spec attach_metrics_handlers(pid(), String.t()) :: [{String.t(), [[atom()]]}]
-  def attach_metrics_handlers(pid, handler_prefix) when is_pid(pid) and is_binary(handler_prefix) do
+  def attach_metrics_handlers(pid, handler_prefix)
+      when is_pid(pid) and is_binary(handler_prefix) do
     handler_fn = fn event, measurements, metadata, _config ->
       send(pid, {:telemetry_event, event, measurements, metadata})
     end
@@ -511,8 +513,10 @@ defmodule TripleStore.Telemetry do
        ]},
 
       # Reasoner events
-      {handler_id(handler_prefix, :materialize), [[:triple_store, :reasoner, :materialize, :stop]]},
-      {handler_id(handler_prefix, :iteration), [[:triple_store, :reasoner, :materialize, :iteration]]},
+      {handler_id(handler_prefix, :materialize),
+       [[:triple_store, :reasoner, :materialize, :stop]]},
+      {handler_id(handler_prefix, :iteration),
+       [[:triple_store, :reasoner, :materialize, :iteration]]},
 
       # Backup events
       {handler_id(handler_prefix, :backup),

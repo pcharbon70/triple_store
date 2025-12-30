@@ -207,7 +207,9 @@ defmodule TripleStore.Reasoner.Namespaces do
   @spec validate_iri!(String.t()) :: String.t()
   def validate_iri!(iri) do
     case validate_iri(iri) do
-      {:ok, iri} -> iri
+      {:ok, iri} ->
+        iri
+
       {:error, :invalid_iri_characters} ->
         raise ArgumentError, "IRI contains invalid characters: #{inspect(iri)}"
     end

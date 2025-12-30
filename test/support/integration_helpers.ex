@@ -239,7 +239,11 @@ defmodule TripleStore.Test.IntegrationHelpers do
     catch
       :exit, reason ->
         require Logger
-        Logger.debug("Cleanup close exited (expected for already-closed stores): #{inspect(reason)}")
+
+        Logger.debug(
+          "Cleanup close exited (expected for already-closed stores): #{inspect(reason)}"
+        )
+
         :ok
     end
 
@@ -374,6 +378,7 @@ defmodule TripleStore.Test.IntegrationHelpers do
   """
   def assert_store_operational(health) do
     import ExUnit.Assertions
+
     assert health.status in [:healthy, :degraded],
            "Expected operational status (:healthy or :degraded), got #{inspect(health.status)}"
   end

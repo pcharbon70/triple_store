@@ -554,7 +554,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
   defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
   defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :language_tagged, value, lang}), do: RDF.literal(value, language: lang)
+
+  defp ast_to_rdf({:literal, :language_tagged, value, lang}),
+    do: RDF.literal(value, language: lang)
 
   defp ast_to_rdf({:literal, :typed, value, datatype}) do
     RDF.literal(value, datatype: datatype)

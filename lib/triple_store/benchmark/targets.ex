@@ -413,7 +413,8 @@ defmodule TripleStore.Benchmark.Targets do
     if actual_tps > threshold_tps do
       :pass
     else
-      {:fail, "throughput #{format_number(actual_tps)} triples/sec below target >#{format_number(threshold_tps)}"}
+      {:fail,
+       "throughput #{format_number(actual_tps)} triples/sec below target >#{format_number(threshold_tps)}"}
     end
   end
 

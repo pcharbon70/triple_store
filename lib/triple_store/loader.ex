@@ -357,7 +357,11 @@ defmodule TripleStore.Loader do
       # From RDF.Graph
       {:ok, count} = Loader.insert(db, manager, graph)
   """
-  @spec insert(db_ref(), manager(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+  @spec insert(
+          db_ref(),
+          manager(),
+          RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()
+        ) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def insert(db, manager, %RDF.Graph{} = graph) do
     triples = RDF.Graph.triples(graph)
@@ -417,7 +421,11 @@ defmodule TripleStore.Loader do
       # Multiple triples
       {:ok, count} = Loader.delete(db, manager, triples)
   """
-  @spec delete(db_ref(), manager(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
+  @spec delete(
+          db_ref(),
+          manager(),
+          RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()
+        ) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def delete(db, manager, %RDF.Graph{} = graph) do
     triples = RDF.Graph.triples(graph)

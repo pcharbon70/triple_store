@@ -40,10 +40,15 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
       query = {:triple, {:variable, "x"}, 1, {:variable, "y"}}
       compute_called = :counters.new(1, [:atomics])
 
-      result = PlanCache.get_or_compute(query, fn ->
-        :counters.add(compute_called, 1, 1)
-        {:ok, :test_plan}
-      end, name: name)
+      result =
+        PlanCache.get_or_compute(
+          query,
+          fn ->
+            :counters.add(compute_called, 1, 1)
+            {:ok, :test_plan}
+          end,
+          name: name
+        )
 
       assert result == {:ok, :test_plan}
       assert :counters.get(compute_called, 1) == 1
@@ -54,16 +59,25 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
       compute_called = :counters.new(1, [:atomics])
 
       # First call - computes
-      PlanCache.get_or_compute(query, fn ->
-        :counters.add(compute_called, 1, 1)
-        {:ok, :test_plan}
-      end, name: name)
+      PlanCache.get_or_compute(
+        query,
+        fn ->
+          :counters.add(compute_called, 1, 1)
+          {:ok, :test_plan}
+        end,
+        name: name
+      )
 
       # Second call - should use cache
-      result = PlanCache.get_or_compute(query, fn ->
-        :counters.add(compute_called, 1, 1)
-        {:ok, :different_plan}
-      end, name: name)
+      result =
+        PlanCache.get_or_compute(
+          query,
+          fn ->
+            :counters.add(compute_called, 1, 1)
+            {:ok, :different_plan}
+          end,
+          name: name
+        )
 
       assert result == {:ok, :test_plan}
       assert :counters.get(compute_called, 1) == 1
@@ -260,7 +274,8 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
         for i <- 1..3 do
           query = {:pattern, i}
           PlanCache.put(query, {:plan, i}, name: name)
-          Process.sleep(5)  # Ensure distinct timestamps
+          # Ensure distinct timestamps
+          Process.sleep(5)
         end
 
         Process.sleep(10)
@@ -326,7 +341,8 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
         Process.sleep(10)
 
         stats = PlanCache.stats(name: name)
-        assert stats.evictions >= 3  # At least 3 evictions (5 inserts, max 2)
+        # At least 3 evictions (5 inserts, max 2)
+        assert stats.evictions >= 3
       after
         GenServer.stop(pid)
       end

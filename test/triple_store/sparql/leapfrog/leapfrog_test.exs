@@ -547,15 +547,22 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
 
       # knows=10, works_at=20, lives_in=30
       # Alice=100, ACME=200, NYC=300
-      insert_triple(db, 1, 10, 100)  # 1 knows Alice
-      insert_triple(db, 1, 20, 200)  # 1 works_at ACME
-      insert_triple(db, 1, 30, 300)  # 1 lives_in NYC
+      # 1 knows Alice
+      insert_triple(db, 1, 10, 100)
+      # 1 works_at ACME
+      insert_triple(db, 1, 20, 200)
+      # 1 lives_in NYC
+      insert_triple(db, 1, 30, 300)
 
-      insert_triple(db, 2, 10, 100)  # 2 knows Alice
-      insert_triple(db, 2, 20, 200)  # 2 works_at ACME
+      # 2 knows Alice
+      insert_triple(db, 2, 10, 100)
+      # 2 works_at ACME
+      insert_triple(db, 2, 20, 200)
 
-      insert_triple(db, 3, 20, 200)  # 3 works_at ACME
-      insert_triple(db, 3, 30, 300)  # 3 lives_in NYC
+      # 3 works_at ACME
+      insert_triple(db, 3, 20, 200)
+      # 3 lives_in NYC
+      insert_triple(db, 3, 30, 300)
 
       {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
       {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)
@@ -573,20 +580,27 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
       # This simulates path pattern matching
 
       # Triple patterns in OSP to find objects
-      insert_triple(db, 1, 10, 5)   # 1 -10-> 5
-      insert_triple(db, 2, 10, 5)   # 2 -10-> 5
-      insert_triple(db, 3, 10, 7)   # 3 -10-> 7
+      # 1 -10-> 5
+      insert_triple(db, 1, 10, 5)
+      # 2 -10-> 5
+      insert_triple(db, 2, 10, 5)
+      # 3 -10-> 7
+      insert_triple(db, 3, 10, 7)
 
       # These 5 and 7 are subjects of other triples
-      insert_triple(db, 5, 20, 100) # 5 -20-> 100
-      insert_triple(db, 7, 20, 200) # 7 -20-> 200
+      # 5 -20-> 100
+      insert_triple(db, 5, 20, 100)
+      # 7 -20-> 200
+      insert_triple(db, 7, 20, 200)
 
       # Find: objects of predicate 10 that are also subjects of predicate 20
       # Using OSP index for objects of pred=10
       # Using SPO index for subjects of pred=20
 
-      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big>>, 1)  # objects of pred 10
-      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big>>, 1)  # objects of pred 20 (subjects that have pred 20)
+      # objects of pred 10
+      {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big>>, 1)
+      # objects of pred 20 (subjects that have pred 20)
+      {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big>>, 1)
 
       # Actually we need different approach - let's use SPO to find subjects with pred 20
       TrieIterator.close(iter1)

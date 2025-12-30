@@ -215,7 +215,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec scm_sco() :: Rule.t()
   def scm_sco do
-    Rule.new(:scm_sco,
+    Rule.new(
+      :scm_sco,
       [
         Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c2")),
         Rule.pattern(Rule.var("c2"), rdfs_subClassOf(), Rule.var("c3"))
@@ -233,7 +234,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec scm_spo() :: Rule.t()
   def scm_spo do
-    Rule.new(:scm_spo,
+    Rule.new(
+      :scm_spo,
       [
         Rule.pattern(Rule.var("p1"), rdfs_subPropertyOf(), Rule.var("p2")),
         Rule.pattern(Rule.var("p2"), rdfs_subPropertyOf(), Rule.var("p3"))
@@ -251,7 +253,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cax_sco() :: Rule.t()
   def cax_sco do
-    Rule.new(:cax_sco,
+    Rule.new(
+      :cax_sco,
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c1")),
         Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c2"))
@@ -269,7 +272,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_spo1() :: Rule.t()
   def prp_spo1 do
-    Rule.new(:prp_spo1,
+    Rule.new(
+      :prp_spo1,
       [
         Rule.pattern(Rule.var("p1"), rdfs_subPropertyOf(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
@@ -287,7 +291,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_dom() :: Rule.t()
   def prp_dom do
-    Rule.new(:prp_dom,
+    Rule.new(
+      :prp_dom,
       [
         Rule.pattern(Rule.var("p"), rdfs_domain(), Rule.var("c")),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
@@ -305,7 +310,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_rng() :: Rule.t()
   def prp_rng do
-    Rule.new(:prp_rng,
+    Rule.new(
+      :prp_rng,
       [
         Rule.pattern(Rule.var("p"), rdfs_range(), Rule.var("c")),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
@@ -327,7 +333,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_trp() :: Rule.t()
   def prp_trp do
-    Rule.new(:prp_trp,
+    Rule.new(
+      :prp_trp,
       [
         Rule.pattern(Rule.var("p"), rdf_type(), owl_TransitiveProperty()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
@@ -346,7 +353,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_symp() :: Rule.t()
   def prp_symp do
-    Rule.new(:prp_symp,
+    Rule.new(
+      :prp_symp,
       [
         Rule.pattern(Rule.var("p"), rdf_type(), owl_SymmetricProperty()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
@@ -364,7 +372,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_inv1() :: Rule.t()
   def prp_inv1 do
-    Rule.new(:prp_inv1,
+    Rule.new(
+      :prp_inv1,
       [
         Rule.pattern(Rule.var("p1"), owl_inverseOf(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
@@ -382,7 +391,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_inv2() :: Rule.t()
   def prp_inv2 do
-    Rule.new(:prp_inv2,
+    Rule.new(
+      :prp_inv2,
       [
         Rule.pattern(Rule.var("p1"), owl_inverseOf(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y"))
@@ -402,7 +412,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_fp() :: Rule.t()
   def prp_fp do
-    Rule.new(:prp_fp,
+    Rule.new(
+      :prp_fp,
       [
         Rule.pattern(Rule.var("p"), rdf_type(), owl_FunctionalProperty()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y1")),
@@ -424,7 +435,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec prp_ifp() :: Rule.t()
   def prp_ifp do
-    Rule.new(:prp_ifp,
+    Rule.new(
+      :prp_ifp,
       [
         Rule.pattern(Rule.var("p"), rdf_type(), owl_InverseFunctionalProperty()),
         Rule.pattern(Rule.var("x1"), Rule.var("p"), Rule.var("y")),
@@ -451,7 +463,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_ref() :: Rule.t()
   def eq_ref do
-    Rule.new(:eq_ref,
+    Rule.new(
+      :eq_ref,
       [
         # Match any triple to find resources
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
@@ -469,7 +482,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_sym() :: Rule.t()
   def eq_sym do
-    Rule.new(:eq_sym,
+    Rule.new(
+      :eq_sym,
       [
         Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("y"))
       ],
@@ -486,7 +500,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_trans() :: Rule.t()
   def eq_trans do
-    Rule.new(:eq_trans,
+    Rule.new(
+      :eq_trans,
       [
         Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("y")),
         Rule.pattern(Rule.var("y"), owl_sameAs(), Rule.var("z"))
@@ -504,7 +519,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_rep_s() :: Rule.t()
   def eq_rep_s do
-    Rule.new(:eq_rep_s,
+    Rule.new(
+      :eq_rep_s,
       [
         Rule.pattern(Rule.var("s1"), owl_sameAs(), Rule.var("s2")),
         Rule.pattern(Rule.var("s1"), Rule.var("p"), Rule.var("o"))
@@ -524,7 +540,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_rep_p() :: Rule.t()
   def eq_rep_p do
-    Rule.new(:eq_rep_p,
+    Rule.new(
+      :eq_rep_p,
       [
         Rule.pattern(Rule.var("p1"), owl_sameAs(), Rule.var("p2")),
         Rule.pattern(Rule.var("s"), Rule.var("p1"), Rule.var("o"))
@@ -542,7 +559,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec eq_rep_o() :: Rule.t()
   def eq_rep_o do
-    Rule.new(:eq_rep_o,
+    Rule.new(
+      :eq_rep_o,
       [
         Rule.pattern(Rule.var("o1"), owl_sameAs(), Rule.var("o2")),
         Rule.pattern(Rule.var("s"), Rule.var("p"), Rule.var("o1"))
@@ -567,7 +585,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cls_hv1() :: Rule.t()
   def cls_hv1 do
-    Rule.new(:cls_hv1,
+    Rule.new(
+      :cls_hv1,
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c")),
         Rule.pattern(Rule.var("c"), owl_hasValue(), Rule.var("v")),
@@ -589,7 +608,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cls_hv2() :: Rule.t()
   def cls_hv2 do
-    Rule.new(:cls_hv2,
+    Rule.new(
+      :cls_hv2,
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("v")),
         Rule.pattern(Rule.var("c"), owl_hasValue(), Rule.var("v")),
@@ -610,7 +630,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cls_svf1() :: Rule.t()
   def cls_svf1 do
-    Rule.new(:cls_svf1,
+    Rule.new(
+      :cls_svf1,
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
         Rule.pattern(Rule.var("y"), rdf_type(), Rule.var("c")),
@@ -633,7 +654,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cls_svf2() :: Rule.t()
   def cls_svf2 do
-    Rule.new(:cls_svf2,
+    Rule.new(
+      :cls_svf2,
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
         Rule.pattern(Rule.var("r"), owl_someValuesFrom(), owl_Thing()),
@@ -654,7 +676,8 @@ defmodule TripleStore.Reasoner.Rules do
   """
   @spec cls_avf() :: Rule.t()
   def cls_avf do
-    Rule.new(:cls_avf,
+    Rule.new(
+      :cls_avf,
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("r")),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),

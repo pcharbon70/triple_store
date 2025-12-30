@@ -546,7 +546,10 @@ defmodule TripleStore.Query.CacheTest do
   describe "telemetry events" do
     setup do
       name = unique_name()
-      {:ok, pid} = Cache.start_link(name: name, max_entries: 100, max_result_size: 1000, ttl_ms: 50)
+
+      {:ok, pid} =
+        Cache.start_link(name: name, max_entries: 100, max_result_size: 1000, ttl_ms: 50)
+
       on_exit(fn -> safe_stop(pid) end)
       %{name: name}
     end
@@ -633,10 +636,12 @@ defmodule TripleStore.Query.CacheTest do
       temp_dir = System.tmp_dir!()
       cache_file = Path.join(temp_dir, "cache_test_#{:erlang.unique_integer([:positive])}.bin")
       {:ok, pid} = Cache.start_link(name: name, max_entries: 100, max_result_size: 1000)
+
       on_exit(fn ->
         safe_stop(pid)
         File.rm(cache_file)
       end)
+
       %{name: name, cache_file: cache_file}
     end
 
@@ -692,12 +697,13 @@ defmodule TripleStore.Query.CacheTest do
       entries = Cache.get_all_entries(name: name)
 
       assert length(entries) == 2
+
       assert Enum.all?(entries, fn e ->
-        Map.has_key?(e, :key) and
-        Map.has_key?(e, :result) and
-        Map.has_key?(e, :result_size) and
-        Map.has_key?(e, :predicates)
-      end)
+               Map.has_key?(e, :key) and
+                 Map.has_key?(e, :result) and
+                 Map.has_key?(e, :result_size) and
+                 Map.has_key?(e, :predicates)
+             end)
     end
   end
 
@@ -705,7 +711,9 @@ defmodule TripleStore.Query.CacheTest do
     test "warms cache from file on startup when enabled" do
       name = unique_name()
       temp_dir = System.tmp_dir!()
-      cache_file = Path.join(temp_dir, "cache_warm_start_#{:erlang.unique_integer([:positive])}.bin")
+
+      cache_file =
+        Path.join(temp_dir, "cache_warm_start_#{:erlang.unique_integer([:positive])}.bin")
 
       # Start cache, add entries, persist
       {:ok, pid1} = Cache.start_link(name: name, max_entries: 100)
@@ -719,12 +727,14 @@ defmodule TripleStore.Query.CacheTest do
 
       # Start new cache with warm_on_start
       name2 = unique_name()
-      {:ok, pid2} = Cache.start_link(
-        name: name2,
-        max_entries: 100,
-        persistence_path: cache_file,
-        warm_on_start: true
-      )
+
+      {:ok, pid2} =
+        Cache.start_link(
+          name: name2,
+          max_entries: 100,
+          persistence_path: cache_file,
+          warm_on_start: true
+        )
 
       # Should have warmed entries
       assert Cache.size(name: name2) == 2
@@ -738,12 +748,13 @@ defmodule TripleStore.Query.CacheTest do
     test "starts empty when warm_on_start enabled but file missing" do
       name = unique_name()
 
-      {:ok, pid} = Cache.start_link(
-        name: name,
-        max_entries: 100,
-        persistence_path: "/nonexistent/cache.bin",
-        warm_on_start: true
-      )
+      {:ok, pid} =
+        Cache.start_link(
+          name: name,
+          max_entries: 100,
+          persistence_path: "/nonexistent/cache.bin",
+          warm_on_start: true
+        )
 
       # Should start empty (no error)
       assert Cache.size(name: name) == 0
@@ -794,10 +805,11 @@ defmodule TripleStore.Query.CacheTest do
       call_count = :counters.new(1, [:atomics])
 
       queries = [
-        {"query1", fn ->
-          :counters.add(call_count, 1, 1)
-          {:ok, [:new]}
-        end, []}
+        {"query1",
+         fn ->
+           :counters.add(call_count, 1, 1)
+           {:ok, [:new]}
+         end, []}
       ]
 
       {:ok, _} = Cache.warm_queries(queries, name: name)
@@ -814,12 +826,17 @@ defmodule TripleStore.Query.CacheTest do
     setup do
       name = unique_name()
       temp_dir = System.tmp_dir!()
-      cache_file = Path.join(temp_dir, "cache_telemetry_#{:erlang.unique_integer([:positive])}.bin")
+
+      cache_file =
+        Path.join(temp_dir, "cache_telemetry_#{:erlang.unique_integer([:positive])}.bin")
+
       {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+
       on_exit(fn ->
         safe_stop(pid)
         File.rm(cache_file)
       end)
+
       %{name: name, cache_file: cache_file}
     end
 
@@ -878,11 +895,12 @@ defmodule TripleStore.Query.CacheTest do
       allowed_dir = Path.join(temp_dir, "cache_allowed_#{:erlang.unique_integer([:positive])}")
       File.mkdir_p!(allowed_dir)
 
-      {:ok, pid} = Cache.start_link(
-        name: name,
-        max_entries: 100,
-        allowed_persistence_dir: allowed_dir
-      )
+      {:ok, pid} =
+        Cache.start_link(
+          name: name,
+          max_entries: 100,
+          allowed_persistence_dir: allowed_dir
+        )
 
       on_exit(fn ->
         safe_stop(pid)
@@ -912,6 +930,7 @@ defmodule TripleStore.Query.CacheTest do
       cache_file = Path.join(temp_dir, "unrestricted_#{:erlang.unique_integer([:positive])}.bin")
 
       {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+
       on_exit(fn ->
         safe_stop(pid)
         File.rm(cache_file)
@@ -938,11 +957,13 @@ defmodule TripleStore.Query.CacheTest do
     test "evicts when memory limit is exceeded" do
       name = unique_name()
       # Set a very low memory limit to force eviction
-      {:ok, pid} = Cache.start_link(
-        name: name,
-        max_entries: 1000,
-        max_memory_bytes: 500
-      )
+      {:ok, pid} =
+        Cache.start_link(
+          name: name,
+          max_entries: 1000,
+          max_memory_bytes: 500
+        )
+
       on_exit(fn -> safe_stop(pid) end)
 
       # Add entries until we exceed memory limit
@@ -957,11 +978,14 @@ defmodule TripleStore.Query.CacheTest do
 
     test "config includes memory settings" do
       name = unique_name()
-      {:ok, pid} = Cache.start_link(
-        name: name,
-        max_entries: 100,
-        max_memory_bytes: 1_000_000
-      )
+
+      {:ok, pid} =
+        Cache.start_link(
+          name: name,
+          max_entries: 100,
+          max_memory_bytes: 1_000_000
+        )
+
       on_exit(fn -> safe_stop(pid) end)
 
       config = Cache.config(name: name)
@@ -998,6 +1022,7 @@ defmodule TripleStore.Query.CacheTest do
       cache_file = Path.join(temp_dir, "invalid_cache_#{:erlang.unique_integer([:positive])}.bin")
 
       {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+
       on_exit(fn ->
         safe_stop(pid)
         File.rm(cache_file)
@@ -1020,6 +1045,7 @@ defmodule TripleStore.Query.CacheTest do
       cache_file = Path.join(temp_dir, "mixed_cache_#{:erlang.unique_integer([:positive])}.bin")
 
       {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+
       on_exit(fn ->
         safe_stop(pid)
         File.rm(cache_file)
@@ -1032,10 +1058,12 @@ defmodule TripleStore.Query.CacheTest do
         entry_count: 3,
         entries: [
           %{key: Cache.compute_key("valid1"), result: [1], result_size: 1, predicates: [:p1]},
-          %{invalid_key: "bad", result: [2], result_size: 1, predicates: []},  # Missing key field
+          # Missing key field
+          %{invalid_key: "bad", result: [2], result_size: 1, predicates: []},
           %{key: Cache.compute_key("valid2"), result: [3], result_size: 1, predicates: [:p2]}
         ]
       }
+
       File.write!(cache_file, :erlang.term_to_binary(cache_data, [:compressed]))
 
       assert {:ok, 2} = Cache.warm_from_file(cache_file, name: name)
@@ -1047,13 +1075,16 @@ defmodule TripleStore.Query.CacheTest do
     test "persists cache on shutdown when persistence_path is set" do
       name = unique_name()
       temp_dir = System.tmp_dir!()
-      cache_file = Path.join(temp_dir, "shutdown_cache_#{:erlang.unique_integer([:positive])}.bin")
 
-      {:ok, pid} = Cache.start_link(
-        name: name,
-        max_entries: 100,
-        persistence_path: cache_file
-      )
+      cache_file =
+        Path.join(temp_dir, "shutdown_cache_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} =
+        Cache.start_link(
+          name: name,
+          max_entries: 100,
+          persistence_path: cache_file
+        )
 
       Cache.put("query1", [1, 2, 3], name: name)
       Cache.put("query2", [4, 5, 6], name: name)
@@ -1069,12 +1100,14 @@ defmodule TripleStore.Query.CacheTest do
 
       # Start new cache and verify data was persisted
       name2 = unique_name()
-      {:ok, pid2} = Cache.start_link(
-        name: name2,
-        max_entries: 100,
-        persistence_path: cache_file,
-        warm_on_start: true
-      )
+
+      {:ok, pid2} =
+        Cache.start_link(
+          name: name2,
+          max_entries: 100,
+          persistence_path: cache_file,
+          warm_on_start: true
+        )
 
       assert Cache.size(name: name2) == 2
 

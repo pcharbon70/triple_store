@@ -105,10 +105,32 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       cat_idx = rem(div(i - 1, 5), 5)
 
       add_triple(db, manager, {subject, Enum.at(predicates, 0), literal("Entity_#{i}")})
-      add_triple(db, manager, {subject, Enum.at(predicates, 1), typed_literal(20 + rem(i, 50), "http://www.w3.org/2001/XMLSchema#integer")})
-      add_triple(db, manager, {subject, Enum.at(predicates, 2), literal(Enum.at(cities, city_idx))})
-      add_triple(db, manager, {subject, Enum.at(predicates, 3), literal(Enum.at(categories, cat_idx))})
-      add_triple(db, manager, {subject, Enum.at(predicates, 4), typed_literal(rem(i, 100), "http://www.w3.org/2001/XMLSchema#integer")})
+
+      add_triple(
+        db,
+        manager,
+        {subject, Enum.at(predicates, 1),
+         typed_literal(20 + rem(i, 50), "http://www.w3.org/2001/XMLSchema#integer")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {subject, Enum.at(predicates, 2), literal(Enum.at(cities, city_idx))}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {subject, Enum.at(predicates, 3), literal(Enum.at(categories, cat_idx))}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {subject, Enum.at(predicates, 4),
+         typed_literal(rem(i, 100), "http://www.w3.org/2001/XMLSchema#integer")}
+      )
     end
 
     :ok
@@ -147,7 +169,12 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       amount = 10 + rem(i, 990)
 
       add_triple(db, manager, {subject, category_pred, literal(category)})
-      add_triple(db, manager, {subject, value_pred, typed_literal(amount, "http://www.w3.org/2001/XMLSchema#integer")})
+
+      add_triple(
+        db,
+        manager,
+        {subject, value_pred, typed_literal(amount, "http://www.w3.org/2001/XMLSchema#integer")}
+      )
     end
 
     :ok
@@ -298,7 +325,11 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       ctx = %{db: db, dict_manager: manager}
 
       entity_count = div(@small_dataset, 5)
-      IO.puts("\n\n📊 Generating #{entity_count} entities (#{@small_dataset} triples) for star query...")
+
+      IO.puts(
+        "\n\n📊 Generating #{entity_count} entities (#{@small_dataset} triples) for star query..."
+      )
+
       {gen_time, :ok} = :timer.tc(fn -> generate_star_dataset(db, manager, entity_count) end)
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
@@ -325,12 +356,18 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
     end
 
     @tag timeout: 600_000
-    test "benchmark star query on medium dataset (20K entities = 100K triples)", %{tmp_dir: tmp_dir} do
+    test "benchmark star query on medium dataset (20K entities = 100K triples)", %{
+      tmp_dir: tmp_dir
+    } do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
       entity_count = div(@medium_dataset, 5)
-      IO.puts("\n\n📊 Generating #{entity_count} entities (#{@medium_dataset} triples) for star query...")
+
+      IO.puts(
+        "\n\n📊 Generating #{entity_count} entities (#{@medium_dataset} triples) for star query..."
+      )
+
       {gen_time, :ok} = :timer.tc(fn -> generate_star_dataset(db, manager, entity_count) end)
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
@@ -363,7 +400,11 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       ctx = %{db: db, dict_manager: manager}
 
       entity_count = div(@large_dataset, 5)
-      IO.puts("\n\n📊 Generating #{entity_count} entities (#{@large_dataset} triples) for star query...")
+
+      IO.puts(
+        "\n\n📊 Generating #{entity_count} entities (#{@large_dataset} triples) for star query..."
+      )
+
       IO.puts("   This may take several minutes...")
       {gen_time, :ok} = :timer.tc(fn -> generate_star_dataset(db, manager, entity_count) end)
       IO.puts("   Data generation: #{format_time(gen_time)}")
@@ -400,7 +441,10 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       ctx = %{db: db, dict_manager: manager}
 
       IO.puts("\n\n📊 Generating #{@small_dataset} entities for OPTIONAL comparison...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_optional_dataset(db, manager, @small_dataset) end)
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_optional_dataset(db, manager, @small_dataset) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       # Inner join query (only entities with email)
@@ -429,7 +473,9 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       report_benchmark("Inner Join (10K entities, LIMIT 500)", inner_stats)
       report_benchmark("OPTIONAL (10K entities, LIMIT 500)", optional_stats)
 
-      overhead_pct = ((optional_stats.median_us - inner_stats.median_us) / max(inner_stats.median_us, 1)) * 100
+      overhead_pct =
+        (optional_stats.median_us - inner_stats.median_us) / max(inner_stats.median_us, 1) * 100
+
       IO.puts("\n  OPTIONAL overhead: #{Float.round(overhead_pct, 1)}%")
 
       # Record the overhead for benchmark reporting
@@ -446,7 +492,10 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       ctx = %{db: db, dict_manager: manager}
 
       IO.puts("\n\n📊 Generating #{@medium_dataset} entities for OPTIONAL comparison...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_optional_dataset(db, manager, @medium_dataset) end)
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_optional_dataset(db, manager, @medium_dataset) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       inner_query = """
@@ -473,7 +522,9 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       report_benchmark("Inner Join (100K entities, LIMIT 500)", inner_stats)
       report_benchmark("OPTIONAL (100K entities, LIMIT 500)", optional_stats)
 
-      overhead_pct = ((optional_stats.median_us - inner_stats.median_us) / max(inner_stats.median_us, 1)) * 100
+      overhead_pct =
+        (optional_stats.median_us - inner_stats.median_us) / max(inner_stats.median_us, 1) * 100
+
       IO.puts("\n  OPTIONAL overhead: #{Float.round(overhead_pct, 1)}%")
 
       cleanup({db, manager})
@@ -494,8 +545,14 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
       # Half the count since we add 2 triples per entity
       entity_count = div(@small_dataset, 2)
-      IO.puts("\n\n📊 Generating #{entity_count} sales (#{@small_dataset} triples) for aggregation...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
+      IO.puts(
+        "\n\n📊 Generating #{entity_count} sales (#{@small_dataset} triples) for aggregation..."
+      )
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       # GROUP BY with COUNT
@@ -523,7 +580,10 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
       entity_count = div(@small_dataset, 2)
       IO.puts("\n\n📊 Generating #{entity_count} sales for SUM aggregation...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       # GROUP BY with SUM
@@ -552,7 +612,10 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
       entity_count = div(@small_dataset, 2)
       IO.puts("\n\n📊 Generating #{entity_count} sales for implicit grouping...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       # Implicit grouping (aggregate all)
@@ -580,7 +643,10 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
       entity_count = div(@medium_dataset, 2)
       IO.puts("\n\n📊 Generating #{entity_count} sales for HAVING benchmark...")
-      {gen_time, :ok} = :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
+      {gen_time, :ok} =
+        :timer.tc(fn -> generate_aggregation_dataset(db, manager, entity_count) end)
+
       IO.puts("   Data generation: #{format_time(gen_time)}")
 
       # GROUP BY with HAVING filter
@@ -652,6 +718,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       }
       LIMIT 100
       """
+
       star_stats = measure_query(ctx, star_query)
 
       # Cleanup and regenerate for OPTIONAL
@@ -670,6 +737,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       }
       LIMIT 500
       """
+
       optional_stats = measure_query(ctx, optional_query)
 
       # Cleanup and regenerate for aggregation
@@ -677,7 +745,9 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
 
-      {t4, :ok} = :timer.tc(fn -> generate_aggregation_dataset(db, manager, div(@small_dataset, 2)) end)
+      {t4, :ok} =
+        :timer.tc(fn -> generate_aggregation_dataset(db, manager, div(@small_dataset, 2)) end)
+
       IO.puts("   Aggregation data: #{format_time(t4)}")
 
       agg_query = """
@@ -688,6 +758,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       }
       GROUP BY ?category
       """
+
       agg_stats = measure_query(ctx, agg_query)
 
       # Print summary

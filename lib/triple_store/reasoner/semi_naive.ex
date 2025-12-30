@@ -181,11 +181,36 @@ defmodule TripleStore.Reasoner.SemiNaive do
     # Optionally validate rules before materialization
     if validate_rules do
       case validate_all_rules(rules) do
-        :ok -> do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout)
-        {:error, _} = error -> error
+        :ok ->
+          do_materialize(
+            lookup_fn,
+            store_fn,
+            rules,
+            initial_facts,
+            max_iterations,
+            max_facts,
+            emit_telemetry,
+            parallel,
+            max_concurrency,
+            task_timeout
+          )
+
+        {:error, _} = error ->
+          error
       end
     else
-      do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout)
+      do_materialize(
+        lookup_fn,
+        store_fn,
+        rules,
+        initial_facts,
+        max_iterations,
+        max_facts,
+        emit_telemetry,
+        parallel,
+        max_concurrency,
+        task_timeout
+      )
     end
   end
 
@@ -198,7 +223,18 @@ defmodule TripleStore.Reasoner.SemiNaive do
     end)
   end
 
-  defp do_materialize(lookup_fn, store_fn, rules, initial_facts, max_iterations, max_facts, emit_telemetry, parallel, max_concurrency, task_timeout) do
+  defp do_materialize(
+         lookup_fn,
+         store_fn,
+         rules,
+         initial_facts,
+         max_iterations,
+         max_facts,
+         emit_telemetry,
+         parallel,
+         max_concurrency,
+         task_timeout
+       ) do
     start_time = System.monotonic_time(:millisecond)
 
     # Stratify rules (for OWL 2 RL, all rules are in stratum 0)
@@ -231,16 +267,17 @@ defmodule TripleStore.Reasoner.SemiNaive do
     end
 
     # Run fixpoint loop
-    result = run_fixpoint(
-      lookup_fn,
-      store_fn,
-      strata,
-      state,
-      max_iterations,
-      max_facts,
-      emit_telemetry,
-      parallel_opts
-    )
+    result =
+      run_fixpoint(
+        lookup_fn,
+        store_fn,
+        strata,
+        state,
+        max_iterations,
+        max_facts,
+        emit_telemetry,
+        parallel_opts
+      )
 
     # Calculate duration and emit stop telemetry
     duration_ms = System.monotonic_time(:millisecond) - start_time
@@ -256,16 +293,24 @@ defmodule TripleStore.Reasoner.SemiNaive do
         }
 
         if emit_telemetry do
-          Telemetry.emit_stop([:triple_store, :reasoner, :materialize], duration_ms * 1_000_000, stats)
+          Telemetry.emit_stop(
+            [:triple_store, :reasoner, :materialize],
+            duration_ms * 1_000_000,
+            stats
+          )
         end
 
         {:ok, stats}
 
       {:error, reason} = error ->
         if emit_telemetry do
-          Telemetry.emit_stop([:triple_store, :reasoner, :materialize], duration_ms * 1_000_000, %{
-            error: reason
-          })
+          Telemetry.emit_stop(
+            [:triple_store, :reasoner, :materialize],
+            duration_ms * 1_000_000,
+            %{
+              error: reason
+            }
+          )
         end
 
         error
@@ -415,7 +460,16 @@ defmodule TripleStore.Reasoner.SemiNaive do
   # Private Functions
   # ============================================================================
 
-  defp run_fixpoint(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts) do
+  defp run_fixpoint(
+         lookup_fn,
+         store_fn,
+         strata,
+         state,
+         max_iterations,
+         max_facts,
+         emit_telemetry,
+         parallel_opts
+       ) do
     cond do
       # Fixpoint reached - no new facts
       MapSet.size(state.delta) == 0 ->
@@ -431,11 +485,29 @@ defmodule TripleStore.Reasoner.SemiNaive do
 
       # Continue iteration
       true ->
-        apply_iteration(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts)
+        apply_iteration(
+          lookup_fn,
+          store_fn,
+          strata,
+          state,
+          max_iterations,
+          max_facts,
+          emit_telemetry,
+          parallel_opts
+        )
     end
   end
 
-  defp apply_iteration(lookup_fn, store_fn, strata, state, max_iterations, max_facts, emit_telemetry, parallel_opts) do
+  defp apply_iteration(
+         lookup_fn,
+         store_fn,
+         strata,
+         state,
+         max_iterations,
+         max_facts,
+         emit_telemetry,
+         parallel_opts
+       ) do
     case apply_strata(lookup_fn, strata, state, parallel_opts) do
       {:ok, new_derivations, rules_applied} ->
         iteration_count = MapSet.size(new_derivations)
@@ -457,7 +529,16 @@ defmodule TripleStore.Reasoner.SemiNaive do
               rules_applied: state.rules_applied + rules_applied
             }
 
-            run_fixpoint(lookup_fn, store_fn, strata, new_state, max_iterations, max_facts, emit_telemetry, parallel_opts)
+            run_fixpoint(
+              lookup_fn,
+              store_fn,
+              strata,
+              new_state,
+              max_iterations,
+              max_facts,
+              emit_telemetry,
+              parallel_opts
+            )
 
           {:error, _} = error ->
             error
@@ -470,10 +551,12 @@ defmodule TripleStore.Reasoner.SemiNaive do
 
   defp apply_strata(lookup_fn, strata, state, parallel_opts) do
     # Apply each stratum in order, collecting all derivations
-    Enum.reduce_while(strata, {:ok, MapSet.new(), 0}, fn stratum, {:ok, acc_derivations, acc_rules} ->
+    Enum.reduce_while(strata, {:ok, MapSet.new(), 0}, fn stratum,
+                                                         {:ok, acc_derivations, acc_rules} ->
       case apply_stratum(lookup_fn, stratum, state, acc_derivations, parallel_opts) do
         {:ok, stratum_derivations, rules_applied} ->
-          {:cont, {:ok, MapSet.union(acc_derivations, stratum_derivations), acc_rules + rules_applied}}
+          {:cont,
+           {:ok, MapSet.union(acc_derivations, stratum_derivations), acc_rules + rules_applied}}
 
         {:error, _} = error ->
           {:halt, error}
@@ -485,7 +568,14 @@ defmodule TripleStore.Reasoner.SemiNaive do
     all_existing = MapSet.union(state.all_facts, already_derived)
 
     if parallel_opts.parallel and length(rules) > 1 do
-      apply_stratum_parallel(lookup_fn, rules, state, all_existing, parallel_opts.max_concurrency, parallel_opts.task_timeout)
+      apply_stratum_parallel(
+        lookup_fn,
+        rules,
+        state,
+        all_existing,
+        parallel_opts.max_concurrency,
+        parallel_opts.task_timeout
+      )
     else
       apply_stratum_sequential(lookup_fn, rules, state, all_existing)
     end
@@ -495,7 +585,9 @@ defmodule TripleStore.Reasoner.SemiNaive do
   defp apply_stratum_sequential(lookup_fn, rules, state, all_existing) do
     {derivations, rules_applied} =
       Enum.reduce(rules, {MapSet.new(), 0}, fn rule, {acc, rule_count} ->
-        {:ok, new_facts} = DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing)
+        {:ok, new_facts} =
+          DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing)
+
         # Filter out facts we've already derived in this iteration
         truly_new = MapSet.difference(new_facts, acc)
         {MapSet.union(acc, truly_new), rule_count + 1}
@@ -507,7 +599,14 @@ defmodule TripleStore.Reasoner.SemiNaive do
   end
 
   # Parallel rule application using Task.async_stream
-  defp apply_stratum_parallel(lookup_fn, rules, state, all_existing, max_concurrency, task_timeout) do
+  defp apply_stratum_parallel(
+         lookup_fn,
+         rules,
+         state,
+         all_existing,
+         max_concurrency,
+         task_timeout
+       ) do
     # Apply each rule in parallel
     # Each task returns {:ok, fact_set} or {:error, reason}
     results =

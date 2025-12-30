@@ -368,7 +368,11 @@ defmodule TripleStore.Prometheus do
     buckets = Keyword.get(opts, :buckets, @default_buckets)
 
     # Attach telemetry handlers using shared utility
-    handlers = TripleStore.Telemetry.attach_metrics_handlers(self(), "triple_store_prometheus_#{inspect(self())}")
+    handlers =
+      TripleStore.Telemetry.attach_metrics_handlers(
+        self(),
+        "triple_store_prometheus_#{inspect(self())}"
+      )
 
     state = %{
       buckets: buckets,
@@ -432,7 +436,12 @@ defmodule TripleStore.Prometheus do
   # Event Handling
   # ===========================================================================
 
-  defp handle_telemetry_event([:triple_store, :query, :execute, :stop], measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :query, :execute, :stop],
+         measurements,
+         _metadata,
+         state
+       ) do
     duration_s = get_duration_seconds(measurements)
 
     state
@@ -440,7 +449,12 @@ defmodule TripleStore.Prometheus do
     |> observe_histogram(:query_duration, duration_s)
   end
 
-  defp handle_telemetry_event([:triple_store, :query, :execute, :exception], _measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :query, :execute, :exception],
+         _measurements,
+         _metadata,
+         state
+       ) do
     state
     |> increment_counter(:query_errors_total)
   end
@@ -469,15 +483,30 @@ defmodule TripleStore.Prometheus do
     |> increment_counter(:load_triples_total, count)
   end
 
-  defp handle_telemetry_event([:triple_store, :cache, cache_type, :hit], _measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :cache, cache_type, :hit],
+         _measurements,
+         _metadata,
+         state
+       ) do
     increment_counter_with_label(state, :cache_hits_total, :cache_type, cache_type)
   end
 
-  defp handle_telemetry_event([:triple_store, :cache, cache_type, :miss], _measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :cache, cache_type, :miss],
+         _measurements,
+         _metadata,
+         state
+       ) do
     increment_counter_with_label(state, :cache_misses_total, :cache_type, cache_type)
   end
 
-  defp handle_telemetry_event([:triple_store, :reasoner, :materialize, :stop], measurements, metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :reasoner, :materialize, :stop],
+         measurements,
+         metadata,
+         state
+       ) do
     duration_s = get_duration_seconds(measurements)
     iterations = Map.get(metadata, :iterations, 0)
     derived = Map.get(metadata, :total_derived, 0)
@@ -489,7 +518,12 @@ defmodule TripleStore.Prometheus do
     |> observe_histogram(:reasoning_duration, duration_s)
   end
 
-  defp handle_telemetry_event([:triple_store, :backup, :create, :stop], measurements, metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :backup, :create, :stop],
+         measurements,
+         metadata,
+         state
+       ) do
     duration_s = get_duration_seconds(measurements)
     size_bytes = Map.get(metadata, :size_bytes, 0)
 
@@ -499,7 +533,12 @@ defmodule TripleStore.Prometheus do
     |> set_gauge(:backup_size_bytes, size_bytes)
   end
 
-  defp handle_telemetry_event([:triple_store, :backup, :create_incremental, :stop], measurements, metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :backup, :create_incremental, :stop],
+         measurements,
+         metadata,
+         state
+       ) do
     duration_s = get_duration_seconds(measurements)
     size_bytes = Map.get(metadata, :size_bytes, 0)
 
@@ -509,7 +548,12 @@ defmodule TripleStore.Prometheus do
     |> set_gauge(:backup_size_bytes, size_bytes)
   end
 
-  defp handle_telemetry_event([:triple_store, :backup, :restore, :stop], measurements, _metadata, state) do
+  defp handle_telemetry_event(
+         [:triple_store, :backup, :restore, :stop],
+         measurements,
+         _metadata,
+         state
+       ) do
     duration_s = get_duration_seconds(measurements)
 
     state
@@ -656,35 +700,200 @@ defmodule TripleStore.Prometheus do
     lines = []
 
     # Format counters
-    lines = lines ++ format_counter("triple_store_query_total", "Total number of queries executed", state.counters.query_total)
-    lines = lines ++ format_counter("triple_store_query_errors_total", "Total number of query errors", state.counters.query_errors_total)
-    lines = lines ++ format_counter("triple_store_insert_total", "Total number of insert operations", state.counters.insert_total)
-    lines = lines ++ format_counter("triple_store_insert_triples_total", "Total number of triples inserted", state.counters.insert_triples_total)
-    lines = lines ++ format_counter("triple_store_delete_total", "Total number of delete operations", state.counters.delete_total)
-    lines = lines ++ format_counter("triple_store_delete_triples_total", "Total number of triples deleted", state.counters.delete_triples_total)
-    lines = lines ++ format_counter("triple_store_load_total", "Total number of load operations", state.counters.load_total)
-    lines = lines ++ format_counter("triple_store_load_triples_total", "Total number of triples loaded", state.counters.load_triples_total)
-    lines = lines ++ format_counter("triple_store_reasoning_total", "Total number of materialization operations", state.counters.reasoning_total)
-    lines = lines ++ format_counter("triple_store_reasoning_iterations_total", "Total number of reasoning iterations", state.counters.reasoning_iterations_total)
-    lines = lines ++ format_counter("triple_store_reasoning_derived_total", "Total number of derived facts", state.counters.reasoning_derived_total)
-    lines = lines ++ format_counter("triple_store_restore_total", "Total number of restore operations", state.counters.restore_total)
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_query_total",
+          "Total number of queries executed",
+          state.counters.query_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_query_errors_total",
+          "Total number of query errors",
+          state.counters.query_errors_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_insert_total",
+          "Total number of insert operations",
+          state.counters.insert_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_insert_triples_total",
+          "Total number of triples inserted",
+          state.counters.insert_triples_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_delete_total",
+          "Total number of delete operations",
+          state.counters.delete_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_delete_triples_total",
+          "Total number of triples deleted",
+          state.counters.delete_triples_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_load_total",
+          "Total number of load operations",
+          state.counters.load_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_load_triples_total",
+          "Total number of triples loaded",
+          state.counters.load_triples_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_reasoning_total",
+          "Total number of materialization operations",
+          state.counters.reasoning_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_reasoning_iterations_total",
+          "Total number of reasoning iterations",
+          state.counters.reasoning_iterations_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_reasoning_derived_total",
+          "Total number of derived facts",
+          state.counters.reasoning_derived_total
+        )
+
+    lines =
+      lines ++
+        format_counter(
+          "triple_store_restore_total",
+          "Total number of restore operations",
+          state.counters.restore_total
+        )
 
     # Format labeled counters
-    lines = lines ++ format_labeled_counter("triple_store_cache_hits_total", "Total number of cache hits", :cache_type, state.counters.cache_hits_total)
-    lines = lines ++ format_labeled_counter("triple_store_cache_misses_total", "Total number of cache misses", :cache_type, state.counters.cache_misses_total)
-    lines = lines ++ format_labeled_counter("triple_store_backup_total", "Total number of backup operations", :type, state.counters.backup_total)
+    lines =
+      lines ++
+        format_labeled_counter(
+          "triple_store_cache_hits_total",
+          "Total number of cache hits",
+          :cache_type,
+          state.counters.cache_hits_total
+        )
+
+    lines =
+      lines ++
+        format_labeled_counter(
+          "triple_store_cache_misses_total",
+          "Total number of cache misses",
+          :cache_type,
+          state.counters.cache_misses_total
+        )
+
+    lines =
+      lines ++
+        format_labeled_counter(
+          "triple_store_backup_total",
+          "Total number of backup operations",
+          :type,
+          state.counters.backup_total
+        )
 
     # Format histograms
-    lines = lines ++ format_histogram("triple_store_query_duration_seconds", "Query execution time in seconds", state.histograms.query_duration, state.buckets)
-    lines = lines ++ format_histogram("triple_store_reasoning_duration_seconds", "Reasoning duration in seconds", state.histograms.reasoning_duration, state.buckets)
-    lines = lines ++ format_histogram("triple_store_backup_duration_seconds", "Backup operation duration in seconds", state.histograms.backup_duration, state.buckets)
-    lines = lines ++ format_histogram("triple_store_restore_duration_seconds", "Restore operation duration in seconds", state.histograms.restore_duration, state.buckets)
+    lines =
+      lines ++
+        format_histogram(
+          "triple_store_query_duration_seconds",
+          "Query execution time in seconds",
+          state.histograms.query_duration,
+          state.buckets
+        )
+
+    lines =
+      lines ++
+        format_histogram(
+          "triple_store_reasoning_duration_seconds",
+          "Reasoning duration in seconds",
+          state.histograms.reasoning_duration,
+          state.buckets
+        )
+
+    lines =
+      lines ++
+        format_histogram(
+          "triple_store_backup_duration_seconds",
+          "Backup operation duration in seconds",
+          state.histograms.backup_duration,
+          state.buckets
+        )
+
+    lines =
+      lines ++
+        format_histogram(
+          "triple_store_restore_duration_seconds",
+          "Restore operation duration in seconds",
+          state.histograms.restore_duration,
+          state.buckets
+        )
 
     # Format gauges
-    lines = lines ++ format_gauge("triple_store_triples", "Current number of triples in the store", state.gauges.triples)
-    lines = lines ++ format_gauge("triple_store_memory_bytes", "Estimated memory usage in bytes", state.gauges.memory_bytes)
-    lines = lines ++ format_gauge("triple_store_backup_size_bytes", "Size of last backup in bytes", state.gauges.backup_size_bytes)
-    lines = lines ++ format_labeled_gauge("triple_store_index_entries", "Number of entries in each index", :index, state.gauges.index_entries)
+    lines =
+      lines ++
+        format_gauge(
+          "triple_store_triples",
+          "Current number of triples in the store",
+          state.gauges.triples
+        )
+
+    lines =
+      lines ++
+        format_gauge(
+          "triple_store_memory_bytes",
+          "Estimated memory usage in bytes",
+          state.gauges.memory_bytes
+        )
+
+    lines =
+      lines ++
+        format_gauge(
+          "triple_store_backup_size_bytes",
+          "Size of last backup in bytes",
+          state.gauges.backup_size_bytes
+        )
+
+    lines =
+      lines ++
+        format_labeled_gauge(
+          "triple_store_index_entries",
+          "Number of entries in each index",
+          :index,
+          state.gauges.index_entries
+        )
 
     Enum.join(lines, "\n") <> "\n"
   end
@@ -697,7 +906,8 @@ defmodule TripleStore.Prometheus do
     ]
   end
 
-  defp format_labeled_counter(name, help, _label_name, labels_map) when map_size(labels_map) == 0 do
+  defp format_labeled_counter(name, help, _label_name, labels_map)
+       when map_size(labels_map) == 0 do
     [
       "# HELP #{name} #{help}",
       "# TYPE #{name} counter"

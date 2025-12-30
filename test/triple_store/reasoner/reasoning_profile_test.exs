@@ -187,10 +187,12 @@ defmodule TripleStore.Reasoner.ReasoningProfileTest do
     end
 
     test "excludes specified rules from custom profile" do
-      {:ok, rules} = ReasoningProfile.rules_for(:custom,
-        rules: [:scm_sco, :cax_sco, :prp_dom],
-        exclude: [:cax_sco]
-      )
+      {:ok, rules} =
+        ReasoningProfile.rules_for(:custom,
+          rules: [:scm_sco, :cax_sco, :prp_dom],
+          exclude: [:cax_sco]
+        )
+
       names = rule_names(rules)
 
       assert :scm_sco in names

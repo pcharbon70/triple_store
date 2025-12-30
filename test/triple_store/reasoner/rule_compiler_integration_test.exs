@@ -86,6 +86,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
         # Head pattern has exactly 3 terms
         {:pattern, head_terms} = rule.head
+
         assert length(head_terms) == 3,
                "Head of #{rule.name} should have exactly 3 terms"
       end
@@ -111,11 +112,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
       # Apply binding to head
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@rdf}type"},
-        {:iri, "#{@ex}Agent"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alice"},
+                {:iri, "#{@rdf}type"},
+                {:iri, "#{@ex}Agent"}
+              ]} = inferred
 
       assert Rule.ground?(inferred)
     end
@@ -133,11 +135,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}Student"},
-        {:iri, "#{@rdfs}subClassOf"},
-        {:iri, "#{@ex}Agent"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}Student"},
+                {:iri, "#{@rdfs}subClassOf"},
+                {:iri, "#{@ex}Agent"}
+              ]} = inferred
     end
   end
 
@@ -160,11 +163,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@rdf}type"},
-        {:iri, "#{@ex}Employee"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alice"},
+                {:iri, "#{@rdf}type"},
+                {:iri, "#{@ex}Employee"}
+              ]} = inferred
     end
 
     test "prp_rng derives object type from range" do
@@ -181,11 +185,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}acme"},
-        {:iri, "#{@rdf}type"},
-        {:iri, "#{@ex}Company"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}acme"},
+                {:iri, "#{@rdf}type"},
+                {:iri, "#{@ex}Company"}
+              ]} = inferred
     end
   end
 
@@ -209,11 +214,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}a"},
-        {:iri, "#{@ex}contains"},
-        {:iri, "#{@ex}c"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}a"},
+                {:iri, "#{@ex}contains"},
+                {:iri, "#{@ex}c"}
+              ]} = inferred
     end
 
     test "transitive rule variables connect correctly" do
@@ -227,9 +233,10 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
       patterns = Rule.body_patterns(rule)
 
       # Find patterns with p as predicate variable
-      data_patterns = Enum.filter(patterns, fn {:pattern, [_, p, _]} ->
-        p == {:var, "p"}
-      end)
+      data_patterns =
+        Enum.filter(patterns, fn {:pattern, [_, p, _]} ->
+          p == {:var, "p"}
+        end)
 
       assert length(data_patterns) == 2
     end
@@ -254,11 +261,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}bob"},
-        {:iri, "#{@ex}knows"},
-        {:iri, "#{@ex}alice"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}bob"},
+                {:iri, "#{@ex}knows"},
+                {:iri, "#{@ex}alice"}
+              ]} = inferred
     end
 
     test "symmetric rule head has swapped positions" do
@@ -291,11 +299,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alicia"},
-        {:iri, "#{@owl}sameAs"},
-        {:iri, "#{@ex}alice"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alicia"},
+                {:iri, "#{@owl}sameAs"},
+                {:iri, "#{@ex}alice"}
+              ]} = inferred
     end
 
     test "eq_trans chains sameAs relationships" do
@@ -311,11 +320,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@owl}sameAs"},
-        {:iri, "#{@ex}ally"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alice"},
+                {:iri, "#{@owl}sameAs"},
+                {:iri, "#{@ex}ally"}
+              ]} = inferred
     end
 
     test "eq_rep_s propagates equality to subject position" do
@@ -332,11 +342,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alicia"},
-        {:iri, "#{@ex}knows"},
-        {:iri, "#{@ex}bob"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alicia"},
+                {:iri, "#{@ex}knows"},
+                {:iri, "#{@ex}bob"}
+              ]} = inferred
     end
 
     test "eq_rep_o propagates equality to object position" do
@@ -353,11 +364,12 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       inferred = Rule.substitute_pattern(rule.head, binding)
 
-      assert {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@ex}knows"},
-        {:iri, "#{@ex}robert"}
-      ]} = inferred
+      assert {:pattern,
+              [
+                {:iri, "#{@ex}alice"},
+                {:iri, "#{@ex}knows"},
+                {:iri, "#{@ex}robert"}
+              ]} = inferred
     end
   end
 
@@ -395,8 +407,8 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
     test "schema with transitive properties includes prp_trp" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info)
@@ -452,13 +464,15 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
   describe "rule optimization reorders patterns" do
     test "constant predicate patterns come first" do
       # Create rule with variable pattern first, constant second
-      rule = Rule.new(:test_order,
-        [
-          {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
-          {:pattern, [{:var, "y"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}
-        ],
-        {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}
-      )
+      rule =
+        Rule.new(
+          :test_order,
+          [
+            {:pattern, [{:var, "x"}, {:var, "p"}, {:var, "y"}]},
+            {:pattern, [{:var, "y"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}
+          ],
+          {:pattern, [{:var, "x"}, {:iri, "#{@rdf}type"}, {:var, "c"}]}
+        )
 
       optimized = RuleOptimizer.optimize_rule(rule)
       [first | _] = Rule.body_patterns(optimized)
@@ -470,14 +484,16 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
     test "bound variables increase selectivity" do
       # After first pattern binds y, second pattern using y should be preferred
-      rule = Rule.new(:test_bound,
-        [
-          {:pattern, [{:var, "x"}, {:iri, "#{@ex}p"}, {:var, "y"}]},
-          {:pattern, [{:var, "a"}, {:var, "b"}, {:var, "c"}]},
-          {:pattern, [{:var, "y"}, {:iri, "#{@ex}q"}, {:var, "z"}]}
-        ],
-        {:pattern, [{:var, "x"}, {:iri, "#{@ex}r"}, {:var, "z"}]}
-      )
+      rule =
+        Rule.new(
+          :test_bound,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "#{@ex}p"}, {:var, "y"}]},
+            {:pattern, [{:var, "a"}, {:var, "b"}, {:var, "c"}]},
+            {:pattern, [{:var, "y"}, {:iri, "#{@ex}q"}, {:var, "z"}]}
+          ],
+          {:pattern, [{:var, "x"}, {:iri, "#{@ex}r"}, {:var, "z"}]}
+        )
 
       optimized = RuleOptimizer.optimize_rule(rule)
       patterns = Rule.body_patterns(optimized)
@@ -488,13 +504,15 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
     end
 
     test "conditions placed after binding patterns" do
-      rule = Rule.new(:test_condition,
-        [
-          {:not_equal, {:var, "x"}, {:var, "y"}},
-          {:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]}
-        ],
-        {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "x"}]}
-      )
+      rule =
+        Rule.new(
+          :test_condition,
+          [
+            {:not_equal, {:var, "x"}, {:var, "y"}},
+            {:pattern, [{:var, "x"}, {:iri, "#{@owl}sameAs"}, {:var, "y"}]}
+          ],
+          {:pattern, [{:var, "y"}, {:iri, "#{@owl}sameAs"}, {:var, "x"}]}
+        )
 
       optimized = RuleOptimizer.optimize_rule(rule)
 

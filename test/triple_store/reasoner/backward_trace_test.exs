@@ -83,9 +83,10 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
       # The derived store contains the derived fact
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -103,9 +104,10 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("Student"), rdfs_subClassOf(), iri("Person")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -124,10 +126,11 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Animal")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Animal")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -154,15 +157,19 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("Person"), rdfs_subClassOf(), iri("Animal")}])
 
-      derived = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
       rules = [Rules.scm_sco()]
 
       {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules)
 
-      assert MapSet.member?(result.potentially_invalid, {iri("Student"), rdfs_subClassOf(), iri("Animal")})
+      assert MapSet.member?(
+               result.potentially_invalid,
+               {iri("Student"), rdfs_subClassOf(), iri("Animal")}
+             )
     end
 
     test "finds multiple derived subclass relationships" do
@@ -173,11 +180,12 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("B"), rdfs_subClassOf(), iri("C")}])
 
-      derived = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("C")},
-        {iri("A"), rdfs_subClassOf(), iri("D")},
-        {iri("B"), rdfs_subClassOf(), iri("D")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("C")},
+          {iri("A"), rdfs_subClassOf(), iri("D")},
+          {iri("B"), rdfs_subClassOf(), iri("D")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -202,15 +210,19 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("alice"), owl_sameAs(), iri("alicia")}])
 
-      derived = MapSet.new([
-        {iri("alicia"), owl_sameAs(), iri("alice")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alicia"), owl_sameAs(), iri("alice")}
+        ])
 
       rules = [Rules.eq_sym()]
 
       {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules)
 
-      assert MapSet.member?(result.potentially_invalid, {iri("alicia"), owl_sameAs(), iri("alice")})
+      assert MapSet.member?(
+               result.potentially_invalid,
+               {iri("alicia"), owl_sameAs(), iri("alice")}
+             )
     end
 
     test "finds transitive sameAs when link is deleted" do
@@ -221,15 +233,19 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("bob"), owl_sameAs(), iri("carol")}])
 
-      derived = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("carol")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("carol")}
+        ])
 
       rules = [Rules.eq_trans()]
 
       {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules)
 
-      assert MapSet.member?(result.potentially_invalid, {iri("alice"), owl_sameAs(), iri("carol")})
+      assert MapSet.member?(
+               result.potentially_invalid,
+               {iri("alice"), owl_sameAs(), iri("carol")}
+             )
     end
   end
 
@@ -245,10 +261,11 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Animal")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Animal")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -266,9 +283,10 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
 
       deleted = MapSet.new([{iri("a"), owl_sameAs(), iri("b")}])
 
-      derived = MapSet.new([
-        {iri("b"), owl_sameAs(), iri("a")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("b"), owl_sameAs(), iri("a")}
+        ])
 
       rules = [Rules.eq_sym()]
 
@@ -287,11 +305,12 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
     test "respects max_depth option" do
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("A")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("B")},
-        {iri("alice"), rdf_type(), iri("C")},
-        {iri("alice"), rdf_type(), iri("D")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("B")},
+          {iri("alice"), rdf_type(), iri("C")},
+          {iri("alice"), rdf_type(), iri("D")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -304,31 +323,42 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
     test "include_deleted option adds deleted facts to result" do
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules, include_deleted: true)
+      {:ok, result} =
+        BackwardTrace.trace_in_memory(deleted, derived, rules, include_deleted: true)
 
       # Should include the deleted fact itself
-      assert MapSet.member?(result.potentially_invalid, {iri("alice"), rdf_type(), iri("Student")})
+      assert MapSet.member?(
+               result.potentially_invalid,
+               {iri("alice"), rdf_type(), iri("Student")}
+             )
     end
 
     test "include_deleted false excludes deleted facts" do
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules, include_deleted: false)
+      {:ok, result} =
+        BackwardTrace.trace_in_memory(deleted, derived, rules, include_deleted: false)
 
       # Should NOT include the deleted fact
-      refute MapSet.member?(result.potentially_invalid, {iri("alice"), rdf_type(), iri("Student")})
+      refute MapSet.member?(
+               result.potentially_invalid,
+               {iri("alice"), rdf_type(), iri("Student")}
+             )
+
       # But should include the derived fact
       assert MapSet.member?(result.potentially_invalid, {iri("alice"), rdf_type(), iri("Person")})
     end
@@ -342,9 +372,10 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
     test "finds single direct dependent" do
       fact = {iri("alice"), rdf_type(), iri("Student")}
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -358,10 +389,11 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       # Then deleting alice type Student affects both derivations
       fact = {iri("alice"), rdf_type(), iri("Student")}
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Human")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("alice"), rdf_type(), iri("Human")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -374,9 +406,10 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
     test "returns empty for unrelated facts" do
       fact = {iri("alice"), iri("knows"), iri("bob")}
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -395,10 +428,11 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       derived = {iri("alice"), rdf_type(), iri("Person")}
       input = {iri("alice"), rdf_type(), iri("Student")}
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rule = Rules.cax_sco()
 
@@ -409,10 +443,11 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       derived = {iri("bob"), rdf_type(), iri("Person")}
       input = {iri("alice"), rdf_type(), iri("Student")}
 
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rule = Rules.cax_sco()
 
@@ -425,7 +460,8 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       input = {iri("alice"), owl_sameAs(), iri("alicia")}
 
       all_facts = MapSet.new()
-      rule = Rules.cax_sco()  # Class hierarchy rule, not sameAs
+      # Class hierarchy rule, not sameAs
+      rule = Rules.cax_sco()
 
       refute BackwardTrace.could_derive?(derived, input, rule, all_facts)
     end
@@ -440,12 +476,14 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
       # Multiple rules might identify the same derived fact as dependent
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       # Use multiple rules that could match
-      rules = [Rules.cax_sco(), Rules.cax_sco()]  # Duplicate rule
+      # Duplicate rule
+      rules = [Rules.cax_sco(), Rules.cax_sco()]
 
       {:ok, result} = BackwardTrace.trace_in_memory(deleted, derived, rules)
 
@@ -454,15 +492,17 @@ defmodule TripleStore.Reasoner.BackwardTraceTest do
     end
 
     test "handles deleting multiple facts" do
-      deleted = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Student")},
-        {iri("bob"), rdf_type(), iri("Student")}
-      ])
+      deleted =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Student")},
+          {iri("bob"), rdf_type(), iri("Student")}
+        ])
 
-      derived = MapSet.new([
-        {iri("alice"), rdf_type(), iri("Person")},
-        {iri("bob"), rdf_type(), iri("Person")}
-      ])
+      derived =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("Person")},
+          {iri("bob"), rdf_type(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 

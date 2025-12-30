@@ -232,11 +232,13 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   @spec export_to_file(counter(), Path.t()) :: :ok | {:error, term()}
   def export_to_file(counter, path) do
     with {:ok, values} <- export(counter) do
-      content = :erlang.term_to_binary(%{
-        version: 1,
-        counters: values,
-        exported_at: DateTime.utc_now() |> DateTime.to_iso8601()
-      })
+      content =
+        :erlang.term_to_binary(%{
+          version: 1,
+          counters: values,
+          exported_at: DateTime.utc_now() |> DateTime.to_iso8601()
+        })
+
       File.write(path, content)
     end
   end
@@ -302,6 +304,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   # Validate counter file structure
   defp validate_counter_file(%{version: 1, counters: counters}) when is_map(counters) do
     required_keys = [:uri, :bnode, :literal]
+
     if Enum.all?(required_keys, &Map.has_key?(counters, &1)) do
       :ok
     else
@@ -422,6 +425,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
       bnode: :atomics.get(state.counter_ref, @type_indices[:bnode]),
       literal: :atomics.get(state.counter_ref, @type_indices[:literal])
     }
+
     {:reply, {:ok, values}, state}
   end
 

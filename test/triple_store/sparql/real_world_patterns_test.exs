@@ -219,21 +219,40 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
 
       # Zipfian distribution: query 0 is most common, query 4 is least common
       # Frequency proportional to 1/rank
-      query_sequence = [
-        0, 0, 0, 0, 0,  # Query 0: 5x
-        1, 1, 1, 1,     # Query 1: 4x
-        2, 2, 2,        # Query 2: 3x
-        3, 3,           # Query 3: 2x
-        4               # Query 4: 1x
-      ] |> Enum.shuffle()
+      query_sequence =
+        [
+          # Query 0: 5x
+          0,
+          0,
+          0,
+          0,
+          0,
+          # Query 1: 4x
+          1,
+          1,
+          1,
+          1,
+          # Query 2: 3x
+          2,
+          2,
+          2,
+          # Query 3: 2x
+          3,
+          3,
+          # Query 4: 1x
+          4
+        ]
+        |> Enum.shuffle()
 
       # Simulate cache access pattern
       for idx <- query_sequence do
         key = Enum.at(query_keys, idx)
+
         case PlanCache.get(key, name: cache_name) do
           :miss ->
             # Cache miss - store a dummy plan
             PlanCache.put(key, {:dummy_plan, idx}, name: cache_name)
+
           {:ok, _plan} ->
             # Cache hit - nothing to do
             :ok
@@ -248,7 +267,8 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
       # With Zipfian distribution, we expect high hit rate after warmup
       # First 5 unique queries will be misses, rest should be hits
       # Expected: 15 total, 5 misses, 10 hits = 66%+
-      assert hit_rate >= 60, "Expected hit rate >= 60% with Zipfian distribution, got #{hit_rate}%"
+      assert hit_rate >= 60,
+             "Expected hit rate >= 60% with Zipfian distribution, got #{hit_rate}%"
 
       GenServer.stop(cache_pid)
     end
@@ -259,12 +279,17 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
   # ===========================================================================
 
   defp insert_triples(ctx, triples) do
-    rdf_triples = Enum.map(triples, fn {s, p, o} ->
-      s_term = if String.starts_with?(s, "http://"), do: RDF.iri(s), else: RDF.literal(s)
-      p_term = RDF.iri(p)
-      o_term = if String.starts_with?(to_string(o), "http://"), do: RDF.iri(o), else: RDF.literal(o)
-      {s_term, p_term, o_term}
-    end)
+    rdf_triples =
+      Enum.map(triples, fn {s, p, o} ->
+        s_term = if String.starts_with?(s, "http://"), do: RDF.iri(s), else: RDF.literal(s)
+        p_term = RDF.iri(p)
+
+        o_term =
+          if String.starts_with?(to_string(o), "http://"), do: RDF.iri(o), else: RDF.literal(o)
+
+        {s_term, p_term, o_term}
+      end)
+
     {:ok, _} = Update.insert(ctx, rdf_triples)
   end
 

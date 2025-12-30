@@ -57,10 +57,12 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.push_filters_down(algebra)
 
-      expected = join(
-        filter(greater(var("x"), int(5)), left_bgp),
-        right_bgp
-      )
+      expected =
+        join(
+          filter(greater(var("x"), int(5)), left_bgp),
+          right_bgp
+        )
+
       assert result == expected
     end
 
@@ -74,10 +76,12 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.push_filters_down(algebra)
 
-      expected = join(
-        left_bgp,
-        filter(greater(var("y"), int(5)), right_bgp)
-      )
+      expected =
+        join(
+          left_bgp,
+          filter(greater(var("y"), int(5)), right_bgp)
+        )
+
       assert result == expected
     end
 
@@ -105,10 +109,12 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.push_filters_down(algebra)
 
-      expected = left_join(
-        filter(greater(var("x"), int(5)), left_bgp),
-        right_bgp
-      )
+      expected =
+        left_join(
+          filter(greater(var("x"), int(5)), left_bgp),
+          right_bgp
+        )
+
       assert result == expected
     end
 
@@ -148,18 +154,22 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       right_bgp = bgp([triple(var("y"), iri("http://ex.org/q"), var("z"))])
       joined = join(left_bgp, right_bgp)
 
-      filter_expr = and_expr(
-        greater(var("x"), int(5)),
-        {:less, var("y"), int(10)}
-      )
+      filter_expr =
+        and_expr(
+          greater(var("x"), int(5)),
+          {:less, var("y"), int(10)}
+        )
+
       algebra = filter(filter_expr, joined)
 
       result = Optimizer.push_filters_down(algebra)
 
-      expected = join(
-        filter(greater(var("x"), int(5)), left_bgp),
-        filter({:less, var("y"), int(10)}, right_bgp)
-      )
+      expected =
+        join(
+          filter(greater(var("x"), int(5)), left_bgp),
+          filter({:less, var("y"), int(10)}, right_bgp)
+        )
+
       assert result == expected
     end
 
@@ -170,22 +180,26 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       right_bgp = bgp([triple(var("y"), iri("http://ex.org/q"), var("z"))])
       joined = join(left_bgp, right_bgp)
 
-      filter_expr = and_expr(
-        greater(var("x"), int(5)),
-        equal(var("x"), var("y"))
-      )
+      filter_expr =
+        and_expr(
+          greater(var("x"), int(5)),
+          equal(var("x"), var("y"))
+        )
+
       algebra = filter(filter_expr, joined)
 
       result = Optimizer.push_filters_down(algebra)
 
       # ?x = ?y remains at top, ?x > 5 pushed to left
-      expected = filter(
-        equal(var("x"), var("y")),
-        join(
-          filter(greater(var("x"), int(5)), left_bgp),
-          right_bgp
+      expected =
+        filter(
+          equal(var("x"), var("y")),
+          join(
+            filter(greater(var("x"), int(5)), left_bgp),
+            right_bgp
+          )
         )
-      )
+
       assert result == expected
     end
 
@@ -200,13 +214,15 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       result = Optimizer.push_filters_down(algebra)
 
       # Filter should be pushed all the way to bgp_x
-      expected = join(
+      expected =
         join(
-          filter(greater(var("x"), int(5)), bgp_x),
-          bgp_y
-        ),
-        bgp_z
-      )
+          join(
+            filter(greater(var("x"), int(5)), bgp_x),
+            bgp_y
+          ),
+          bgp_z
+        )
+
       assert result == expected
     end
 
@@ -295,7 +311,9 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       result = Optimizer.push_filters_down(algebra)
 
       # Filter uses ?x which is not the extended variable - can push
-      expected = {:extend, filter(greater(var("x"), int(5)), inner), var("y"), {:add, var("x"), int(1)}}
+      expected =
+        {:extend, filter(greater(var("x"), int(5)), inner), var("y"), {:add, var("x"), int(1)}}
+
       assert result == expected
     end
   end
@@ -309,10 +327,12 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.optimize(algebra)
 
-      expected = join(
-        filter(greater(var("x"), int(5)), left_bgp),
-        right_bgp
-      )
+      expected =
+        join(
+          filter(greater(var("x"), int(5)), left_bgp),
+          right_bgp
+        )
+
       assert result == expected
     end
 
@@ -334,13 +354,14 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       bgp1 = bgp([triple(var("x"), var("p"), var("o"))])
       bgp2 = bgp([triple(var("y"), var("q"), var("z"))])
 
-      algebra = filter(
-        greater(var("x"), int(5)),
+      algebra =
         filter(
-          {:less, var("y"), int(10)},
-          join(bgp1, bgp2)
+          greater(var("x"), int(5)),
+          filter(
+            {:less, var("y"), int(10)},
+            join(bgp1, bgp2)
+          )
         )
-      )
 
       stats = Optimizer.analyze_filters(algebra)
       assert stats.total_filters == 2
@@ -416,8 +437,13 @@ defmodule TripleStore.SPARQL.OptimizerTest do
   # Helper to check if a filter exists at a leaf level
   defp has_filter_at_leaf?({:filter, _, {:bgp, _}}), do: true
   defp has_filter_at_leaf?({:filter, _, inner}), do: has_filter_at_leaf?(inner)
-  defp has_filter_at_leaf?({:join, left, right}), do: has_filter_at_leaf?(left) or has_filter_at_leaf?(right)
-  defp has_filter_at_leaf?({:left_join, left, right, _}), do: has_filter_at_leaf?(left) or has_filter_at_leaf?(right)
+
+  defp has_filter_at_leaf?({:join, left, right}),
+    do: has_filter_at_leaf?(left) or has_filter_at_leaf?(right)
+
+  defp has_filter_at_leaf?({:left_join, left, right, _}),
+    do: has_filter_at_leaf?(left) or has_filter_at_leaf?(right)
+
   defp has_filter_at_leaf?({:project, inner, _}), do: has_filter_at_leaf?(inner)
   defp has_filter_at_leaf?({:distinct, inner}), do: has_filter_at_leaf?(inner)
   defp has_filter_at_leaf?({:order_by, inner, _}), do: has_filter_at_leaf?(inner)
@@ -476,7 +502,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
 
       # Division produces decimal
-      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "5.0", @xsd_decimal}} = result
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "5.0", @xsd_decimal}} =
+               result
     end
 
     test "preserves arithmetic with variables" do
@@ -486,7 +513,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
 
-      assert {:extend, ^pattern, {:variable, "y"}, {:add, {:variable, "x"}, {:literal, :typed, "2", @xsd_integer}}} = result
+      assert {:extend, ^pattern, {:variable, "y"},
+              {:add, {:variable, "x"}, {:literal, :typed, "2", @xsd_integer}}} = result
     end
 
     test "folds unary minus on constant" do
@@ -495,7 +523,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       result = Optimizer.fold_constants({:extend, pattern, var("y"), expr})
 
-      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "-5", @xsd_integer}} = result
+      assert {:extend, ^pattern, {:variable, "y"}, {:literal, :typed, "-5", @xsd_integer}} =
+               result
     end
   end
 
@@ -868,10 +897,12 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       result = Optimizer.optimize(algebra)
 
       # Should fold true && to just ?x > 5, then push to left side
-      expected = join(
-        filter(greater(var("x"), int(5)), left_bgp),
-        right_bgp
-      )
+      expected =
+        join(
+          filter(greater(var("x"), int(5)), left_bgp),
+          right_bgp
+        )
+
       assert result == expected
     end
   end
@@ -970,11 +1001,13 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       # S P O all bound is most selective
       all_vars = triple(var("x"), var("p"), var("o"))
       one_bound = triple(iri("http://ex.org/Bob"), var("p"), var("o"))
-      all_bound = triple(
-        iri("http://ex.org/Alice"),
-        iri("http://ex.org/knows"),
-        iri("http://ex.org/Bob")
-      )
+
+      all_bound =
+        triple(
+          iri("http://ex.org/Alice"),
+          iri("http://ex.org/knows"),
+          iri("http://ex.org/Bob")
+        )
 
       result = Optimizer.reorder_bgp_patterns({:bgp, [all_vars, one_bound, all_bound]})
 
@@ -1017,6 +1050,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       right_patterns = [
         triple(var("a"), var("b"), var("c")),
         triple(var("s"), iri("http://ex.org/type"), var("t"))
@@ -1038,6 +1072,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Alice"), var("q"), var("z"))
       ]
+
       right_patterns = [
         triple(var("a"), var("b"), var("c")),
         triple(iri("http://ex.org/Bob"), var("d"), var("e"))
@@ -1115,6 +1150,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       right_patterns = [
         triple(var("a"), var("b"), var("c")),
         triple(iri("http://ex.org/Alice"), var("d"), var("e"))
@@ -1175,11 +1211,13 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     end
 
     test "fully bound is most selective" do
-      all_bound = triple(
-        iri("http://ex.org/Alice"),
-        iri("http://ex.org/knows"),
-        iri("http://ex.org/Bob")
-      )
+      all_bound =
+        triple(
+          iri("http://ex.org/Alice"),
+          iri("http://ex.org/knows"),
+          iri("http://ex.org/Bob")
+        )
+
       all_vars = triple(var("s"), var("p"), var("o"))
 
       bound_score = Optimizer.estimate_selectivity(all_bound)
@@ -1221,6 +1259,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
 
       result = Optimizer.optimize(algebra)
@@ -1279,6 +1318,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       # Constant that can be folded
       expr = and_expr(bool(true), greater(var("x"), int(5)))
       algebra = filter(expr, {:bgp, patterns})
@@ -1303,13 +1343,15 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       algebra = {:bgp, patterns}
 
-      result = Optimizer.optimize(algebra,
-        fold_constants: false,
-        reorder_bgp: false,
-        push_filters: false
-      )
+      result =
+        Optimizer.optimize(algebra,
+          fold_constants: false,
+          reorder_bgp: false,
+          push_filters: false
+        )
 
       # Should be unchanged
       assert result == algebra
@@ -1320,6 +1362,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       algebra = {:bgp, patterns}
 
       # With logging
@@ -1354,6 +1397,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(iri("http://ex.org/Bob"), var("q"), var("z"))
       ]
+
       algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
 
       result = Optimizer.optimize(algebra, explain: true)
@@ -1380,6 +1424,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(var("y"), var("q"), var("z"))
       ]
+
       algebra = {:bgp, patterns}
 
       {:explain, info} = Optimizer.optimize(algebra, explain: true)
@@ -1411,13 +1456,15 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     end
 
     test "explain includes BGP statistics" do
-      algebra = join(
-        {:bgp, [
-          triple(var("a"), var("b"), var("c")),
-          triple(var("x"), var("y"), var("z"))
-        ]},
-        {:bgp, [triple(var("s"), var("p"), var("o"))]}
-      )
+      algebra =
+        join(
+          {:bgp,
+           [
+             triple(var("a"), var("b"), var("c")),
+             triple(var("x"), var("y"), var("z"))
+           ]},
+          {:bgp, [triple(var("s"), var("p"), var("o"))]}
+        )
 
       {:explain, info} = Optimizer.optimize(algebra, explain: true)
 
@@ -1445,13 +1492,15 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(var("y"), var("q"), var("z"))
       ]
+
       algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
 
-      {:explain, info} = Optimizer.optimize(algebra,
-        explain: true,
-        push_filters: false,
-        reorder_bgp: false
-      )
+      {:explain, info} =
+        Optimizer.optimize(algebra,
+          explain: true,
+          push_filters: false,
+          reorder_bgp: false
+        )
 
       refute :filter_push_down in info.optimizations
       refute :bgp_reordering in info.optimizations
@@ -1463,6 +1512,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         triple(var("x"), var("p"), var("o")),
         triple(var("y"), var("q"), var("z"))
       ]
+
       algebra = filter(greater(var("x"), int(5)), {:bgp, patterns})
 
       {:explain, info} = Optimizer.optimize(algebra, explain: true)
@@ -1495,6 +1545,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     # Helper to create deeply nested algebra
     defp deeply_nested_joins(depth) do
       base = bgp([triple(var("x"), var("p"), var("o"))])
+
       Enum.reduce(1..depth, base, fn _, acc ->
         join(acc, bgp([triple(var("y"), var("q"), var("z"))]))
       end)
@@ -1502,6 +1553,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
     defp deeply_nested_filters(depth) do
       base = bgp([triple(var("x"), var("p"), var("o"))])
+
       Enum.reduce(1..depth, base, fn _, acc ->
         filter(greater(var("x"), int(5)), acc)
       end)
@@ -1509,6 +1561,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
     defp deeply_nested_unions(depth) do
       base = bgp([triple(var("x"), var("p"), var("o"))])
+
       Enum.reduce(1..depth, base, fn _, acc ->
         union(acc, bgp([triple(var("y"), var("q"), var("z"))]))
       end)
