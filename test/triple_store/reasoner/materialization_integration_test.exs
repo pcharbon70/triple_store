@@ -151,19 +151,21 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     university = ex_iri("University0")
 
     # Generate university
-    facts = MapSet.new([
-      {university, rdf_type(), lubm_iri("University")}
-    ])
+    facts =
+      MapSet.new([
+        {university, rdf_type(), lubm_iri("University")}
+      ])
 
     # Generate departments and their contents
     Enum.reduce(0..(num_departments - 1), facts, fn dept_id, acc ->
       dept = ex_iri("Department#{dept_id}")
 
       # Department facts
-      dept_facts = MapSet.new([
-        {dept, rdf_type(), lubm_iri("Department")},
-        {dept, lubm_iri("subOrganizationOf"), university}
-      ])
+      dept_facts =
+        MapSet.new([
+          {dept, rdf_type(), lubm_iri("Department")},
+          {dept, lubm_iri("subOrganizationOf"), university}
+        ])
 
       # Generate faculty
       faculty_facts = generate_faculty(dept_id, faculty_per_dept, dept)
@@ -172,7 +174,8 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       student_facts = generate_students(dept_id, students_per_dept, dept, faculty_per_dept)
 
       # Generate courses
-      course_facts = generate_courses(dept_id, courses_per_dept, dept, faculty_per_dept, students_per_dept)
+      course_facts =
+        generate_courses(dept_id, courses_per_dept, dept, faculty_per_dept, students_per_dept)
 
       acc
       |> MapSet.union(dept_facts)
@@ -187,24 +190,27 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       faculty = ex_iri("Faculty#{dept_id}_#{faculty_id}")
 
       # Assign professor types
-      type = case rem(faculty_id, 4) do
-        0 -> lubm_iri("FullProfessor")
-        1 -> lubm_iri("AssociateProfessor")
-        2 -> lubm_iri("AssistantProfessor")
-        3 -> lubm_iri("Lecturer")
-      end
+      type =
+        case rem(faculty_id, 4) do
+          0 -> lubm_iri("FullProfessor")
+          1 -> lubm_iri("AssociateProfessor")
+          2 -> lubm_iri("AssistantProfessor")
+          3 -> lubm_iri("Lecturer")
+        end
 
-      facts = MapSet.new([
-        {faculty, rdf_type(), type},
-        {faculty, lubm_iri("worksFor"), dept}
-      ])
+      facts =
+        MapSet.new([
+          {faculty, rdf_type(), type},
+          {faculty, lubm_iri("worksFor"), dept}
+        ])
 
       # First faculty is head of department
-      facts = if faculty_id == 0 do
-        MapSet.put(facts, {faculty, lubm_iri("headOf"), dept})
-      else
-        facts
-      end
+      facts =
+        if faculty_id == 0 do
+          MapSet.put(facts, {faculty, lubm_iri("headOf"), dept})
+        else
+          facts
+        end
 
       MapSet.union(acc, facts)
     end)
@@ -215,28 +221,31 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       student = ex_iri("Student#{dept_id}_#{student_id}")
 
       # Assign student types
-      type = case rem(student_id, 4) do
-        0 -> lubm_iri("PhDStudent")
-        1 -> lubm_iri("MastersStudent")
-        2 -> lubm_iri("UndergraduateStudent")
-        3 -> lubm_iri("UndergraduateStudent")
-      end
+      type =
+        case rem(student_id, 4) do
+          0 -> lubm_iri("PhDStudent")
+          1 -> lubm_iri("MastersStudent")
+          2 -> lubm_iri("UndergraduateStudent")
+          3 -> lubm_iri("UndergraduateStudent")
+        end
 
       # Assign advisor (for graduate students)
       advisor_id = rem(student_id, num_faculty)
       advisor = ex_iri("Faculty#{dept_id}_#{advisor_id}")
 
-      facts = MapSet.new([
-        {student, rdf_type(), type},
-        {student, lubm_iri("memberOf"), dept}
-      ])
+      facts =
+        MapSet.new([
+          {student, rdf_type(), type},
+          {student, lubm_iri("memberOf"), dept}
+        ])
 
       # Graduate students have advisors
-      facts = if rem(student_id, 4) in [0, 1] do
-        MapSet.put(facts, {student, lubm_iri("advisor"), advisor})
-      else
-        facts
-      end
+      facts =
+        if rem(student_id, 4) in [0, 1] do
+          MapSet.put(facts, {student, lubm_iri("advisor"), advisor})
+        else
+          facts
+        end
 
       MapSet.union(acc, facts)
     end)
@@ -248,18 +257,21 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       teacher_id = rem(course_id, num_faculty)
       teacher = ex_iri("Faculty#{dept_id}_#{teacher_id}")
 
-      facts = MapSet.new([
-        {course, rdf_type(), lubm_iri("Course")},
-        {teacher, lubm_iri("teacherOf"), course}
-      ])
+      facts =
+        MapSet.new([
+          {course, rdf_type(), lubm_iri("Course")},
+          {teacher, lubm_iri("teacherOf"), course}
+        ])
 
       # Students take courses
       students_per_course = div(num_students, count)
-      student_facts = Enum.reduce(0..(students_per_course - 1), MapSet.new(), fn i, sacc ->
-        student_id = rem(course_id * students_per_course + i, num_students)
-        student = ex_iri("Student#{dept_id}_#{student_id}")
-        MapSet.put(sacc, {student, lubm_iri("takesCourse"), course})
-      end)
+
+      student_facts =
+        Enum.reduce(0..(students_per_course - 1), MapSet.new(), fn i, sacc ->
+          student_id = rem(course_id * students_per_course + i, num_students)
+          student = ex_iri("Student#{dept_id}_#{student_id}")
+          MapSet.put(sacc, {student, lubm_iri("takesCourse"), course})
+        end)
 
       acc
       |> MapSet.union(facts)
@@ -291,12 +303,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     test "materializes LUBM(1) scale dataset with RDFS rules" do
       # Generate LUBM(1) scale dataset (1 university)
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 15,
-        faculty_per_dept: 10,
-        students_per_dept: 100,
-        courses_per_dept: 10
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 15,
+          faculty_per_dept: 10,
+          students_per_dept: 100,
+          courses_per_dept: 10
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       initial_count = MapSet.size(initial_facts)
@@ -325,12 +339,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       # Generate smaller dataset for OWL 2 RL (more complex rules = slower)
       # Still representative but practical for testing
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 3,
-        faculty_per_dept: 5,
-        students_per_dept: 20,
-        courses_per_dept: 5
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 3,
+          faculty_per_dept: 5,
+          students_per_dept: 20,
+          courses_per_dept: 5
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       initial_count = MapSet.size(initial_facts)
@@ -355,12 +371,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     test "materializes smaller dataset correctly" do
       # Small test for quick verification
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 2,
-        faculty_per_dept: 3,
-        students_per_dept: 10,
-        courses_per_dept: 2
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 2,
+          faculty_per_dept: 3,
+          students_per_dept: 10,
+          courses_per_dept: 2
+        )
 
       initial_facts = MapSet.union(tbox, abox)
 
@@ -380,10 +398,11 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       tbox = generate_lubm_tbox()
 
       # Create a single PhD student
-      abox = MapSet.new([
-        {ex_iri("Alice"), rdf_type(), lubm_iri("PhDStudent")},
-        {ex_iri("Alice"), lubm_iri("memberOf"), ex_iri("Department0")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("Alice"), rdf_type(), lubm_iri("PhDStudent")},
+          {ex_iri("Alice"), lubm_iri("memberOf"), ex_iri("Department0")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :rdfs)
@@ -399,26 +418,35 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     test "property hierarchy inference produces expected properties" do
       tbox = generate_lubm_tbox()
 
-      abox = MapSet.new([
-        {ex_iri("Prof1"), lubm_iri("headOf"), ex_iri("Department0")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("Prof1"), lubm_iri("headOf"), ex_iri("Department0")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :rdfs)
 
       # headOf < worksFor < affiliatedWith
       # So Prof1 headOf Dept0 should imply Prof1 worksFor Dept0 and Prof1 affiliatedWith Dept0
-      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")})
-      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")})
+      assert has_triple?(
+               all_facts,
+               {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")}
+             )
+
+      assert has_triple?(
+               all_facts,
+               {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")}
+             )
     end
 
     test "domain/range inference produces expected types" do
       tbox = generate_lubm_tbox()
 
-      abox = MapSet.new([
-        {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
-        {ex_iri("Student1"), lubm_iri("takesCourse"), ex_iri("Course101")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
+          {ex_iri("Student1"), lubm_iri("takesCourse"), ex_iri("Course101")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :rdfs)
@@ -436,48 +464,57 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       tbox = generate_lubm_tbox()
 
       # Create a chain of subOrganizationOf
-      abox = MapSet.new([
-        {ex_iri("ResearchGroup1"), rdf_type(), lubm_iri("ResearchGroup")},
-        {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
-        {ex_iri("University0"), rdf_type(), lubm_iri("University")},
-        {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("Department0")},
-        {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("ResearchGroup1"), rdf_type(), lubm_iri("ResearchGroup")},
+          {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
+          {ex_iri("University0"), rdf_type(), lubm_iri("University")},
+          {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("Department0")},
+          {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :owl2rl)
 
       # Transitive: ResearchGroup1 subOrganizationOf University0
-      assert has_triple?(all_facts, {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("University0")})
+      assert has_triple?(
+               all_facts,
+               {ex_iri("ResearchGroup1"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
+             )
     end
 
     test "symmetric property inference produces expected relations" do
       tbox = generate_lubm_tbox()
 
-      abox = MapSet.new([
-        {ex_iri("Prof1"), rdf_type(), lubm_iri("Professor")},
-        {ex_iri("Prof2"), rdf_type(), lubm_iri("Professor")},
-        {ex_iri("Prof1"), lubm_iri("collaboratesWith"), ex_iri("Prof2")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("Prof1"), rdf_type(), lubm_iri("Professor")},
+          {ex_iri("Prof2"), rdf_type(), lubm_iri("Professor")},
+          {ex_iri("Prof1"), lubm_iri("collaboratesWith"), ex_iri("Prof2")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :owl2rl)
 
       # Symmetric: Prof2 collaboratesWith Prof1
-      assert has_triple?(all_facts, {ex_iri("Prof2"), lubm_iri("collaboratesWith"), ex_iri("Prof1")})
+      assert has_triple?(
+               all_facts,
+               {ex_iri("Prof2"), lubm_iri("collaboratesWith"), ex_iri("Prof1")}
+             )
     end
 
     test "complete inference closure for faculty member" do
       tbox = generate_lubm_tbox()
 
-      abox = MapSet.new([
-        {ex_iri("Prof1"), rdf_type(), lubm_iri("FullProfessor")},
-        {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")},
-        {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
-        {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
-        {ex_iri("University0"), rdf_type(), lubm_iri("University")},
-        {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("Prof1"), rdf_type(), lubm_iri("FullProfessor")},
+          {ex_iri("Prof1"), lubm_iri("worksFor"), ex_iri("Department0")},
+          {ex_iri("Prof1"), lubm_iri("teacherOf"), ex_iri("Course101")},
+          {ex_iri("Department0"), rdf_type(), lubm_iri("Department")},
+          {ex_iri("University0"), rdf_type(), lubm_iri("University")},
+          {ex_iri("Department0"), lubm_iri("subOrganizationOf"), ex_iri("University0")}
+        ])
 
       initial_facts = MapSet.union(tbox, abox)
       all_facts = materialize(initial_facts, :rdfs)
@@ -489,17 +526,22 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       assert has_triple?(all_facts, {ex_iri("Prof1"), rdf_type(), lubm_iri("Person")})
 
       # Property hierarchy: worksFor < affiliatedWith
-      assert has_triple?(all_facts, {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")})
+      assert has_triple?(
+               all_facts,
+               {ex_iri("Prof1"), lubm_iri("affiliatedWith"), ex_iri("Department0")}
+             )
     end
 
     test "statistics accuracy: derived count equals difference" do
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 2,
-        faculty_per_dept: 3,
-        students_per_dept: 10,
-        courses_per_dept: 2
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 2,
+          faculty_per_dept: 3,
+          students_per_dept: 10,
+          courses_per_dept: 2
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       initial_count = MapSet.size(initial_facts)
@@ -508,8 +550,9 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Verify stats accuracy
       actual_derived = MapSet.size(all_facts) - initial_count
+
       assert stats.total_derived == actual_derived,
-        "Stats derived (#{stats.total_derived}) != actual derived (#{actual_derived})"
+             "Stats derived (#{stats.total_derived}) != actual derived (#{actual_derived})"
     end
   end
 
@@ -522,12 +565,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     @tag :benchmark
     test "LUBM(1) materialization completes in reasonable time" do
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 15,
-        faculty_per_dept: 10,
-        students_per_dept: 100,
-        courses_per_dept: 10
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 15,
+          faculty_per_dept: 10,
+          students_per_dept: 100,
+          courses_per_dept: 10
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
@@ -564,36 +609,41 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
       # Run with different data sizes and measure scaling
       sizes = [
-        {2, 3, 10, 2},    # Small
-        {5, 5, 50, 5},    # Medium
-        {10, 8, 80, 8}    # Large
+        # Small
+        {2, 3, 10, 2},
+        # Medium
+        {5, 5, 50, 5},
+        # Large
+        {10, 8, 80, 8}
       ]
 
       {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
-      results = Enum.map(sizes, fn {depts, faculty, students, courses} ->
-        abox = generate_lubm_abox(
-          departments: depts,
-          faculty_per_dept: faculty,
-          students_per_dept: students,
-          courses_per_dept: courses
-        )
+      results =
+        Enum.map(sizes, fn {depts, faculty, students, courses} ->
+          abox =
+            generate_lubm_abox(
+              departments: depts,
+              faculty_per_dept: faculty,
+              students_per_dept: students,
+              courses_per_dept: courses
+            )
 
-        initial_facts = MapSet.union(tbox, abox)
-        initial_count = MapSet.size(initial_facts)
+          initial_facts = MapSet.union(tbox, abox)
+          initial_count = MapSet.size(initial_facts)
 
-        {duration_us, {:ok, _all_facts, stats}} =
-          :timer.tc(fn ->
-            SemiNaive.materialize_in_memory(rules, initial_facts)
-          end)
+          {duration_us, {:ok, _all_facts, stats}} =
+            :timer.tc(fn ->
+              SemiNaive.materialize_in_memory(rules, initial_facts)
+            end)
 
-        %{
-          initial_count: initial_count,
-          derived_count: stats.total_derived,
-          duration_ms: div(duration_us, 1000),
-          iterations: stats.iterations
-        }
-      end)
+          %{
+            initial_count: initial_count,
+            derived_count: stats.total_derived,
+            duration_ms: div(duration_us, 1000),
+            iterations: stats.iterations
+          }
+        end)
 
       Logger.debug("Scaling Benchmark: #{inspect(results, pretty: true)}")
 
@@ -613,28 +663,32 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     @tag timeout: 120_000
     test "parallel materialization produces same results as sequential" do
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 5,
-        faculty_per_dept: 5,
-        students_per_dept: 30,
-        courses_per_dept: 5
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 5,
+          faculty_per_dept: 5,
+          students_per_dept: 30,
+          courses_per_dept: 5
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
       # Sequential
-      {:ok, seq_facts, seq_stats} = SemiNaive.materialize_in_memory(rules, initial_facts, parallel: false)
+      {:ok, seq_facts, seq_stats} =
+        SemiNaive.materialize_in_memory(rules, initial_facts, parallel: false)
 
       # Parallel
-      {:ok, par_facts, par_stats} = SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
+      {:ok, par_facts, par_stats} =
+        SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
 
       # Results must be identical
       assert MapSet.equal?(seq_facts, par_facts),
-        "Sequential and parallel results differ!"
+             "Sequential and parallel results differ!"
 
       assert seq_stats.total_derived == par_stats.total_derived,
-        "Derived counts differ: seq=#{seq_stats.total_derived}, par=#{par_stats.total_derived}"
+             "Derived counts differ: seq=#{seq_stats.total_derived}, par=#{par_stats.total_derived}"
 
       Logger.debug("""
       Sequential vs Parallel:
@@ -647,12 +701,14 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     @tag :benchmark
     test "parallel materialization shows speedup on larger dataset" do
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 10,
-        faculty_per_dept: 8,
-        students_per_dept: 80,
-        courses_per_dept: 8
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 10,
+          faculty_per_dept: 8,
+          students_per_dept: 80,
+          courses_per_dept: 8
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       {:ok, rules} = ReasoningProfile.rules_for(:owl2rl)
@@ -660,19 +716,25 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       # Run multiple times to get stable measurements
       num_runs = 3
 
-      seq_times = Enum.map(1..num_runs, fn _ ->
-        {duration_us, _result} = :timer.tc(fn ->
-          SemiNaive.materialize_in_memory(rules, initial_facts, parallel: false)
-        end)
-        div(duration_us, 1000)
-      end)
+      seq_times =
+        Enum.map(1..num_runs, fn _ ->
+          {duration_us, _result} =
+            :timer.tc(fn ->
+              SemiNaive.materialize_in_memory(rules, initial_facts, parallel: false)
+            end)
 
-      par_times = Enum.map(1..num_runs, fn _ ->
-        {duration_us, _result} = :timer.tc(fn ->
-          SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
+          div(duration_us, 1000)
         end)
-        div(duration_us, 1000)
-      end)
+
+      par_times =
+        Enum.map(1..num_runs, fn _ ->
+          {duration_us, _result} =
+            :timer.tc(fn ->
+              SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
+            end)
+
+          div(duration_us, 1000)
+        end)
 
       avg_seq = div(Enum.sum(seq_times), num_runs)
       avg_par = div(Enum.sum(par_times), num_runs)
@@ -698,24 +760,30 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
 
     test "parallel mode is deterministic across multiple runs" do
       tbox = generate_lubm_tbox()
-      abox = generate_lubm_abox(
-        departments: 3,
-        faculty_per_dept: 4,
-        students_per_dept: 20,
-        courses_per_dept: 3
-      )
+
+      abox =
+        generate_lubm_abox(
+          departments: 3,
+          faculty_per_dept: 4,
+          students_per_dept: 20,
+          courses_per_dept: 3
+        )
 
       initial_facts = MapSet.union(tbox, abox)
       {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
 
       # Run parallel multiple times
-      results = Enum.map(1..5, fn _ ->
-        {:ok, facts, _stats} = SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
-        facts
-      end)
+      results =
+        Enum.map(1..5, fn _ ->
+          {:ok, facts, _stats} =
+            SemiNaive.materialize_in_memory(rules, initial_facts, parallel: true)
+
+          facts
+        end)
 
       # All results should be identical
       first = hd(results)
+
       Enum.each(results, fn facts ->
         assert MapSet.equal?(facts, first), "Non-deterministic parallel results!"
       end)

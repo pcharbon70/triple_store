@@ -177,7 +177,8 @@ defmodule TripleStore.Benchmark.BSBM do
     offer_triples = num_products * avg_offers * 6
     review_triples = num_products * avg_reviews * 8
 
-    schema_triples + producer_triples + vendor_triples + product_triples + offer_triples + review_triples
+    schema_triples + producer_triples + vendor_triples + product_triples + offer_triples +
+      review_triples
   end
 
   @doc """
@@ -263,7 +264,8 @@ defmodule TripleStore.Benchmark.BSBM do
     [
       {producer_uri, rdf_type(), bsbm("Producer")},
       {producer_uri, rdfs("label"), RDF.literal("Producer#{producer_id}")},
-      {producer_uri, bsbm("country"), RDF.iri("http://downlode.org/rdf/iso-3166/countries##{country}")},
+      {producer_uri, bsbm("country"),
+       RDF.iri("http://downlode.org/rdf/iso-3166/countries##{country}")},
       {producer_uri, dc("publisher"), producer_uri}
     ]
   end
@@ -275,7 +277,8 @@ defmodule TripleStore.Benchmark.BSBM do
     [
       {vendor_uri, rdf_type(), bsbm("Vendor")},
       {vendor_uri, rdfs("label"), RDF.literal("Vendor#{vendor_id}")},
-      {vendor_uri, bsbm("country"), RDF.iri("http://downlode.org/rdf/iso-3166/countries##{country}")},
+      {vendor_uri, bsbm("country"),
+       RDF.iri("http://downlode.org/rdf/iso-3166/countries##{country}")},
       {vendor_uri, bsbm("homepage"), RDF.literal("http://www.vendor#{vendor_id}.com")},
       {vendor_uri, dc("publisher"), vendor_uri}
     ]
@@ -290,7 +293,8 @@ defmodule TripleStore.Benchmark.BSBM do
       {product_uri, rdf_type(), bsbm("Product")},
       {product_uri, rdf_type(), product_type_uri(type_id)},
       {product_uri, rdfs("label"), RDF.literal("Product#{product_id}")},
-      {product_uri, rdfs("comment"), RDF.literal("Product description for product #{product_id}")},
+      {product_uri, rdfs("comment"),
+       RDF.literal("Product description for product #{product_id}")},
       {product_uri, bsbm("producer"), producer_uri(producer_id)},
       {product_uri, bsbm("productPropertyNumeric1"), RDF.literal(random_range(1, 2000))},
       {product_uri, bsbm("productPropertyNumeric2"), RDF.literal(random_range(1, 2000))},
@@ -359,12 +363,22 @@ defmodule TripleStore.Benchmark.BSBM do
 
   defp product_uri(id), do: RDF.iri(@bsbm_inst <> "dataFromProducer/Product#{id}")
   defp product_type_uri(id), do: RDF.iri(@bsbm_inst <> "ProductType#{id}")
-  defp product_feature_uri(type_id, feat_id), do: RDF.iri(@bsbm_inst <> "ProductFeature#{type_id}_#{feat_id}")
+
+  defp product_feature_uri(type_id, feat_id),
+    do: RDF.iri(@bsbm_inst <> "ProductFeature#{type_id}_#{feat_id}")
+
   defp producer_uri(id), do: RDF.iri(@bsbm_inst <> "dataFromProducer/Producer#{id}")
   defp vendor_uri(id), do: RDF.iri(@bsbm_inst <> "dataFromVendor/Vendor#{id}")
-  defp offer_uri(prod_id, offer_id), do: RDF.iri(@bsbm_inst <> "dataFromVendor/Offer#{prod_id}_#{offer_id}")
-  defp review_uri(prod_id, rev_id), do: RDF.iri(@bsbm_inst <> "dataFromRatingSite/Review#{prod_id}_#{rev_id}")
-  defp reviewer_uri(prod_id, rev_id), do: RDF.iri(@bsbm_inst <> "dataFromRatingSite/Reviewer#{prod_id}_#{rev_id}")
+
+  defp offer_uri(prod_id, offer_id),
+    do: RDF.iri(@bsbm_inst <> "dataFromVendor/Offer#{prod_id}_#{offer_id}")
+
+  defp review_uri(prod_id, rev_id),
+    do: RDF.iri(@bsbm_inst <> "dataFromRatingSite/Review#{prod_id}_#{rev_id}")
+
+  defp reviewer_uri(prod_id, rev_id),
+    do: RDF.iri(@bsbm_inst <> "dataFromRatingSite/Reviewer#{prod_id}_#{rev_id}")
+
   defp review_site_uri(id), do: RDF.iri(@bsbm_inst <> "dataFromRatingSite/RatingSite#{id}")
 
   # ===========================================================================

@@ -30,8 +30,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "evaluates literal constants" do
       assert Expression.evaluate(int(10), %{}) == {:ok, int(10)}
       assert Expression.evaluate(str("hello"), %{}) == {:ok, str("hello")}
+
       assert Expression.evaluate({:named_node, "http://example.org"}, %{}) ==
                {:ok, {:named_node, "http://example.org"}}
+
       assert Expression.evaluate({:blank_node, "b1"}, %{}) == {:ok, {:blank_node, "b1"}}
     end
   end
@@ -219,6 +221,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
 
     test "DATATYPE returns rdf:langString for language literal" do
       expr = {:function_call, "DATATYPE", [lang_str("hello", "en")]}
+
       assert Expression.evaluate(expr, %{}) ==
                {:ok, {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"}}
     end
@@ -285,6 +288,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "STRSTARTS" do
       assert Expression.evaluate({:function_call, "STRSTARTS", [str("hello"), str("hel")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "STRSTARTS", [str("hello"), str("ell")]}, %{}) ==
                {:ok, bool(false)}
     end
@@ -292,6 +296,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "STRENDS" do
       assert Expression.evaluate({:function_call, "STRENDS", [str("hello"), str("llo")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "STRENDS", [str("hello"), str("hel")]}, %{}) ==
                {:ok, bool(false)}
     end
@@ -299,6 +304,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "CONTAINS" do
       assert Expression.evaluate({:function_call, "CONTAINS", [str("hello"), str("ell")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "CONTAINS", [str("hello"), str("xyz")]}, %{}) ==
                {:ok, bool(false)}
     end
@@ -326,10 +332,13 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "LANGMATCHES" do
       assert Expression.evaluate({:function_call, "LANGMATCHES", [str("en"), str("en")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "LANGMATCHES", [str("en-US"), str("en")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "LANGMATCHES", [str("en"), str("*")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "LANGMATCHES", [str(""), str("*")]}, %{}) ==
                {:ok, bool(false)}
     end
@@ -337,8 +346,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "REGEX" do
       assert Expression.evaluate({:function_call, "REGEX", [str("hello"), str("ell")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "REGEX", [str("hello"), str("^hel")]}, %{}) ==
                {:ok, bool(true)}
+
       assert Expression.evaluate({:function_call, "REGEX", [str("hello"), str("xyz")]}, %{}) ==
                {:ok, bool(false)}
     end
@@ -378,6 +389,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "RAND returns a double between 0 and 1" do
       {:ok, {:literal, :typed, val, @xsd_double}} =
         Expression.evaluate({:function_call, "RAND", []}, %{})
+
       {n, ""} = Float.parse(val)
       assert n >= 0 and n < 1
     end
@@ -387,6 +399,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "MD5" do
       {:ok, {:literal, :simple, hash}} =
         Expression.evaluate({:function_call, "MD5", [str("hello")]}, %{})
+
       assert String.length(hash) == 32
       assert hash == "5d41402abc4b2a76b9719d911017c592"
     end
@@ -394,12 +407,14 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "SHA1" do
       {:ok, {:literal, :simple, hash}} =
         Expression.evaluate({:function_call, "SHA1", [str("hello")]}, %{})
+
       assert String.length(hash) == 40
     end
 
     test "SHA256" do
       {:ok, {:literal, :simple, hash}} =
         Expression.evaluate({:function_call, "SHA256", [str("hello")]}, %{})
+
       assert String.length(hash) == 64
     end
   end
@@ -461,36 +476,47 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "NOW returns current datetime" do
       {:ok, {:literal, :typed, value, dt}} =
         Expression.evaluate({:function_call, "NOW", []}, %{})
+
       assert dt == "http://www.w3.org/2001/XMLSchema#dateTime"
       assert {:ok, _, _} = DateTime.from_iso8601(value)
     end
 
     test "YEAR extracts year" do
-      datetime = {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+      datetime =
+        {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+
       expr = {:function_call, "YEAR", [datetime]}
       assert Expression.evaluate(expr, %{}) == {:ok, int(2024)}
     end
 
     test "MONTH extracts month" do
-      datetime = {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+      datetime =
+        {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+
       expr = {:function_call, "MONTH", [datetime]}
       assert Expression.evaluate(expr, %{}) == {:ok, int(3)}
     end
 
     test "DAY extracts day" do
-      datetime = {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+      datetime =
+        {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+
       expr = {:function_call, "DAY", [datetime]}
       assert Expression.evaluate(expr, %{}) == {:ok, int(15)}
     end
 
     test "HOURS extracts hours" do
-      datetime = {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+      datetime =
+        {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+
       expr = {:function_call, "HOURS", [datetime]}
       assert Expression.evaluate(expr, %{}) == {:ok, int(10)}
     end
 
     test "MINUTES extracts minutes" do
-      datetime = {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+      datetime =
+        {:literal, :typed, "2024-03-15T10:30:00Z", "http://www.w3.org/2001/XMLSchema#dateTime"}
+
       expr = {:function_call, "MINUTES", [datetime]}
       assert Expression.evaluate(expr, %{}) == {:ok, int(30)}
     end
@@ -503,6 +529,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(2)},
         %{"x" => int(3)}
       ]
+
       result = Expression.evaluate_aggregate({:count, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(3)}
     end
@@ -513,6 +540,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(1)},
         %{"x" => int(2)}
       ]
+
       result = Expression.evaluate_aggregate({:count, {:variable, "x"}, true}, solutions)
       assert result == {:ok, int(2)}
     end
@@ -529,6 +557,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(20)},
         %{"x" => int(30)}
       ]
+
       result = Expression.evaluate_aggregate({:sum, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(60)}
     end
@@ -544,8 +573,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(20)},
         %{"x" => int(30)}
       ]
+
       {:ok, {:literal, :typed, val, @xsd_decimal}} =
         Expression.evaluate_aggregate({:avg, {:variable, "x"}, false}, solutions)
+
       {n, ""} = Float.parse(val)
       assert_in_delta n, 20.0, 0.001
     end
@@ -556,6 +587,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(10)},
         %{"x" => int(20)}
       ]
+
       result = Expression.evaluate_aggregate({:min, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(10)}
     end
@@ -566,6 +598,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(30)},
         %{"x" => int(20)}
       ]
+
       result = Expression.evaluate_aggregate({:max, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(30)}
     end
@@ -576,7 +609,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => str("b")},
         %{"x" => str("c")}
       ]
-      result = Expression.evaluate_aggregate({{:group_concat, ","}, {:variable, "x"}, false}, solutions)
+
+      result =
+        Expression.evaluate_aggregate({{:group_concat, ","}, {:variable, "x"}, false}, solutions)
+
       assert result == {:ok, str("a,b,c")}
     end
 
@@ -585,7 +621,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => str("a")},
         %{"x" => str("b")}
       ]
-      result = Expression.evaluate_aggregate({{:group_concat, nil}, {:variable, "x"}, false}, solutions)
+
+      result =
+        Expression.evaluate_aggregate({{:group_concat, nil}, {:variable, "x"}, false}, solutions)
+
       assert result == {:ok, str("a b")}
     end
 
@@ -594,6 +633,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(42)},
         %{"x" => int(100)}
       ]
+
       result = Expression.evaluate_aggregate({:sample, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(42)}
     end
@@ -609,8 +649,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => dec(20.5)},
         %{"x" => int(30)}
       ]
+
       {:ok, {:literal, :typed, val, type}} =
         Expression.evaluate_aggregate({:sum, {:variable, "x"}, false}, solutions)
+
       assert type == @xsd_decimal
       {n, ""} = Float.parse(val)
       assert_in_delta n, 60.5, 0.001
@@ -622,6 +664,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(10)},
         %{"x" => int(20)}
       ]
+
       result = Expression.evaluate_aggregate({:sum, {:variable, "x"}, true}, solutions)
       assert result == {:ok, int(30)}
     end
@@ -632,8 +675,10 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => int(10)},
         %{"x" => int(20)}
       ]
+
       {:ok, {:literal, :typed, val, @xsd_decimal}} =
         Expression.evaluate_aggregate({:avg, {:variable, "x"}, true}, solutions)
+
       {n, ""} = Float.parse(val)
       # AVG(DISTINCT 10, 20) = 15
       assert_in_delta n, 15.0, 0.001
@@ -642,6 +687,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     test "AVG of empty returns 0" do
       {:ok, {:literal, :typed, val, @xsd_decimal}} =
         Expression.evaluate_aggregate({:avg, {:variable, "x"}, false}, [])
+
       assert val == "0"
     end
 
@@ -661,16 +707,21 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => str("a")},
         %{"x" => str("b")}
       ]
-      result = Expression.evaluate_aggregate({{:group_concat, ","}, {:variable, "x"}, true}, solutions)
+
+      result =
+        Expression.evaluate_aggregate({{:group_concat, ","}, {:variable, "x"}, true}, solutions)
+
       assert result == {:ok, str("a,b")}
     end
 
     test "COUNT skips unbound variables" do
       solutions = [
         %{"x" => int(1)},
-        %{},  # x is unbound
+        # x is unbound
+        %{},
         %{"x" => int(3)}
       ]
+
       result = Expression.evaluate_aggregate({:count, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(2)}
     end
@@ -681,6 +732,7 @@ defmodule TripleStore.SPARQL.ExpressionTest do
         %{"x" => str("not a number")},
         %{"x" => int(20)}
       ]
+
       result = Expression.evaluate_aggregate({:sum, {:variable, "x"}, false}, solutions)
       assert result == {:ok, int(30)}
     end
@@ -764,10 +816,9 @@ defmodule TripleStore.SPARQL.ExpressionTest do
   describe "integration with parser expressions" do
     test "evaluates parsed FILTER expression" do
       # Simulating what comes from the parser: FILTER(?y > 10 && ?y < 20)
-      expr = {:and,
-        {:greater, {:variable, "y"}, {:literal, :typed, "10", @xsd_integer}},
-        {:less, {:variable, "y"}, {:literal, :typed, "20", @xsd_integer}}
-      }
+      expr =
+        {:and, {:greater, {:variable, "y"}, {:literal, :typed, "10", @xsd_integer}},
+         {:less, {:variable, "y"}, {:literal, :typed, "20", @xsd_integer}}}
 
       bindings = %{"y" => int(15)}
       assert Expression.evaluate(expr, bindings) == {:ok, bool(true)}

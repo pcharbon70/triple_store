@@ -54,17 +54,19 @@ defmodule TripleStore.Reasoner.RuleTest do
     end
 
     test "pattern can mix variables and constants" do
-      pattern = Rule.pattern(
-        Rule.var("x"),
-        Rule.iri("#{@rdf}type"),
-        Rule.iri("#{@ex}Person")
-      )
+      pattern =
+        Rule.pattern(
+          Rule.var("x"),
+          Rule.iri("#{@rdf}type"),
+          Rule.iri("#{@ex}Person")
+        )
 
-      assert {:pattern, [
-        {:var, "x"},
-        {:iri, "#{@rdf}type"},
-        {:iri, "#{@ex}Person"}
-      ]} = pattern
+      assert {:pattern,
+              [
+                {:var, "x"},
+                {:iri, "#{@rdf}type"},
+                {:iri, "#{@ex}Person"}
+              ]} = pattern
     end
   end
 
@@ -151,6 +153,7 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c1")),
         Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2"))
       ]
+
       head = Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c2"))
 
       rule = Rule.new(:cax_sco, body, head)
@@ -166,10 +169,11 @@ defmodule TripleStore.Reasoner.RuleTest do
       body = [Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))]
       head = Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("x"))
 
-      rule = Rule.new(:prp_symp, body, head,
-        description: "Symmetric property inference",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(:prp_symp, body, head,
+          description: "Symmetric property inference",
+          profile: :owl2rl
+        )
 
       assert rule.name == :prp_symp
       assert rule.description == "Symmetric property inference"
@@ -183,10 +187,12 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "variables/1" do
     test "extracts all variables from body and head" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
+        )
 
       vars = Rule.variables(rule)
 
@@ -194,13 +200,15 @@ defmodule TripleStore.Reasoner.RuleTest do
     end
 
     test "extracts variables from conditions" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.not_equal(Rule.var("x"), Rule.var("z"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.not_equal(Rule.var("x"), Rule.var("z"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       vars = Rule.variables(rule)
 
@@ -210,13 +218,15 @@ defmodule TripleStore.Reasoner.RuleTest do
     end
 
     test "deduplicates variables" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("x"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("x"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("y"))
+        )
 
       vars = Rule.variables(rule)
 
@@ -227,10 +237,12 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "body_variables/1" do
     test "extracts variables from body only" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
+        )
 
       vars = Rule.body_variables(rule)
 
@@ -240,10 +252,12 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "head_variables/1" do
     test "extracts variables from head only" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
+        )
 
       vars = Rule.head_variables(rule)
 
@@ -257,14 +271,16 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "pattern_count/1" do
     test "counts patterns in body" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z")),
-          Rule.not_equal(Rule.var("x"), Rule.var("z"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("z"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z")),
+            Rule.not_equal(Rule.var("x"), Rule.var("z"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("z"))
+        )
 
       assert Rule.pattern_count(rule) == 2
     end
@@ -272,14 +288,16 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "condition_count/1" do
     test "counts conditions in body" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.not_equal(Rule.var("x"), Rule.var("y")),
-          Rule.is_iri(Rule.var("x"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.not_equal(Rule.var("x"), Rule.var("y")),
+            Rule.is_iri(Rule.var("x"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       assert Rule.condition_count(rule) == 2
     end
@@ -287,19 +305,23 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "safe?/1" do
     test "returns true when all head variables are in body" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       assert Rule.safe?(rule) == true
     end
 
     test "returns false when head has unbound variables" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("z"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("z"))
+        )
 
       assert Rule.safe?(rule) == false
     end
@@ -311,7 +333,12 @@ defmodule TripleStore.Reasoner.RuleTest do
       p2 = Rule.pattern(Rule.var("y"), Rule.iri("#{@ex}q"), Rule.var("z"))
       c1 = Rule.not_equal(Rule.var("x"), Rule.var("z"))
 
-      rule = Rule.new(:test, [p1, c1, p2], Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("z")))
+      rule =
+        Rule.new(
+          :test,
+          [p1, c1, p2],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}r"), Rule.var("z"))
+        )
 
       patterns = Rule.body_patterns(rule)
 
@@ -325,7 +352,12 @@ defmodule TripleStore.Reasoner.RuleTest do
       c1 = Rule.not_equal(Rule.var("x"), Rule.var("y"))
       c2 = Rule.is_iri(Rule.var("x"))
 
-      rule = Rule.new(:test, [p1, c1, c2], Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y")))
+      rule =
+        Rule.new(
+          :test,
+          [p1, c1, c2],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       conditions = Rule.body_conditions(rule)
 
@@ -373,11 +405,13 @@ defmodule TripleStore.Reasoner.RuleTest do
       pattern = Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}knows"), Rule.var("y"))
       result = Rule.substitute_pattern(pattern, binding)
 
-      assert result == {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@ex}knows"},
-        {:iri, "#{@ex}bob"}
-      ]}
+      assert result ==
+               {:pattern,
+                [
+                  {:iri, "#{@ex}alice"},
+                  {:iri, "#{@ex}knows"},
+                  {:iri, "#{@ex}bob"}
+                ]}
     end
 
     test "leaves unbound variables in pattern" do
@@ -386,11 +420,13 @@ defmodule TripleStore.Reasoner.RuleTest do
       pattern = Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}knows"), Rule.var("y"))
       result = Rule.substitute_pattern(pattern, binding)
 
-      assert result == {:pattern, [
-        {:iri, "#{@ex}alice"},
-        {:iri, "#{@ex}knows"},
-        {:var, "y"}
-      ]}
+      assert result ==
+               {:pattern,
+                [
+                  {:iri, "#{@ex}alice"},
+                  {:iri, "#{@ex}knows"},
+                  {:var, "y"}
+                ]}
     end
   end
 
@@ -400,21 +436,23 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "ground?/1" do
     test "returns true for fully ground pattern" do
-      pattern = Rule.pattern(
-        Rule.iri("#{@ex}alice"),
-        Rule.iri("#{@ex}knows"),
-        Rule.iri("#{@ex}bob")
-      )
+      pattern =
+        Rule.pattern(
+          Rule.iri("#{@ex}alice"),
+          Rule.iri("#{@ex}knows"),
+          Rule.iri("#{@ex}bob")
+        )
 
       assert Rule.ground?(pattern) == true
     end
 
     test "returns false for pattern with variables" do
-      pattern = Rule.pattern(
-        Rule.iri("#{@ex}alice"),
-        Rule.iri("#{@ex}knows"),
-        Rule.var("y")
-      )
+      pattern =
+        Rule.pattern(
+          Rule.iri("#{@ex}alice"),
+          Rule.iri("#{@ex}knows"),
+          Rule.var("y")
+        )
 
       assert Rule.ground?(pattern) == false
     end
@@ -519,14 +557,16 @@ defmodule TripleStore.Reasoner.RuleTest do
 
   describe "evaluate_conditions/2" do
     test "returns true when all conditions pass" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.not_equal(Rule.var("x"), Rule.var("y")),
-          Rule.is_iri(Rule.var("x"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.not_equal(Rule.var("x"), Rule.var("y")),
+            Rule.is_iri(Rule.var("x"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       binding = %{"x" => {:iri, "#{@ex}a"}, "y" => {:iri, "#{@ex}b"}}
 
@@ -534,14 +574,17 @@ defmodule TripleStore.Reasoner.RuleTest do
     end
 
     test "returns false when any condition fails" do
-      rule = Rule.new(:test,
-        [
-          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
-          Rule.not_equal(Rule.var("x"), Rule.var("y")),
-          Rule.is_literal(Rule.var("x"))  # This will fail
-        ],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
+            Rule.not_equal(Rule.var("x"), Rule.var("y")),
+            # This will fail
+            Rule.is_literal(Rule.var("x"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       binding = %{"x" => {:iri, "#{@ex}a"}, "y" => {:iri, "#{@ex}b"}}
 
@@ -549,10 +592,12 @@ defmodule TripleStore.Reasoner.RuleTest do
     end
 
     test "returns true when no conditions" do
-      rule = Rule.new(:test,
-        [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
-        Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
-      )
+      rule =
+        Rule.new(
+          :test,
+          [Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))],
+          Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
+        )
 
       binding = %{"x" => {:iri, "#{@ex}a"}, "y" => {:iri, "#{@ex}b"}}
 
@@ -567,15 +612,17 @@ defmodule TripleStore.Reasoner.RuleTest do
   describe "OWL 2 RL rule examples" do
     test "cax-sco: class membership through subclass" do
       # (?x rdf:type ?c1), (?c1 rdfs:subClassOf ?c2) -> (?x rdf:type ?c2)
-      rule = Rule.new(:cax_sco,
-        [
-          Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c1")),
-          Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c2")),
-        description: "Class membership through subclass",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :cax_sco,
+          [
+            Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c1")),
+            Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c2")),
+          description: "Class membership through subclass",
+          profile: :owl2rl
+        )
 
       assert rule.name == :cax_sco
       assert Rule.pattern_count(rule) == 2
@@ -585,15 +632,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "scm-sco: subClassOf transitivity" do
       # (?c1 rdfs:subClassOf ?c2), (?c2 rdfs:subClassOf ?c3) -> (?c1 rdfs:subClassOf ?c3)
-      rule = Rule.new(:scm_sco,
-        [
-          Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2")),
-          Rule.pattern(Rule.var("c2"), Rule.rdfs_subClassOf(), Rule.var("c3"))
-        ],
-        Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c3")),
-        description: "rdfs:subClassOf transitivity",
-        profile: :rdfs
-      )
+      rule =
+        Rule.new(
+          :scm_sco,
+          [
+            Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2")),
+            Rule.pattern(Rule.var("c2"), Rule.rdfs_subClassOf(), Rule.var("c3"))
+          ],
+          Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c3")),
+          description: "rdfs:subClassOf transitivity",
+          profile: :rdfs
+        )
 
       assert rule.name == :scm_sco
       assert Rule.pattern_count(rule) == 2
@@ -602,16 +651,18 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-trp: transitive property" do
       # (?p rdf:type owl:TransitiveProperty), (?x ?p ?y), (?y ?p ?z) -> (?x ?p ?z)
-      rule = Rule.new(:prp_trp,
-        [
-          Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_TransitiveProperty()),
-          Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
-          Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("z"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("z")),
-        description: "Transitive property inference",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :prp_trp,
+          [
+            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_TransitiveProperty()),
+            Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
+            Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("z"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("z")),
+          description: "Transitive property inference",
+          profile: :owl2rl
+        )
 
       assert rule.name == :prp_trp
       assert Rule.pattern_count(rule) == 3
@@ -620,15 +671,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-symp: symmetric property" do
       # (?p rdf:type owl:SymmetricProperty), (?x ?p ?y) -> (?y ?p ?x)
-      rule = Rule.new(:prp_symp,
-        [
-          Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_SymmetricProperty()),
-          Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("x")),
-        description: "Symmetric property inference",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :prp_symp,
+          [
+            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_SymmetricProperty()),
+            Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
+          ],
+          Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("x")),
+          description: "Symmetric property inference",
+          profile: :owl2rl
+        )
 
       assert rule.name == :prp_symp
       assert Rule.pattern_count(rule) == 2
@@ -637,15 +690,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-dom: property domain" do
       # (?p rdfs:domain ?c), (?x ?p ?y) -> (?x rdf:type ?c)
-      rule = Rule.new(:prp_dom,
-        [
-          Rule.pattern(Rule.var("p"), Rule.rdfs_domain(), Rule.var("c")),
-          Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c")),
-        description: "Property domain inference",
-        profile: :rdfs
-      )
+      rule =
+        Rule.new(
+          :prp_dom,
+          [
+            Rule.pattern(Rule.var("p"), Rule.rdfs_domain(), Rule.var("c")),
+            Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c")),
+          description: "Property domain inference",
+          profile: :rdfs
+        )
 
       assert rule.name == :prp_dom
       assert Rule.pattern_count(rule) == 2
@@ -654,15 +709,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-rng: property range" do
       # (?p rdfs:range ?c), (?x ?p ?y) -> (?y rdf:type ?c)
-      rule = Rule.new(:prp_rng,
-        [
-          Rule.pattern(Rule.var("p"), Rule.rdfs_range(), Rule.var("c")),
-          Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("y"), Rule.rdf_type(), Rule.var("c")),
-        description: "Property range inference",
-        profile: :rdfs
-      )
+      rule =
+        Rule.new(
+          :prp_rng,
+          [
+            Rule.pattern(Rule.var("p"), Rule.rdfs_range(), Rule.var("c")),
+            Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
+          ],
+          Rule.pattern(Rule.var("y"), Rule.rdf_type(), Rule.var("c")),
+          description: "Property range inference",
+          profile: :rdfs
+        )
 
       assert rule.name == :prp_rng
       assert Rule.pattern_count(rule) == 2
@@ -671,12 +728,14 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "eq-sym: owl:sameAs symmetry" do
       # (?x owl:sameAs ?y) -> (?y owl:sameAs ?x)
-      rule = Rule.new(:eq_sym,
-        [Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y"))],
-        Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("x")),
-        description: "owl:sameAs symmetry",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :eq_sym,
+          [Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y"))],
+          Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("x")),
+          description: "owl:sameAs symmetry",
+          profile: :owl2rl
+        )
 
       assert rule.name == :eq_sym
       assert Rule.pattern_count(rule) == 1
@@ -685,15 +744,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "eq-trans: owl:sameAs transitivity" do
       # (?x owl:sameAs ?y), (?y owl:sameAs ?z) -> (?x owl:sameAs ?z)
-      rule = Rule.new(:eq_trans,
-        [
-          Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
-          Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("z"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("z")),
-        description: "owl:sameAs transitivity",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :eq_trans,
+          [
+            Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
+            Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("z"))
+          ],
+          Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("z")),
+          description: "owl:sameAs transitivity",
+          profile: :owl2rl
+        )
 
       assert rule.name == :eq_trans
       assert Rule.pattern_count(rule) == 2
@@ -702,15 +763,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-inv1: inverse property (forward)" do
       # (?p1 owl:inverseOf ?p2), (?x ?p1 ?y) -> (?y ?p2 ?x)
-      rule = Rule.new(:prp_inv1,
-        [
-          Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
-          Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("y"), Rule.var("p2"), Rule.var("x")),
-        description: "Inverse property inference (forward)",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :prp_inv1,
+          [
+            Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
+            Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
+          ],
+          Rule.pattern(Rule.var("y"), Rule.var("p2"), Rule.var("x")),
+          description: "Inverse property inference (forward)",
+          profile: :owl2rl
+        )
 
       assert rule.name == :prp_inv1
       assert Rule.pattern_count(rule) == 2
@@ -719,15 +782,17 @@ defmodule TripleStore.Reasoner.RuleTest do
 
     test "prp-inv2: inverse property (backward)" do
       # (?p1 owl:inverseOf ?p2), (?x ?p2 ?y) -> (?y ?p1 ?x)
-      rule = Rule.new(:prp_inv2,
-        [
-          Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
-          Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("y"), Rule.var("p1"), Rule.var("x")),
-        description: "Inverse property inference (backward)",
-        profile: :owl2rl
-      )
+      rule =
+        Rule.new(
+          :prp_inv2,
+          [
+            Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
+            Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y"))
+          ],
+          Rule.pattern(Rule.var("y"), Rule.var("p1"), Rule.var("x")),
+          description: "Inverse property inference (backward)",
+          profile: :owl2rl
+        )
 
       assert rule.name == :prp_inv2
       assert Rule.pattern_count(rule) == 2
@@ -737,14 +802,16 @@ defmodule TripleStore.Reasoner.RuleTest do
     test "rule with not_equal condition" do
       # Example: infer different-from when sameAs leads to contradiction
       # (?x owl:sameAs ?y), ?x != ?y -> track for inconsistency
-      rule = Rule.new(:example_with_condition,
-        [
+      rule =
+        Rule.new(
+          :example_with_condition,
+          [
+            Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
+            Rule.not_equal(Rule.var("x"), Rule.var("y"))
+          ],
           Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
-          Rule.not_equal(Rule.var("x"), Rule.var("y"))
-        ],
-        Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
-        description: "Example rule with not_equal condition"
-      )
+          description: "Example rule with not_equal condition"
+        )
 
       assert Rule.pattern_count(rule) == 1
       assert Rule.condition_count(rule) == 1

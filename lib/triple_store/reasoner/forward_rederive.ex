@@ -144,12 +144,13 @@ defmodule TripleStore.Reasoner.ForwardRederive do
         end
       end)
 
-    {:ok, %{
-      keep: keep,
-      delete: delete,
-      rederivation_count: MapSet.size(keep),
-      facts_checked: MapSet.size(potentially_invalid)
-    }}
+    {:ok,
+     %{
+       keep: keep,
+       delete: delete,
+       rederivation_count: MapSet.size(keep),
+       facts_checked: MapSet.size(potentially_invalid)
+     }}
   end
 
   @doc """
@@ -242,8 +243,9 @@ defmodule TripleStore.Reasoner.ForwardRederive do
             # This is safe because it may lead to over-deletion but not incorrect retention
             Logger.warning(
               "Binding set limit exceeded during re-derivation check, " <>
-              "conservatively marking fact as non-re-derivable"
+                "conservatively marking fact as non-re-derivable"
             )
+
             false
         end
 

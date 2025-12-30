@@ -92,10 +92,16 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   defp max_path_depth(ctx), do: get_limit(ctx, :max_path_depth, @default_max_path_depth)
-  defp max_bidirectional_depth(ctx), do: get_limit(ctx, :max_bidirectional_depth, @default_max_bidirectional_depth)
+
+  defp max_bidirectional_depth(ctx),
+    do: get_limit(ctx, :max_bidirectional_depth, @default_max_bidirectional_depth)
+
   defp max_frontier_size(ctx), do: get_limit(ctx, :max_frontier_size, @default_max_frontier_size)
   defp max_visited_size(ctx), do: get_limit(ctx, :max_visited_size, @default_max_visited_size)
-  defp max_unbounded_results(ctx), do: get_limit(ctx, :max_unbounded_results, @default_max_unbounded_results)
+
+  defp max_unbounded_results(ctx),
+    do: get_limit(ctx, :max_unbounded_results, @default_max_unbounded_results)
+
   defp max_all_nodes(ctx), do: get_limit(ctx, :max_all_nodes, @default_max_all_nodes)
 
   # Helper to check if a MapSet is empty (avoids map_size anti-pattern)
@@ -179,7 +185,8 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       # Optimization 2: Bidirectional search for bounded recursive paths
       both_bound?(s_resolved, o_resolved) and recursive_path?(path) ->
-        {:optimized, evaluate_bidirectional(ctx, binding, subject, path, object, s_resolved, o_resolved)}
+        {:optimized,
+         evaluate_bidirectional(ctx, binding, subject, path, object, s_resolved, o_resolved)}
 
       true ->
         :not_optimized
@@ -273,7 +280,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
             # Chain to rest of predicates
             result_stream =
               Stream.flat_map(stream, fn intermediate_binding ->
-                case evaluate_predicate_chain(ctx, intermediate_binding, intermediate, rest, object) do
+                case evaluate_predicate_chain(
+                       ctx,
+                       intermediate_binding,
+                       intermediate,
+                       rest,
+                       object
+                     ) do
                   {:ok, rest_stream} ->
                     # Remove intermediate variable from final bindings
                     Stream.map(rest_stream, &Map.delete(&1, var_name))
@@ -396,6 +409,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
           forward_size: MapSet.size(forward_visited),
           backward_size: MapSet.size(backward_visited)
         })
+
         false
 
       true ->
@@ -451,12 +465,16 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # Expand forward
         next_forward = expand_frontier(ctx, inner_path, forward_frontier)
         new_forward = MapSet.difference(next_forward, forward_visited)
-        {new_forward, MapSet.union(forward_visited, new_forward), backward_frontier, backward_visited}
+
+        {new_forward, MapSet.union(forward_visited, new_forward), backward_frontier,
+         backward_visited}
       else
         # Expand backward
         next_backward = expand_frontier(ctx, reversed_path, backward_frontier)
         new_backward = MapSet.difference(next_backward, backward_visited)
-        {forward_frontier, forward_visited, new_backward, MapSet.union(backward_visited, new_backward)}
+
+        {forward_frontier, forward_visited, new_backward,
+         MapSet.union(backward_visited, new_backward)}
       end
 
     # Check for intersection (path found)
@@ -737,12 +755,30 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       {_, _} ->
         # Both bound: check if there's a path (including identity)
-        evaluate_zero_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+        evaluate_zero_or_more_both_bound(
+          ctx,
+          binding,
+          subject,
+          inner_path,
+          object,
+          s_resolved,
+          o_resolved,
+          dict_manager
+        )
     end
   end
 
   # Both subject and object are bound - check for path existence (including identity)
-  defp evaluate_zero_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager) do
+  defp evaluate_zero_or_more_both_bound(
+         ctx,
+         binding,
+         subject,
+         inner_path,
+         object,
+         s_resolved,
+         o_resolved,
+         dict_manager
+       ) do
     # Check identity first (zero steps)
     if terms_equal?(s_resolved, o_resolved, dict_manager) do
       {:ok, Stream.map([binding], & &1)}
@@ -881,12 +917,30 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       {_, _} ->
         # Both bound: check if there's a path of length >= 1
-        evaluate_one_or_more_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+        evaluate_one_or_more_both_bound(
+          ctx,
+          binding,
+          subject,
+          inner_path,
+          object,
+          s_resolved,
+          o_resolved,
+          dict_manager
+        )
     end
   end
 
   # Both bound - check for path of length >= 1
-  defp evaluate_one_or_more_both_bound(ctx, binding, _subject, inner_path, _object, s_resolved, o_resolved, dict_manager) do
+  defp evaluate_one_or_more_both_bound(
+         ctx,
+         binding,
+         _subject,
+         inner_path,
+         _object,
+         s_resolved,
+         o_resolved,
+         dict_manager
+       ) do
     case term_to_id(s_resolved, dict_manager) do
       {:ok, s_id} when s_id != :not_found ->
         case term_to_id(o_resolved, dict_manager) do
@@ -1027,12 +1081,30 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
       {_, _} ->
         # Both bound: identity or one-step path
-        evaluate_zero_or_one_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager)
+        evaluate_zero_or_one_both_bound(
+          ctx,
+          binding,
+          subject,
+          inner_path,
+          object,
+          s_resolved,
+          o_resolved,
+          dict_manager
+        )
     end
   end
 
   # Both bound - check identity or one-step path
-  defp evaluate_zero_or_one_both_bound(ctx, binding, subject, inner_path, object, s_resolved, o_resolved, dict_manager) do
+  defp evaluate_zero_or_one_both_bound(
+         ctx,
+         binding,
+         subject,
+         inner_path,
+         object,
+         s_resolved,
+         o_resolved,
+         dict_manager
+       ) do
     # Check identity first
     if terms_equal?(s_resolved, o_resolved, dict_manager) do
       {:ok, Stream.map([binding], & &1)}
@@ -1215,7 +1287,9 @@ defmodule TripleStore.SPARQL.PropertyPath do
             stream
             |> Enum.flat_map(fn binding ->
               case Map.get(binding, var_name) do
-                nil -> []
+                nil ->
+                  []
+
                 term ->
                   case term_to_id(term, dict_manager) do
                     {:ok, id} when id != :not_found -> [id]
@@ -1303,8 +1377,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
   defp reverse_path({:link, iri}), do: {:reverse, {:link, iri}}
   defp reverse_path({:named_node, iri}), do: {:reverse, {:named_node, iri}}
   defp reverse_path({:reverse, inner}), do: inner
-  defp reverse_path({:sequence, left, right}), do: {:sequence, reverse_path(right), reverse_path(left)}
-  defp reverse_path({:alternative, left, right}), do: {:alternative, reverse_path(left), reverse_path(right)}
+
+  defp reverse_path({:sequence, left, right}),
+    do: {:sequence, reverse_path(right), reverse_path(left)}
+
+  defp reverse_path({:alternative, left, right}),
+    do: {:alternative, reverse_path(left), reverse_path(right)}
+
   defp reverse_path({:zero_or_more, inner}), do: {:zero_or_more, reverse_path(inner)}
   defp reverse_path({:one_or_more, inner}), do: {:one_or_more, reverse_path(inner)}
   defp reverse_path({:zero_or_one, inner}), do: {:zero_or_one, reverse_path(inner)}

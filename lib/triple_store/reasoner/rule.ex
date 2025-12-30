@@ -674,7 +674,9 @@ defmodule TripleStore.Reasoner.Rule do
   @spec validate!(t()) :: t()
   def validate!(%__MODULE__{} = rule) do
     case validate(rule) do
-      {:ok, rule} -> rule
+      {:ok, rule} ->
+        rule
+
       {:error, reasons} ->
         raise ArgumentError, "Invalid rule #{rule.name}: #{inspect(reasons)}"
     end
@@ -732,7 +734,8 @@ defmodule TripleStore.Reasoner.Rule do
 
     unsatisfiable =
       Enum.any?(conditions, fn
-        {:not_equal, {:var, v}, {:var, v}} -> true  # Same variable, always fails
+        # Same variable, always fails
+        {:not_equal, {:var, v}, {:var, v}} -> true
         _ -> false
       end)
 
@@ -788,7 +791,8 @@ defmodule TripleStore.Reasoner.Rule do
       iex> Rule.explain_applicability(rule, schema)
       {:not_applicable, "Rule prp_trp requires transitive_properties but none found"}
   """
-  @spec explain_applicability(t(), map()) :: {:applicable, String.t()} | {:not_applicable, String.t()}
+  @spec explain_applicability(t(), map()) ::
+          {:applicable, String.t()} | {:not_applicable, String.t()}
   def explain_applicability(%__MODULE__{name: name} = _rule, schema_info) do
     case name do
       :prp_trp ->

@@ -102,6 +102,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
@@ -130,6 +131,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
@@ -140,6 +142,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       patterns = [
         triple(iri("http://example.org/Alice"), iri("http://example.org/name"), var("name"))
       ]
+
       {:ok, stream} = Executor.execute_bgp(ctx, patterns)
       results = Enum.to_list(stream)
 
@@ -160,11 +163,13 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/knows"),
         iri("http://example.org/Bob")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/knows"),
         iri("http://example.org/Carol")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Alice"),
         iri("http://example.org/knows"),
@@ -175,6 +180,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       patterns = [
         triple(iri("http://example.org/Alice"), iri("http://example.org/knows"), var("x"))
       ]
+
       {:ok, stream} = Executor.execute_bgp(ctx, patterns)
       results = Enum.to_list(stream)
 
@@ -193,6 +199,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/knows"),
         iri("http://example.org/Bob")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/age"),
@@ -204,13 +211,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         triple(iri("http://example.org/Alice"), iri("http://example.org/knows"), var("person")),
         triple(var("person"), iri("http://example.org/age"), var("age"))
       ]
+
       {:ok, stream} = Executor.execute_bgp(ctx, patterns)
       results = Enum.to_list(stream)
 
       assert length(results) == 1
       [binding] = results
       assert binding["person"] == {:named_node, "http://example.org/Bob"}
-      assert binding["age"] == {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert binding["age"] ==
+               {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
 
       cleanup({db, manager})
     end
@@ -225,6 +235,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
@@ -255,6 +266,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/p1"),
         literal("o1")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/s2"),
         iri("http://example.org/p2"),
@@ -280,6 +292,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/sameAs"),
         iri("http://example.org/A")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/B"),
         iri("http://example.org/sameAs"),
@@ -377,7 +390,11 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
     test "handles RDF term values" do
       binding1 = %{"s" => {:named_node, "http://ex.org/A"}}
-      binding2 = %{"s" => {:named_node, "http://ex.org/A"}, "name" => {:literal, :simple, "Alice"}}
+
+      binding2 = %{
+        "s" => {:named_node, "http://ex.org/A"},
+        "name" => {:literal, :simple, "Alice"}
+      }
 
       assert {:ok, merged} = Executor.merge_bindings(binding1, binding2)
       assert merged["s"] == {:named_node, "http://ex.org/A"}
@@ -450,7 +467,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
     test "filters incompatible bindings" do
       left = [%{"x" => 1, "y" => 1}]
-      right = [%{"x" => 1, "y" => 2}]  # Incompatible: y differs
+      # Incompatible: y differs
+      right = [%{"x" => 1, "y" => 2}]
 
       results = Executor.nested_loop_join(left, right) |> Enum.to_list()
       assert results == []
@@ -513,6 +531,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         %{"x" => 1, "y" => 2, "a" => "L1"},
         %{"x" => 1, "y" => 3, "a" => "L2"}
       ]
+
       right = [
         %{"x" => 1, "y" => 2, "b" => "R1"},
         %{"x" => 1, "y" => 3, "b" => "R2"}
@@ -562,24 +581,29 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         %{"x" => 2, "y" => "b"},
         %{"x" => 1, "y" => "c"}
       ]
+
       right = [
         %{"x" => 1, "z" => "1"},
         %{"x" => 3, "z" => "3"},
         %{"x" => 1, "z" => "2"}
       ]
 
-      nested_results = Executor.join(left, right, strategy: :nested_loop) |> Enum.to_list() |> Enum.sort()
+      nested_results =
+        Executor.join(left, right, strategy: :nested_loop) |> Enum.to_list() |> Enum.sort()
+
       hash_results = Executor.join(left, right, strategy: :hash) |> Enum.to_list() |> Enum.sort()
 
       assert nested_results == hash_results
-      assert length(nested_results) == 4  # 2 left bindings with x=1, 2 right with x=1
+      # 2 left bindings with x=1, 2 right with x=1
+      assert length(nested_results) == 4
     end
   end
 
   describe "left_join/3" do
     test "preserves left bindings when no match on right" do
       left = [%{"x" => 1}, %{"x" => 2}]
-      right = [%{"x" => 3, "y" => "a"}]  # No matching x values
+      # No matching x values
+      right = [%{"x" => 3, "y" => "a"}]
 
       results = Executor.left_join(left, right) |> Enum.to_list()
 
@@ -661,9 +685,13 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         %{"s" => {:named_node, "http://ex.org/Alice"}, "name" => {:literal, :simple, "Alice"}},
         %{"s" => {:named_node, "http://ex.org/Bob"}, "name" => {:literal, :simple, "Bob"}}
       ]
+
       right = [
         # Only Alice has an age
-        %{"s" => {:named_node, "http://ex.org/Alice"}, "age" => {:literal, :typed, "30", "xsd:integer"}}
+        %{
+          "s" => {:named_node, "http://ex.org/Alice"},
+          "age" => {:literal, :typed, "30", "xsd:integer"}
+        }
       ]
 
       results = Executor.left_join(left, right) |> Enum.to_list()
@@ -691,6 +719,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/knows"),
         iri("http://example.org/Bob")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
@@ -702,16 +731,20 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         triple(var("s"), iri("http://example.org/knows"), var("friend")),
         triple(var("friend"), iri("http://example.org/name"), var("name"))
       ]
+
       {:ok, bgp_stream} = Executor.execute_bgp(ctx, bgp_patterns)
       bgp_results = Enum.to_list(bgp_stream)
 
       # Execute as separate BGPs joined
-      {:ok, pattern1_stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/knows"), var("friend"))
-      ])
-      {:ok, pattern2_stream} = Executor.execute_bgp(ctx, [
-        triple(var("friend"), iri("http://example.org/name"), var("name"))
-      ])
+      {:ok, pattern1_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/knows"), var("friend"))
+        ])
+
+      {:ok, pattern2_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("friend"), iri("http://example.org/name"), var("name"))
+        ])
 
       pattern1_results = Enum.to_list(pattern1_stream)
       pattern2_results = Enum.to_list(pattern2_stream)
@@ -921,10 +954,13 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       results = Executor.union_all(branches) |> Enum.to_list()
 
       assert results == [
-        %{"x" => 1}, %{"x" => 2},
-        %{"x" => 3},
-        %{"x" => 4}, %{"x" => 5}, %{"x" => 6}
-      ]
+               %{"x" => 1},
+               %{"x" => 2},
+               %{"x" => 3},
+               %{"x" => 4},
+               %{"x" => 5},
+               %{"x" => 6}
+             ]
     end
 
     test "handles branches with different variables" do
@@ -1023,6 +1059,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/knows"),
         iri("http://example.org/Bob")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Carol"),
         iri("http://example.org/likes"),
@@ -1030,14 +1067,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       })
 
       # Execute first BGP: ?s :knows ?o
-      {:ok, knows_stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/knows"), var("o"))
-      ])
+      {:ok, knows_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/knows"), var("o"))
+        ])
 
       # Execute second BGP: ?s :likes ?o
-      {:ok, likes_stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/likes"), var("o"))
-      ])
+      {:ok, likes_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/likes"), var("o"))
+        ])
 
       # UNION of both
       results = Executor.union(knows_stream, likes_stream) |> Enum.to_list()
@@ -1101,7 +1140,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "removes bindings where expression errors (unbound variable)" do
       bindings = [
         %{"x" => {:literal, :typed, "10", @xsd_integer}},
-        %{"y" => {:literal, :typed, "5", @xsd_integer}}  # x is unbound
+        # x is unbound
+        %{"y" => {:literal, :typed, "5", @xsd_integer}}
       ]
 
       # Filter: ?x > 5 (errors on second binding)
@@ -1115,7 +1155,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
     test "removes bindings where expression errors (type mismatch)" do
       bindings = [
-        %{"x" => {:named_node, "http://example.org/A"}}  # Can't compare IRI with integer
+        # Can't compare IRI with integer
+        %{"x" => {:named_node, "http://example.org/A"}}
       ]
 
       # Filter: ?x > 5 (type error)
@@ -1146,10 +1187,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       # Filter: ?x > 0 && ?x < 20
-      expr = {:and,
-        {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
-        {:less, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
-      }
+      expr =
+        {:and, {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
+         {:less, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}}
+
       results = Executor.filter(bindings, expr) |> Enum.to_list()
 
       assert length(results) == 2
@@ -1166,10 +1207,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       # Filter: ?x < 10 || ?x > 20
-      expr = {:or,
-        {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
-        {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
-      }
+      expr =
+        {:or, {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
+         {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}}
+
       results = Executor.filter(bindings, expr) |> Enum.to_list()
 
       assert length(results) == 2
@@ -1195,7 +1236,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "handles BOUND filter" do
       bindings = [
         %{"x" => {:literal, :typed, "5", @xsd_integer}, "y" => {:literal, :simple, "a"}},
-        %{"x" => {:literal, :typed, "10", @xsd_integer}}  # y is unbound
+        # y is unbound
+        %{"x" => {:literal, :typed, "10", @xsd_integer}}
       ]
 
       # Filter: BOUND(?y)
@@ -1268,12 +1310,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
   describe "evaluate_filter/2" do
     test "returns true for true expression" do
-      expr = {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      expr =
+        {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+
       assert Executor.evaluate_filter(expr, %{}) == true
     end
 
     test "returns false for false expression" do
-      expr = {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      expr =
+        {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+
       assert Executor.evaluate_filter(expr, %{}) == false
     end
 
@@ -1294,12 +1340,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
   describe "evaluate_filter_3vl/2" do
     test "returns {:ok, true} for true expression" do
-      expr = {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      expr =
+        {:greater, {:literal, :typed, "10", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+
       assert Executor.evaluate_filter_3vl(expr, %{}) == {:ok, true}
     end
 
     test "returns {:ok, false} for false expression" do
-      expr = {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+      expr =
+        {:greater, {:literal, :typed, "3", @xsd_integer}, {:literal, :typed, "5", @xsd_integer}}
+
       assert Executor.evaluate_filter_3vl(expr, %{}) == {:ok, false}
     end
 
@@ -1330,6 +1380,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
         {:less, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
       ]
+
       results = Executor.filter_all(bindings, exprs) |> Enum.to_list()
 
       assert length(results) == 2
@@ -1350,6 +1401,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         {:greater, {:variable, "x"}, {:literal, :typed, "0", @xsd_integer}},
         {:greater, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}}
       ]
+
       results = Executor.filter_all(bindings, exprs) |> Enum.to_list()
 
       assert results == []
@@ -1369,6 +1421,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
         {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
       ]
+
       results = Executor.filter_any(bindings, exprs) |> Enum.to_list()
 
       assert length(results) == 2
@@ -1392,6 +1445,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         {:less, {:variable, "x"}, {:literal, :typed, "10", @xsd_integer}},
         {:greater, {:variable, "x"}, {:literal, :typed, "20", @xsd_integer}}
       ]
+
       results = Executor.filter_any(bindings, exprs) |> Enum.to_list()
 
       assert results == []
@@ -1400,12 +1454,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
   describe "to_effective_boolean/1" do
     test "handles xsd:boolean true values" do
-      assert Executor.to_effective_boolean({:literal, :typed, "true", @xsd_boolean}) == {:ok, true}
+      assert Executor.to_effective_boolean({:literal, :typed, "true", @xsd_boolean}) ==
+               {:ok, true}
+
       assert Executor.to_effective_boolean({:literal, :typed, "1", @xsd_boolean}) == {:ok, true}
     end
 
     test "handles xsd:boolean false values" do
-      assert Executor.to_effective_boolean({:literal, :typed, "false", @xsd_boolean}) == {:ok, false}
+      assert Executor.to_effective_boolean({:literal, :typed, "false", @xsd_boolean}) ==
+               {:ok, false}
+
       assert Executor.to_effective_boolean({:literal, :typed, "0", @xsd_boolean}) == {:ok, false}
     end
 
@@ -1416,7 +1474,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
     test "handles xsd:string (empty = false)" do
       assert Executor.to_effective_boolean({:literal, :typed, "", @xsd_string}) == {:ok, false}
-      assert Executor.to_effective_boolean({:literal, :typed, "hello", @xsd_string}) == {:ok, true}
+
+      assert Executor.to_effective_boolean({:literal, :typed, "hello", @xsd_string}) ==
+               {:ok, true}
     end
 
     test "handles numeric types (0 = false, non-zero = true)" do
@@ -1424,8 +1484,11 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       assert Executor.to_effective_boolean({:literal, :typed, "42", @xsd_integer}) == {:ok, true}
       assert Executor.to_effective_boolean({:literal, :typed, "-5", @xsd_integer}) == {:ok, true}
 
-      assert Executor.to_effective_boolean({:literal, :typed, "0.0", @xsd_decimal}) == {:ok, false}
-      assert Executor.to_effective_boolean({:literal, :typed, "3.14", @xsd_decimal}) == {:ok, true}
+      assert Executor.to_effective_boolean({:literal, :typed, "0.0", @xsd_decimal}) ==
+               {:ok, false}
+
+      assert Executor.to_effective_boolean({:literal, :typed, "3.14", @xsd_decimal}) ==
+               {:ok, true}
     end
 
     test "returns error for IRIs" do
@@ -1452,11 +1515,13 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/age"),
         typed_literal("25", @xsd_integer)
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/age"),
         typed_literal("17", @xsd_integer)
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Carol"),
         iri("http://example.org/age"),
@@ -1464,9 +1529,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       })
 
       # Execute BGP: ?s :age ?age
-      {:ok, bgp_stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/age"), var("age"))
-      ])
+      {:ok, bgp_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/age"), var("age"))
+        ])
 
       # Apply filter: ?age >= 18
       expr = {:greater_or_equal, {:variable, "age"}, {:literal, :typed, "18", @xsd_integer}}
@@ -1509,18 +1575,24 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "handles missing variables in binding" do
       bindings = [
         %{"x" => 1, "y" => 2},
-        %{"x" => 3}  # missing y
+        # missing y
+        %{"x" => 3}
       ]
 
       results = Executor.project(bindings, ["x", "y"]) |> Enum.to_list()
 
       assert Enum.at(results, 0) == %{"x" => 1, "y" => 2}
-      assert Enum.at(results, 1) == %{"x" => 3}  # y not added
+      # y not added
+      assert Enum.at(results, 1) == %{"x" => 3}
     end
 
     test "handles RDF term values" do
       bindings = [
-        %{"s" => {:named_node, "http://ex.org/A"}, "name" => {:literal, :simple, "Alice"}, "age" => {:literal, :typed, "30", @xsd_integer}}
+        %{
+          "s" => {:named_node, "http://ex.org/A"},
+          "name" => {:literal, :simple, "Alice"},
+          "age" => {:literal, :typed, "30", @xsd_integer}
+        }
       ]
 
       results = Executor.project(bindings, ["s", "name"]) |> Enum.to_list()
@@ -1560,9 +1632,11 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       bindings = [
         %{"x" => 1},
         %{"x" => 2},
-        %{"x" => 1},  # duplicate
+        # duplicate
+        %{"x" => 1},
         %{"x" => 3},
-        %{"x" => 2}   # duplicate
+        # duplicate
+        %{"x" => 2}
       ]
 
       results = Executor.distinct(bindings) |> Enum.to_list()
@@ -1575,7 +1649,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         %{"x" => 3},
         %{"x" => 1},
         %{"x" => 2},
-        %{"x" => 1}  # duplicate
+        # duplicate
+        %{"x" => 1}
       ]
 
       results = Executor.distinct(bindings) |> Enum.to_list()
@@ -1604,8 +1679,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "distinguishes different bindings" do
       bindings = [
         %{"x" => 1, "y" => "a"},
-        %{"x" => 1, "y" => "b"},  # different
-        %{"x" => 1, "y" => "a"}   # duplicate of first
+        # different
+        %{"x" => 1, "y" => "b"},
+        # duplicate of first
+        %{"x" => 1, "y" => "a"}
       ]
 
       results = Executor.distinct(bindings) |> Enum.to_list()
@@ -1619,7 +1696,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       bindings = [
         %{"s" => {:named_node, "http://ex.org/A"}},
         %{"s" => {:named_node, "http://ex.org/B"}},
-        %{"s" => {:named_node, "http://ex.org/A"}}  # duplicate
+        # duplicate
+        %{"s" => {:named_node, "http://ex.org/A"}}
       ]
 
       results = Executor.distinct(bindings) |> Enum.to_list()
@@ -1705,7 +1783,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "handles nil (unbound) values" do
       bindings = [
         %{"x" => 2},
-        %{},  # x is unbound
+        # x is unbound
+        %{},
         %{"x" => 1}
       ]
 
@@ -1872,7 +1951,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       # Project to x only, then distinct
-      results = bindings
+      results =
+        bindings
         |> Executor.project(["x"])
         |> Executor.distinct()
         |> Enum.to_list()
@@ -1890,7 +1970,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       # Order by x, then take 2 starting from offset 1
-      results = bindings
+      results =
+        bindings
         |> Executor.order_by([{"x", :asc}])
         |> Executor.slice(1, 2)
         |> Enum.to_list()
@@ -1909,16 +1990,19 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/age"),
         typed_literal("25", @xsd_integer)
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/age"),
         typed_literal("30", @xsd_integer)
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Carol"),
         iri("http://example.org/age"),
         typed_literal("20", @xsd_integer)
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Dave"),
         iri("http://example.org/age"),
@@ -1926,14 +2010,17 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       })
 
       # Execute BGP
-      {:ok, bgp_stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/age"), var("age"))
-      ])
+      {:ok, bgp_stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/age"), var("age"))
+        ])
 
       # Filter: age >= 20
-      filter_expr = {:greater_or_equal, {:variable, "age"}, {:literal, :typed, "20", @xsd_integer}}
+      filter_expr =
+        {:greater_or_equal, {:variable, "age"}, {:literal, :typed, "20", @xsd_integer}}
 
-      results = bgp_stream
+      results =
+        bgp_stream
         |> Executor.filter(filter_expr)
         |> Executor.project(["s", "age"])
         |> Executor.order_by([{"age", :desc}])
@@ -1976,9 +2063,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       results = Executor.to_select_results(bindings, ["x", "y"])
 
       assert results == [
-        %{"x" => 1, "y" => "a"},
-        %{"x" => 2, "y" => "b"}
-      ]
+               %{"x" => 1, "y" => "a"},
+               %{"x" => 2, "y" => "b"}
+             ]
     end
 
     test "handles empty stream" do
@@ -2060,7 +2147,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"},
+         {:variable, "name"}}
       ]
 
       {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
@@ -2080,11 +2168,13 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       bindings = [
         %{"s" => {:named_node, "http://ex.org/Alice"}, "name" => {:literal, :simple, "Alice"}},
-        %{"s" => {:named_node, "http://ex.org/Bob"}}  # name is unbound
+        # name is unbound
+        %{"s" => {:named_node, "http://ex.org/Bob"}}
       ]
 
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"},
+         {:variable, "name"}}
       ]
 
       {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
@@ -2107,7 +2197,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       # Template with concrete predicate
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"}, {:named_node, "http://xmlns.com/foaf/0.1/Person"}}
+        {:triple, {:variable, "s"},
+         {:named_node, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"},
+         {:named_node, "http://xmlns.com/foaf/0.1/Person"}}
       ]
 
       {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
@@ -2137,7 +2229,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ctx = %{db: db, dict_manager: manager}
 
       bindings = [
-        %{"s" => {:named_node, "http://ex.org/Alice"}, "age" => {:literal, :typed, "30", @xsd_integer}}
+        %{
+          "s" => {:named_node, "http://ex.org/Alice"},
+          "age" => {:literal, :typed, "30", @xsd_integer}
+        }
       ]
 
       template = [
@@ -2156,11 +2251,15 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ctx = %{db: db, dict_manager: manager}
 
       bindings = [
-        %{"s" => {:named_node, "http://ex.org/Alice"}, "label" => {:literal, :lang, "Alice", "en"}}
+        %{
+          "s" => {:named_node, "http://ex.org/Alice"},
+          "label" => {:literal, :lang, "Alice", "en"}
+        }
       ]
 
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://www.w3.org/2000/01/rdf-schema#label"}, {:variable, "label"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://www.w3.org/2000/01/rdf-schema#label"},
+         {:variable, "label"}}
       ]
 
       {:ok, graph} = Executor.to_construct_result(ctx, bindings, template)
@@ -2182,6 +2281,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Alice"),
         iri("http://example.org/age"),
@@ -2220,6 +2320,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
@@ -2294,15 +2395,17 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         iri("http://example.org/name"),
         literal("Alice")
       })
+
       add_triple(db, manager, {
         iri("http://example.org/Bob"),
         iri("http://example.org/name"),
         literal("Bob")
       })
 
-      {:ok, stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/name"), var("name"))
-      ])
+      {:ok, stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/name"), var("name"))
+        ])
 
       results = Executor.to_select_results(stream, ["name"])
 
@@ -2325,16 +2428,18 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       })
 
       # ASK if Alice knows anyone
-      {:ok, stream} = Executor.execute_bgp(ctx, [
-        triple(iri("http://example.org/Alice"), iri("http://example.org/knows"), var("person"))
-      ])
+      {:ok, stream} =
+        Executor.execute_bgp(ctx, [
+          triple(iri("http://example.org/Alice"), iri("http://example.org/knows"), var("person"))
+        ])
 
       assert Executor.to_ask_result(stream) == true
 
       # ASK if Bob knows anyone (he doesn't)
-      {:ok, stream2} = Executor.execute_bgp(ctx, [
-        triple(iri("http://example.org/Bob"), iri("http://example.org/knows"), var("person"))
-      ])
+      {:ok, stream2} =
+        Executor.execute_bgp(ctx, [
+          triple(iri("http://example.org/Bob"), iri("http://example.org/knows"), var("person"))
+        ])
 
       assert Executor.to_ask_result(stream2) == false
 
@@ -2351,13 +2456,15 @@ defmodule TripleStore.SPARQL.ExecutorTest do
         literal("Alice")
       })
 
-      {:ok, stream} = Executor.execute_bgp(ctx, [
-        triple(var("s"), iri("http://example.org/name"), var("name"))
-      ])
+      {:ok, stream} =
+        Executor.execute_bgp(ctx, [
+          triple(var("s"), iri("http://example.org/name"), var("name"))
+        ])
 
       # Construct with different predicate
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"},
+         {:variable, "name"}}
       ]
 
       {:ok, graph} = Executor.to_construct_result(ctx, stream, template)
@@ -2471,6 +2578,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       # Attach telemetry handler
       handler_id = "test-hash-join-handler"
+
       :telemetry.attach(
         handler_id,
         [:triple_store, :sparql, :executor, :hash_join],
@@ -2495,6 +2603,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       test_pid = self()
 
       handler_id = "test-order-by-handler"
+
       :telemetry.attach(
         handler_id,
         [:triple_store, :sparql, :executor, :order_by],
@@ -2521,7 +2630,10 @@ defmodule TripleStore.SPARQL.ExecutorTest do
   describe "group_by/3" do
     test "groups bindings by single variable" do
       bindings = [
-        %{"type" => {:named_node, "http://ex.org/Person"}, "name" => {:literal, :simple, "Alice"}},
+        %{
+          "type" => {:named_node, "http://ex.org/Person"},
+          "name" => {:literal, :simple, "Alice"}
+        },
         %{"type" => {:named_node, "http://ex.org/Person"}, "name" => {:literal, :simple, "Bob"}},
         %{"type" => {:named_node, "http://ex.org/Animal"}, "name" => {:literal, :simple, "Cat"}}
       ]
@@ -2533,19 +2645,41 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       assert length(result) == 2
 
-      person_group = Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Person"} end)
-      animal_group = Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Animal"} end)
+      person_group =
+        Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Person"} end)
 
-      assert person_group["count"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert animal_group["count"] == {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
+      animal_group =
+        Enum.find(result, fn r -> r["type"] == {:named_node, "http://ex.org/Animal"} end)
+
+      assert person_group["count"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert animal_group["count"] ==
+               {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "groups bindings by multiple variables" do
       bindings = [
-        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "active"}, "val" => 1},
-        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "active"}, "val" => 2},
-        %{"type" => {:named_node, "http://ex.org/A"}, "status" => {:literal, :simple, "inactive"}, "val" => 3},
-        %{"type" => {:named_node, "http://ex.org/B"}, "status" => {:literal, :simple, "active"}, "val" => 4}
+        %{
+          "type" => {:named_node, "http://ex.org/A"},
+          "status" => {:literal, :simple, "active"},
+          "val" => 1
+        },
+        %{
+          "type" => {:named_node, "http://ex.org/A"},
+          "status" => {:literal, :simple, "active"},
+          "val" => 2
+        },
+        %{
+          "type" => {:named_node, "http://ex.org/A"},
+          "status" => {:literal, :simple, "inactive"},
+          "val" => 3
+        },
+        %{
+          "type" => {:named_node, "http://ex.org/B"},
+          "status" => {:literal, :simple, "active"},
+          "val" => 4
+        }
       ]
 
       group_vars = [{:variable, "type"}, {:variable, "status"}]
@@ -2556,11 +2690,14 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       # Should have 3 groups: (A, active), (A, inactive), (B, active)
       assert length(result) == 3
 
-      a_active = Enum.find(result, fn r ->
-        r["type"] == {:named_node, "http://ex.org/A"} and r["status"] == {:literal, :simple, "active"}
-      end)
+      a_active =
+        Enum.find(result, fn r ->
+          r["type"] == {:named_node, "http://ex.org/A"} and
+            r["status"] == {:literal, :simple, "active"}
+        end)
 
-      assert a_active["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert a_active["cnt"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "COUNT(*) counts all solutions" do
@@ -2575,13 +2712,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
 
       assert length(result) == 1
-      assert hd(result)["total"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result)["total"] ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "COUNT(expr) counts non-null values" do
       bindings = [
         %{"x" => {:literal, :simple, "a"}, "y" => {:literal, :simple, "1"}},
-        %{"x" => {:literal, :simple, "b"}},  # y is missing
+        # y is missing
+        %{"x" => {:literal, :simple, "b"}},
         %{"x" => {:literal, :simple, "c"}, "y" => {:literal, :simple, "3"}}
       ]
 
@@ -2591,14 +2731,24 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       assert length(result) == 1
       # Only 2 bindings have y
-      assert hd(result)["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result)["cnt"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "SUM aggregates numeric values" do
       bindings = [
-        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}},
-        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}},
-        %{"type" => {:literal, :simple, "B"}, "val" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}}
+        %{
+          "type" => {:literal, :simple, "A"},
+          "val" => {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}
+        },
+        %{
+          "type" => {:literal, :simple, "A"},
+          "val" => {:literal, :typed, "20", "http://www.w3.org/2001/XMLSchema#integer"}
+        },
+        %{
+          "type" => {:literal, :simple, "B"},
+          "val" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
+        }
       ]
 
       group_vars = [{:variable, "type"}]
@@ -2609,7 +2759,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       a_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "A"} end)
       b_group = Enum.find(result, fn r -> r["type"] == {:literal, :simple, "B"} end)
 
-      assert a_group["sum"] == {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert a_group["sum"] ==
+               {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+
       assert b_group["sum"] == {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
@@ -2625,7 +2777,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
 
       # (10 + 20 + 30) / 3 = 20.0
-      assert hd(result)["avg"] == {:literal, :typed, "20.0", "http://www.w3.org/2001/XMLSchema#decimal"}
+      assert hd(result)["avg"] ==
+               {:literal, :typed, "20.0", "http://www.w3.org/2001/XMLSchema#decimal"}
     end
 
     test "MIN finds minimum value" do
@@ -2639,7 +2792,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
 
-      assert hd(result)["min"] == {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result)["min"] ==
+               {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "MAX finds maximum value" do
@@ -2653,7 +2807,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       result = Executor.group_by(bindings, [], aggregates) |> Enum.to_list()
 
-      assert hd(result)["max"] == {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result)["max"] ==
+               {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "GROUP_CONCAT joins values with separator" do
@@ -2695,7 +2850,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "DISTINCT in COUNT removes duplicates" do
       bindings = [
         %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},
-        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},  # duplicate
+        # duplicate
+        %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "x"}},
         %{"type" => {:literal, :simple, "A"}, "val" => {:literal, :simple, "y"}}
       ]
 
@@ -2703,11 +2859,16 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       agg_no_distinct = [{{:variable, "cnt"}, {:count, {:variable, "val"}, false}}]
       agg_distinct = [{{:variable, "cnt"}, {:count, {:variable, "val"}, true}}]
 
-      result_no_distinct = Executor.group_by(bindings, group_vars, agg_no_distinct) |> Enum.to_list()
+      result_no_distinct =
+        Executor.group_by(bindings, group_vars, agg_no_distinct) |> Enum.to_list()
+
       result_distinct = Executor.group_by(bindings, group_vars, agg_distinct) |> Enum.to_list()
 
-      assert hd(result_no_distinct)["cnt"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert hd(result_distinct)["cnt"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert hd(result_no_distinct)["cnt"] ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result_distinct)["cnt"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "handles empty group variables (single implicit group)" do
@@ -2718,6 +2879,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       ]
 
       group_vars = []
+
       aggregates = [
         {{:variable, "cnt"}, {:count, :star, false}},
         {{:variable, "sum"}, {:sum, {:variable, "val"}, false}}
@@ -2726,8 +2888,12 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       result = Executor.group_by(bindings, group_vars, aggregates) |> Enum.to_list()
 
       assert length(result) == 1
-      assert hd(result)["cnt"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert hd(result)["sum"] == {:literal, :typed, "6", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result)["cnt"] ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result)["sum"] ==
+               {:literal, :typed, "6", "http://www.w3.org/2001/XMLSchema#integer"}
     end
   end
 
@@ -2744,7 +2910,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       result = Executor.implicit_group(bindings, aggregates) |> Enum.to_list()
 
       assert length(result) == 1
-      assert hd(result)["total"] == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result)["total"] ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "handles empty input" do
@@ -2754,7 +2922,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       result = Executor.implicit_group(bindings, aggregates) |> Enum.to_list()
 
       assert length(result) == 1
-      assert hd(result)["total"] == {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert hd(result)["total"] ==
+               {:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#integer"}
     end
   end
 
@@ -2762,13 +2932,24 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     test "filters groups by aggregate value" do
       # Pre-grouped bindings with aggregate results
       groups = [
-        %{"type" => {:literal, :simple, "A"}, "count" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}},
-        %{"type" => {:literal, :simple, "B"}, "count" => {:literal, :typed, "15", "http://www.w3.org/2001/XMLSchema#integer"}},
-        %{"type" => {:literal, :simple, "C"}, "count" => {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}}
+        %{
+          "type" => {:literal, :simple, "A"},
+          "count" => {:literal, :typed, "5", "http://www.w3.org/2001/XMLSchema#integer"}
+        },
+        %{
+          "type" => {:literal, :simple, "B"},
+          "count" => {:literal, :typed, "15", "http://www.w3.org/2001/XMLSchema#integer"}
+        },
+        %{
+          "type" => {:literal, :simple, "C"},
+          "count" => {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+        }
       ]
 
       # HAVING count > 10
-      having_expr = {:greater, {:variable, "count"}, {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}}
+      having_expr =
+        {:greater, {:variable, "count"},
+         {:literal, :typed, "10", "http://www.w3.org/2001/XMLSchema#integer"}}
 
       result = Executor.having(groups, having_expr) |> Enum.to_list()
 
@@ -2805,6 +2986,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       # Attach a telemetry handler
       ref = make_ref()
       test_pid = self()
+
       :telemetry.attach(
         "test-distinct-handler-#{inspect(ref)}",
         [:triple_store, :sparql, :executor, :distinct],

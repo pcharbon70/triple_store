@@ -183,13 +183,14 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
     derived_after_explicit_delete = MapSet.difference(derived_facts, deleted_set)
 
     # Phase 2: Backward trace to find potentially invalid derived facts
-    {:ok, trace_result} = BackwardTrace.trace_in_memory(
-      deleted_set,
-      derived_after_explicit_delete,
-      rules,
-      max_depth: max_depth,
-      include_deleted: false
-    )
+    {:ok, trace_result} =
+      BackwardTrace.trace_in_memory(
+        deleted_set,
+        derived_after_explicit_delete,
+        rules,
+        max_depth: max_depth,
+        include_deleted: false
+      )
 
     # Emit backward trace telemetry
     if emit_telemetry do
@@ -203,12 +204,13 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
     potentially_invalid = trace_result.potentially_invalid
 
     # Phase 3: Forward re-derivation to partition keep/delete
-    {:ok, rederive_result} = ForwardRederive.rederive_in_memory(
-      potentially_invalid,
-      facts_after_explicit_delete,
-      deleted_set,
-      rules
-    )
+    {:ok, rederive_result} =
+      ForwardRederive.rederive_in_memory(
+        potentially_invalid,
+        facts_after_explicit_delete,
+        deleted_set,
+        rules
+      )
 
     # Emit forward re-derivation telemetry
     if emit_telemetry do
@@ -241,13 +243,14 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
       Telemetry.emit_stop([:triple_store, :reasoner, :delete], duration, stats)
     end
 
-    {:ok, %{
-      explicit_deleted: explicit_deleted,
-      derived_deleted: derived_deleted,
-      derived_kept: derived_kept,
-      final_facts: final_facts,
-      stats: stats
-    }}
+    {:ok,
+     %{
+       explicit_deleted: explicit_deleted,
+       derived_deleted: derived_deleted,
+       derived_kept: derived_kept,
+       final_facts: final_facts,
+       stats: stats
+     }}
   end
 
   @doc """
@@ -313,13 +316,14 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   def delete_with_reasoning(db, triples, rules, opts \\ [])
 
   def delete_with_reasoning(_db, [], _rules, _opts) do
-    {:ok, %{
-      explicit_deleted: 0,
-      derived_deleted: 0,
-      derived_kept: 0,
-      potentially_invalid_count: 0,
-      duration_ms: 0
-    }}
+    {:ok,
+     %{
+       explicit_deleted: 0,
+       derived_deleted: 0,
+       derived_kept: 0,
+       potentially_invalid_count: 0,
+       duration_ms: 0
+     }}
   end
 
   def delete_with_reasoning(db, triples, rules, opts) when is_list(triples) do
@@ -333,33 +337,35 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
          # Get all derived facts for backward tracing
          {:ok, all_derived} <- get_all_derived_facts(db),
          # Perform backward trace
-         {:ok, trace_result} <- backward_trace_db(
-           MapSet.new(triples),
-           all_derived,
-           rules,
-           max_depth
-         ),
+         {:ok, trace_result} <-
+           backward_trace_db(
+             MapSet.new(triples),
+             all_derived,
+             rules,
+             max_depth
+           ),
          # Perform forward re-derivation
-         {:ok, rederive_result} <- forward_rederive_db(
-           db,
-           trace_result.potentially_invalid,
-           MapSet.new(triples),
-           rules
-         ),
+         {:ok, rederive_result} <-
+           forward_rederive_db(
+             db,
+             trace_result.potentially_invalid,
+             MapSet.new(triples),
+             rules
+           ),
          # Delete derived facts that cannot be re-derived
          :ok <- DerivedStore.delete_derived(db, MapSet.to_list(rederive_result.delete)),
          # Also delete any derived facts that were explicitly requested for deletion
          :ok <- DerivedStore.delete_derived(db, derived_triples) do
-
       duration_ms = System.monotonic_time(:millisecond) - start_time
 
-      {:ok, %{
-        explicit_deleted: length(explicit_triples),
-        derived_deleted: MapSet.size(rederive_result.delete) + length(derived_triples),
-        derived_kept: MapSet.size(rederive_result.keep),
-        potentially_invalid_count: MapSet.size(trace_result.potentially_invalid),
-        duration_ms: duration_ms
-      }}
+      {:ok,
+       %{
+         explicit_deleted: length(explicit_triples),
+         derived_deleted: MapSet.size(rederive_result.delete) + length(derived_triples),
+         derived_kept: MapSet.size(rederive_result.keep),
+         potentially_invalid_count: MapSet.size(trace_result.potentially_invalid),
+         duration_ms: duration_ms
+       }}
     end
   end
 
@@ -398,7 +404,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
       triples
       |> Enum.chunk_every(batch_size)
       |> Enum.reduce_while(
-        {:ok, %{explicit_deleted: 0, derived_deleted: 0, derived_kept: 0, potentially_invalid_count: 0}},
+        {:ok,
+         %{explicit_deleted: 0, derived_deleted: 0, derived_kept: 0, potentially_invalid_count: 0}},
         fn batch, {:ok, acc} ->
           case delete_with_reasoning(db, batch, rules, opts) do
             {:ok, batch_stats} ->
@@ -406,8 +413,10 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
                 explicit_deleted: acc.explicit_deleted + batch_stats.explicit_deleted,
                 derived_deleted: acc.derived_deleted + batch_stats.derived_deleted,
                 derived_kept: acc.derived_kept + batch_stats.derived_kept,
-                potentially_invalid_count: acc.potentially_invalid_count + batch_stats.potentially_invalid_count
+                potentially_invalid_count:
+                  acc.potentially_invalid_count + batch_stats.potentially_invalid_count
               }
+
               {:cont, {:ok, new_acc}}
 
             {:error, _} = error ->
@@ -439,12 +448,17 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
 
           {:ok, false} ->
             case DerivedStore.derived_exists?(db, triple) do
-              {:ok, true} -> {exp_acc, [triple | der_acc]}
-              {:ok, false} -> {exp_acc, der_acc}
+              {:ok, true} ->
+                {exp_acc, [triple | der_acc]}
+
+              {:ok, false} ->
+                {exp_acc, der_acc}
+
               {:error, reason} ->
                 Logger.warning(
                   "Error checking derived store for triple #{inspect(triple)}: #{inspect(reason)}"
                 )
+
                 {exp_acc, der_acc}
             end
 
@@ -452,6 +466,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
             Logger.warning(
               "Error checking index for triple #{inspect(triple)}: #{inspect(reason)}"
             )
+
             {exp_acc, der_acc}
         end
       end)

@@ -724,18 +724,6 @@ defmodule TripleStore.Query.Cache do
   end
 
   @impl true
-  def handle_cast({:put, key, result, predicates}, state) do
-    result_size = compute_result_size(result)
-
-    if result_size > state.max_result_size do
-      {:noreply, %{state | skipped_large: state.skipped_large + 1}}
-    else
-      state = do_put(state, key, result, result_size, predicates)
-      {:noreply, state}
-    end
-  end
-
-  @impl true
   def handle_call({:persist_to_file, path}, _from, state) do
     result = do_persist_to_file(state, path)
     {:reply, result, state}
@@ -769,6 +757,18 @@ defmodule TripleStore.Query.Cache do
       )
 
     {:reply, entries, state}
+  end
+
+  @impl true
+  def handle_cast({:put, key, result, predicates}, state) do
+    result_size = compute_result_size(result)
+
+    if result_size > state.max_result_size do
+      {:noreply, %{state | skipped_large: state.skipped_large + 1}}
+    else
+      state = do_put(state, key, result, result_size, predicates)
+      {:noreply, state}
+    end
   end
 
   @impl true

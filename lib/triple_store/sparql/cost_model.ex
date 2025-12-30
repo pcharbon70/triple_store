@@ -585,9 +585,11 @@ defmodule TripleStore.SPARQL.CostModel do
       # More join variables = more selective
       num_join_vars = length(join_vars)
       triple_count = Map.get(stats, :triple_count, 10_000)
-      distinct_avg = (Map.get(stats, :distinct_subjects, 1000) +
-                     Map.get(stats, :distinct_predicates, 100) +
-                     Map.get(stats, :distinct_objects, 2000)) / 3
+
+      distinct_avg =
+        (Map.get(stats, :distinct_subjects, 1000) +
+           Map.get(stats, :distinct_predicates, 100) +
+           Map.get(stats, :distinct_objects, 2000)) / 3
 
       selectivity = :math.pow(distinct_avg / triple_count, num_join_vars / 2)
 
@@ -607,7 +609,8 @@ defmodule TripleStore.SPARQL.CostModel do
       [first | rest] ->
         # Start with first pattern
         {total_cost, _current_card} =
-          Enum.reduce(rest, {build_cost(0.0, 0.0, 0.0), first}, fn right_card, {acc_cost, left_card} ->
+          Enum.reduce(rest, {build_cost(0.0, 0.0, 0.0), first}, fn right_card,
+                                                                   {acc_cost, left_card} ->
             # Use hash join for each pair
             join_cost = hash_join_cost(left_card, right_card)
 

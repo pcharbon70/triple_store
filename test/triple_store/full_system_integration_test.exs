@@ -76,64 +76,74 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert load_count > 0
 
         # 2. Query to verify data loaded
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?person ?name WHERE {
-            ?person a ex:Person .
-            ?person ex:name ?name .
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?person ?name WHERE {
+              ?person a ex:Person .
+              ?person ex:name ?name .
+            }
+          """)
+
         assert length(results) == 3
 
         names = Enum.map(results, fn row -> Map.get(row, "name") |> extract_value() end)
+
         assert Enum.all?(["Alice", "Bob", "Charlie"], fn name ->
-          Enum.member?(names, name)
-        end)
+                 Enum.member?(names, name)
+               end)
 
         # 3. Update: Add a new person
-        {:ok, update_count} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA {
-            ex:diana a ex:Person ;
-                ex:name "Diana" ;
-                ex:age 28 .
-          }
-        """)
+        {:ok, update_count} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA {
+              ex:diana a ex:Person ;
+                  ex:name "Diana" ;
+                  ex:age 28 .
+            }
+          """)
+
         assert update_count >= 0
 
         # 4. Query again to verify update
-        {:ok, results2} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?person) AS ?count) WHERE {
-            ?person a ex:Person .
-          }
-        """)
+        {:ok, results2} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?person) AS ?count) WHERE {
+              ?person a ex:Person .
+            }
+          """)
+
         assert length(results2) == 1
         count = results2 |> hd() |> Map.get("count") |> extract_value()
         assert count == 4
 
         # 5. Delete: Remove Bob
-        {:ok, _delete_count} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          DELETE WHERE {
-            ex:bob ?p ?o .
-          }
-        """)
+        {:ok, _delete_count} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            DELETE WHERE {
+              ex:bob ?p ?o .
+            }
+          """)
 
         # 6. Query to verify deletion
-        {:ok, results3} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?person WHERE {
-            ?person a ex:Person .
-          }
-        """)
+        {:ok, results3} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?person WHERE {
+              ?person a ex:Person .
+            }
+          """)
 
-        person_uris = Enum.map(results3, fn row ->
-          case Map.get(row, "person") do
-            %RDF.IRI{} = iri -> to_string(iri)
-            _ -> nil
-          end
-        end)
+        person_uris =
+          Enum.map(results3, fn row ->
+            case Map.get(row, "person") do
+              %RDF.IRI{} = iri -> to_string(iri)
+              _ -> nil
+            end
+          end)
 
         refute Enum.member?(person_uris, "http://example.org/bob")
       after
@@ -163,12 +173,14 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert load_count >= 2
 
         # 2. Query to verify
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?item ?val WHERE {
-            ?item ex:value ?val .
-          } ORDER BY ?val
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?item ?val WHERE {
+              ?item ex:value ?val .
+            } ORDER BY ?val
+          """)
+
         assert length(results) == 2
 
         # 3. Insert using API
@@ -177,16 +189,18 @@ defmodule TripleStore.FullSystemIntegrationTest do
           RDF.iri("http://example.org/value"),
           RDF.literal(300)
         }
+
         {:ok, insert_count} = TripleStore.insert(store, new_triple)
         assert insert_count >= 1
 
         # 4. Query to verify insert
-        {:ok, results2} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (SUM(?val) AS ?total) WHERE {
-            ?item ex:value ?val .
-          }
-        """)
+        {:ok, results2} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (SUM(?val) AS ?total) WHERE {
+              ?item ex:value ?val .
+            }
+          """)
 
         total = results2 |> hd() |> Map.get("total") |> extract_value()
         assert total == 600
@@ -202,22 +216,24 @@ defmodule TripleStore.FullSystemIntegrationTest do
         # Perform 10 insert cycles
         for i <- 1..10 do
           # Add a new item
-          {:ok, _} = TripleStore.update(store, """
-            PREFIX ex: <http://example.org/>
-            INSERT DATA {
-              ex:item#{i} a ex:Item ;
-                  ex:index #{i} .
-            }
-          """)
+          {:ok, _} =
+            TripleStore.update(store, """
+              PREFIX ex: <http://example.org/>
+              INSERT DATA {
+                ex:item#{i} a ex:Item ;
+                    ex:index #{i} .
+              }
+            """)
         end
 
         # Verify all items exist
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?item) AS ?count) WHERE {
-            ?item a ex:Item .
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?item) AS ?count) WHERE {
+              ?item a ex:Item .
+            }
+          """)
 
         count = results |> hd() |> Map.get("count") |> extract_value()
         assert count == 10
@@ -241,12 +257,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         end
 
         # Verify remaining items
-        {:ok, results2} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?item) AS ?count) WHERE {
-            ?item a ex:Item .
-          }
-        """)
+        {:ok, results2} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?item) AS ?count) WHERE {
+              ?item a ex:Item .
+            }
+          """)
 
         count2 = results2 |> hd() |> Map.get("count") |> extract_value()
         assert count2 == 5
@@ -357,20 +374,22 @@ defmodule TripleStore.FullSystemIntegrationTest do
         results = Task.await_many(tasks, 30_000)
 
         # Count successes
-        successes = Enum.filter(results, fn
-          {:ok, _, _} -> true
-          _ -> false
-        end)
+        successes =
+          Enum.filter(results, fn
+            {:ok, _, _} -> true
+            _ -> false
+          end)
 
         assert length(successes) == 10
 
         # Verify all items were added
-        {:ok, query_results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?item) AS ?count) WHERE {
-            ?item a ex:ConcurrentItem .
-          }
-        """)
+        {:ok, query_results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?item) AS ?count) WHERE {
+              ?item a ex:ConcurrentItem .
+            }
+          """)
 
         count = query_results |> hd() |> Map.get("count") |> extract_value()
         assert count == 10
@@ -434,12 +453,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert write_count == 25
 
         # Verify all items exist
-        {:ok, query_results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT (COUNT(?item) AS ?count) WHERE {
-            ?item a ex:MixedItem .
-          }
-        """)
+        {:ok, query_results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT (COUNT(?item) AS ?count) WHERE {
+              ?item a ex:MixedItem .
+            }
+          """)
 
         count = query_results |> hd() |> Map.get("count") |> extract_value()
         assert count == 25
@@ -479,9 +499,9 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
         # All health checks should succeed
         assert Enum.all?(health_checks, fn
-          {:ok, %{status: status}} -> status in [:healthy, :degraded]
-          _ -> false
-        end)
+                 {:ok, %{status: status}} -> status in [:healthy, :degraded]
+                 _ -> false
+               end)
       after
         cleanup_test_store(store, path)
       end
@@ -515,9 +535,10 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert count >= 1000
 
         # Query should work
-        {:ok, results} = TripleStore.query(store, """
-          SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }
+          """)
 
         result_count = results |> hd() |> Map.get("count") |> extract_value()
         assert result_count >= 1000
@@ -549,13 +570,14 @@ defmodule TripleStore.FullSystemIntegrationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         # Query returning all items should complete
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-          SELECT ?item WHERE {
-            ?item rdf:type ex:Item .
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?item WHERE {
+              ?item rdf:type ex:Item .
+            }
+          """)
 
         assert length(results) == 500
       after
@@ -579,10 +601,11 @@ defmodule TripleStore.FullSystemIntegrationTest do
           end
 
           # Query batch
-          {:ok, _results} = TripleStore.query(store, """
-            PREFIX ex: <http://example.org/>
-            SELECT * WHERE { ?s ex:batch #{batch} }
-          """)
+          {:ok, _results} =
+            TripleStore.query(store, """
+              PREFIX ex: <http://example.org/>
+              SELECT * WHERE { ?s ex:batch #{batch} }
+            """)
         end
 
         # Final count check
@@ -643,10 +666,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
           {:ok, stats2} = TripleStore.stats(store2)
           assert stats2.triple_count == original_count
 
-          {:ok, results} = TripleStore.query(store2, """
-            PREFIX ex: <http://example.org/>
-            SELECT ?person WHERE { ?person a ex:Person }
-          """)
+          {:ok, results} =
+            TripleStore.query(store2, """
+              PREFIX ex: <http://example.org/>
+              SELECT ?person WHERE { ?person a ex:Person }
+            """)
+
           assert length(results) == 3
         after
           :ok = TripleStore.close(store2)
@@ -666,12 +691,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         {:ok, _} = TripleStore.load_string(store, @sample_turtle, :turtle)
 
         # Add some unique data
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA {
-            ex:unique_test ex:marker "backup_test_marker" .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA {
+              ex:unique_test ex:marker "backup_test_marker" .
+            }
+          """)
 
         {:ok, original_stats} = TripleStore.stats(store)
 
@@ -686,12 +712,13 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert restored_stats.triple_count == original_stats.triple_count
 
         # Verify unique data exists
-        {:ok, results} = TripleStore.query(restored_store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?marker WHERE {
-            ex:unique_test ex:marker ?marker .
-          }
-        """)
+        {:ok, results} =
+          TripleStore.query(restored_store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?marker WHERE {
+              ex:unique_test ex:marker ?marker .
+            }
+          """)
 
         assert length(results) == 1
         marker = results |> hd() |> Map.get("marker") |> extract_value()
@@ -721,10 +748,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         assert Process.alive?(dict_manager)
 
         # Query should work
-        {:ok, results} = TripleStore.query(store, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?person WHERE { ?person a ex:Person }
-        """)
+        {:ok, results} =
+          TripleStore.query(store, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?person WHERE { ?person a ex:Person }
+          """)
+
         assert length(results) == 3
 
         # Close properly and reopen to simulate recovery
@@ -733,10 +762,12 @@ defmodule TripleStore.FullSystemIntegrationTest do
         {:ok, store2} = open_with_retry(path)
 
         # Query should still work after recovery
-        {:ok, results2} = TripleStore.query(store2, """
-          PREFIX ex: <http://example.org/>
-          SELECT ?person WHERE { ?person a ex:Person }
-        """)
+        {:ok, results2} =
+          TripleStore.query(store2, """
+            PREFIX ex: <http://example.org/>
+            SELECT ?person WHERE { ?person a ex:Person }
+          """)
+
         assert length(results2) == 3
 
         :ok = TripleStore.close(store2)

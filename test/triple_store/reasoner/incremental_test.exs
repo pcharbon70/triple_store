@@ -49,10 +49,12 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "adds multiple explicit facts" do
       existing = MapSet.new()
+
       new_triples = [
         {iri("alice"), rdf_type(), iri("Person")},
         {iri("bob"), rdf_type(), iri("Student")}
       ]
+
       rules = []
 
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, existing, rules)
@@ -63,7 +65,8 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "skips facts that already exist" do
       existing = MapSet.new([{iri("alice"), rdf_type(), iri("Person")}])
-      new_triples = [{iri("alice"), rdf_type(), iri("Person")}]  # Same fact
+      # Same fact
+      new_triples = [{iri("alice"), rdf_type(), iri("Person")}]
       rules = []
 
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, existing, rules)
@@ -91,9 +94,10 @@ defmodule TripleStore.Reasoner.IncrementalTest do
   describe "add_in_memory/4 - class hierarchy reasoning" do
     test "derives class membership from subclass hierarchy" do
       # Set up hierarchy: Student subClassOf Person
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       # Add alice as Student
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
@@ -110,10 +114,11 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "derives transitive class membership" do
       # Set up hierarchy: Person subClassOf Animal subClassOf LivingThing
-      existing = MapSet.new([
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-        {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
+          {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
+        ])
 
       # Add alice as Person
       new_triples = [{iri("alice"), rdf_type(), iri("Person")}]
@@ -131,11 +136,12 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "handles deep class hierarchies" do
       # Set up 4-level hierarchy
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-        {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
+          {iri("Animal"), rdfs_subClassOf(), iri("LivingThing")}
+        ])
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
       rules = [Rules.cax_sco()]
@@ -150,10 +156,11 @@ defmodule TripleStore.Reasoner.IncrementalTest do
     end
 
     test "reports correct iteration count" do
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
       rules = [Rules.cax_sco()]
@@ -170,9 +177,10 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
   describe "add_in_memory/4 - multiple rules" do
     test "handles multiple rules" do
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
       # Use multiple rules
@@ -186,10 +194,12 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "does not duplicate existing derived facts" do
       # Pre-derive the fact
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), rdf_type(), iri("Person")}  # Already derived
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          # Already derived
+          {iri("alice"), rdf_type(), iri("Person")}
+        ])
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
       rules = [Rules.cax_sco()]
@@ -209,9 +219,10 @@ defmodule TripleStore.Reasoner.IncrementalTest do
   describe "add_in_memory/4 - subclass transitivity" do
     test "derives subclass transitivity when adding subclass assertion" do
       # Existing: Person subClassOf Animal
-      existing = MapSet.new([
-        {iri("Person"), rdfs_subClassOf(), iri("Animal")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+        ])
 
       # Add: Student subClassOf Person
       new_triples = [{iri("Student"), rdfs_subClassOf(), iri("Person")}]
@@ -245,9 +256,10 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "propagates sameAs transitivity" do
       # Existing: alice sameAs bob
-      existing = MapSet.new([
-        {iri("alice"), owl_sameAs(), iri("bob")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("alice"), owl_sameAs(), iri("bob")}
+        ])
 
       # Add: bob sameAs carol
       new_triples = [{iri("bob"), owl_sameAs(), iri("carol")}]
@@ -270,19 +282,21 @@ defmodule TripleStore.Reasoner.IncrementalTest do
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
       rules = [Rules.cax_sco()]
 
-      {:ok, all_facts, _stats} = Incremental.add_in_memory(new_triples, existing, rules, parallel: true)
+      {:ok, all_facts, _stats} =
+        Incremental.add_in_memory(new_triples, existing, rules, parallel: true)
 
       assert MapSet.member?(all_facts, {iri("alice"), rdf_type(), iri("Person")})
     end
 
     test "respects max_iterations option" do
       # Set up deep hierarchy
-      existing = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("D")},
-        {iri("D"), rdfs_subClassOf(), iri("E")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("D")},
+          {iri("D"), rdfs_subClassOf(), iri("E")}
+        ])
 
       new_triples = [{iri("x"), rdf_type(), iri("A")}]
       rules = [Rules.cax_sco()]
@@ -293,6 +307,7 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
       # Limit to 1 iteration - may not fully propagate but should complete
       result = Incremental.add_in_memory(new_triples, existing, rules, max_iterations: 1)
+
       case result do
         {:ok, _all, _s} -> :ok
         {:error, :max_iterations_exceeded} -> :ok
@@ -306,7 +321,8 @@ defmodule TripleStore.Reasoner.IncrementalTest do
       rules = []
 
       # Should not raise with telemetry disabled
-      {:ok, _all_facts, _stats} = Incremental.add_in_memory(new_triples, existing, rules, emit_telemetry: false)
+      {:ok, _all_facts, _stats} =
+        Incremental.add_in_memory(new_triples, existing, rules, emit_telemetry: false)
     end
   end
 
@@ -319,7 +335,8 @@ defmodule TripleStore.Reasoner.IncrementalTest do
       existing = MapSet.new()
       # Add facts with no matching rules
       new_triples = [{iri("alice"), iri("knows"), iri("bob")}]
-      rules = [Rules.cax_sco()]  # Only matches rdf:type patterns
+      # Only matches rdf:type patterns
+      rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, existing, rules)
 
@@ -331,13 +348,20 @@ defmodule TripleStore.Reasoner.IncrementalTest do
     test "handles multiple additions sequentially" do
       # First addition
       existing1 = MapSet.new([{iri("Student"), rdfs_subClassOf(), iri("Person")}])
-      {:ok, facts1, stats1} = Incremental.add_in_memory([{iri("alice"), rdf_type(), iri("Student")}], existing1, [Rules.cax_sco()])
+
+      {:ok, facts1, stats1} =
+        Incremental.add_in_memory([{iri("alice"), rdf_type(), iri("Student")}], existing1, [
+          Rules.cax_sco()
+        ])
 
       assert stats1.derived_count >= 1
       assert MapSet.member?(facts1, {iri("alice"), rdf_type(), iri("Person")})
 
       # Second addition using previous result as existing
-      {:ok, facts2, stats2} = Incremental.add_in_memory([{iri("bob"), rdf_type(), iri("Student")}], facts1, [Rules.cax_sco()])
+      {:ok, facts2, stats2} =
+        Incremental.add_in_memory([{iri("bob"), rdf_type(), iri("Student")}], facts1, [
+          Rules.cax_sco()
+        ])
 
       assert stats2.derived_count >= 1
       assert MapSet.member?(facts2, {iri("bob"), rdf_type(), iri("Person")})
@@ -359,10 +383,12 @@ defmodule TripleStore.Reasoner.IncrementalTest do
 
     test "handles empty existing facts" do
       existing = MapSet.new()
+
       new_triples = [
         {iri("alice"), rdf_type(), iri("Student")},
         {iri("Student"), rdfs_subClassOf(), iri("Person")}
       ]
+
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, existing, rules)
@@ -388,9 +414,11 @@ defmodule TripleStore.Reasoner.IncrementalTest do
     end
 
     test "returns derived facts without modifying existing" do
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       rules = [Rules.cax_sco()]
 
       # Preview additions
@@ -405,9 +433,11 @@ defmodule TripleStore.Reasoner.IncrementalTest do
     end
 
     test "excludes new facts from derived set" do
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       rules = [Rules.cax_sco()]
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]

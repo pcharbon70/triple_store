@@ -46,7 +46,8 @@ defmodule TripleStore.Benchmark.LUBMQueries do
   @lubm_ns "http://www.lehigh.edu/~zhp2/2004/0401/univ-bench.owl#"
   @rdf_ns "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
-  @type query_id :: :q1 | :q2 | :q3 | :q4 | :q5 | :q6 | :q7 | :q8 | :q9 | :q10 | :q11 | :q12 | :q13 | :q14
+  @type query_id ::
+          :q1 | :q2 | :q3 | :q4 | :q5 | :q6 | :q7 | :q8 | :q9 | :q10 | :q11 | :q12 | :q13 | :q14
   @type query_params :: keyword()
   @type query_template :: %{
           id: query_id(),

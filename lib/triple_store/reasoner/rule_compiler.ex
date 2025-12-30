@@ -185,7 +185,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       )
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
   """
-  @spec compile_with_schema(SchemaInfo.t() | map(), compile_opts()) :: {:ok, compiled()} | {:error, term()}
+  @spec compile_with_schema(SchemaInfo.t() | map(), compile_opts()) ::
+          {:ok, compiled()} | {:error, term()}
   def compile_with_schema(schema_info, opts \\ []) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     specialize = Keyword.get(opts, :specialize, true)
@@ -407,11 +408,15 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         has_range: has_predicate?(ctx, Namespaces.rdfs_range()),
         has_sameas: has_predicate?(ctx, Namespaces.owl_sameAs()),
         has_restrictions: has_restrictions?(ctx),
-        transitive_properties: get_typed_properties(ctx, Namespaces.owl_TransitiveProperty(), max_props),
-        symmetric_properties: get_typed_properties(ctx, Namespaces.owl_SymmetricProperty(), max_props),
+        transitive_properties:
+          get_typed_properties(ctx, Namespaces.owl_TransitiveProperty(), max_props),
+        symmetric_properties:
+          get_typed_properties(ctx, Namespaces.owl_SymmetricProperty(), max_props),
         inverse_properties: get_inverse_properties(ctx, max_props),
-        functional_properties: get_typed_properties(ctx, Namespaces.owl_FunctionalProperty(), max_props),
-        inverse_functional_properties: get_typed_properties(ctx, Namespaces.owl_InverseFunctionalProperty(), max_props),
+        functional_properties:
+          get_typed_properties(ctx, Namespaces.owl_FunctionalProperty(), max_props),
+        inverse_functional_properties:
+          get_typed_properties(ctx, Namespaces.owl_InverseFunctionalProperty(), max_props),
         max_properties: max_props
       )
 
@@ -440,7 +445,6 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       :prp_spo1 -> get_field(schema_info, :has_subproperty)
       :prp_dom -> get_field(schema_info, :has_domain)
       :prp_rng -> get_field(schema_info, :has_range)
-
       # Property characteristic rules
       :prp_trp -> not Enum.empty?(get_field(schema_info, :transitive_properties, []))
       :prp_symp -> not Enum.empty?(get_field(schema_info, :symmetric_properties, []))
@@ -448,22 +452,20 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       :prp_inv2 -> not Enum.empty?(get_field(schema_info, :inverse_properties, []))
       :prp_fp -> not Enum.empty?(get_field(schema_info, :functional_properties, []))
       :prp_ifp -> not Enum.empty?(get_field(schema_info, :inverse_functional_properties, []))
-
       # Equality rules
-      :eq_ref -> true  # Always potentially applicable
+      # Always potentially applicable
+      :eq_ref -> true
       :eq_sym -> get_field(schema_info, :has_sameas)
       :eq_trans -> get_field(schema_info, :has_sameas)
       :eq_rep_s -> get_field(schema_info, :has_sameas)
       :eq_rep_p -> get_field(schema_info, :has_sameas)
       :eq_rep_o -> get_field(schema_info, :has_sameas)
-
       # Class restriction rules
       :cls_hv1 -> get_field(schema_info, :has_restrictions)
       :cls_hv2 -> get_field(schema_info, :has_restrictions)
       :cls_svf1 -> get_field(schema_info, :has_restrictions)
       :cls_svf2 -> get_field(schema_info, :has_restrictions)
       :cls_avf -> get_field(schema_info, :has_restrictions)
-
       # Unknown rule - include by default
       _ -> true
     end
@@ -534,7 +536,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         |> Enum.map(&specialize_for_property(rule, "p", &1, :inverse_functional))
 
       # Rules that don't benefit from specialization
-      _ -> []
+      _ ->
+        []
     end
   end
 
@@ -553,7 +556,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         # and substitute the property in remaining patterns/conditions
         new_body =
           rule.body
-          |> Enum.drop(1)  # Drop the rdf:type pattern
+          # Drop the rdf:type pattern
+          |> Enum.drop(1)
           |> Enum.map(&substitute_body_element(&1, binding))
 
         new_head = Rule.substitute_pattern(rule.head, binding)
@@ -576,15 +580,17 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       p2_local = Namespaces.extract_local_name(p2_iri)
 
       # Use sanitized names to avoid atom exhaustion with malicious inputs
-      new_name = String.to_atom(
-        "#{rule.name}_#{direction}_#{sanitize_local_name(p1_local)}_#{sanitize_local_name(p2_local)}"
-      )
+      new_name =
+        String.to_atom(
+          "#{rule.name}_#{direction}_#{sanitize_local_name(p1_local)}_#{sanitize_local_name(p2_local)}"
+        )
 
       binding = %{"p1" => {:iri, p1_iri}, "p2" => {:iri, p2_iri}}
 
       new_body =
         rule.body
-        |> Enum.drop(1)  # Drop the owl:inverseOf pattern
+        # Drop the owl:inverseOf pattern
+        |> Enum.drop(1)
         |> Enum.map(&substitute_body_element(&1, binding))
 
       new_head = Rule.substitute_pattern(rule.head, binding)
@@ -639,7 +645,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp has_predicate?(ctx, predicate_iri) do
     case query_exists?(ctx, nil, predicate_iri, nil) do
-      {:ok, result} -> result
+      {:ok, result} ->
+        result
+
       {:error, reason} ->
         Logger.debug("has_predicate? query failed: #{inspect(reason)}")
         false
@@ -648,7 +656,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp get_typed_properties(ctx, type_iri, max_count) do
     case query_subjects?(ctx, Namespaces.rdf_type(), type_iri, max_count) do
-      {:ok, subjects} -> subjects
+      {:ok, subjects} ->
+        subjects
+
       {:error, reason} ->
         Logger.debug("get_typed_properties query failed: #{inspect(reason)}")
         []
@@ -657,7 +667,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp get_inverse_properties(ctx, max_count) do
     case query_pairs?(ctx, Namespaces.owl_inverseOf(), max_count) do
-      {:ok, pairs} -> pairs
+      {:ok, pairs} ->
+        pairs
+
       {:error, reason} ->
         Logger.debug("get_inverse_properties query failed: #{inspect(reason)}")
         []
@@ -666,9 +678,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp has_restrictions?(ctx) do
     has_predicate?(ctx, Namespaces.owl_hasValue()) or
-    has_predicate?(ctx, Namespaces.owl_someValuesFrom()) or
-    has_predicate?(ctx, Namespaces.owl_allValuesFrom()) or
-    has_predicate?(ctx, Namespaces.owl_onProperty())
+      has_predicate?(ctx, Namespaces.owl_someValuesFrom()) or
+      has_predicate?(ctx, Namespaces.owl_allValuesFrom()) or
+      has_predicate?(ctx, Namespaces.owl_onProperty())
   end
 
   # Query helpers with SPARQL injection prevention
@@ -680,12 +692,14 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         case TripleStore.SPARQL.Query.query(ctx, sparql) do
           {:ok, true} -> {:ok, true}
           {:ok, false} -> {:ok, false}
-          {:ok, _} -> {:ok, true}  # Non-empty result
+          # Non-empty result
+          {:ok, _} -> {:ok, true}
           {:error, reason} -> {:error, reason}
         end
       rescue
         e in ArgumentError ->
           {:error, {:query_error, e.message}}
+
         e ->
           Logger.warning("Unexpected error in query_exists?: #{inspect(e)}")
           {:error, {:unexpected_error, e}}
@@ -701,14 +715,16 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       try do
         case TripleStore.SPARQL.Query.query(ctx, sparql) do
           {:ok, results} ->
-            subjects = Enum.map(results, fn r ->
-              case r["s"] do
-                {:named_node, iri} -> iri
-                %RDF.IRI{value: iri} -> iri
-                iri when is_binary(iri) -> iri
-                _ -> nil
-              end
-            end)
+            subjects =
+              Enum.map(results, fn r ->
+                case r["s"] do
+                  {:named_node, iri} -> iri
+                  %RDF.IRI{value: iri} -> iri
+                  iri when is_binary(iri) -> iri
+                  _ -> nil
+                end
+              end)
+
             {:ok, Enum.reject(subjects, &is_nil/1)}
 
           {:error, reason} ->
@@ -717,6 +733,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       rescue
         e in ArgumentError ->
           {:error, {:query_error, e.message}}
+
         e ->
           Logger.warning("Unexpected error in query_subjects?: #{inspect(e)}")
           {:error, {:unexpected_error, e}}
@@ -731,21 +748,27 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       try do
         case TripleStore.SPARQL.Query.query(ctx, sparql) do
           {:ok, results} ->
-            pairs = Enum.map(results, fn r ->
-              s = case r["s"] do
-                {:named_node, iri} -> iri
-                %RDF.IRI{value: iri} -> iri
-                iri when is_binary(iri) -> iri
-                _ -> nil
-              end
-              o = case r["o"] do
-                {:named_node, iri} -> iri
-                %RDF.IRI{value: iri} -> iri
-                iri when is_binary(iri) -> iri
-                _ -> nil
-              end
-              if s && o, do: {s, o}, else: nil
-            end)
+            pairs =
+              Enum.map(results, fn r ->
+                s =
+                  case r["s"] do
+                    {:named_node, iri} -> iri
+                    %RDF.IRI{value: iri} -> iri
+                    iri when is_binary(iri) -> iri
+                    _ -> nil
+                  end
+
+                o =
+                  case r["o"] do
+                    {:named_node, iri} -> iri
+                    %RDF.IRI{value: iri} -> iri
+                    iri when is_binary(iri) -> iri
+                    _ -> nil
+                  end
+
+                if s && o, do: {s, o}, else: nil
+              end)
+
             {:ok, Enum.reject(pairs, &is_nil/1)}
 
           {:error, reason} ->
@@ -754,6 +777,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       rescue
         e in ArgumentError ->
           {:error, {:query_error, e.message}}
+
         e ->
           Logger.warning("Unexpected error in query_pairs?: #{inspect(e)}")
           {:error, {:unexpected_error, e}}

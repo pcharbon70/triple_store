@@ -1316,7 +1316,9 @@ defmodule TripleStore do
   """
   @spec restore!(Path.t(), Path.t(), keyword()) :: store()
   def restore!(backup_path, restore_path, opts \\ []) do
-    unwrap_or_raise!(restore(backup_path, restore_path, opts), :database_io_error, path: backup_path)
+    unwrap_or_raise!(restore(backup_path, restore_path, opts), :database_io_error,
+      path: backup_path
+    )
   end
 
   # ===========================================================================
@@ -1331,6 +1333,7 @@ defmodule TripleStore do
   # Unwrap an ok/error tuple or raise a structured error.
   # Used by bang variants to reduce boilerplate.
   defp unwrap_or_raise!({:ok, result}, _category, _opts), do: result
+
   defp unwrap_or_raise!({:error, reason}, category, opts) do
     raise error_for(reason, category, opts)
   end

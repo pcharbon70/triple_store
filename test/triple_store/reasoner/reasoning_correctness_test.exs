@@ -33,10 +33,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 8: scm-sco
       # IF c1 subClassOf c2 AND c2 subClassOf c3
       # THEN c1 subClassOf c3
-      facts = MapSet.new([
-        {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
-        {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
+          {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -48,10 +49,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 8: scm-spo
       # IF p1 subPropertyOf p2 AND p2 subPropertyOf p3
       # THEN p1 subPropertyOf p3
-      facts = MapSet.new([
-        {ex_iri("p1"), rdfs_subPropertyOf(), ex_iri("p2")},
-        {ex_iri("p2"), rdfs_subPropertyOf(), ex_iri("p3")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("p1"), rdfs_subPropertyOf(), ex_iri("p2")},
+          {ex_iri("p2"), rdfs_subPropertyOf(), ex_iri("p3")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -63,10 +65,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 9: cax-sco
       # IF x type c1 AND c1 subClassOf c2
       # THEN x type c2
-      facts = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("Student")},
-        {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("Student")},
+          {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -78,10 +81,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-spo1
       # IF p1 subPropertyOf p2 AND x p1 y
       # THEN x p2 y
-      facts = MapSet.new([
-        {ex_iri("teaches"), rdfs_subPropertyOf(), ex_iri("involves")},
-        {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("teaches"), rdfs_subPropertyOf(), ex_iri("involves")},
+          {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -93,10 +97,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-dom
       # IF p domain c AND x p y
       # THEN x type c
-      facts = MapSet.new([
-        {ex_iri("teaches"), rdfs_domain(), ex_iri("Teacher")},
-        {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("teaches"), rdfs_domain(), ex_iri("Teacher")},
+          {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -108,10 +113,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-rng
       # IF p range c AND x p y
       # THEN y type c
-      facts = MapSet.new([
-        {ex_iri("teaches"), rdfs_range(), ex_iri("Course")},
-        {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("teaches"), rdfs_range(), ex_iri("Course")},
+          {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -123,11 +129,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-trp
       # IF p type TransitiveProperty AND x p y AND y p z
       # THEN x p z
-      facts = MapSet.new([
-        {ex_iri("ancestorOf"), rdf_type(), owl_TransitiveProperty()},
-        {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
-        {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("ancestorOf"), rdf_type(), owl_TransitiveProperty()},
+          {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
+          {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")}
+        ])
 
       result = materialize(facts)
 
@@ -139,10 +146,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-symp
       # IF p type SymmetricProperty AND x p y
       # THEN y p x
-      facts = MapSet.new([
-        {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
-        {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
+          {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
+        ])
 
       result = materialize(facts)
 
@@ -154,10 +162,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-inv1, prp-inv2
       # IF p1 inverseOf p2 AND x p1 y THEN y p2 x
       # IF p1 inverseOf p2 AND x p2 y THEN y p1 x
-      facts = MapSet.new([
-        {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")},
-        {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")},
+          {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")}
+        ])
 
       result = materialize(facts)
 
@@ -169,11 +178,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-fp
       # IF p type FunctionalProperty AND x p y1 AND x p y2
       # THEN y1 sameAs y2
-      facts = MapSet.new([
-        {ex_iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
-        {ex_iri("alice"), ex_iri("hasMother"), ex_iri("mary")},
-        {ex_iri("alice"), ex_iri("hasMother"), ex_iri("mary_smith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
+          {ex_iri("alice"), ex_iri("hasMother"), ex_iri("mary")},
+          {ex_iri("alice"), ex_iri("hasMother"), ex_iri("mary_smith")}
+        ])
 
       result = materialize(facts)
 
@@ -186,11 +196,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # OWL 2 RL Table 4: prp-ifp
       # IF p type InverseFunctionalProperty AND x1 p y AND x2 p y
       # THEN x1 sameAs x2
-      facts = MapSet.new([
-        {ex_iri("ssn"), rdf_type(), owl_InverseFunctionalProperty()},
-        {ex_iri("alice"), ex_iri("ssn"), {:literal, "123-45-6789", nil}},
-        {ex_iri("alice_smith"), ex_iri("ssn"), {:literal, "123-45-6789", nil}}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("ssn"), rdf_type(), owl_InverseFunctionalProperty()},
+          {ex_iri("alice"), ex_iri("ssn"), {:literal, "123-45-6789", nil}},
+          {ex_iri("alice_smith"), ex_iri("ssn"), {:literal, "123-45-6789", nil}}
+        ])
 
       result = materialize(facts)
 
@@ -202,9 +213,10 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "eq-sym: owl:sameAs symmetry" do
       # OWL 2 RL Table 5: eq-sym
       # IF x sameAs y THEN y sameAs x
-      facts = MapSet.new([
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
+        ])
 
       result = materialize(facts)
 
@@ -215,10 +227,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "eq-trans: owl:sameAs transitivity" do
       # OWL 2 RL Table 5: eq-trans
       # IF x sameAs y AND y sameAs z THEN x sameAs z
-      facts = MapSet.new([
-        {ex_iri("a"), owl_sameAs(), ex_iri("b")},
-        {ex_iri("b"), owl_sameAs(), ex_iri("c")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("a"), owl_sameAs(), ex_iri("b")},
+          {ex_iri("b"), owl_sameAs(), ex_iri("c")}
+        ])
 
       result = materialize(facts)
 
@@ -229,10 +242,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "eq-rep-s: equality replacement in subject" do
       # OWL 2 RL Table 5: eq-rep-s
       # IF s sameAs s' AND s p o THEN s' p o
-      facts = MapSet.new([
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
-        {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
+          {ex_iri("alice"), rdf_type(), ex_iri("Person")}
+        ])
 
       result = materialize(facts)
 
@@ -243,10 +257,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "eq-rep-o: equality replacement in object" do
       # OWL 2 RL Table 5: eq-rep-o
       # IF o sameAs o' AND s p o THEN s p o'
-      facts = MapSet.new([
-        {ex_iri("bob"), owl_sameAs(), ex_iri("robert")},
-        {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("bob"), owl_sameAs(), ex_iri("robert")},
+          {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
+        ])
 
       result = materialize(facts)
 
@@ -263,13 +278,14 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "long sameAs chain" do
       # sameAs chains can cause performance issues and incorrect results
       # a = b = c = d = e should all be equivalent
-      facts = MapSet.new([
-        {ex_iri("a"), owl_sameAs(), ex_iri("b")},
-        {ex_iri("b"), owl_sameAs(), ex_iri("c")},
-        {ex_iri("c"), owl_sameAs(), ex_iri("d")},
-        {ex_iri("d"), owl_sameAs(), ex_iri("e")},
-        {ex_iri("a"), rdf_type(), ex_iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("a"), owl_sameAs(), ex_iri("b")},
+          {ex_iri("b"), owl_sameAs(), ex_iri("c")},
+          {ex_iri("c"), owl_sameAs(), ex_iri("d")},
+          {ex_iri("d"), owl_sameAs(), ex_iri("e")},
+          {ex_iri("a"), rdf_type(), ex_iri("Person")}
+        ])
 
       result = materialize(facts)
 
@@ -291,13 +307,14 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "diamond class hierarchy" do
       # Diamond: D < B, D < C, B < A, C < A
       # x : D should be x : A via both paths
-      facts = MapSet.new([
-        {ex_iri("D"), rdfs_subClassOf(), ex_iri("B")},
-        {ex_iri("D"), rdfs_subClassOf(), ex_iri("C")},
-        {ex_iri("B"), rdfs_subClassOf(), ex_iri("A")},
-        {ex_iri("C"), rdfs_subClassOf(), ex_iri("A")},
-        {ex_iri("x"), rdf_type(), ex_iri("D")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("D"), rdfs_subClassOf(), ex_iri("B")},
+          {ex_iri("D"), rdfs_subClassOf(), ex_iri("C")},
+          {ex_iri("B"), rdfs_subClassOf(), ex_iri("A")},
+          {ex_iri("C"), rdfs_subClassOf(), ex_iri("A")},
+          {ex_iri("x"), rdf_type(), ex_iri("D")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -332,17 +349,18 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "multiple inheritance with properties" do
       # Entity inherits from multiple classes, each with different property constraints
-      facts = MapSet.new([
-        {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Person")},
-        {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")},
-        {ex_iri("TeachingAssistant"), rdfs_subClassOf(), ex_iri("Employee")},
-        {ex_iri("TeachingAssistant"), rdfs_subClassOf(), ex_iri("Student")},
-        {ex_iri("worksAt"), rdfs_domain(), ex_iri("Employee")},
-        {ex_iri("studiesAt"), rdfs_domain(), ex_iri("Student")},
-        {ex_iri("alice"), rdf_type(), ex_iri("TeachingAssistant")},
-        {ex_iri("alice"), ex_iri("worksAt"), ex_iri("univ1")},
-        {ex_iri("alice"), ex_iri("studiesAt"), ex_iri("univ1")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Person")},
+          {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")},
+          {ex_iri("TeachingAssistant"), rdfs_subClassOf(), ex_iri("Employee")},
+          {ex_iri("TeachingAssistant"), rdfs_subClassOf(), ex_iri("Student")},
+          {ex_iri("worksAt"), rdfs_domain(), ex_iri("Employee")},
+          {ex_iri("studiesAt"), rdfs_domain(), ex_iri("Student")},
+          {ex_iri("alice"), rdf_type(), ex_iri("TeachingAssistant")},
+          {ex_iri("alice"), ex_iri("worksAt"), ex_iri("univ1")},
+          {ex_iri("alice"), ex_iri("studiesAt"), ex_iri("univ1")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -356,11 +374,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "sameAs with circular property references" do
       # a knows b, b sameAs c, c knows a - should form complete graph
-      facts = MapSet.new([
-        {ex_iri("a"), ex_iri("knows"), ex_iri("b")},
-        {ex_iri("b"), owl_sameAs(), ex_iri("c")},
-        {ex_iri("c"), ex_iri("knows"), ex_iri("a")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("a"), ex_iri("knows"), ex_iri("b")},
+          {ex_iri("b"), owl_sameAs(), ex_iri("c")},
+          {ex_iri("c"), ex_iri("knows"), ex_iri("a")}
+        ])
 
       result = materialize(facts)
 
@@ -376,11 +395,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "subproperty and inverse interaction" do
       # p1 subPropertyOf p2, p2 inverseOf p3
       # x p1 y should imply y p3 x (via chain)
-      facts = MapSet.new([
-        {ex_iri("teaches"), rdfs_subPropertyOf(), ex_iri("involves")},
-        {ex_iri("involves"), owl_inverseOf(), ex_iri("involvedIn")},
-        {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("teaches"), rdfs_subPropertyOf(), ex_iri("involves")},
+          {ex_iri("involves"), owl_inverseOf(), ex_iri("involvedIn")},
+          {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")}
+        ])
 
       result = materialize(facts)
 
@@ -394,12 +414,13 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "symmetric and transitive property combination" do
       # related is both symmetric and transitive
       # This creates an equivalence relation
-      facts = MapSet.new([
-        {ex_iri("related"), rdf_type(), owl_SymmetricProperty()},
-        {ex_iri("related"), rdf_type(), owl_TransitiveProperty()},
-        {ex_iri("a"), ex_iri("related"), ex_iri("b")},
-        {ex_iri("b"), ex_iri("related"), ex_iri("c")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("related"), rdf_type(), owl_SymmetricProperty()},
+          {ex_iri("related"), rdf_type(), owl_TransitiveProperty()},
+          {ex_iri("a"), ex_iri("related"), ex_iri("b")},
+          {ex_iri("b"), ex_iri("related"), ex_iri("c")}
+        ])
 
       result = materialize(facts)
 
@@ -420,10 +441,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
   describe "4.6.4.3 consistency checking (owl:Nothing membership)" do
     test "owl:Nothing is never a valid type for consistent ontologies" do
       # In a consistent ontology, no individual should be typed as owl:Nothing
-      facts = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("Person")},
-        {ex_iri("Person"), rdfs_subClassOf(), ex_iri("Thing")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("Person")},
+          {ex_iri("Person"), rdfs_subClassOf(), ex_iri("Thing")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -435,12 +457,13 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "detect potential inconsistency via owl:Nothing subclass" do
       # If a class is subclass of owl:Nothing, instances would be inconsistent
       # This tests that we handle this pattern correctly
-      facts = MapSet.new([
-        {ex_iri("ImpossibleClass"), rdfs_subClassOf(), owl_Nothing()},
-        # Note: We don't actually create an instance of ImpossibleClass
-        # as that would be an inconsistency
-        {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("ImpossibleClass"), rdfs_subClassOf(), owl_Nothing()},
+          # Note: We don't actually create an instance of ImpossibleClass
+          # as that would be an inconsistency
+          {ex_iri("alice"), rdf_type(), ex_iri("Person")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -450,10 +473,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "empty class has no instances" do
       # A class with no asserted instances should remain empty
-      facts = MapSet.new([
-        {ex_iri("EmptyClass"), rdfs_subClassOf(), ex_iri("Thing")},
-        {ex_iri("alice"), rdf_type(), ex_iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("EmptyClass"), rdfs_subClassOf(), ex_iri("Thing")},
+          {ex_iri("alice"), rdf_type(), ex_iri("Person")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -468,12 +492,13 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     test "disjoint class handling (no instances in both)" do
       # Simulate disjoint classes - an individual shouldn't be in both
       # (This is more of a validation test; OWL 2 RL doesn't fully support disjointness)
-      facts = MapSet.new([
-        {ex_iri("Cat"), rdfs_subClassOf(), ex_iri("Animal")},
-        {ex_iri("Dog"), rdfs_subClassOf(), ex_iri("Animal")},
-        {ex_iri("whiskers"), rdf_type(), ex_iri("Cat")}
-        # Note: whiskers is NOT typed as Dog
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("Cat"), rdfs_subClassOf(), ex_iri("Animal")},
+          {ex_iri("Dog"), rdfs_subClassOf(), ex_iri("Animal")},
+          {ex_iri("whiskers"), rdf_type(), ex_iri("Cat")}
+          # Note: whiskers is NOT typed as Dog
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -481,6 +506,7 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       types = select_types(result, ex_iri("whiskers"))
       assert ex_iri("Cat") in types
       assert ex_iri("Animal") in types
+
       refute ex_iri("Dog") in types,
              "whiskers should not be Dog (no assertion or inference path)"
     end
@@ -492,10 +518,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
   describe "4.6.4.4 no spurious inferences generated" do
     test "only expected inferences from subClassOf" do
-      facts = MapSet.new([
-        {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")},
-        {ex_iri("alice"), rdf_type(), ex_iri("Student")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("Student"), rdfs_subClassOf(), ex_iri("Person")},
+          {ex_iri("alice"), rdf_type(), ex_iri("Student")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -514,12 +541,13 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     end
 
     test "domain inference only where applicable" do
-      facts = MapSet.new([
-        {ex_iri("teaches"), rdfs_domain(), ex_iri("Teacher")},
-        {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")},
-        {ex_iri("bob"), rdf_type(), ex_iri("Student")}
-        # bob does NOT teach anything
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("teaches"), rdfs_domain(), ex_iri("Teacher")},
+          {ex_iri("alice"), ex_iri("teaches"), ex_iri("course101")},
+          {ex_iri("bob"), rdf_type(), ex_iri("Student")}
+          # bob does NOT teach anything
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -532,13 +560,14 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     end
 
     test "transitive property only along actual chain" do
-      facts = MapSet.new([
-        {ex_iri("partOf"), rdf_type(), owl_TransitiveProperty()},
-        {ex_iri("a"), ex_iri("partOf"), ex_iri("b")},
-        {ex_iri("b"), ex_iri("partOf"), ex_iri("c")},
-        {ex_iri("x"), ex_iri("partOf"), ex_iri("y")}
-        # x-y chain is separate from a-b-c chain
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("partOf"), rdf_type(), owl_TransitiveProperty()},
+          {ex_iri("a"), ex_iri("partOf"), ex_iri("b")},
+          {ex_iri("b"), ex_iri("partOf"), ex_iri("c")},
+          {ex_iri("x"), ex_iri("partOf"), ex_iri("y")}
+          # x-y chain is separate from a-b-c chain
+        ])
 
       result = materialize(facts)
 
@@ -548,16 +577,18 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # Should NOT have spurious cross-chain inferences
       refute has_triple?(result, {ex_iri("a"), ex_iri("partOf"), ex_iri("y")}),
              "a should not be partOf y (separate chains)"
+
       refute has_triple?(result, {ex_iri("x"), ex_iri("partOf"), ex_iri("c")}),
              "x should not be partOf c (separate chains)"
     end
 
     test "sameAs only propagates to equivalent entities" do
-      facts = MapSet.new([
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
-        {ex_iri("bob"), rdf_type(), ex_iri("Person")},
-        {ex_iri("alice"), rdf_type(), ex_iri("Student")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
+          {ex_iri("bob"), rdf_type(), ex_iri("Person")},
+          {ex_iri("alice"), rdf_type(), ex_iri("Student")}
+        ])
 
       result = materialize(facts)
 
@@ -570,12 +601,13 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
     end
 
     test "inverse property only where defined" do
-      facts = MapSet.new([
-        {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")},
-        {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")},
-        {ex_iri("carol"), ex_iri("knows"), ex_iri("dave")}
-        # knows has no inverse defined
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")},
+          {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")},
+          {ex_iri("carol"), ex_iri("knows"), ex_iri("dave")}
+          # knows has no inverse defined
+        ])
 
       result = materialize(facts)
 
@@ -589,11 +621,12 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "count of derived facts matches expected" do
       # Simple ontology with predictable inference count
-      facts = MapSet.new([
-        {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
-        {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")},
-        {ex_iri("x"), rdf_type(), ex_iri("A")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
+          {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")},
+          {ex_iri("x"), rdf_type(), ex_iri("A")}
+        ])
 
       result = materialize(facts, :rdfs)
 
@@ -617,10 +650,11 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "no self-loops from symmetric property" do
       # Symmetric property should not create x knows x from x knows y
-      facts = MapSet.new([
-        {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
-        {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
+          {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
+        ])
 
       result = materialize(facts)
 
@@ -630,6 +664,7 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
       # Should NOT create alice knows alice or bob knows bob
       refute has_triple?(result, {ex_iri("alice"), ex_iri("knows"), ex_iri("alice")}),
              "Should not create spurious self-loop from symmetric property"
+
       refute has_triple?(result, {ex_iri("bob"), ex_iri("knows"), ex_iri("bob")}),
              "Should not create spurious self-loop from symmetric property"
     end
@@ -642,25 +677,26 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
   describe "additional correctness tests" do
     test "combining multiple rule types produces correct result" do
       # Comprehensive test combining multiple inference patterns
-      facts = MapSet.new([
-        # Class hierarchy
-        {ex_iri("Professor"), rdfs_subClassOf(), ex_iri("Faculty")},
-        {ex_iri("Faculty"), rdfs_subClassOf(), ex_iri("Person")},
+      facts =
+        MapSet.new([
+          # Class hierarchy
+          {ex_iri("Professor"), rdfs_subClassOf(), ex_iri("Faculty")},
+          {ex_iri("Faculty"), rdfs_subClassOf(), ex_iri("Person")},
 
-        # Property hierarchy
-        {ex_iri("advises"), rdfs_subPropertyOf(), ex_iri("knows")},
+          # Property hierarchy
+          {ex_iri("advises"), rdfs_subPropertyOf(), ex_iri("knows")},
 
-        # Property characteristics
-        {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
+          # Property characteristics
+          {ex_iri("knows"), rdf_type(), owl_SymmetricProperty()},
 
-        # Domain/range
-        {ex_iri("advises"), rdfs_domain(), ex_iri("Faculty")},
-        {ex_iri("advises"), rdfs_range(), ex_iri("Student")},
+          # Domain/range
+          {ex_iri("advises"), rdfs_domain(), ex_iri("Faculty")},
+          {ex_iri("advises"), rdfs_range(), ex_iri("Student")},
 
-        # Instance data
-        {ex_iri("prof1"), rdf_type(), ex_iri("Professor")},
-        {ex_iri("prof1"), ex_iri("advises"), ex_iri("student1")}
-      ])
+          # Instance data
+          {ex_iri("prof1"), rdf_type(), ex_iri("Professor")},
+          {ex_iri("prof1"), ex_iri("advises"), ex_iri("student1")}
+        ])
 
       result = materialize(facts)
 
@@ -680,18 +716,23 @@ defmodule TripleStore.Reasoner.ReasoningCorrectnessTest do
 
     test "incremental reasoning maintains correctness" do
       # First materialization
-      facts1 = MapSet.new([
-        {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
-        {ex_iri("x"), rdf_type(), ex_iri("A")}
-      ])
+      facts1 =
+        MapSet.new([
+          {ex_iri("A"), rdfs_subClassOf(), ex_iri("B")},
+          {ex_iri("x"), rdf_type(), ex_iri("A")}
+        ])
 
       result1 = materialize(facts1, :rdfs)
       assert has_triple?(result1, {ex_iri("x"), rdf_type(), ex_iri("B")})
 
       # Extended ontology
-      facts2 = MapSet.union(facts1, MapSet.new([
-        {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")}
-      ]))
+      facts2 =
+        MapSet.union(
+          facts1,
+          MapSet.new([
+            {ex_iri("B"), rdfs_subClassOf(), ex_iri("C")}
+          ])
+        )
 
       result2 = materialize(facts2, :rdfs)
       assert has_triple?(result2, {ex_iri("x"), rdf_type(), ex_iri("C")})

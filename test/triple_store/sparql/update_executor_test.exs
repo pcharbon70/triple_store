@@ -49,8 +49,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
   describe "execute_insert_data/2" do
     test "inserts single triple", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -62,12 +62,12 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "inserts multiple triples", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s1"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v1"}, :default_graph},
-        {:quad, {:named_node, "http://example.org/s2"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v2"}, :default_graph},
-        {:quad, {:named_node, "http://example.org/s3"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v3"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v1"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s2"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v2"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s3"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v3"}, :default_graph}
       ]
 
       assert {:ok, 3} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -80,8 +80,7 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "handles typed literals", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/age"},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/age"},
          {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}, :default_graph}
       ]
 
@@ -90,9 +89,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "handles language-tagged literals", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/label"}, {:literal, :lang, "hello", "en"},
-         :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/label"},
+         {:literal, :lang, "hello", "en"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -100,8 +98,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "handles blank nodes", %{ctx: ctx} do
       quads = [
-        {:quad, {:blank_node, "b1"}, {:named_node, "http://example.org/p"},
-         {:blank_node, "b2"}, :default_graph}
+        {:quad, {:blank_node, "b1"}, {:named_node, "http://example.org/p"}, {:blank_node, "b2"},
+         :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -109,8 +107,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "inserts are idempotent", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -140,8 +138,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
     test "deletes existing triple", %{ctx: ctx} do
       # First insert a triple
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -154,18 +152,18 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "deletes multiple triples", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s1"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v1"}, :default_graph},
-        {:quad, {:named_node, "http://example.org/s2"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v2"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v1"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s2"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v2"}, :default_graph}
       ]
 
       {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
 
       # Delete one of them
       delete_quads = [
-        {:quad, {:named_node, "http://example.org/s1"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "v1"}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v1"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_delete_data(ctx, delete_quads)
@@ -272,11 +270,11 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
       {:ok, 3} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Delete all :name triples using DELETE WHERE
-      pattern = {:bgp,
-       [
-         {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
-          {:variable, "o"}}
-       ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "o"}}
+         ]}
 
       assert {:ok, _count} = UpdateExecutor.execute_delete_where(ctx, pattern)
 
@@ -308,11 +306,12 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
          {:variable, "name"}}
       ]
 
-      pattern = {:bgp,
-       [
-         {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
-          {:variable, "name"}}
-       ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
+            {:variable, "name"}}
+         ]}
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_where(ctx, template, pattern)
 
@@ -349,13 +348,15 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
          {:literal, :simple, "active"}}
       ]
 
-      pattern = {:bgp,
-       [
-         {:triple, {:variable, "s"}, {:named_node, "http://example.org/status"},
-          {:literal, :simple, "pending"}}
-       ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/status"},
+            {:literal, :simple, "pending"}}
+         ]}
 
-      assert {:ok, _count} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      assert {:ok, _count} =
+               UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Should still have 1 triple, but with different value
       assert {:ok, 1} = Index.count(ctx.db, {:var, :var, :var})
@@ -365,8 +366,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
       pattern = {:bgp, []}
 
       insert_template = [
-        {:triple, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}}
+        {:triple, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}}
       ]
 
       # This inserts without deleting anything
@@ -390,10 +391,11 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
         {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
       ]
 
-      pattern = {:bgp,
-       [
-         {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-       ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       assert {:ok, _count} = UpdateExecutor.execute_modify(ctx, delete_template, [], pattern)
       assert {:ok, 0} = Index.count(ctx.db, {:var, :var, :var})
@@ -496,8 +498,7 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
   describe "edge cases" do
     test "handles special characters in literals", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
          {:literal, :simple, "Hello \"World\"!\nNew line\ttab"}, :default_graph}
       ]
 
@@ -506,8 +507,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
     test "handles unicode in values", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "Hello "}, :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "Hello "}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -527,8 +528,8 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
     test "triple format works same as quad format", %{ctx: ctx} do
       # Using triple format (without graph)
       triples = [
-        {:triple, {:named_node, "http://example.org/s"},
-         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}}
+        {:triple, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, triples)

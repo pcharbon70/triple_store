@@ -61,7 +61,8 @@ defmodule TripleStore.Config.RocksDB do
         }
 
   @typedoc "Configuration preset name"
-  @type preset_name :: :development | :production_low_memory | :production_high_memory | :write_heavy
+  @type preset_name ::
+          :development | :production_low_memory | :production_high_memory | :write_heavy
 
   # ===========================================================================
   # Constants
@@ -415,7 +416,8 @@ defmodule TripleStore.Config.RocksDB do
   def validate(config) do
     with :ok <- Helpers.validate_non_negative(config.block_cache_size, "block_cache_size"),
          :ok <- Helpers.validate_positive(config.write_buffer_size, "write_buffer_size"),
-         :ok <- Helpers.validate_min(config.max_write_buffer_number, 1, "max_write_buffer_number"),
+         :ok <-
+           Helpers.validate_min(config.max_write_buffer_number, 1, "max_write_buffer_number"),
          :ok <- validate_integer(config.max_open_files, "max_open_files"),
          :ok <- Helpers.validate_positive(config.target_file_size_base, "target_file_size_base") do
       Helpers.validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base")
@@ -475,7 +477,8 @@ defmodule TripleStore.Config.RocksDB do
   end
 
   defp get_memsup_memory do
-    case :memsup.get_system_memory_data() do
+    # Use apply to avoid compile-time warning when :memsup is not available
+    case apply(:memsup, :get_system_memory_data, []) do
       data when is_list(data) ->
         # Try total_memory first, fall back to system_total_memory
         Keyword.get(data, :total_memory) ||

@@ -15,7 +15,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
   defp owl_TransitiveProperty, do: {:iri, "http://www.w3.org/2002/07/owl#TransitiveProperty"}
   defp owl_SymmetricProperty, do: {:iri, "http://www.w3.org/2002/07/owl#SymmetricProperty"}
   defp owl_FunctionalProperty, do: {:iri, "http://www.w3.org/2002/07/owl#FunctionalProperty"}
-  defp owl_InverseFunctionalProperty, do: {:iri, "http://www.w3.org/2002/07/owl#InverseFunctionalProperty"}
+
+  defp owl_InverseFunctionalProperty,
+    do: {:iri, "http://www.w3.org/2002/07/owl#InverseFunctionalProperty"}
+
   defp owl_inverseOf, do: {:iri, "http://www.w3.org/2002/07/owl#inverseOf"}
 
   # ============================================================================
@@ -32,9 +35,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "computes direct superclass relationship" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -52,11 +56,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "computes transitive superclass closure" do
-      facts = MapSet.new([
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -74,10 +79,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "handles multiple superclasses" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Student"), rdfs_subClassOf(), iri("LearningAgent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Student"), rdfs_subClassOf(), iri("LearningAgent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -92,12 +98,13 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       #   Person  Machine
       #      \     /
       #       Robot
-      facts = MapSet.new([
-        {iri("Person"), rdfs_subClassOf(), iri("Thing")},
-        {iri("Machine"), rdfs_subClassOf(), iri("Thing")},
-        {iri("Robot"), rdfs_subClassOf(), iri("Person")},
-        {iri("Robot"), rdfs_subClassOf(), iri("Machine")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Person"), rdfs_subClassOf(), iri("Thing")},
+          {iri("Machine"), rdfs_subClassOf(), iri("Thing")},
+          {iri("Robot"), rdfs_subClassOf(), iri("Person")},
+          {iri("Robot"), rdfs_subClassOf(), iri("Machine")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -115,11 +122,13 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "ignores non-subClassOf triples" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("alice"), {:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"}, iri("Student")},
-        {iri("bob"), {:iri, "http://example.org/knows"}, iri("alice")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("alice"), {:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"},
+           iri("Student")},
+          {iri("bob"), {:iri, "http://example.org/knows"}, iri("alice")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -128,9 +137,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "handles reflexive subClassOf (class subClassOf itself)" do
-      facts = MapSet.new([
-        {iri("Person"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Person"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -141,11 +151,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
     test "handles cycles in hierarchy" do
       # A -> B -> C -> A (cycle)
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")},
-        {iri("C"), rdfs_subClassOf(), iri("A")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")},
+          {iri("C"), rdfs_subClassOf(), iri("A")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -158,10 +169,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns statistics" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -183,9 +195,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns empty set for root class" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -197,9 +210,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
   describe "subclasses_from/2" do
     test "returns empty set for leaf class" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -211,9 +225,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
   describe "is_superclass?/3" do
     test "returns true for direct superclass" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -221,10 +236,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns true for transitive superclass" do
-      facts = MapSet.new([
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -232,9 +248,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns false for non-superclass" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -244,9 +261,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
   describe "is_subclass?/3" do
     test "returns true for direct subclass" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -254,9 +272,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns false for non-subclass" do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -281,9 +300,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "stores hierarchy in persistent_term", %{key: key} do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, stats} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -292,10 +312,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns statistics", %{key: key} do
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       {:ok, stats} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -316,10 +337,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns superclasses from cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -346,10 +368,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns subclasses from cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Student")},
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -374,9 +397,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "removes cached hierarchy" do
       key = :"clear_test_#{System.unique_integer([:positive])}"
 
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
       assert TBoxCache.cached?(:class_hierarchy, key)
@@ -398,9 +422,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns version for cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -426,10 +451,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns stats for cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
 
@@ -447,9 +473,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       key1 = :"clear_all_test_1_#{System.unique_integer([:positive])}"
       key2 = :"clear_all_test_2_#{System.unique_integer([:positive])}"
 
-      facts = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key1)
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key2)
@@ -557,9 +584,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "works with different term types" do
       # Test with blank nodes and other term types
       blank_node = {:bnode, "_:b1"}
-      facts = MapSet.new([
-        {blank_node, rdfs_subClassOf(), iri("Person")}
-      ])
+
+      facts =
+        MapSet.new([
+          {blank_node, rdfs_subClassOf(), iri("Person")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
@@ -587,9 +616,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "computes direct superproperty relationship" do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -607,11 +637,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "computes transitive superproperty closure" do
-      facts = MapSet.new([
-        {iri("hasGrandchild"), rdfs_subPropertyOf(), iri("hasChild")},
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasGrandchild"), rdfs_subPropertyOf(), iri("hasChild")},
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -629,10 +660,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "handles multiple superproperties" do
-      facts = MapSet.new([
-        {iri("hasParent"), rdfs_subPropertyOf(), iri("hasAncestor")},
-        {iri("hasParent"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasParent"), rdfs_subPropertyOf(), iri("hasAncestor")},
+          {iri("hasParent"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -647,12 +679,13 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       #   propA        propB
       #        \       /
       #        bottomProp
-      facts = MapSet.new([
-        {iri("propA"), rdfs_subPropertyOf(), iri("topProperty")},
-        {iri("propB"), rdfs_subPropertyOf(), iri("topProperty")},
-        {iri("bottomProp"), rdfs_subPropertyOf(), iri("propA")},
-        {iri("bottomProp"), rdfs_subPropertyOf(), iri("propB")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("propA"), rdfs_subPropertyOf(), iri("topProperty")},
+          {iri("propB"), rdfs_subPropertyOf(), iri("topProperty")},
+          {iri("bottomProp"), rdfs_subPropertyOf(), iri("propA")},
+          {iri("bottomProp"), rdfs_subPropertyOf(), iri("propB")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -670,11 +703,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "ignores non-subPropertyOf triples" do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("alice"), iri("hasChild"), iri("bob")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("alice"), iri("hasChild"), iri("bob")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -683,10 +717,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns statistics" do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -702,10 +737,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
   describe "property characteristics" do
     test "extracts transitive properties" do
-      facts = MapSet.new([
-        {iri("contains"), rdf_type(), owl_TransitiveProperty()},
-        {iri("ancestor"), rdf_type(), owl_TransitiveProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("contains"), rdf_type(), owl_TransitiveProperty()},
+          {iri("ancestor"), rdf_type(), owl_TransitiveProperty()}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -718,10 +754,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "extracts symmetric properties" do
-      facts = MapSet.new([
-        {iri("knows"), rdf_type(), owl_SymmetricProperty()},
-        {iri("sibling"), rdf_type(), owl_SymmetricProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("knows"), rdf_type(), owl_SymmetricProperty()},
+          {iri("sibling"), rdf_type(), owl_SymmetricProperty()}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -734,10 +771,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "extracts functional properties" do
-      facts = MapSet.new([
-        {iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
-        {iri("hasBirthDate"), rdf_type(), owl_FunctionalProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
+          {iri("hasBirthDate"), rdf_type(), owl_FunctionalProperty()}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -750,10 +788,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "extracts inverse functional properties" do
-      facts = MapSet.new([
-        {iri("hasSSN"), rdf_type(), owl_InverseFunctionalProperty()},
-        {iri("hasEmail"), rdf_type(), owl_InverseFunctionalProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasSSN"), rdf_type(), owl_InverseFunctionalProperty()},
+          {iri("hasEmail"), rdf_type(), owl_InverseFunctionalProperty()}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -766,9 +805,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "extracts inverse property pairs" do
-      facts = MapSet.new([
-        {iri("hasChild"), owl_inverseOf(), iri("hasParent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), owl_inverseOf(), iri("hasParent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -782,10 +822,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "handles multiple inverse pairs" do
-      facts = MapSet.new([
-        {iri("hasChild"), owl_inverseOf(), iri("hasParent")},
-        {iri("owns"), owl_inverseOf(), iri("ownedBy")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), owl_inverseOf(), iri("hasParent")},
+          {iri("owns"), owl_inverseOf(), iri("ownedBy")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -797,16 +838,18 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "property with multiple characteristics" do
-      facts = MapSet.new([
-        {iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
-        {iri("hasMother"), owl_inverseOf(), iri("motherOf")},
-        {iri("hasMother"), rdfs_subPropertyOf(), iri("hasParent")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasMother"), rdf_type(), owl_FunctionalProperty()},
+          {iri("hasMother"), owl_inverseOf(), iri("motherOf")},
+          {iri("hasMother"), rdfs_subPropertyOf(), iri("hasParent")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
       assert TBoxCache.functional_property?(hierarchy, iri("hasMother"))
       assert TBoxCache.inverse_of(hierarchy, iri("hasMother")) == iri("motherOf")
+
       assert MapSet.member?(
                TBoxCache.superproperties_from(hierarchy, iri("hasMother")),
                iri("hasParent")
@@ -814,13 +857,14 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "counts characteristics in stats" do
-      facts = MapSet.new([
-        {iri("p1"), rdf_type(), owl_TransitiveProperty()},
-        {iri("p2"), rdf_type(), owl_SymmetricProperty()},
-        {iri("p3"), rdf_type(), owl_FunctionalProperty()},
-        {iri("p4"), rdf_type(), owl_InverseFunctionalProperty()},
-        {iri("p5"), owl_inverseOf(), iri("p6")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("p1"), rdf_type(), owl_TransitiveProperty()},
+          {iri("p2"), rdf_type(), owl_SymmetricProperty()},
+          {iri("p3"), rdf_type(), owl_FunctionalProperty()},
+          {iri("p4"), rdf_type(), owl_InverseFunctionalProperty()},
+          {iri("p5"), owl_inverseOf(), iri("p6")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -844,9 +888,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns empty set for root property" do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -858,9 +903,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
   describe "subproperties_from/2" do
     test "returns empty set for leaf property" do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -886,10 +932,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "stores hierarchy in persistent_term", %{key: key} do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("hasChild"), rdf_type(), owl_TransitiveProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("hasChild"), rdf_type(), owl_TransitiveProperty()}
+        ])
 
       {:ok, stats} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -898,10 +945,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns statistics", %{key: key} do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, stats} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -922,10 +970,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns superproperties from cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("hasDescendant"), rdfs_subPropertyOf(), iri("hasRelative")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -952,10 +1001,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "returns subproperties from cached hierarchy", %{key: key} do
-      facts = MapSet.new([
-        {iri("hasGrandchild"), rdfs_subPropertyOf(), iri("hasChild")},
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasGrandchild"), rdfs_subPropertyOf(), iri("hasChild")},
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -978,9 +1028,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "clear/2 removes cached property hierarchy" do
       key = :"prop_clear_test_#{System.unique_integer([:positive])}"
 
-      facts = MapSet.new([
-        {iri("a"), rdfs_subPropertyOf(), iri("b")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("a"), rdfs_subPropertyOf(), iri("b")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
       assert TBoxCache.cached?(:property_hierarchy, key)
@@ -992,9 +1043,10 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "version/2 returns version for cached property hierarchy" do
       key = :"prop_version_test_#{System.unique_integer([:positive])}"
 
-      facts = MapSet.new([
-        {iri("a"), rdfs_subPropertyOf(), iri("b")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("a"), rdfs_subPropertyOf(), iri("b")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -1008,10 +1060,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     test "stats/2 returns stats for cached property hierarchy" do
       key = :"prop_stats_test_#{System.unique_integer([:positive])}"
 
-      facts = MapSet.new([
-        {iri("a"), rdfs_subPropertyOf(), iri("b")},
-        {iri("b"), rdfs_subPropertyOf(), iri("c")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("a"), rdfs_subPropertyOf(), iri("b")},
+          {iri("b"), rdfs_subPropertyOf(), iri("c")}
+        ])
 
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
 
@@ -1065,11 +1118,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
     test "handles cycles in property hierarchy" do
       # p1 -> p2 -> p3 -> p1 (cycle)
-      facts = MapSet.new([
-        {iri("p1"), rdfs_subPropertyOf(), iri("p2")},
-        {iri("p2"), rdfs_subPropertyOf(), iri("p3")},
-        {iri("p3"), rdfs_subPropertyOf(), iri("p1")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("p1"), rdfs_subPropertyOf(), iri("p2")},
+          {iri("p2"), rdfs_subPropertyOf(), iri("p3")},
+          {iri("p3"), rdfs_subPropertyOf(), iri("p1")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -1082,9 +1136,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
     test "works with blank nodes in property hierarchy" do
       blank_node = {:bnode, "_:prop1"}
-      facts = MapSet.new([
-        {blank_node, rdfs_subPropertyOf(), iri("namedProp")}
-      ])
+
+      facts =
+        MapSet.new([
+          {blank_node, rdfs_subPropertyOf(), iri("namedProp")}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -1093,15 +1149,16 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "combines hierarchy and characteristics correctly" do
-      facts = MapSet.new([
-        # Hierarchy
-        {iri("contains"), rdfs_subPropertyOf(), iri("locatedIn")},
-        {iri("locatedIn"), rdfs_subPropertyOf(), iri("relatedTo")},
-        # Characteristics
-        {iri("contains"), rdf_type(), owl_TransitiveProperty()},
-        {iri("locatedIn"), rdf_type(), owl_TransitiveProperty()},
-        {iri("relatedTo"), rdf_type(), owl_SymmetricProperty()}
-      ])
+      facts =
+        MapSet.new([
+          # Hierarchy
+          {iri("contains"), rdfs_subPropertyOf(), iri("locatedIn")},
+          {iri("locatedIn"), rdfs_subPropertyOf(), iri("relatedTo")},
+          # Characteristics
+          {iri("contains"), rdf_type(), owl_TransitiveProperty()},
+          {iri("locatedIn"), rdf_type(), owl_TransitiveProperty()},
+          {iri("relatedTo"), rdf_type(), owl_SymmetricProperty()}
+        ])
 
       {:ok, hierarchy} = TBoxCache.compute_property_hierarchy_in_memory(facts)
 
@@ -1127,7 +1184,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       predicates = TBoxCache.tbox_predicates()
 
       assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#subClassOf"})
-      assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"})
+
+      assert MapSet.member?(
+               predicates,
+               {:iri, "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"}
+             )
+
       assert MapSet.member?(predicates, {:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"})
       assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2002/07/owl#inverseOf"})
       assert MapSet.member?(predicates, {:iri, "http://www.w3.org/2000/01/rdf-schema#domain"})
@@ -1142,7 +1204,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#TransitiveProperty"})
       assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#SymmetricProperty"})
       assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#FunctionalProperty"})
-      assert MapSet.member?(types, {:iri, "http://www.w3.org/2002/07/owl#InverseFunctionalProperty"})
+
+      assert MapSet.member?(
+               types,
+               {:iri, "http://www.w3.org/2002/07/owl#InverseFunctionalProperty"}
+             )
     end
   end
 
@@ -1320,9 +1386,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
     test "invalidates class hierarchy when subClassOf triples provided", %{key: key} do
       # First, create cached hierarchies
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
       assert TBoxCache.cached?(:class_hierarchy, key)
 
@@ -1335,9 +1403,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "invalidates property hierarchy when subPropertyOf triples provided", %{key: key} do
-      facts = MapSet.new([
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")}
+        ])
+
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
       assert TBoxCache.cached?(:property_hierarchy, key)
 
@@ -1349,9 +1419,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "invalidates property hierarchy when characteristic triples provided", %{key: key} do
-      facts = MapSet.new([
-        {iri("knows"), rdf_type(), owl_SymmetricProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+        ])
+
       {:ok, _} = TBoxCache.compute_and_store_property_hierarchy(facts, key)
       assert TBoxCache.cached?(:property_hierarchy, key)
 
@@ -1363,9 +1435,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "does not invalidate when only instance triples provided", %{key: key} do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(facts, key)
       assert TBoxCache.cached?(:class_hierarchy, key)
 
@@ -1395,11 +1469,12 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
 
     test "recomputes both class and property hierarchies", %{key: key} do
-      facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
-        {iri("knows"), rdf_type(), owl_SymmetricProperty()}
-      ])
+      facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("hasChild"), rdfs_subPropertyOf(), iri("hasDescendant")},
+          {iri("knows"), rdf_type(), owl_SymmetricProperty()}
+        ])
 
       {:ok, stats} = TBoxCache.recompute_hierarchies(facts, key)
 
@@ -1436,9 +1511,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
     test "invalidates and recomputes class hierarchy when subClassOf added", %{key: key} do
       # Start with initial hierarchy
-      initial_facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      initial_facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
+
       {:ok, _} = TBoxCache.compute_and_store_class_hierarchy(initial_facts, key)
 
       # Add a new subClassOf triple
@@ -1511,6 +1588,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
         {iri("Student"), rdfs_subClassOf(), iri("Person")},
         {iri("knows"), rdf_type(), owl_SymmetricProperty()}
       ]
+
       result = TBoxCache.needs_recomputation?(triples)
 
       assert result.class_hierarchy == true
@@ -1523,6 +1601,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
         {iri("alice"), iri("knows"), iri("bob")},
         {iri("alice"), rdf_type(), iri("Person")}
       ]
+
       result = TBoxCache.needs_recomputation?(triples)
 
       assert result.class_hierarchy == false

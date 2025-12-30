@@ -126,7 +126,8 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
     # Check if any iterator is exhausted
     if Enum.any?(iterators, &TrieIterator.exhausted?/1) do
-      {:exhausted, %__MODULE__{iterators: iterators, exhausted: true, max_iterations: max_iterations}}
+      {:exhausted,
+       %__MODULE__{iterators: iterators, exhausted: true, max_iterations: max_iterations}}
     else
       # Sort iterators by current value
       sorted = sort_iterators(iterators)

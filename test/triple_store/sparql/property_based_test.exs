@@ -57,6 +57,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
     StreamData.list_of(node_name(), min_length: min_length, max_length: max_length)
     |> StreamData.map(fn nodes ->
       nodes = Enum.uniq(nodes)
+
       for {from, to} <- Enum.zip(nodes, Enum.drop(nodes, 1)) do
         {"#{@ex}#{from}", "#{@ex}next", "#{@ex}#{to}"}
       end
@@ -69,7 +70,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   # ===========================================================================
 
   property "transitive closure contains all reachable nodes", %{ctx: ctx} do
-    check all chain <- chain_graph(3, 15), max_runs: 25 do
+    check all(chain <- chain_graph(3, 15), max_runs: 25) do
       # Insert chain triples
       insert_triples(ctx, chain)
 
@@ -88,7 +89,8 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
       found_nodes = Enum.map(results, &get_iri(&1["node"])) |> MapSet.new()
 
       # All nodes after first should be reachable
-      expected_nodes = chain
+      expected_nodes =
+        chain
         |> Enum.map(fn {_, _, o} -> o end)
         |> MapSet.new()
 
@@ -109,7 +111,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   # ===========================================================================
 
   property "zero-or-more path includes start node", %{ctx: ctx} do
-    check all chain <- chain_graph(2, 10), max_runs: 25 do
+    check all(chain <- chain_graph(2, 10), max_runs: 25) do
       insert_triples(ctx, chain)
 
       [{first_s, _, _} | _] = chain
@@ -137,7 +139,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   # ===========================================================================
 
   property "one-or-more path excludes start node (unless cycle)", %{ctx: ctx} do
-    check all chain <- chain_graph(2, 10), max_runs: 25 do
+    check all(chain <- chain_graph(2, 10), max_runs: 25) do
       insert_triples(ctx, chain)
 
       [{first_s, _, _} | _] = chain
@@ -166,7 +168,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   # ===========================================================================
 
   property "COUNT matches actual result length", %{ctx: ctx} do
-    check all chain <- chain_graph(3, 15), max_runs: 25 do
+    check all(chain <- chain_graph(3, 15), max_runs: 25) do
       insert_triples(ctx, chain)
 
       [{first_s, _, _} | _] = chain
@@ -201,19 +203,24 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   # ===========================================================================
 
   defp insert_triples(ctx, triples) do
-    rdf_triples = Enum.map(triples, fn {s, p, o} ->
-      {RDF.iri(s), RDF.iri(p), RDF.iri(o)}
-    end)
+    rdf_triples =
+      Enum.map(triples, fn {s, p, o} ->
+        {RDF.iri(s), RDF.iri(p), RDF.iri(o)}
+      end)
+
     {:ok, _} = Update.insert(ctx, rdf_triples)
   end
 
   defp delete_all_triples(ctx) do
     # Delete all triples by querying and deleting each
     {:ok, results} = Query.query(ctx, "SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
+
     if length(results) > 0 do
-      rdf_triples = Enum.map(results, fn r ->
-        {to_rdf_term(r["s"]), to_rdf_term(r["p"]), to_rdf_term(r["o"])}
-      end)
+      rdf_triples =
+        Enum.map(results, fn r ->
+          {to_rdf_term(r["s"]), to_rdf_term(r["p"]), to_rdf_term(r["o"])}
+        end)
+
       {:ok, _} = Update.delete(ctx, rdf_triples)
     end
   end

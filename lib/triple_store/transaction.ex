@@ -557,5 +557,4 @@ defmodule TripleStore.Transaction do
         :ok
     end
   end
-
 end

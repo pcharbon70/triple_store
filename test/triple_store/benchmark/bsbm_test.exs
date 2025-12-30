@@ -70,7 +70,9 @@ defmodule TripleStore.Benchmark.BSBMTest do
       graph = BSBM.generate(10)
       triples = RDF.Graph.triples(graph)
 
-      bsbm_producer = RDF.iri("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/producer")
+      bsbm_producer =
+        RDF.iri("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/producer")
+
       producer_triples = Enum.filter(triples, fn {_, p, _} -> p == bsbm_producer end)
 
       # Each product should have a producer

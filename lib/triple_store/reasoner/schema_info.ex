@@ -146,8 +146,7 @@ defmodule TripleStore.Reasoner.SchemaInfo do
         opts |> Keyword.get(:transitive_properties, []) |> limit_list(max_props),
       symmetric_properties:
         opts |> Keyword.get(:symmetric_properties, []) |> limit_list(max_props),
-      inverse_properties:
-        opts |> Keyword.get(:inverse_properties, []) |> limit_list(max_props),
+      inverse_properties: opts |> Keyword.get(:inverse_properties, []) |> limit_list(max_props),
       functional_properties:
         opts |> Keyword.get(:functional_properties, []) |> limit_list(max_props),
       inverse_functional_properties:

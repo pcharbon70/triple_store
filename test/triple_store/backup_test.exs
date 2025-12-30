@@ -86,7 +86,8 @@ defmodule TripleStore.BackupTest do
       {:ok, _} = Backup.create(store, full_path, verify: false)
 
       # Create incremental backup
-      assert {:ok, metadata} = Backup.create_incremental(store, incr_path, full_path, verify: false)
+      assert {:ok, metadata} =
+               Backup.create_incremental(store, incr_path, full_path, verify: false)
 
       assert metadata.path == incr_path
       assert metadata.backup_type == :incremental
@@ -99,7 +100,8 @@ defmodule TripleStore.BackupTest do
       incr_path = Path.join(backup_dir, "incr")
       invalid_base = Path.join(backup_dir, "nonexistent")
 
-      assert {:error, :not_a_directory} = Backup.create_incremental(store, incr_path, invalid_base)
+      assert {:error, :not_a_directory} =
+               Backup.create_incremental(store, incr_path, invalid_base)
     end
 
     @tag :skip
@@ -188,7 +190,11 @@ defmodule TripleStore.BackupTest do
   end
 
   describe "restore/3" do
-    test "restores backup to new location", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "restores backup to new location", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       backup_path = Path.join(backup_dir, "to_restore")
       restore_path = Path.join(test_dir, "restored_db")
 
@@ -302,6 +308,7 @@ defmodule TripleStore.BackupTest do
       ex:a ex:b ex:c .
       ex:d ex:e ex:f .
       """
+
       {:ok, _} = TripleStore.load_string(store, turtle, :turtle)
 
       {:ok, _} = Backup.create(store, backup_path)
@@ -311,7 +318,11 @@ defmodule TripleStore.BackupTest do
       assert File.exists?(counter_file)
     end
 
-    test "restore applies counter state from backup", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "restore applies counter state from backup", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       backup_path = Path.join(backup_dir, "restore_counter")
       restore_path = Path.join(test_dir, "restored_counter")
 
@@ -319,6 +330,7 @@ defmodule TripleStore.BackupTest do
       turtle = """
       @prefix ex: <http://example.org/> .
       """
+
       # Generate many unique subjects to advance URI counter
       turtle = turtle <> Enum.map_join(1..100, "\n", fn i -> "ex:s#{i} ex:p ex:o#{i} ." end)
       {:ok, _} = TripleStore.load_string(store, turtle, :turtle)
@@ -335,7 +347,9 @@ defmodule TripleStore.BackupTest do
       {:ok, restored_store} = Backup.restore(backup_path, restore_path)
 
       # Get restored counter state
-      {:ok, restored_counter} = TripleStore.Dictionary.Manager.get_counter(restored_store.dict_manager)
+      {:ok, restored_counter} =
+        TripleStore.Dictionary.Manager.get_counter(restored_store.dict_manager)
+
       {:ok, restored_counters} = TripleStore.Dictionary.SequenceCounter.export(restored_counter)
 
       # Restored counters should be at least original + safety_margin
@@ -347,7 +361,11 @@ defmodule TripleStore.BackupTest do
       TripleStore.close(restored_store)
     end
 
-    test "restore works without counter file (legacy backup)", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "restore works without counter file (legacy backup)", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       backup_path = Path.join(backup_dir, "legacy_backup")
       restore_path = Path.join(test_dir, "restored_legacy")
 
@@ -369,7 +387,11 @@ defmodule TripleStore.BackupTest do
       TripleStore.close(restored_store)
     end
 
-    test "new data after restore gets unique IDs", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "new data after restore gets unique IDs", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       backup_path = Path.join(backup_dir, "id_uniqueness")
       restore_path = Path.join(test_dir, "restored_ids")
 
@@ -379,6 +401,7 @@ defmodule TripleStore.BackupTest do
       ex:original1 ex:pred ex:obj1 .
       ex:original2 ex:pred ex:obj2 .
       """
+
       {:ok, _} = TripleStore.load_string(store, turtle1, :turtle)
 
       # Create backup
@@ -394,6 +417,7 @@ defmodule TripleStore.BackupTest do
       ex:new1 ex:pred ex:newobj1 .
       ex:new2 ex:pred ex:newobj2 .
       """
+
       {:ok, _} = TripleStore.load_string(restored_store, turtle2, :turtle)
 
       # Query should return all data (original + new)
@@ -413,7 +437,11 @@ defmodule TripleStore.BackupTest do
       assert {:error, :path_traversal_attempt} = Backup.create(store, malicious_path)
     end
 
-    test "rejects restore path with path traversal", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "rejects restore path with path traversal", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       # Create a valid backup first
       backup_path = Path.join(backup_dir, "valid_backup")
       {:ok, _} = Backup.create(store, backup_path)
@@ -425,7 +453,11 @@ defmodule TripleStore.BackupTest do
       assert {:error, :path_traversal_attempt} = Backup.restore(backup_path, malicious_restore)
     end
 
-    test "rejects source with symlinks", %{store: store, backup_dir: backup_dir, test_dir: test_dir} do
+    test "rejects source with symlinks", %{
+      store: store,
+      backup_dir: backup_dir,
+      test_dir: test_dir
+    } do
       # Create a backup first
       backup_path = Path.join(backup_dir, "backup_for_symlink_test")
       {:ok, _} = Backup.create(store, backup_path)

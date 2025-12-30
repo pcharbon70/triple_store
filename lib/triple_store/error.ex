@@ -206,9 +206,7 @@ defmodule TripleStore.Error do
   """
   @spec file_not_found(String.t()) :: t()
   def file_not_found(path) do
-    new(:validation_file_not_found, "File not found: #{path}",
-      details: %{path: path}
-    )
+    new(:validation_file_not_found, "File not found: #{path}", details: %{path: path})
   end
 
   @doc """

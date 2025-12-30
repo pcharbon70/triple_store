@@ -409,22 +409,25 @@ defmodule TripleStore.Reasoner.DerivedStoreTest do
       b = {:iri, "http://example.org/B"}
       c = {:iri, "http://example.org/C"}
 
-      initial_facts = MapSet.new([
-        {a, parent_pred, b},
-        {b, parent_pred, c}
-      ])
+      initial_facts =
+        MapSet.new([
+          {a, parent_pred, b},
+          {b, parent_pred, c}
+        ])
 
       # Create in-memory lookup function that searches initial_facts
       lookup_fn = fn pattern ->
         # Convert pattern to match format
-        {s_pat, p_pat, o_pat} = case pattern do
-          {:pattern, [s, p, o]} -> {s, p, o}
-          {s, p, o} -> {s, p, o}
-        end
+        {s_pat, p_pat, o_pat} =
+          case pattern do
+            {:pattern, [s, p, o]} -> {s, p, o}
+            {s, p, o} -> {s, p, o}
+          end
 
-        matches = Enum.filter(initial_facts, fn {s, p, o} ->
-          match_term?(s, s_pat) and match_term?(p, p_pat) and match_term?(o, o_pat)
-        end)
+        matches =
+          Enum.filter(initial_facts, fn {s, p, o} ->
+            match_term?(s, s_pat) and match_term?(p, p_pat) and match_term?(o, o_pat)
+          end)
 
         {:ok, matches}
       end
@@ -432,6 +435,7 @@ defmodule TripleStore.Reasoner.DerivedStoreTest do
       # Store function that writes to DerivedStore
       # For this test, we use a simplified version that stores term-level facts
       derived_facts = :ets.new(:derived_facts, [:set, :public])
+
       store_fn = fn fact_set ->
         for fact <- fact_set, do: :ets.insert(derived_facts, {fact, true})
         :ok

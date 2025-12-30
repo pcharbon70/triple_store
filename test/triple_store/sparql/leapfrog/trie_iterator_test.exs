@@ -352,10 +352,14 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
     test "multiple iterators on same data", %{db: db} do
       # Insert data for a star query: (?x knows Alice), (?x works_at ACME)
       # Using IDs: knows=10, works_at=20, Alice=100, ACME=200
-      insert_triple(db, 1, 10, 100)  # 1 knows Alice
-      insert_triple(db, 1, 20, 200)  # 1 works_at ACME
-      insert_triple(db, 2, 10, 100)  # 2 knows Alice
-      insert_triple(db, 3, 20, 200)  # 3 works_at ACME
+      # 1 knows Alice
+      insert_triple(db, 1, 10, 100)
+      # 1 works_at ACME
+      insert_triple(db, 1, 20, 200)
+      # 2 knows Alice
+      insert_triple(db, 2, 10, 100)
+      # 3 works_at ACME
+      insert_triple(db, 3, 20, 200)
 
       # Iterator 1: subjects where ?s knows Alice (predicate=10, object=100)
       {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
@@ -406,8 +410,12 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
   # Helper for leapfrog intersection
   defp leapfrog_intersect(iter1, iter2, acc) do
     case {TrieIterator.current(iter1), TrieIterator.current(iter2)} do
-      {:exhausted, _} -> Enum.reverse(acc)
-      {_, :exhausted} -> Enum.reverse(acc)
+      {:exhausted, _} ->
+        Enum.reverse(acc)
+
+      {_, :exhausted} ->
+        Enum.reverse(acc)
+
       {{:ok, v1}, {:ok, v2}} when v1 == v2 ->
         # Found match, record and advance both
         case TrieIterator.next(iter1) do
@@ -416,15 +424,18 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
               {:ok, iter2} -> leapfrog_intersect(iter1, iter2, [v1 | acc])
               {:exhausted, _} -> Enum.reverse([v1 | acc])
             end
+
           {:exhausted, _} ->
             Enum.reverse([v1 | acc])
         end
+
       {{:ok, v1}, {:ok, v2}} when v1 < v2 ->
         # Seek iter1 to v2
         case TrieIterator.seek(iter1, v2) do
           {:ok, iter1} -> leapfrog_intersect(iter1, iter2, acc)
           {:exhausted, _} -> Enum.reverse(acc)
         end
+
       {{:ok, v1}, {:ok, v2}} when v1 > v2 ->
         # Seek iter2 to v1
         case TrieIterator.seek(iter2, v1) do
@@ -506,7 +517,8 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
       # POS index: predicate (0) | object (1) | subject (2)
       # With prefix <<p::64, o::64>> (16 bytes), level should be 2
       insert_triple(db, 5, 10, 100)
-      insert_triple(db, 7, 10, 100)  # Same predicate and object
+      # Same predicate and object
+      insert_triple(db, 7, 10, 100)
       insert_triple(db, 9, 10, 100)
 
       # Correct usage: 2-level prefix with level 2

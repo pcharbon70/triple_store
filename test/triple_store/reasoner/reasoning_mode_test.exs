@@ -130,9 +130,11 @@ defmodule TripleStore.Reasoner.ReasoningModeTest do
     end
 
     test "validates hybrid mode with materialized_rules" do
-      {:ok, config} = ReasoningMode.validate_config(:hybrid,
-        materialized_rules: [:scm_sco, :prp_trp]
-      )
+      {:ok, config} =
+        ReasoningMode.validate_config(:hybrid,
+          materialized_rules: [:scm_sco, :prp_trp]
+        )
+
       assert config.materialized_rules == [:scm_sco, :prp_trp]
     end
 
@@ -154,16 +156,20 @@ defmodule TripleStore.Reasoner.ReasoningModeTest do
     end
 
     test "returns error for unknown rules in hybrid mode" do
-      {:error, reason} = ReasoningMode.validate_config(:hybrid,
-        materialized_rules: [:unknown_rule]
-      )
+      {:error, reason} =
+        ReasoningMode.validate_config(:hybrid,
+          materialized_rules: [:unknown_rule]
+        )
+
       assert {:unknown_rules, :materialized_rules, [:unknown_rule]} = reason
     end
 
     test "returns error for unknown query_time_rules in hybrid mode" do
-      {:error, reason} = ReasoningMode.validate_config(:hybrid,
-        query_time_rules: [:unknown_rule]
-      )
+      {:error, reason} =
+        ReasoningMode.validate_config(:hybrid,
+          query_time_rules: [:unknown_rule]
+        )
+
       assert {:unknown_rules, :query_time_rules, [:unknown_rule]} = reason
     end
   end
@@ -195,7 +201,8 @@ defmodule TripleStore.Reasoner.ReasoningModeTest do
     end
 
     test "suggests query_time for write-heavy memory-constrained" do
-      assert ReasoningMode.suggest_mode(write_heavy: true, memory_constrained: true) == :query_time
+      assert ReasoningMode.suggest_mode(write_heavy: true, memory_constrained: true) ==
+               :query_time
     end
 
     test "suggests query_time for write-heavy simple queries" do

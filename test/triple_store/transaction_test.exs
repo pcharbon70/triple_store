@@ -59,7 +59,11 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager, stats_callback: callback)
 
       # Insert something to trigger callback
-      {:ok, 1} = Transaction.update(txn, "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      {:ok, 1} =
+        Transaction.update(
+          txn,
+          "INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }"
+        )
 
       [{:called, was_called}] = :ets.lookup(callback_called, :called)
       assert was_called == true
@@ -73,11 +77,12 @@ defmodule TripleStore.TransactionTest do
     test "inserts a single triple", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -86,13 +91,14 @@ defmodule TripleStore.TransactionTest do
     test "inserts multiple triples", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-          <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+            <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
+          }
+        """)
 
       assert {:ok, 3} = result
       Transaction.stop(txn)
@@ -101,11 +107,12 @@ defmodule TripleStore.TransactionTest do
     test "handles typed literals", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -114,11 +121,12 @@ defmodule TripleStore.TransactionTest do
     test "handles language-tagged literals", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice"@en .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice"@en .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -139,18 +147,20 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # First insert
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Then delete
-      result = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -159,11 +169,12 @@ defmodule TripleStore.TransactionTest do
     test "returns 0 for non-existent triple (idempotent)", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       assert {:ok, 0} = result
       Transaction.stop(txn)
@@ -175,18 +186,20 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert data
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Query for it
-      result = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      result =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
 
       assert {:ok, results} = result
       assert length(results) == 1
@@ -196,11 +209,12 @@ defmodule TripleStore.TransactionTest do
     test "returns empty for non-matching query", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.query(txn, """
-        SELECT ?s ?p ?o WHERE {
-          ?s ?p ?o .
-        }
-      """)
+      result =
+        Transaction.query(txn, """
+          SELECT ?s ?p ?o WHERE {
+            ?s ?p ?o .
+          }
+        """)
 
       assert {:ok, []} = result
       Transaction.stop(txn)
@@ -260,6 +274,7 @@ defmodule TripleStore.TransactionTest do
       triples = [
         {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("value")}
       ]
+
       {:ok, 1} = Transaction.insert(txn, triples)
 
       # Then delete
@@ -272,7 +287,8 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       triples = [
-        {RDF.iri("http://example.org/nonexistent"), RDF.iri("http://example.org/p"), RDF.literal("value")}
+        {RDF.iri("http://example.org/nonexistent"), RDF.iri("http://example.org/p"),
+         RDF.literal("value")}
       ]
 
       result = Transaction.delete(txn, triples)
@@ -286,11 +302,12 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Parse the update
-      {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("""
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse_update("""
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       result = Transaction.execute_update(txn, ast)
       assert {:ok, 1} = result
@@ -334,11 +351,12 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager, plan_cache: cache_name)
 
       # Insert data (should invalidate cache)
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       stats_after = PlanCache.stats(name: cache_name)
       assert stats_after.size == 0
@@ -357,14 +375,16 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager, plan_cache: cache_name)
 
       # Delete non-existent data (no actual changes)
-      {:ok, 0} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 0} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       stats_after = PlanCache.stats(name: cache_name)
-      assert stats_after.size == 1  # Cache should still have the entry
+      # Cache should still have the entry
+      assert stats_after.size == 1
 
       Transaction.stop(txn)
       GenServer.stop(cache_name)
@@ -376,26 +396,33 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Launch multiple concurrent updates
-      tasks = for i <- 1..5 do
-        Task.async(fn ->
-          Transaction.update(txn, """
-            INSERT DATA {
-              <http://example.org/s#{i}> <http://example.org/p> <http://example.org/o#{i}> .
-            }
-          """)
-        end)
-      end
+      tasks =
+        for i <- 1..5 do
+          Task.async(fn ->
+            Transaction.update(txn, """
+              INSERT DATA {
+                <http://example.org/s#{i}> <http://example.org/p> <http://example.org/o#{i}> .
+              }
+            """)
+          end)
+        end
 
       # All should succeed
       results = Task.await_many(tasks, 10_000)
-      assert Enum.all?(results, fn {:ok, 1} -> true; _ -> false end)
+
+      assert Enum.all?(results, fn
+               {:ok, 1} -> true
+               _ -> false
+             end)
 
       # Verify all 5 were inserted
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?s ?o WHERE {
-          ?s <http://example.org/p> ?o .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?s ?o WHERE {
+            ?s <http://example.org/p> ?o .
+          }
+        """)
+
       assert length(results) == 5
 
       Transaction.stop(txn)
@@ -410,11 +437,12 @@ defmodule TripleStore.TransactionTest do
       assert Transaction.current_snapshot(txn) == nil
 
       # Perform update (snapshot is created and released within the call)
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # After update (snapshot should be released)
       assert Transaction.current_snapshot(txn) == nil
@@ -434,11 +462,12 @@ defmodule TripleStore.TransactionTest do
       assert Process.alive?(txn)
 
       # Should still be able to do valid updates
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       Transaction.stop(txn)
     end
@@ -456,11 +485,16 @@ defmodule TripleStore.TransactionTest do
     test "update accepts custom timeout", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """, timeout: 60_000)
+      result =
+        Transaction.update(
+          txn,
+          """
+            INSERT DATA {
+              <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+            }
+          """,
+          timeout: 60_000
+        )
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -472,20 +506,22 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert
-      {:ok, 3} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
-          <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
-        }
-      """)
+      {:ok, 3} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
+            <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
+          }
+        """)
 
       # Query all
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?p ?o WHERE {
-          <http://example.org/alice> ?p ?o .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?p ?o WHERE {
+            <http://example.org/alice> ?p ?o .
+          }
+        """)
 
       assert length(results) == 3
       Transaction.stop(txn)
@@ -495,26 +531,29 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert
-      {:ok, 2} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-        }
-      """)
+      {:ok, 2} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+          }
+        """)
 
       # Delete one
-      {:ok, 1} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Query - should only find Bob
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          ?s <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            ?s <http://example.org/name> ?name .
+          }
+        """)
 
       assert length(results) == 1
       Transaction.stop(txn)

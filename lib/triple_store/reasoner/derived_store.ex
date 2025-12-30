@@ -382,7 +382,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
       lookup_fn = DerivedStore.make_lookup_fn(db, :both)
       {:ok, triples} = lookup_fn.(pattern)
   """
-  @spec make_lookup_fn(db_ref(), source()) :: (pattern() -> {:ok, [id_triple()]} | {:error, term()})
+  @spec make_lookup_fn(db_ref(), source()) :: (pattern() ->
+                                                 {:ok, [id_triple()]} | {:error, term()})
   def make_lookup_fn(db, source) do
     fn pattern ->
       # Convert from Rule pattern format to Index pattern format

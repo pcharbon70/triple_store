@@ -37,10 +37,11 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
   describe "incremental addition derives new consequences" do
     test "adding instance fact derives type through subclass hierarchy" do
       # Schema: Student subClassOf Person subClassOf Agent
-      schema = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("Person"), rdfs_subClassOf(), iri("Agent")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("Person"), rdfs_subClassOf(), iri("Agent")}
+        ])
 
       rules = [Rules.cax_sco(), Rules.scm_sco()]
 
@@ -56,10 +57,11 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
     end
 
     test "adding subclass fact derives transitive closure" do
-      existing = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("C"), rdfs_subClassOf(), iri("D")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("C"), rdfs_subClassOf(), iri("D")}
+        ])
 
       rules = [Rules.scm_sco()]
 
@@ -75,9 +77,10 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
     end
 
     test "adding sameAs derives symmetric and transitive facts" do
-      existing = MapSet.new([
-        {iri("bob"), owl_sameAs(), iri("robert")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("bob"), owl_sameAs(), iri("robert")}
+        ])
 
       rules = [Rules.eq_sym(), Rules.eq_trans()]
 
@@ -135,22 +138,24 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       potentially_invalid = MapSet.new([alice_person])
 
       # Alice has GradStudent type, and GradStudent subClassOf Person
-      all_facts = MapSet.new([
-        {iri("alice"), rdf_type(), iri("GradStudent")},
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
-        alice_person
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("alice"), rdf_type(), iri("GradStudent")},
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Person")},
+          alice_person
+        ])
 
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid,
-        all_facts,
-        deleted,
-        rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert MapSet.member?(result.keep, alice_person)
       assert MapSet.size(result.delete) == 0
@@ -162,21 +167,23 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       potentially_invalid = MapSet.new([alice_person])
 
       # Only the subclass hierarchy remains, no instance type
-      all_facts = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        alice_person
-      ])
+      all_facts =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          alice_person
+        ])
 
       deleted = MapSet.new([{iri("alice"), rdf_type(), iri("Student")}])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = ForwardRederive.rederive_in_memory(
-        potentially_invalid,
-        all_facts,
-        deleted,
-        rules
-      )
+      {:ok, result} =
+        ForwardRederive.rederive_in_memory(
+          potentially_invalid,
+          all_facts,
+          deleted,
+          rules
+        )
 
       assert MapSet.member?(result.delete, alice_person)
       assert MapSet.size(result.keep) == 0
@@ -194,12 +201,13 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice Person should be deleted
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -218,23 +226,26 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       gradstudent_person = {iri("GradStudent"), rdfs_subClassOf(), iri("Person")}
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_gradstudent,
-        student_person,
-        gradstudent_person,
-        alice_person
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_gradstudent,
+          student_person,
+          gradstudent_person,
+          alice_person
+        ])
+
       derived_facts = MapSet.new([alice_person])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # alice Person should be kept (via GradStudent)
       assert MapSet.member?(result.derived_kept, alice_person)
@@ -251,23 +262,26 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       alice_agent = {iri("alice"), rdf_type(), iri("Agent")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        student_person,
-        person_agent,
-        alice_person,
-        alice_agent
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          student_person,
+          person_agent,
+          alice_person,
+          alice_agent
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_agent])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Both derived types should be deleted
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -286,25 +300,28 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       alice_agent = {iri("alice"), rdf_type(), iri("Agent")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_employee,
-        student_person,
-        person_agent,
-        employee_agent,
-        alice_person,
-        alice_agent
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_employee,
+          student_person,
+          person_agent,
+          employee_agent,
+          alice_person,
+          alice_agent
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_agent])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Person should be deleted (no alternative)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -315,16 +332,18 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
   describe "bulk operations" do
     test "bulk addition processes multiple facts efficiently" do
-      schema = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
       # Add multiple students at once
-      new_triples = for i <- 1..100 do
-        {iri("student#{i}"), rdf_type(), iri("Student")}
-      end
+      new_triples =
+        for i <- 1..100 do
+          {iri("student#{i}"), rdf_type(), iri("Student")}
+        end
 
       {:ok, all_facts, stats} = Incremental.add_in_memory(new_triples, schema, rules)
 
@@ -339,13 +358,15 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
     test "bulk deletion handles many facts correctly" do
       # Create 50 students and their derived Person types
-      student_facts = for i <- 1..50 do
-        {iri("student#{i}"), rdf_type(), iri("Student")}
-      end
+      student_facts =
+        for i <- 1..50 do
+          {iri("student#{i}"), rdf_type(), iri("Student")}
+        end
 
-      person_facts = for i <- 1..50 do
-        {iri("student#{i}"), rdf_type(), iri("Person")}
-      end
+      person_facts =
+        for i <- 1..50 do
+          {iri("student#{i}"), rdf_type(), iri("Person")}
+        end
 
       schema = MapSet.new([{iri("Student"), rdfs_subClassOf(), iri("Person")}])
 
@@ -355,12 +376,13 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       rules = [Rules.cax_sco()]
 
       # Delete all student facts
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        student_facts,
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          student_facts,
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # All Person types should be deleted
       for i <- 1..50 do
@@ -378,9 +400,10 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
   describe "add-then-delete workflow" do
     test "add and delete returns to original state" do
-      schema = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -394,22 +417,25 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
       # Now delete alice as Student
       derived_facts = MapSet.new([alice_person])
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [new_triple],
-        after_add,
-        derived_facts,
-        rules
-      )
+
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [new_triple],
+          after_add,
+          derived_facts,
+          rules
+        )
 
       # Should be back to just schema
       assert result.final_facts == schema
     end
 
     test "partial delete after multiple additions" do
-      schema = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")},
-        {iri("GradStudent"), rdfs_subClassOf(), iri("Person")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")},
+          {iri("GradStudent"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -425,12 +451,14 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
       # Delete only Student type
       derived_facts = MapSet.new([alice_person])
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        after_add2,
-        derived_facts,
-        rules
-      )
+
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          after_add2,
+          derived_facts,
+          rules
+        )
 
       # Person should still be there (via GradStudent)
       assert MapSet.member?(result.final_facts, alice_person)
@@ -447,28 +475,31 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       # alice is Student, bob sameAs alice
       # Student subClassOf Person
       # bob should inherit Person type via sameAs + cax-sco
-      schema = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       rules = [Rules.cax_sco(), Rules.eq_sym()]
 
       # First add alice as Student
-      {:ok, after_alice, _} = Incremental.add_in_memory(
-        [{iri("alice"), rdf_type(), iri("Student")}],
-        schema,
-        rules
-      )
+      {:ok, after_alice, _} =
+        Incremental.add_in_memory(
+          [{iri("alice"), rdf_type(), iri("Student")}],
+          schema,
+          rules
+        )
 
       # Verify alice is Person
       assert MapSet.member?(after_alice, {iri("alice"), rdf_type(), iri("Person")})
 
       # Add bob sameAs alice
-      {:ok, after_bob, _} = Incremental.add_in_memory(
-        [{iri("bob"), owl_sameAs(), iri("alice")}],
-        after_alice,
-        rules
-      )
+      {:ok, after_bob, _} =
+        Incremental.add_in_memory(
+          [{iri("bob"), owl_sameAs(), iri("alice")}],
+          after_alice,
+          rules
+        )
 
       # Verify symmetry: alice sameAs bob
       assert MapSet.member?(after_bob, {iri("alice"), owl_sameAs(), iri("bob")})
@@ -485,24 +516,27 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       alice_person = {iri("alice"), rdf_type(), iri("Person")}
       alice_worker = {iri("alice"), rdf_type(), iri("Worker")}
 
-      all_facts = MapSet.new([
-        alice_student,
-        alice_employee,
-        student_person,
-        employee_worker,
-        alice_person,
-        alice_worker
-      ])
+      all_facts =
+        MapSet.new([
+          alice_student,
+          alice_employee,
+          student_person,
+          employee_worker,
+          alice_person,
+          alice_worker
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_worker])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # Person deleted, Worker kept
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -527,9 +561,10 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
     end
 
     test "no rules means no derivations" do
-      existing = MapSet.new([
-        {iri("Student"), rdfs_subClassOf(), iri("Person")}
-      ])
+      existing =
+        MapSet.new([
+          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+        ])
 
       new_triples = [{iri("alice"), rdf_type(), iri("Student")}]
 
@@ -550,12 +585,13 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       rules = [Rules.cax_sco(), Rules.scm_sco()]
 
       # Should handle without infinite loop
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [thing_thing],
-        all_facts,
-        MapSet.new(),
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [thing_thing],
+          all_facts,
+          MapSet.new(),
+          rules
+        )
 
       assert MapSet.member?(result.final_facts, alice_thing)
     end
@@ -577,20 +613,29 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       alice_worker = {iri("alice"), rdf_type(), iri("Worker")}
       alice_agent = {iri("alice"), rdf_type(), iri("Agent")}
 
-      all_facts = MapSet.new([
-        student_person, student_worker, person_agent, worker_agent,
-        alice_student, alice_person, alice_worker, alice_agent
-      ])
+      all_facts =
+        MapSet.new([
+          student_person,
+          student_worker,
+          person_agent,
+          worker_agent,
+          alice_student,
+          alice_person,
+          alice_worker,
+          alice_agent
+        ])
+
       derived_facts = MapSet.new([alice_person, alice_worker, alice_agent])
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_student],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_student],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       # All derived types should be deleted (all came from Student)
       assert MapSet.member?(result.derived_deleted, alice_person)
@@ -605,10 +650,11 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
   describe "statistics accuracy" do
     test "addition statistics are accurate" do
-      schema = MapSet.new([
-        {iri("A"), rdfs_subClassOf(), iri("B")},
-        {iri("B"), rdfs_subClassOf(), iri("C")}
-      ])
+      schema =
+        MapSet.new([
+          {iri("A"), rdfs_subClassOf(), iri("B")},
+          {iri("B"), rdfs_subClassOf(), iri("C")}
+        ])
 
       rules = [Rules.cax_sco()]
 
@@ -617,7 +663,8 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
       {:ok, _all_facts, stats} = Incremental.add_in_memory(new_triples, schema, rules)
 
       assert stats.explicit_added == 1
-      assert stats.derived_count == 2  # x type B, x type C
+      # x type B, x type C
+      assert stats.derived_count == 2
       assert stats.iterations >= 1
       assert stats.duration_ms >= 0
     end
@@ -632,12 +679,13 @@ defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
 
       rules = [Rules.cax_sco()]
 
-      {:ok, result} = DeleteWithReasoning.delete_in_memory(
-        [alice_a],
-        all_facts,
-        derived_facts,
-        rules
-      )
+      {:ok, result} =
+        DeleteWithReasoning.delete_in_memory(
+          [alice_a],
+          all_facts,
+          derived_facts,
+          rules
+        )
 
       assert result.stats.explicit_deleted == 1
       assert result.stats.derived_deleted == 1

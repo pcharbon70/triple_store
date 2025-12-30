@@ -421,6 +421,7 @@ defmodule TripleStore.MetricsTest do
       :telemetry.execute([:triple_store, :query, :execute, :stop], %{duration_ms: 50}, %{})
       :telemetry.execute([:triple_store, :insert, :stop], %{duration: 1000}, %{count: 100})
       :telemetry.execute([:triple_store, :cache, :plan, :hit], %{count: 1}, %{})
+
       :telemetry.execute(
         [:triple_store, :reasoner, :materialize, :stop],
         %{duration_ms: 100},

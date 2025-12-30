@@ -461,7 +461,9 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       {:ok, original} = SequenceCounter.export(counter1)
 
       # Export to file
-      path = Path.join(System.tmp_dir!(), "counter_test_#{:erlang.unique_integer([:positive])}.bin")
+      path =
+        Path.join(System.tmp_dir!(), "counter_test_#{:erlang.unique_integer([:positive])}.bin")
+
       :ok = SequenceCounter.export_to_file(counter1, path)
       SequenceCounter.stop(counter1)
 
@@ -489,7 +491,9 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       assert {:error, :enoent} = SequenceCounter.import_from_file(counter, "/nonexistent/path")
 
       # Create invalid file
-      path = Path.join(System.tmp_dir!(), "invalid_counter_#{:erlang.unique_integer([:positive])}.bin")
+      path =
+        Path.join(System.tmp_dir!(), "invalid_counter_#{:erlang.unique_integer([:positive])}.bin")
+
       File.write!(path, "invalid binary data")
       assert {:error, :invalid_format} = SequenceCounter.import_from_file(counter, path)
       File.rm(path)

@@ -62,9 +62,9 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with domain/range includes prp_dom and prp_rng" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        has_domain: true,
-        has_range: true
+        RuleCompiler.empty_schema_info()
+        | has_domain: true,
+          has_range: true
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :rdfs)
@@ -76,8 +76,8 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with transitive properties includes prp_trp" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
@@ -88,8 +88,8 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with symmetric properties includes prp_symp" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        symmetric_properties: ["#{@ex}knows"]
+        RuleCompiler.empty_schema_info()
+        | symmetric_properties: ["#{@ex}knows"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
@@ -100,8 +100,8 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with inverse properties includes prp_inv1 and prp_inv2" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        inverse_properties: [{"#{@ex}hasParent", "#{@ex}hasChild"}]
+        RuleCompiler.empty_schema_info()
+        | inverse_properties: [{"#{@ex}hasParent", "#{@ex}hasChild"}]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
@@ -113,8 +113,8 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with functional properties includes prp_fp" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        functional_properties: ["#{@ex}hasSSN"]
+        RuleCompiler.empty_schema_info()
+        | functional_properties: ["#{@ex}hasSSN"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
@@ -125,8 +125,8 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "compiles with inverse functional properties includes prp_ifp" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        inverse_functional_properties: ["#{@ex}hasSSN"]
+        RuleCompiler.empty_schema_info()
+        | inverse_functional_properties: ["#{@ex}hasSSN"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
@@ -163,9 +163,9 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "rdfs profile excludes owl2rl-only rules" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        has_subclass: true,
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | has_subclass: true,
+          transitive_properties: ["#{@ex}contains"]
       }
 
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :rdfs)
@@ -186,14 +186,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
   describe "rule specialization" do
     test "specializes transitive property rule" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       specialized_names = Enum.map(compiled.specialized_rules, & &1.name)
       # Should have a specialized rule for "contains"
@@ -202,19 +203,22 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "specialized rule has fewer body patterns" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       generic_rule = Enum.find(compiled.rules, &(&1.name == :prp_trp))
-      specialized_rule = Enum.find(compiled.specialized_rules, fn r ->
-        String.contains?(to_string(r.name), "transitive")
-      end)
+
+      specialized_rule =
+        Enum.find(compiled.specialized_rules, fn r ->
+          String.contains?(to_string(r.name), "transitive")
+        end)
 
       # Generic rule has 3 patterns (type declaration + 2 property patterns)
       assert Rule.pattern_count(generic_rule) == 3
@@ -224,18 +228,20 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "specialized rule has bound property" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        symmetric_properties: ["#{@ex}knows"]
+        RuleCompiler.empty_schema_info()
+        | symmetric_properties: ["#{@ex}knows"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
-      specialized_rule = Enum.find(compiled.specialized_rules, fn r ->
-        String.contains?(to_string(r.name), "knows")
-      end)
+      specialized_rule =
+        Enum.find(compiled.specialized_rules, fn r ->
+          String.contains?(to_string(r.name), "knows")
+        end)
 
       assert specialized_rule != nil
       # The specialized rule should have the property bound in head
@@ -245,14 +251,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "specializes inverse property rules" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        inverse_properties: [{"#{@ex}hasParent", "#{@ex}hasChild"}]
+        RuleCompiler.empty_schema_info()
+        | inverse_properties: [{"#{@ex}hasParent", "#{@ex}hasChild"}]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       specialized_names = Enum.map(compiled.specialized_rules, &to_string(&1.name))
       # Should have specialized rules for the inverse pair
@@ -262,14 +269,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "specializes multiple properties" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains", "#{@ex}partOf"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains", "#{@ex}partOf"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       specialized_names = Enum.map(compiled.specialized_rules, &to_string(&1.name))
       assert Enum.any?(specialized_names, &String.contains?(&1, "contains"))
@@ -278,14 +286,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "specialize: false skips specialization" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: false
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: false
+        )
 
       assert compiled.specialized_rules == []
     end
@@ -298,14 +307,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
   describe "get_rules/1" do
     test "returns specialized rules when available" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       rules = RuleCompiler.get_rules(compiled)
       # Should include both specialized and generic rules
@@ -315,10 +325,11 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
     test "returns generic rules when no specialization" do
       schema_info = %{RuleCompiler.empty_schema_info() | has_subclass: true}
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :rdfs,
-        specialize: false
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :rdfs,
+          specialize: false
+        )
 
       rules = RuleCompiler.get_rules(compiled)
       assert rules == compiled.rules
@@ -328,14 +339,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
   describe "get_generic_rules/1" do
     test "returns only generic rules" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       generic = RuleCompiler.get_generic_rules(compiled)
       assert generic == compiled.rules
@@ -345,14 +357,15 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
   describe "get_specialized_rules/1" do
     test "returns only specialized rules" do
       schema_info = %{
-        RuleCompiler.empty_schema_info() |
-        transitive_properties: ["#{@ex}contains"]
+        RuleCompiler.empty_schema_info()
+        | transitive_properties: ["#{@ex}contains"]
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       specialized = RuleCompiler.get_specialized_rules(compiled)
       assert specialized == compiled.specialized_rules
@@ -431,12 +444,13 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
     test "includes rules when schema has matching features" do
       all_rules = Rules.all_rules()
+
       schema = %{
-        RuleCompiler.empty_schema_info() |
-        has_subclass: true,
-        has_subproperty: true,
-        has_domain: true,
-        has_range: true
+        RuleCompiler.empty_schema_info()
+        | has_subclass: true,
+          has_subproperty: true,
+          has_domain: true,
+          has_range: true
       }
 
       filtered = RuleCompiler.filter_applicable_rules(all_rules, schema)
@@ -507,10 +521,11 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
         has_restrictions: true
       }
 
-      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
-        profile: :owl2rl,
-        specialize: true
-      )
+      {:ok, compiled} =
+        RuleCompiler.compile_with_schema(schema_info,
+          profile: :owl2rl,
+          specialize: true
+        )
 
       # All 23 rules should be applicable
       assert length(compiled.rules) == 23

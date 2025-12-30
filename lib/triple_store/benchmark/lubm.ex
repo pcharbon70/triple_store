@@ -148,7 +148,10 @@ defmodule TripleStore.Benchmark.LUBM do
     # Approximate triples per university
     avg_depts = div(@min_departments + @max_departments, 2)
     avg_faculty = div(Enum.min(@faculty_per_dept) + Enum.max(@faculty_per_dept), 2)
-    avg_undergrad = div(Enum.min(@undergrad_students_per_dept) + Enum.max(@undergrad_students_per_dept), 2)
+
+    avg_undergrad =
+      div(Enum.min(@undergrad_students_per_dept) + Enum.max(@undergrad_students_per_dept), 2)
+
     avg_grad = div(Enum.min(@grad_students_per_dept) + Enum.max(@grad_students_per_dept), 2)
     avg_courses = div(Enum.min(@courses_per_dept) + Enum.max(@courses_per_dept), 2)
     avg_pubs = div(Enum.min(@publications_per_faculty) + Enum.max(@publications_per_faculty), 2)
@@ -161,7 +164,10 @@ defmodule TripleStore.Benchmark.LUBM do
     dept_triples = avg_depts * 5
     uni_triples = 3
 
-    per_university = faculty_triples + student_triples + course_triples + pub_triples + dept_triples + uni_triples
+    per_university =
+      faculty_triples + student_triples + course_triples + pub_triples + dept_triples +
+        uni_triples
+
     scale * per_university
   end
 
@@ -217,13 +223,16 @@ defmodule TripleStore.Benchmark.LUBM do
 
     # Generate courses
     num_courses = random_in_range(@courses_per_dept)
-    course_triples = Enum.flat_map(1..num_courses, &generate_course(uni_id, dept_id, &1, num_faculty))
+
+    course_triples =
+      Enum.flat_map(1..num_courses, &generate_course(uni_id, dept_id, &1, num_faculty))
 
     # Generate research groups
     num_groups = random_in_range(@research_groups_per_dept)
     group_triples = Enum.flat_map(1..num_groups, &generate_research_group(uni_id, dept_id, &1))
 
-    dept_triples ++ faculty_triples ++ undergrad_triples ++ grad_triples ++ course_triples ++ group_triples
+    dept_triples ++
+      faculty_triples ++ undergrad_triples ++ grad_triples ++ course_triples ++ group_triples
   end
 
   defp generate_faculty(uni_id, dept_id, faculty_id) do
@@ -242,16 +251,20 @@ defmodule TripleStore.Benchmark.LUBM do
       {faculty_uri, rdf_type(), lubm(faculty_type)},
       {faculty_uri, lubm("name"), RDF.literal("Faculty#{uni_id}_#{dept_id}_#{faculty_id}")},
       {faculty_uri, lubm("worksFor"), dept_uri},
-      {faculty_uri, lubm("emailAddress"), RDF.literal("faculty#{faculty_id}@dept#{dept_id}.uni#{uni_id}.edu")},
+      {faculty_uri, lubm("emailAddress"),
+       RDF.literal("faculty#{faculty_id}@dept#{dept_id}.uni#{uni_id}.edu")},
       {faculty_uri, lubm("telephone"), RDF.literal("555-#{dept_id}-#{faculty_id}")},
-      {faculty_uri, lubm("undergraduateDegreeFrom"), university_uri(random_range(1, max(1, uni_id)))},
+      {faculty_uri, lubm("undergraduateDegreeFrom"),
+       university_uri(random_range(1, max(1, uni_id)))},
       {faculty_uri, lubm("mastersDegreeFrom"), university_uri(random_range(1, max(1, uni_id)))},
       {faculty_uri, lubm("doctoralDegreeFrom"), university_uri(random_range(1, max(1, uni_id)))}
     ]
 
     # Generate publications for this faculty
     num_pubs = random_in_range(@publications_per_faculty)
-    pub_triples = Enum.flat_map(1..num_pubs, &generate_publication(uni_id, dept_id, faculty_id, &1))
+
+    pub_triples =
+      Enum.flat_map(1..num_pubs, &generate_publication(uni_id, dept_id, faculty_id, &1))
 
     base_triples ++ pub_triples
   end
@@ -263,9 +276,11 @@ defmodule TripleStore.Benchmark.LUBM do
 
     [
       {student_uri, rdf_type(), lubm("UndergraduateStudent")},
-      {student_uri, lubm("name"), RDF.literal("UndergradStudent#{uni_id}_#{dept_id}_#{student_id}")},
+      {student_uri, lubm("name"),
+       RDF.literal("UndergradStudent#{uni_id}_#{dept_id}_#{student_id}")},
       {student_uri, lubm("memberOf"), dept_uri},
-      {student_uri, lubm("emailAddress"), RDF.literal("ug#{student_id}@dept#{dept_id}.uni#{uni_id}.edu")},
+      {student_uri, lubm("emailAddress"),
+       RDF.literal("ug#{student_id}@dept#{dept_id}.uni#{uni_id}.edu")},
       {student_uri, lubm("advisor"), faculty_uri(uni_id, dept_id, advisor_id)}
     ]
   end
@@ -280,7 +295,8 @@ defmodule TripleStore.Benchmark.LUBM do
       {student_uri, rdf_type(), lubm("GraduateStudent")},
       {student_uri, lubm("name"), RDF.literal("GradStudent#{uni_id}_#{dept_id}_#{student_id}")},
       {student_uri, lubm("memberOf"), dept_uri},
-      {student_uri, lubm("emailAddress"), RDF.literal("grad#{student_id}@dept#{dept_id}.uni#{uni_id}.edu")},
+      {student_uri, lubm("emailAddress"),
+       RDF.literal("grad#{student_id}@dept#{dept_id}.uni#{uni_id}.edu")},
       {student_uri, lubm("advisor"), faculty_uri(uni_id, dept_id, advisor_id)},
       {student_uri, lubm("undergraduateDegreeFrom"), university_uri(undergrad_uni)}
     ]
@@ -306,7 +322,8 @@ defmodule TripleStore.Benchmark.LUBM do
 
     [
       {pub_uri, rdf_type(), lubm("Publication")},
-      {pub_uri, lubm("name"), RDF.literal("Publication #{uni_id}_#{dept_id}_#{faculty_id}_#{pub_id}")},
+      {pub_uri, lubm("name"),
+       RDF.literal("Publication #{uni_id}_#{dept_id}_#{faculty_id}_#{pub_id}")},
       {pub_uri, lubm("publicationAuthor"), author_uri}
     ]
   end
@@ -327,12 +344,24 @@ defmodule TripleStore.Benchmark.LUBM do
 
   defp university_uri(id), do: RDF.iri("http://www.University#{id}.edu")
   defp department_uri(uni, dept), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu")
-  defp faculty_uri(uni, dept, fac), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Faculty#{fac}")
-  defp undergrad_uri(uni, dept, stu), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/UndergraduateStudent#{stu}")
-  defp grad_uri(uni, dept, stu), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/GraduateStudent#{stu}")
-  defp course_uri(uni, dept, course), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Course#{course}")
-  defp publication_uri(uni, dept, fac, pub), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Publication#{fac}_#{pub}")
-  defp research_group_uri(uni, dept, grp), do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/ResearchGroup#{grp}")
+
+  defp faculty_uri(uni, dept, fac),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Faculty#{fac}")
+
+  defp undergrad_uri(uni, dept, stu),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/UndergraduateStudent#{stu}")
+
+  defp grad_uri(uni, dept, stu),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/GraduateStudent#{stu}")
+
+  defp course_uri(uni, dept, course),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Course#{course}")
+
+  defp publication_uri(uni, dept, fac, pub),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/Publication#{fac}_#{pub}")
+
+  defp research_group_uri(uni, dept, grp),
+    do: RDF.iri("http://www.Department#{dept}.University#{uni}.edu/ResearchGroup#{grp}")
 
   # ===========================================================================
   # Private: Helpers

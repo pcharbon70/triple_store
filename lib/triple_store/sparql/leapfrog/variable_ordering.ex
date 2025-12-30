@@ -203,19 +203,16 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
       {:subject, _, true, false} -> {:pos, prefix_vars(p_var, nil, bound_vars)}
       {:subject, _, false, true} -> {:osp, prefix_vars(o_var, nil, bound_vars)}
       {:subject, _, false, false} -> {:spo, []}
-
       # Variable is predicate
       {:predicate, true, _, true} -> {:spo, prefix_vars(s_var, nil, bound_vars)}
       {:predicate, true, _, false} -> {:spo, prefix_vars(s_var, nil, bound_vars)}
       {:predicate, false, _, true} -> {:osp, prefix_vars(o_var, nil, bound_vars)}
       {:predicate, false, _, false} -> {:pos, []}
-
       # Variable is object
       {:object, true, true, _} -> {:spo, prefix_vars(s_var, p_var, bound_vars)}
       {:object, true, false, _} -> {:spo, prefix_vars(s_var, nil, bound_vars)}
       {:object, false, true, _} -> {:pos, prefix_vars(p_var, nil, bound_vars)}
       {:object, false, false, _} -> {:osp, []}
-
       # Variable not in pattern
       {:not_found, _, _, _} -> {:spo, []}
     end
@@ -317,9 +314,12 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
     # Map positions to indices that have them in useful order
     positions
     |> Enum.flat_map(fn
-      :subject -> [:spo, :osp]  # SPO has subject first, OSP has subject second
-      :predicate -> [:pos, :spo]  # POS has predicate first, SPO has predicate second
-      :object -> [:osp, :pos]  # OSP has object first, POS has object second
+      # SPO has subject first, OSP has subject second
+      :subject -> [:spo, :osp]
+      # POS has predicate first, SPO has predicate second
+      :predicate -> [:pos, :spo]
+      # OSP has object first, POS has object second
+      :object -> [:osp, :pos]
     end)
     |> Enum.uniq()
   end
@@ -347,10 +347,14 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
       [s, p, o]
       |> Enum.count(&PatternUtils.is_constant?/1)
       |> case do
-        0 -> 1.0      # No constants - least selective
-        1 -> 0.1      # One constant - moderately selective
-        2 -> 0.01     # Two constants - very selective
-        3 -> 0.001    # All constants (rare) - maximally selective
+        # No constants - least selective
+        0 -> 1.0
+        # One constant - moderately selective
+        1 -> 0.1
+        # Two constants - very selective
+        2 -> 0.01
+        # All constants (rare) - maximally selective
+        3 -> 0.001
       end
 
     # Adjust for predicate statistics if available
@@ -376,6 +380,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   # Combine selectivities from multiple patterns
   # More patterns = more constrained = lower selectivity score
   defp combine_selectivities([]), do: 1_000_000.0
+
   defp combine_selectivities(selectivities) do
     count = length(selectivities)
 

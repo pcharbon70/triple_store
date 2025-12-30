@@ -52,12 +52,13 @@ defmodule TripleStore.SPARQL.Optimizer do
   @max_depth 100
 
   @typedoc "Optimization options"
-  @type opt :: {:push_filters, boolean()}
-             | {:fold_constants, boolean()}
-             | {:reorder_bgp, boolean()}
-             | {:stats, map()}
-             | {:log, boolean()}
-             | {:explain, boolean()}
+  @type opt ::
+          {:push_filters, boolean()}
+          | {:fold_constants, boolean()}
+          | {:reorder_bgp, boolean()}
+          | {:stats, map()}
+          | {:log, boolean()}
+          | {:explain, boolean()}
 
   # ===========================================================================
   # Main Entry Point
@@ -176,16 +177,17 @@ defmodule TripleStore.SPARQL.Optimizer do
     # Calculate potential improvement
     improvement = estimate_improvement(filter_stats, bgp_stats)
 
-    {:explain, %{
-      original: algebra,
-      optimizations: optimizations,
-      statistics: %{
-        filters: filter_stats,
-        bgp_patterns: bgp_stats,
-        predicate_stats_available: map_size(stats) > 0
-      },
-      estimated_improvement: improvement
-    }}
+    {:explain,
+     %{
+       original: algebra,
+       optimizations: optimizations,
+       statistics: %{
+         filters: filter_stats,
+         bgp_patterns: bgp_stats,
+         predicate_stats_available: map_size(stats) > 0
+       },
+       estimated_improvement: improvement
+     }}
   end
 
   # Determine which optimizations would actually change the algebra
@@ -197,25 +199,28 @@ defmodule TripleStore.SPARQL.Optimizer do
     optimizations = []
 
     # Check constant folding
-    optimizations = if fold_constants? and has_foldable_constants?(algebra) do
-      [:constant_folding | optimizations]
-    else
-      optimizations
-    end
+    optimizations =
+      if fold_constants? and has_foldable_constants?(algebra) do
+        [:constant_folding | optimizations]
+      else
+        optimizations
+      end
 
     # Check BGP reordering
-    optimizations = if reorder_bgp? and bgp_stats.multi_pattern_bgps > 0 do
-      [:bgp_reordering | optimizations]
-    else
-      optimizations
-    end
+    optimizations =
+      if reorder_bgp? and bgp_stats.multi_pattern_bgps > 0 do
+        [:bgp_reordering | optimizations]
+      else
+        optimizations
+      end
 
     # Check filter push-down
-    optimizations = if push_filters? and filter_stats.total_filters > 0 do
-      [:filter_push_down | optimizations]
-    else
-      optimizations
-    end
+    optimizations =
+      if push_filters? and filter_stats.total_filters > 0 do
+        [:filter_push_down | optimizations]
+      else
+        optimizations
+      end
 
     Enum.reverse(optimizations)
   end
@@ -322,11 +327,13 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp analyze_bgp_recursive({:bgp, patterns}, stats) do
     count = length(patterns)
-    %{stats |
-      total_bgps: stats.total_bgps + 1,
-      total_patterns: stats.total_patterns + count,
-      multi_pattern_bgps: stats.multi_pattern_bgps + if(count > 1, do: 1, else: 0),
-      max_patterns_in_bgp: max(stats.max_patterns_in_bgp, count)
+
+    %{
+      stats
+      | total_bgps: stats.total_bgps + 1,
+        total_patterns: stats.total_patterns + count,
+        multi_pattern_bgps: stats.multi_pattern_bgps + if(count > 1, do: 1, else: 0),
+        max_patterns_in_bgp: max(stats.max_patterns_in_bgp, count)
     }
   end
 
@@ -376,6 +383,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp log_start(algebra) do
     node_count = count_nodes(algebra)
+
     Logger.debug("[Optimizer] Starting optimization pipeline",
       nodes: node_count,
       root_type: elem(algebra, 0)
@@ -392,6 +400,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp log_complete(result) do
     node_count = count_nodes(result)
+
     Logger.debug("[Optimizer] Optimization complete",
       nodes: node_count,
       root_type: elem(result, 0)
@@ -633,11 +642,15 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp try_push_filter(filter_expr, {:order_by, inner, conditions}) do
-    push_through_wrapper(filter_expr, inner, fn new_inner -> {:order_by, new_inner, conditions} end)
+    push_through_wrapper(filter_expr, inner, fn new_inner ->
+      {:order_by, new_inner, conditions}
+    end)
   end
 
   defp try_push_filter(filter_expr, {:slice, inner, offset, limit}) do
-    push_through_wrapper(filter_expr, inner, fn new_inner -> {:slice, new_inner, offset, limit} end)
+    push_through_wrapper(filter_expr, inner, fn new_inner ->
+      {:slice, new_inner, offset, limit}
+    end)
   end
 
   defp try_push_filter(_filter_expr, _pattern), do: :cannot_push
@@ -666,10 +679,11 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp push_into_extend(filter_expr, inner, var, expr) do
     filter_vars = Expression.expression_variables(filter_expr) |> MapSet.new()
 
-    extended_var = case var do
-      {:variable, name} -> name
-      _ -> nil
-    end
+    extended_var =
+      case var do
+        {:variable, name} -> name
+        _ -> nil
+      end
 
     if extended_var && extended_var in filter_vars do
       :cannot_push
@@ -846,7 +860,8 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp fold_constants_recursive({:minus, left, right}, depth) do
-    {:minus, fold_constants_recursive(left, depth + 1), fold_constants_recursive(right, depth + 1)}
+    {:minus, fold_constants_recursive(left, depth + 1),
+     fold_constants_recursive(right, depth + 1)}
   end
 
   defp fold_constants_recursive({:union, left, right}, depth) do
@@ -914,30 +929,62 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp fold_expression(expr) do
     case expr do
       # Literals and variables are already in simplest form
-      {:variable, _} -> expr
-      {:named_node, _} -> expr
-      {:blank_node, _} -> expr
-      {:literal, _, _} -> expr
-      {:literal, _, _, _} -> expr
+      {:variable, _} ->
+        expr
+
+      {:named_node, _} ->
+        expr
+
+      {:blank_node, _} ->
+        expr
+
+      {:literal, _, _} ->
+        expr
+
+      {:literal, _, _, _} ->
+        expr
 
       # Arithmetic operations
-      {:add, left, right} -> fold_binary_arithmetic(:add, left, right)
-      {:subtract, left, right} -> fold_binary_arithmetic(:subtract, left, right)
-      {:multiply, left, right} -> fold_binary_arithmetic(:multiply, left, right)
-      {:divide, left, right} -> fold_binary_arithmetic(:divide, left, right)
-      {:unary_minus, arg} -> fold_unary_minus(arg)
+      {:add, left, right} ->
+        fold_binary_arithmetic(:add, left, right)
+
+      {:subtract, left, right} ->
+        fold_binary_arithmetic(:subtract, left, right)
+
+      {:multiply, left, right} ->
+        fold_binary_arithmetic(:multiply, left, right)
+
+      {:divide, left, right} ->
+        fold_binary_arithmetic(:divide, left, right)
+
+      {:unary_minus, arg} ->
+        fold_unary_minus(arg)
 
       # Comparison operations
-      {:equal, left, right} -> fold_comparison(:equal, left, right)
-      {:greater, left, right} -> fold_comparison(:greater, left, right)
-      {:less, left, right} -> fold_comparison(:less, left, right)
-      {:greater_or_equal, left, right} -> fold_comparison(:greater_or_equal, left, right)
-      {:less_or_equal, left, right} -> fold_comparison(:less_or_equal, left, right)
+      {:equal, left, right} ->
+        fold_comparison(:equal, left, right)
+
+      {:greater, left, right} ->
+        fold_comparison(:greater, left, right)
+
+      {:less, left, right} ->
+        fold_comparison(:less, left, right)
+
+      {:greater_or_equal, left, right} ->
+        fold_comparison(:greater_or_equal, left, right)
+
+      {:less_or_equal, left, right} ->
+        fold_comparison(:less_or_equal, left, right)
 
       # Logical operations
-      {:and, left, right} -> fold_logical_and(left, right)
-      {:or, left, right} -> fold_logical_or(left, right)
-      {:not, arg} -> fold_logical_not(arg)
+      {:and, left, right} ->
+        fold_logical_and(left, right)
+
+      {:or, left, right} ->
+        fold_logical_or(left, right)
+
+      {:not, arg} ->
+        fold_logical_not(arg)
 
       # Conditional expressions
       {:if_expr, cond_expr, then_expr, else_expr} ->
@@ -951,13 +998,18 @@ defmodule TripleStore.SPARQL.Optimizer do
         fold_function_call(name, args)
 
       # Other expressions - just fold children
-      {:bound, arg} -> {:bound, fold_expression(arg)}
-      {:exists, pattern} -> {:exists, pattern}
+      {:bound, arg} ->
+        {:bound, fold_expression(arg)}
+
+      {:exists, pattern} ->
+        {:exists, pattern}
+
       {:in_expr, needle, haystack} ->
         {:in_expr, fold_expression(needle), Enum.map(haystack, &fold_expression/1)}
 
       # Unknown expressions - return as-is
-      _ -> expr
+      _ ->
+        expr
     end
   end
 
@@ -1012,19 +1064,28 @@ defmodule TripleStore.SPARQL.Optimizer do
 
     cond do
       # false && anything = false
-      is_false_literal?(folded_left) -> folded_left
+      is_false_literal?(folded_left) ->
+        folded_left
+
       # true && x = x
-      is_true_literal?(folded_left) -> folded_right
+      is_true_literal?(folded_left) ->
+        folded_right
+
       # x && false = false
-      is_false_literal?(folded_right) -> folded_right
+      is_false_literal?(folded_right) ->
+        folded_right
+
       # x && true = x
-      is_true_literal?(folded_right) -> folded_left
+      is_true_literal?(folded_right) ->
+        folded_left
+
       # Both constant - evaluate
       Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
         case Expression.evaluate({:and, folded_left, folded_right}, %{}) do
           {:ok, result} -> result
           :error -> {:and, folded_left, folded_right}
         end
+
       true ->
         {:and, folded_left, folded_right}
     end
@@ -1037,19 +1098,28 @@ defmodule TripleStore.SPARQL.Optimizer do
 
     cond do
       # true || anything = true
-      is_true_literal?(folded_left) -> folded_left
+      is_true_literal?(folded_left) ->
+        folded_left
+
       # false || x = x
-      is_false_literal?(folded_left) -> folded_right
+      is_false_literal?(folded_left) ->
+        folded_right
+
       # x || true = true
-      is_true_literal?(folded_right) -> folded_right
+      is_true_literal?(folded_right) ->
+        folded_right
+
       # x || false = x
-      is_false_literal?(folded_right) -> folded_left
+      is_false_literal?(folded_right) ->
+        folded_left
+
       # Both constant - evaluate
       Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
         case Expression.evaluate({:or, folded_left, folded_right}, %{}) do
           {:ok, result} -> result
           :error -> {:or, folded_left, folded_right}
         end
+
       true ->
         {:or, folded_left, folded_right}
     end
@@ -1060,17 +1130,23 @@ defmodule TripleStore.SPARQL.Optimizer do
     folded = fold_expression(arg)
 
     cond do
-      is_true_literal?(folded) -> make_boolean(false)
-      is_false_literal?(folded) -> make_boolean(true)
+      is_true_literal?(folded) ->
+        make_boolean(false)
+
+      is_false_literal?(folded) ->
+        make_boolean(true)
+
       # Double negation: NOT(NOT(x)) = x
       match?({:not, _}, folded) ->
         {:not, inner} = folded
         inner
+
       Expression.is_constant?(folded) ->
         case Expression.evaluate({:not, folded}, %{}) do
           {:ok, result} -> result
           :error -> {:not, folded}
         end
+
       true ->
         {:not, folded}
     end
@@ -1337,27 +1413,22 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp reorder_bgp_recursive({:join, left, right}, stats, depth) do
-    {:join,
-     reorder_bgp_recursive(left, stats, depth + 1),
+    {:join, reorder_bgp_recursive(left, stats, depth + 1),
      reorder_bgp_recursive(right, stats, depth + 1)}
   end
 
   defp reorder_bgp_recursive({:left_join, left, right, filter}, stats, depth) do
-    {:left_join,
-     reorder_bgp_recursive(left, stats, depth + 1),
-     reorder_bgp_recursive(right, stats, depth + 1),
-     filter}
+    {:left_join, reorder_bgp_recursive(left, stats, depth + 1),
+     reorder_bgp_recursive(right, stats, depth + 1), filter}
   end
 
   defp reorder_bgp_recursive({:minus, left, right}, stats, depth) do
-    {:minus,
-     reorder_bgp_recursive(left, stats, depth + 1),
+    {:minus, reorder_bgp_recursive(left, stats, depth + 1),
      reorder_bgp_recursive(right, stats, depth + 1)}
   end
 
   defp reorder_bgp_recursive({:union, left, right}, stats, depth) do
-    {:union,
-     reorder_bgp_recursive(left, stats, depth + 1),
+    {:union, reorder_bgp_recursive(left, stats, depth + 1),
      reorder_bgp_recursive(right, stats, depth + 1)}
   end
 

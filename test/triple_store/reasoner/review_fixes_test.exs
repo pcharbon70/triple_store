@@ -59,10 +59,17 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
     end
 
     test "rejects dangerous IRIs with injection characters" do
-      assert {:error, :invalid_iri_characters} = Namespaces.validate_iri("http://example.org/Person>")
-      assert {:error, :invalid_iri_characters} = Namespaces.validate_iri("http://example.org/Person}")
-      assert {:error, :invalid_iri_characters} = Namespaces.validate_iri("http://example.org/Person; DROP")
-      assert {:error, :invalid_iri_characters} = Namespaces.validate_iri("http://example.org/Person\n")
+      assert {:error, :invalid_iri_characters} =
+               Namespaces.validate_iri("http://example.org/Person>")
+
+      assert {:error, :invalid_iri_characters} =
+               Namespaces.validate_iri("http://example.org/Person}")
+
+      assert {:error, :invalid_iri_characters} =
+               Namespaces.validate_iri("http://example.org/Person; DROP")
+
+      assert {:error, :invalid_iri_characters} =
+               Namespaces.validate_iri("http://example.org/Person\n")
     end
 
     test "valid_iri? returns boolean" do
@@ -92,10 +99,11 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
     end
 
     test "creates with provided values" do
-      schema = SchemaInfo.new(
-        has_subclass: true,
-        transitive_properties: ["http://example.org/contains"]
-      )
+      schema =
+        SchemaInfo.new(
+          has_subclass: true,
+          transitive_properties: ["http://example.org/contains"]
+        )
 
       assert schema.has_subclass == true
       assert schema.transitive_properties == ["http://example.org/contains"]
@@ -104,10 +112,11 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
     test "limits property list sizes" do
       props = Enum.map(1..100, &"http://example.org/p#{&1}")
 
-      schema = SchemaInfo.new(
-        transitive_properties: props,
-        max_properties: 10
-      )
+      schema =
+        SchemaInfo.new(
+          transitive_properties: props,
+          max_properties: 10
+        )
 
       assert length(schema.transitive_properties) == 10
     end
@@ -150,10 +159,11 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
     end
 
     test "has_feature? checks features" do
-      schema = SchemaInfo.new(
-        has_subclass: true,
-        transitive_properties: ["http://example.org/p"]
-      )
+      schema =
+        SchemaInfo.new(
+          has_subclass: true,
+          transitive_properties: ["http://example.org/p"]
+        )
 
       assert SchemaInfo.has_feature?(schema, :subclass) == true
       assert SchemaInfo.has_feature?(schema, :transitive_properties) == true
@@ -162,10 +172,11 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
     end
 
     test "property_count returns total" do
-      schema = SchemaInfo.new(
-        transitive_properties: ["a", "b"],
-        symmetric_properties: ["c"]
-      )
+      schema =
+        SchemaInfo.new(
+          transitive_properties: ["a", "b"],
+          symmetric_properties: ["c"]
+        )
 
       assert SchemaInfo.property_count(schema) == 3
     end
@@ -177,42 +188,53 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
 
   describe "Rule.validate/1" do
     test "validates safe rule" do
-      rule = Rule.new(:test,
-        [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :test,
+          [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
+        )
 
       assert {:ok, ^rule} = Rule.validate(rule)
     end
 
     test "detects unsafe rule" do
-      rule = Rule.new(:test,
-        [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "z"}]}  # z not in body
-      )
+      rule =
+        Rule.new(
+          :test,
+          [{:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+          # z not in body
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "z"}]}
+        )
 
       assert {:error, errors} = Rule.validate(rule)
       assert :unsafe_rule in errors
     end
 
     test "detects invalid pattern structure" do
-      rule = Rule.new(:test,
-        [{:pattern, [{:var, "x"}, {:var, "y"}]}],  # only 2 terms
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :test,
+          # only 2 terms
+          [{:pattern, [{:var, "x"}, {:var, "y"}]}],
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
+        )
 
       assert {:error, errors} = Rule.validate(rule)
       assert :invalid_pattern_structure in errors
     end
 
     test "detects unsatisfiable conditions" do
-      rule = Rule.new(:test,
-        [
-          {:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]},
-          {:not_equal, {:var, "x"}, {:var, "x"}}  # same var, always false
-        ],
-        {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
-      )
+      rule =
+        Rule.new(
+          :test,
+          [
+            {:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]},
+            # same var, always false
+            {:not_equal, {:var, "x"}, {:var, "x"}}
+          ],
+          {:pattern, [{:var, "x"}, {:iri, "q"}, {:var, "y"}]}
+        )
 
       assert {:error, errors} = Rule.validate(rule)
       assert :unsatisfiable_condition in errors

@@ -151,6 +151,7 @@ defmodule TripleStore.Test.Fixtures do
     for level <- 0..(levels - 2),
         i <- 0..(round(:math.pow(2, level)) - 1) do
       parent = "#{@ex}node_#{level}_#{i}"
+
       [
         {parent, "#{@rdfs}subClassOf", "#{@ex}node_#{level + 1}_#{i * 2}"},
         {parent, "#{@rdfs}subClassOf", "#{@ex}node_#{level + 1}_#{i * 2 + 1}"}

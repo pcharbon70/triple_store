@@ -467,12 +467,25 @@ defmodule TripleStore.Config.Compaction do
   @spec validate(t()) :: :ok | {:error, String.t()}
   def validate(config) do
     with :ok <- validate_style(config.style),
-         :ok <- Helpers.validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base"),
+         :ok <-
+           Helpers.validate_positive(config.max_bytes_for_level_base, "max_bytes_for_level_base"),
          :ok <- Helpers.validate_positive(config.num_levels, "num_levels"),
-         :ok <- Helpers.validate_positive(config.level0_file_num_compaction_trigger, "level0_file_num_compaction_trigger"),
+         :ok <-
+           Helpers.validate_positive(
+             config.level0_file_num_compaction_trigger,
+             "level0_file_num_compaction_trigger"
+           ),
          :ok <- validate_l0_triggers(config),
-         :ok <- Helpers.validate_non_negative(config.rate_limit_bytes_per_sec, "rate_limit_bytes_per_sec"),
-         :ok <- Helpers.validate_positive(config.max_background_compactions, "max_background_compactions"),
+         :ok <-
+           Helpers.validate_non_negative(
+             config.rate_limit_bytes_per_sec,
+             "rate_limit_bytes_per_sec"
+           ),
+         :ok <-
+           Helpers.validate_positive(
+             config.max_background_compactions,
+             "max_background_compactions"
+           ),
          :ok <- Helpers.validate_positive(config.max_background_flushes, "max_background_flushes") do
       Helpers.validate_positive(config.target_file_size_base, "target_file_size_base")
     end

@@ -672,7 +672,13 @@ defmodule TripleStore.Health do
   # Private Helpers
   # ===========================================================================
 
-  defp determine_status(database_open, dict_manager_alive, plan_cache_alive, query_cache_alive, metrics_alive) do
+  defp determine_status(
+         database_open,
+         dict_manager_alive,
+         plan_cache_alive,
+         query_cache_alive,
+         metrics_alive
+       ) do
     cond do
       not database_open ->
         :unhealthy

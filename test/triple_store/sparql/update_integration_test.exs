@@ -48,18 +48,20 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Verify queryable
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
 
       assert length(results) == 1
       Transaction.stop(txn)
@@ -69,20 +71,22 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert multiple
-      {:ok, 3} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-          <http://example.org/charlie> <http://example.org/name> "Charlie" .
-        }
-      """)
+      {:ok, 3} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+            <http://example.org/charlie> <http://example.org/name> "Charlie" .
+          }
+        """)
 
       # Verify all queryable
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?s ?name WHERE {
-          ?s <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?s ?name WHERE {
+            ?s <http://example.org/name> ?name .
+          }
+        """)
 
       assert length(results) == 3
       Transaction.stop(txn)
@@ -98,33 +102,39 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Verify exists
-      {:ok, results1} = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results1} =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
+
       assert length(results1) == 1
 
       # Delete
-      {:ok, 1} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Verify not queryable
-      {:ok, results2} = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results2} =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
+
       assert length(results2) == 0
 
       Transaction.stop(txn)
@@ -134,26 +144,30 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert multiple
-      {:ok, 2} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-        }
-      """)
+      {:ok, 2} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+          }
+        """)
 
       # Delete only Alice
-      {:ok, 1} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Verify Bob still exists
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?name WHERE {
-          ?s <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?name WHERE {
+            ?s <http://example.org/name> ?name .
+          }
+        """)
+
       assert length(results) == 1
 
       Transaction.stop(txn)
@@ -169,29 +183,33 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert triples
-      {:ok, 3} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/type> "person" .
-          <http://example.org/bob> <http://example.org/type> "person" .
-          <http://example.org/company> <http://example.org/type> "organization" .
-        }
-      """)
+      {:ok, 3} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/type> "person" .
+            <http://example.org/bob> <http://example.org/type> "person" .
+            <http://example.org/company> <http://example.org/type> "organization" .
+          }
+        """)
 
       # Delete all persons using DELETE WHERE via pattern
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/type"},
-           {:literal, :simple, "person"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/type"},
+            {:literal, :simple, "person"}}
+         ]}
 
       {:ok, _deleted_count} = UpdateExecutor.execute_delete_where(ctx, pattern)
 
       # Verify only organization remains
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?s WHERE {
-          ?s <http://example.org/type> ?type .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?s WHERE {
+            ?s <http://example.org/type> ?type .
+          }
+        """)
+
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 1
     end
@@ -206,12 +224,13 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert base data
-      {:ok, 2} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-        }
-      """)
+      {:ok, 2} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+          }
+        """)
 
       # Use INSERT WHERE to add derived triples via direct API
       template = [
@@ -219,21 +238,24 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
          {:literal, :simple, "true"}}
       ]
 
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
-           {:variable, "name"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
+            {:variable, "name"}}
+         ]}
 
       {:ok, insert_count} = UpdateExecutor.execute_insert_where(ctx, template, pattern)
       assert insert_count == 2
 
       # Verify derived triples exist
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?s WHERE {
-          ?s <http://example.org/hasName> "true" .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?s WHERE {
+            ?s <http://example.org/hasName> "true" .
+          }
+        """)
+
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 2
     end
@@ -248,12 +270,13 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert initial data
-      {:ok, 2} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/status> "active" .
-          <http://example.org/bob> <http://example.org/status> "active" .
-        }
-      """)
+      {:ok, 2} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/status> "active" .
+            <http://example.org/bob> <http://example.org/status> "active" .
+          }
+        """)
 
       # Use MODIFY to change status from active to archived via direct API
       delete_template = [
@@ -266,29 +289,35 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
          {:literal, :simple, "archived"}}
       ]
 
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/status"},
-           {:literal, :simple, "active"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/status"},
+            {:literal, :simple, "active"}}
+         ]}
 
-      {:ok, _count} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      {:ok, _count} =
+        UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Verify no active status remains
-      {:ok, prepared1} = Query.prepare("""
-        SELECT ?s WHERE {
-          ?s <http://example.org/status> "active" .
-        }
-      """)
+      {:ok, prepared1} =
+        Query.prepare("""
+          SELECT ?s WHERE {
+            ?s <http://example.org/status> "active" .
+          }
+        """)
+
       {:ok, active_results} = Query.execute(ctx, prepared1)
       assert length(active_results) == 0
 
       # Verify archived status exists
-      {:ok, prepared2} = Query.prepare("""
-        SELECT ?s WHERE {
-          ?s <http://example.org/status> "archived" .
-        }
-      """)
+      {:ok, prepared2} =
+        Query.prepare("""
+          SELECT ?s WHERE {
+            ?s <http://example.org/status> "archived" .
+          }
+        """)
+
       {:ok, archived_results} = Query.execute(ctx, prepared2)
       assert length(archived_results) == 2
     end
@@ -303,34 +332,42 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert initial data
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/counter> <http://example.org/value> "0" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/counter> <http://example.org/value> "0" .
+          }
+        """)
 
       # Run concurrent updates and reads
-      tasks = for i <- 1..5 do
-        Task.async(fn ->
-          # Each task does an update
-          Transaction.update(txn, """
-            INSERT DATA {
-              <http://example.org/item#{i}> <http://example.org/seq> "#{i}" .
-            }
-          """)
-        end)
-      end
+      tasks =
+        for i <- 1..5 do
+          Task.async(fn ->
+            # Each task does an update
+            Transaction.update(txn, """
+              INSERT DATA {
+                <http://example.org/item#{i}> <http://example.org/seq> "#{i}" .
+              }
+            """)
+          end)
+        end
 
       # Wait for all updates
       results = Task.await_many(tasks, 10_000)
-      assert Enum.all?(results, fn {:ok, 1} -> true; _ -> false end)
+
+      assert Enum.all?(results, fn
+               {:ok, 1} -> true
+               _ -> false
+             end)
 
       # Verify all 6 triples exist (1 counter + 5 items)
-      {:ok, query_results} = Transaction.query(txn, """
-        SELECT ?s ?p ?o WHERE {
-          ?s ?p ?o .
-        }
-      """)
+      {:ok, query_results} =
+        Transaction.query(txn, """
+          SELECT ?s ?p ?o WHERE {
+            ?s ?p ?o .
+          }
+        """)
+
       assert length(query_results) == 6
 
       Transaction.stop(txn)
@@ -340,37 +377,40 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert initial data
-      {:ok, 10} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s1> <http://example.org/p> "v1" .
-          <http://example.org/s2> <http://example.org/p> "v2" .
-          <http://example.org/s3> <http://example.org/p> "v3" .
-          <http://example.org/s4> <http://example.org/p> "v4" .
-          <http://example.org/s5> <http://example.org/p> "v5" .
-          <http://example.org/s6> <http://example.org/p> "v6" .
-          <http://example.org/s7> <http://example.org/p> "v7" .
-          <http://example.org/s8> <http://example.org/p> "v8" .
-          <http://example.org/s9> <http://example.org/p> "v9" .
-          <http://example.org/s10> <http://example.org/p> "v10" .
-        }
-      """)
-
-      # Launch concurrent read and write
-      read_task = Task.async(fn ->
-        Transaction.query(txn, """
-          SELECT ?s ?o WHERE {
-            ?s <http://example.org/p> ?o .
-          }
-        """)
-      end)
-
-      write_task = Task.async(fn ->
+      {:ok, 10} =
         Transaction.update(txn, """
           INSERT DATA {
-            <http://example.org/s11> <http://example.org/p> "v11" .
+            <http://example.org/s1> <http://example.org/p> "v1" .
+            <http://example.org/s2> <http://example.org/p> "v2" .
+            <http://example.org/s3> <http://example.org/p> "v3" .
+            <http://example.org/s4> <http://example.org/p> "v4" .
+            <http://example.org/s5> <http://example.org/p> "v5" .
+            <http://example.org/s6> <http://example.org/p> "v6" .
+            <http://example.org/s7> <http://example.org/p> "v7" .
+            <http://example.org/s8> <http://example.org/p> "v8" .
+            <http://example.org/s9> <http://example.org/p> "v9" .
+            <http://example.org/s10> <http://example.org/p> "v10" .
           }
         """)
-      end)
+
+      # Launch concurrent read and write
+      read_task =
+        Task.async(fn ->
+          Transaction.query(txn, """
+            SELECT ?s ?o WHERE {
+              ?s <http://example.org/p> ?o .
+            }
+          """)
+        end)
+
+      write_task =
+        Task.async(fn ->
+          Transaction.update(txn, """
+            INSERT DATA {
+              <http://example.org/s11> <http://example.org/p> "v11" .
+            }
+          """)
+        end)
 
       {:ok, read_results} = Task.await(read_task)
       {:ok, 1} = Task.await(write_task)
@@ -396,18 +436,20 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       assert PlanCache.stats(name: cache_name).size == 1
 
       # Start transaction with cache
-      {:ok, txn} = Transaction.start_link(
-        db: db,
-        dict_manager: manager,
-        plan_cache: cache_name
-      )
+      {:ok, txn} =
+        Transaction.start_link(
+          db: db,
+          dict_manager: manager,
+          plan_cache: cache_name
+        )
 
       # Perform update
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # Cache should be invalidated
       assert PlanCache.stats(name: cache_name).size == 0
@@ -424,29 +466,32 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       PlanCache.get_or_compute("test_query", fn -> {:ok, :cached_plan} end, name: cache_name)
       assert PlanCache.stats(name: cache_name).size == 1
 
-      {:ok, txn} = Transaction.start_link(
-        db: db,
-        dict_manager: manager,
-        plan_cache: cache_name
-      )
+      {:ok, txn} =
+        Transaction.start_link(
+          db: db,
+          dict_manager: manager,
+          plan_cache: cache_name
+        )
 
       # Insert then delete to trigger cache invalidation
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # Re-warm cache
       PlanCache.get_or_compute("test_query2", fn -> {:ok, :cached_plan2} end, name: cache_name)
       assert PlanCache.stats(name: cache_name).size == 1
 
       # Delete
-      {:ok, 1} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # Cache should be invalidated again
       assert PlanCache.stats(name: cache_name).size == 0
@@ -465,16 +510,19 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert initial data
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # Verify initial state
-      {:ok, results1} = Transaction.query(txn, """
-        SELECT ?s WHERE { ?s ?p ?o }
-      """)
+      {:ok, results1} =
+        Transaction.query(txn, """
+          SELECT ?s WHERE { ?s ?p ?o }
+        """)
+
       assert length(results1) == 1
 
       # Attempt invalid update
@@ -482,9 +530,11 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       assert {:error, _} = result
 
       # Database should be unchanged
-      {:ok, results2} = Transaction.query(txn, """
-        SELECT ?s WHERE { ?s ?p ?o }
-      """)
+      {:ok, results2} =
+        Transaction.query(txn, """
+          SELECT ?s WHERE { ?s ?p ?o }
+        """)
+
       assert length(results2) == 1
 
       Transaction.stop(txn)
@@ -500,15 +550,18 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       end
 
       # Should still be able to perform valid operations
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?s WHERE { ?s ?p ?o }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?s WHERE { ?s ?p ?o }
+        """)
+
       assert length(results) == 1
 
       Transaction.stop(txn)
@@ -518,11 +571,11 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert some initial data
-      {:ok, 1} = Update.insert(ctx, [
-        {RDF.iri("http://example.org/existing"),
-         RDF.iri("http://example.org/p"),
-         RDF.literal("value")}
-      ])
+      {:ok, 1} =
+        Update.insert(ctx, [
+          {RDF.iri("http://example.org/existing"), RDF.iri("http://example.org/p"),
+           RDF.literal("value")}
+        ])
 
       # Count initial triples
       {:ok, prepared} = Query.prepare("SELECT ?s WHERE { ?s ?p ?o }")
@@ -552,13 +605,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert initial data with version numbers
-      {:ok, 3} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/doc1> <http://example.org/version> "1" .
-          <http://example.org/doc2> <http://example.org/version> "1" .
-          <http://example.org/doc3> <http://example.org/version> "1" .
-        }
-      """)
+      {:ok, 3} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/doc1> <http://example.org/version> "1" .
+            <http://example.org/doc2> <http://example.org/version> "1" .
+            <http://example.org/doc3> <http://example.org/version> "1" .
+          }
+        """)
 
       # MODIFY: delete old version, insert new version in atomic operation
       # Delete and insert affect the SAME subject-predicate pairs
@@ -572,27 +626,32 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
          {:literal, :simple, "2"}}
       ]
 
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "doc"}, {:named_node, "http://example.org/version"},
-           {:literal, :simple, "1"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "doc"}, {:named_node, "http://example.org/version"},
+            {:literal, :simple, "1"}}
+         ]}
 
       {:ok, count} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
       # MODIFY returns total of deletes + inserts, so 3 deletes + 3 inserts = 6
       assert count == 6
 
       # Verify no version "1" remains
-      {:ok, prep1} = Query.prepare("""
-        SELECT ?doc WHERE { ?doc <http://example.org/version> "1" }
-      """)
+      {:ok, prep1} =
+        Query.prepare("""
+          SELECT ?doc WHERE { ?doc <http://example.org/version> "1" }
+        """)
+
       {:ok, v1_results} = Query.execute(ctx, prep1)
       assert length(v1_results) == 0
 
       # Verify all docs now have version "2"
-      {:ok, prep2} = Query.prepare("""
-        SELECT ?doc WHERE { ?doc <http://example.org/version> "2" }
-      """)
+      {:ok, prep2} =
+        Query.prepare("""
+          SELECT ?doc WHERE { ?doc <http://example.org/version> "2" }
+        """)
+
       {:ok, v2_results} = Query.execute(ctx, prep2)
       assert length(v2_results) == 3
     end
@@ -601,14 +660,15 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert relationship data
-      {:ok, 4} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
-          <http://example.org/alice> <http://example.org/knows> <http://example.org/charlie> .
-          <http://example.org/bob> <http://example.org/knows> <http://example.org/alice> .
-          <http://example.org/charlie> <http://example.org/knows> <http://example.org/alice> .
-        }
-      """)
+      {:ok, 4} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
+            <http://example.org/alice> <http://example.org/knows> <http://example.org/charlie> .
+            <http://example.org/bob> <http://example.org/knows> <http://example.org/alice> .
+            <http://example.org/charlie> <http://example.org/knows> <http://example.org/alice> .
+          }
+        """)
 
       # DELETE relationships TO alice, INSERT inverse relationships FROM alice
       delete_template = [
@@ -618,49 +678,56 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
       insert_template = [
         {:triple, {:named_node, "http://example.org/alice"},
-         {:named_node, "http://example.org/knownBy"},
-         {:variable, "person"}}
+         {:named_node, "http://example.org/knownBy"}, {:variable, "person"}}
       ]
 
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "person"}, {:named_node, "http://example.org/knows"},
-           {:named_node, "http://example.org/alice"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "person"}, {:named_node, "http://example.org/knows"},
+            {:named_node, "http://example.org/alice"}}
+         ]}
 
       {:ok, _} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Verify: no one "knows" alice anymore
-      {:ok, prep1} = Query.prepare("""
-        SELECT ?p WHERE { ?p <http://example.org/knows> <http://example.org/alice> }
-      """)
+      {:ok, prep1} =
+        Query.prepare("""
+          SELECT ?p WHERE { ?p <http://example.org/knows> <http://example.org/alice> }
+        """)
+
       {:ok, knows_alice} = Query.execute(ctx, prep1)
       assert length(knows_alice) == 0
 
       # Verify: alice "knownBy" bob and charlie
-      {:ok, prep2} = Query.prepare("""
-        SELECT ?p WHERE { <http://example.org/alice> <http://example.org/knownBy> ?p }
-      """)
+      {:ok, prep2} =
+        Query.prepare("""
+          SELECT ?p WHERE { <http://example.org/alice> <http://example.org/knownBy> ?p }
+        """)
+
       {:ok, known_by} = Query.execute(ctx, prep2)
       assert length(known_by) == 2
     end
 
-    test "self-referential MODIFY updates same triple multiple times correctly", %{db: db, manager: manager} do
+    test "self-referential MODIFY updates same triple multiple times correctly", %{
+      db: db,
+      manager: manager
+    } do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert a counter
-      {:ok, 1} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/counter> <http://example.org/value> "0" .
-        }
-      """)
+      {:ok, 1} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/counter> <http://example.org/value> "0" .
+          }
+        """)
 
       # Perform several increments (simulating sequential updates)
       for i <- 0..4 do
         delete_template = [
           {:triple, {:named_node, "http://example.org/counter"},
-           {:named_node, "http://example.org/value"},
-           {:literal, :simple, Integer.to_string(i)}}
+           {:named_node, "http://example.org/value"}, {:literal, :simple, Integer.to_string(i)}}
         ]
 
         insert_template = [
@@ -669,20 +736,23 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
            {:literal, :simple, Integer.to_string(i + 1)}}
         ]
 
-        pattern = {:bgp,
-          [
-            {:triple, {:named_node, "http://example.org/counter"},
-             {:named_node, "http://example.org/value"},
-             {:literal, :simple, Integer.to_string(i)}}
-          ]}
+        pattern =
+          {:bgp,
+           [
+             {:triple, {:named_node, "http://example.org/counter"},
+              {:named_node, "http://example.org/value"},
+              {:literal, :simple, Integer.to_string(i)}}
+           ]}
 
         {:ok, _} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
       end
 
       # Verify counter is now at 5
-      {:ok, prep} = Query.prepare("""
-        SELECT ?v WHERE { <http://example.org/counter> <http://example.org/value> ?v }
-      """)
+      {:ok, prep} =
+        Query.prepare("""
+          SELECT ?v WHERE { <http://example.org/counter> <http://example.org/value> ?v }
+        """)
+
       {:ok, results} = Query.execute(ctx, prep)
       assert length(results) == 1
       # Query returns AST format, not RDF.ex terms
@@ -697,62 +767,76 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   # extract_count/1 and ast_to_rdf/1 imported from IntegrationHelpers
 
   describe "concurrent queries during update see consistent state (Task 3.5.2.2)" do
-    test "multiple readers see consistent snapshots during heavy writes", %{db: db, manager: manager} do
+    test "multiple readers see consistent snapshots during heavy writes", %{
+      db: db,
+      manager: manager
+    } do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert initial batch
-      {:ok, 100} = Transaction.update(txn, """
-        INSERT DATA {
-          #{for i <- 1..100 do
-            "<http://example.org/item#{i}> <http://example.org/seq> \"#{i}\" ."
-          end |> Enum.join("\n")}
-        }
-      """)
+      {:ok, 100} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            #{for i <- 1..100 do
+          "<http://example.org/item#{i}> <http://example.org/seq> \"#{i}\" ."
+        end |> Enum.join("\n")}
+          }
+        """)
 
       # Launch concurrent readers and writers
-      reader_tasks = for _ <- 1..5 do
-        Task.async(fn ->
-          # Each reader queries multiple times
-          for _ <- 1..10 do
-            {:ok, results} = Transaction.query(txn, """
-              SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
-            """)
-            # Count should be consistent (100 + any completed inserts)
-            count = extract_count(hd(results)["count"])
-            assert count >= 100
-            count
-          end
-        end)
-      end
+      reader_tasks =
+        for _ <- 1..5 do
+          Task.async(fn ->
+            # Each reader queries multiple times
+            for _ <- 1..10 do
+              {:ok, results} =
+                Transaction.query(txn, """
+                  SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
+                """)
 
-      writer_tasks = for i <- 1..5 do
-        Task.async(fn ->
-          Transaction.update(txn, """
-            INSERT DATA {
-              <http://example.org/new_item#{i}> <http://example.org/seq> "new#{i}" .
-            }
-          """)
-        end)
-      end
+              # Count should be consistent (100 + any completed inserts)
+              count = extract_count(hd(results)["count"])
+              assert count >= 100
+              count
+            end
+          end)
+        end
+
+      writer_tasks =
+        for i <- 1..5 do
+          Task.async(fn ->
+            Transaction.update(txn, """
+              INSERT DATA {
+                <http://example.org/new_item#{i}> <http://example.org/seq> "new#{i}" .
+              }
+            """)
+          end)
+        end
 
       # Wait for all tasks
       reader_results = Task.await_many(reader_tasks, 30_000)
       writer_results = Task.await_many(writer_tasks, 30_000)
 
       # All writers should succeed
-      assert Enum.all?(writer_results, fn {:ok, 1} -> true; _ -> false end)
+      assert Enum.all?(writer_results, fn
+               {:ok, 1} -> true
+               _ -> false
+             end)
 
       # All reader count sequences should be monotonically non-decreasing
       for counts <- reader_results do
         pairs = Enum.zip(counts, tl(counts) ++ [List.last(counts)])
+
         assert Enum.all?(pairs, fn {a, b} -> a <= b end),
-          "Counts should be non-decreasing: #{inspect(counts)}"
+               "Counts should be non-decreasing: #{inspect(counts)}"
       end
 
       # Final count should be 105
-      {:ok, final} = Transaction.query(txn, """
-        SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
-      """)
+      {:ok, final} =
+        Transaction.query(txn, """
+          SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
+        """)
+
       final_count = extract_count(hd(final)["count"])
       assert final_count == 105
 
@@ -763,36 +847,45 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert batch of related triples
-      {:ok, 50} = Transaction.update(txn, """
-        INSERT DATA {
-          #{for i <- 1..50 do
-            "<http://example.org/group> <http://example.org/member> <http://example.org/person#{i}> ."
-          end |> Enum.join("\n")}
-        }
-      """)
+      {:ok, 50} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            #{for i <- 1..50 do
+          "<http://example.org/group> <http://example.org/member> <http://example.org/person#{i}> ."
+        end |> Enum.join("\n")}
+          }
+        """)
 
       # Launch readers
-      reader_task = Task.async(fn ->
-        counts = for _ <- 1..20 do
-          {:ok, results} = Transaction.query(txn, """
-            SELECT (COUNT(?m) AS ?count) WHERE {
-              <http://example.org/group> <http://example.org/member> ?m
-            }
-          """)
-          extract_count(hd(results)["count"])
-        end
-        counts
-      end)
+      reader_task =
+        Task.async(fn ->
+          counts =
+            for _ <- 1..20 do
+              {:ok, results} =
+                Transaction.query(txn, """
+                  SELECT (COUNT(?m) AS ?count) WHERE {
+                    <http://example.org/group> <http://example.org/member> ?m
+                  }
+                """)
+
+              extract_count(hd(results)["count"])
+            end
+
+          counts
+        end)
 
       # Delete all members in one atomic batch
-      Process.sleep(10)  # Let reader start
+      # Let reader start
+      Process.sleep(10)
       ctx = %{db: db, dict_manager: manager}
-      pattern = {:bgp,
-        [
-          {:triple, {:named_node, "http://example.org/group"},
-           {:named_node, "http://example.org/member"},
-           {:variable, "m"}}
-        ]}
+
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:named_node, "http://example.org/group"},
+            {:named_node, "http://example.org/member"}, {:variable, "m"}}
+         ]}
+
       {:ok, deleted} = UpdateExecutor.execute_delete_where(ctx, pattern)
       assert deleted == 50
 
@@ -801,7 +894,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       # Each count should be either 50 (before delete) or 0 (after delete)
       # Never a partial count
       assert Enum.all?(counts, fn c -> c in [0, 50] end),
-        "Counts should be 0 or 50, got: #{inspect(counts)}"
+             "Counts should be 0 or 50, got: #{inspect(counts)}"
 
       Transaction.stop(txn)
     end
@@ -812,38 +905,44 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn2} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Interleave updates
-      task1 = Task.async(fn ->
-        for i <- 1..10 do
-          Transaction.update(txn1, """
-            INSERT DATA {
-              <http://example.org/txn1_item#{i}> <http://example.org/from> "txn1" .
-            }
-          """)
-        end
-      end)
+      task1 =
+        Task.async(fn ->
+          for i <- 1..10 do
+            Transaction.update(txn1, """
+              INSERT DATA {
+                <http://example.org/txn1_item#{i}> <http://example.org/from> "txn1" .
+              }
+            """)
+          end
+        end)
 
-      task2 = Task.async(fn ->
-        for i <- 1..10 do
-          Transaction.update(txn2, """
-            INSERT DATA {
-              <http://example.org/txn2_item#{i}> <http://example.org/from> "txn2" .
-            }
-          """)
-        end
-      end)
+      task2 =
+        Task.async(fn ->
+          for i <- 1..10 do
+            Transaction.update(txn2, """
+              INSERT DATA {
+                <http://example.org/txn2_item#{i}> <http://example.org/from> "txn2" .
+              }
+            """)
+          end
+        end)
 
       Task.await(task1, 10_000)
       Task.await(task2, 10_000)
 
       # Both should see all 20 items
-      {:ok, results1} = Transaction.query(txn1, """
-        SELECT ?s WHERE { ?s <http://example.org/from> ?source }
-      """)
+      {:ok, results1} =
+        Transaction.query(txn1, """
+          SELECT ?s WHERE { ?s <http://example.org/from> ?source }
+        """)
+
       assert length(results1) == 20
 
-      {:ok, results2} = Transaction.query(txn2, """
-        SELECT ?s WHERE { ?s <http://example.org/from> ?source }
-      """)
+      {:ok, results2} =
+        Transaction.query(txn2, """
+          SELECT ?s WHERE { ?s <http://example.org/from> ?source }
+        """)
+
       assert length(results2) == 20
 
       Transaction.stop(txn1)
@@ -861,24 +960,27 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Generate 10K triples
-      triples = for i <- 1..10_000 do
-        {RDF.iri("http://example.org/entity#{i}"),
-         RDF.iri("http://example.org/index"),
-         RDF.literal(i)}
-      end
+      triples =
+        for i <- 1..10_000 do
+          {RDF.iri("http://example.org/entity#{i}"), RDF.iri("http://example.org/index"),
+           RDF.literal(i)}
+        end
 
       # Time the insert
-      {time_us, {:ok, count}} = :timer.tc(fn ->
-        Update.insert(ctx, triples)
-      end)
+      {time_us, {:ok, count}} =
+        :timer.tc(fn ->
+          Update.insert(ctx, triples)
+        end)
 
       assert count == 10_000
       IO.puts("\n  10K insert time: #{time_us / 1000}ms")
 
       # Verify all inserted
-      {:ok, prepared} = Query.prepare("""
-        SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/index> ?v }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/index> ?v }
+        """)
+
       {:ok, results} = Query.execute(ctx, prepared)
       result_count = extract_count(hd(results)["count"])
       assert result_count == 10_000
@@ -889,31 +991,36 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # First insert 10K triples
-      triples = for i <- 1..10_000 do
-        {RDF.iri("http://example.org/bulk#{i}"),
-         RDF.iri("http://example.org/bulkProp"),
-         RDF.literal("value#{i}")}
-      end
+      triples =
+        for i <- 1..10_000 do
+          {RDF.iri("http://example.org/bulk#{i}"), RDF.iri("http://example.org/bulkProp"),
+           RDF.literal("value#{i}")}
+        end
+
       {:ok, 10_000} = Update.insert(ctx, triples)
 
       # Delete all via DELETE WHERE
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/bulkProp"},
-           {:variable, "v"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/bulkProp"},
+            {:variable, "v"}}
+         ]}
 
-      {time_us, {:ok, deleted}} = :timer.tc(fn ->
-        UpdateExecutor.execute_delete_where(ctx, pattern)
-      end)
+      {time_us, {:ok, deleted}} =
+        :timer.tc(fn ->
+          UpdateExecutor.execute_delete_where(ctx, pattern)
+        end)
 
       assert deleted == 10_000
       IO.puts("\n  10K delete time: #{time_us / 1000}ms")
 
       # Verify all deleted
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?s WHERE { ?s <http://example.org/bulkProp> ?v }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?s WHERE { ?s <http://example.org/bulkProp> ?v }
+        """)
+
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 0
     end
@@ -923,11 +1030,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert 10K triples with status "pending"
-      triples = for i <- 1..10_000 do
-        {RDF.iri("http://example.org/task#{i}"),
-         RDF.iri("http://example.org/status"),
-         RDF.literal("pending")}
-      end
+      triples =
+        for i <- 1..10_000 do
+          {RDF.iri("http://example.org/task#{i}"), RDF.iri("http://example.org/status"),
+           RDF.literal("pending")}
+        end
+
       {:ok, 10_000} = Update.insert(ctx, triples)
 
       # MODIFY all to "complete"
@@ -941,32 +1049,38 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
          {:literal, :simple, "complete"}}
       ]
 
-      pattern = {:bgp,
-        [
-          {:triple, {:variable, "task"}, {:named_node, "http://example.org/status"},
-           {:literal, :simple, "pending"}}
-        ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "task"}, {:named_node, "http://example.org/status"},
+            {:literal, :simple, "pending"}}
+         ]}
 
-      {time_us, {:ok, modified}} = :timer.tc(fn ->
-        UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
-      end)
+      {time_us, {:ok, modified}} =
+        :timer.tc(fn ->
+          UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+        end)
 
       # MODIFY returns total of deletes + inserts: 10K + 10K = 20K
       assert modified == 20_000
       IO.puts("\n  10K modify time: #{time_us / 1000}ms")
 
       # Verify all are now "complete"
-      {:ok, prep1} = Query.prepare("""
-        SELECT (COUNT(?t) AS ?count) WHERE { ?t <http://example.org/status> "complete" }
-      """)
+      {:ok, prep1} =
+        Query.prepare("""
+          SELECT (COUNT(?t) AS ?count) WHERE { ?t <http://example.org/status> "complete" }
+        """)
+
       {:ok, complete_results} = Query.execute(ctx, prep1)
       complete_count = extract_count(hd(complete_results)["count"])
       assert complete_count == 10_000
 
       # Verify none are "pending"
-      {:ok, prep2} = Query.prepare("""
-        SELECT ?t WHERE { ?t <http://example.org/status> "pending" }
-      """)
+      {:ok, prep2} =
+        Query.prepare("""
+          SELECT ?t WHERE { ?t <http://example.org/status> "pending" }
+        """)
+
       {:ok, pending_results} = Query.execute(ctx, prep2)
       assert length(pending_results) == 0
     end
@@ -979,24 +1093,29 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       total = 50_000
       chunk_size = 5_000
 
-      {time_us, _} = :timer.tc(fn ->
-        for chunk_start <- 0..(total - 1)//chunk_size do
-          chunk_end = min(chunk_start + chunk_size - 1, total - 1)
-          triples = for i <- chunk_start..chunk_end do
-            {RDF.iri("http://example.org/large#{i}"),
-             RDF.iri("http://example.org/seq"),
-             RDF.literal(i)}
+      {time_us, _} =
+        :timer.tc(fn ->
+          for chunk_start <- 0..(total - 1)//chunk_size do
+            chunk_end = min(chunk_start + chunk_size - 1, total - 1)
+
+            triples =
+              for i <- chunk_start..chunk_end do
+                {RDF.iri("http://example.org/large#{i}"), RDF.iri("http://example.org/seq"),
+                 RDF.literal(i)}
+              end
+
+            {:ok, _} = Update.insert(ctx, triples)
           end
-          {:ok, _} = Update.insert(ctx, triples)
-        end
-      end)
+        end)
 
       IO.puts("\n  50K chunked insert time: #{time_us / 1000}ms")
 
       # Verify total count
-      {:ok, prepared} = Query.prepare("""
-        SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT (COUNT(?s) AS ?count) WHERE { ?s <http://example.org/seq> ?v }
+        """)
+
       {:ok, results} = Query.execute(ctx, prepared)
       result_count = extract_count(hd(results)["count"])
       assert result_count == total
@@ -1014,26 +1133,32 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
     inference but ensure the infrastructure is ready.
     """
 
-    test "updates can track which triples were added for forward chaining", %{db: db, manager: manager} do
+    test "updates can track which triples were added for forward chaining", %{
+      db: db,
+      manager: manager
+    } do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert class membership - in Phase 4, this would trigger rdfs:subClassOf inference
-      {:ok, 2} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Student> .
-          <http://example.org/Student> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Person> .
-        }
-      """)
+      {:ok, 2} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Student> .
+            <http://example.org/Student> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Person> .
+          }
+        """)
 
       # For Phase 4: The reasoner would be triggered here to derive:
       # alice rdf:type Person
 
       # Verify the base triples exist (inference would add more)
-      {:ok, prep} = Query.prepare("""
-        SELECT ?class WHERE {
-          <http://example.org/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class
-        }
-      """)
+      {:ok, prep} =
+        Query.prepare("""
+          SELECT ?class WHERE {
+            <http://example.org/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?class
+          }
+        """)
+
       {:ok, results} = Query.execute(ctx, prep)
       # Without reasoner, only Student type
       assert length(results) == 1
@@ -1045,30 +1170,34 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Set up a subclass hierarchy
-      {:ok, 3} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/bob> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Employee> .
-          <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Worker> .
-          <http://example.org/Worker> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Person> .
-        }
-      """)
+      {:ok, 3} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/bob> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Employee> .
+            <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Worker> .
+            <http://example.org/Worker> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Person> .
+          }
+        """)
 
       # In Phase 4: Deleting the middle link would require re-evaluation
       # of all derived types for bob
 
       # Delete the middle subClassOf link
-      {:ok, 1} = Update.update(ctx, """
-        DELETE DATA {
-          <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Worker> .
-        }
-      """)
+      {:ok, 1} =
+        Update.update(ctx, """
+          DELETE DATA {
+            <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/Worker> .
+          }
+        """)
 
       # Verify hierarchy is broken
-      {:ok, prep} = Query.prepare("""
-        SELECT ?class WHERE {
-          <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf>+ ?class
-        }
-      """)
+      {:ok, prep} =
+        Query.prepare("""
+          SELECT ?class WHERE {
+            <http://example.org/Employee> <http://www.w3.org/2000/01/rdf-schema#subClassOf>+ ?class
+          }
+        """)
+
       {:ok, results} = Query.execute(ctx, prep)
       # With broken link, no transitive superclasses
       assert length(results) == 0
@@ -1078,21 +1207,24 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert facts that would trigger rules
-      {:ok, 3} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/x> <http://example.org/sameAs> <http://example.org/y> .
-          <http://example.org/x> <http://example.org/label> "X Label" .
-          <http://example.org/y> <http://example.org/value> "42" .
-        }
-      """)
+      {:ok, 3} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/x> <http://example.org/sameAs> <http://example.org/y> .
+            <http://example.org/x> <http://example.org/label> "X Label" .
+            <http://example.org/y> <http://example.org/value> "42" .
+          }
+        """)
 
       # Simulate what a reasoner might do: propagate properties via sameAs
       # In Phase 4, owl:sameAs would trigger this automatically
 
       # Find sameAs pairs and copy properties
-      {:ok, prep_sameas} = Query.prepare("""
-        SELECT ?a ?b WHERE { ?a <http://example.org/sameAs> ?b }
-      """)
+      {:ok, prep_sameas} =
+        Query.prepare("""
+          SELECT ?a ?b WHERE { ?a <http://example.org/sameAs> ?b }
+        """)
+
       {:ok, sameas_pairs} = Query.execute(ctx, prep_sameas)
 
       for binding <- sameas_pairs do
@@ -1101,12 +1233,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         {:named_node, b_iri} = binding["b"]
 
         # Copy properties from a to b
-        {:ok, prep_props} = Query.prepare("""
-          SELECT ?p ?o WHERE {
-            <#{a_iri}> ?p ?o .
-            FILTER(?p != <http://example.org/sameAs>)
-          }
-        """)
+        {:ok, prep_props} =
+          Query.prepare("""
+            SELECT ?p ?o WHERE {
+              <#{a_iri}> ?p ?o .
+              FILTER(?p != <http://example.org/sameAs>)
+            }
+          """)
+
         {:ok, props} = Query.execute(ctx, prep_props)
 
         for prop <- props do
@@ -1118,12 +1252,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         end
 
         # Copy properties from b to a
-        {:ok, prep_props_b} = Query.prepare("""
-          SELECT ?p ?o WHERE {
-            <#{b_iri}> ?p ?o .
-            FILTER(?p != <http://example.org/sameAs>)
-          }
-        """)
+        {:ok, prep_props_b} =
+          Query.prepare("""
+            SELECT ?p ?o WHERE {
+              <#{b_iri}> ?p ?o .
+              FILTER(?p != <http://example.org/sameAs>)
+            }
+          """)
+
         {:ok, props_b} = Query.execute(ctx, prep_props_b)
 
         for prop <- props_b do
@@ -1135,16 +1271,20 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       end
 
       # Verify property propagation worked
-      {:ok, prep_x_val} = Query.prepare("""
-        SELECT ?v WHERE { <http://example.org/x> <http://example.org/value> ?v }
-      """)
+      {:ok, prep_x_val} =
+        Query.prepare("""
+          SELECT ?v WHERE { <http://example.org/x> <http://example.org/value> ?v }
+        """)
+
       {:ok, x_val} = Query.execute(ctx, prep_x_val)
       assert length(x_val) == 1
       assert hd(x_val)["v"] == {:literal, :simple, "42"}
 
-      {:ok, prep_y_label} = Query.prepare("""
-        SELECT ?l WHERE { <http://example.org/y> <http://example.org/label> ?l }
-      """)
+      {:ok, prep_y_label} =
+        Query.prepare("""
+          SELECT ?l WHERE { <http://example.org/y> <http://example.org/label> ?l }
+        """)
+
       {:ok, y_label} = Query.execute(ctx, prep_y_label)
       assert length(y_label) == 1
       assert hd(y_label)["l"] == {:literal, :simple, "X Label"}
@@ -1158,9 +1298,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
       # Track what we insert as "delta"
       delta_triples = [
-        {RDF.iri("http://example.org/a"), RDF.iri("http://example.org/p"), RDF.iri("http://example.org/b")},
-        {RDF.iri("http://example.org/b"), RDF.iri("http://example.org/p"), RDF.iri("http://example.org/c")},
-        {RDF.iri("http://example.org/c"), RDF.iri("http://example.org/p"), RDF.iri("http://example.org/d")}
+        {RDF.iri("http://example.org/a"), RDF.iri("http://example.org/p"),
+         RDF.iri("http://example.org/b")},
+        {RDF.iri("http://example.org/b"), RDF.iri("http://example.org/p"),
+         RDF.iri("http://example.org/c")},
+        {RDF.iri("http://example.org/c"), RDF.iri("http://example.org/p"),
+         RDF.iri("http://example.org/d")}
       ]
 
       {:ok, 3} = Update.insert(ctx, delta_triples)
@@ -1168,9 +1311,11 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       # In Phase 4, we'd process delta_triples through rules
       # For now, just verify we can track and query them
 
-      {:ok, prep} = Query.prepare("""
-        SELECT ?s ?o WHERE { ?s <http://example.org/p> ?o }
-      """)
+      {:ok, prep} =
+        Query.prepare("""
+          SELECT ?s ?o WHERE { ?s <http://example.org/p> ?o }
+        """)
+
       {:ok, results} = Query.execute(ctx, prep)
       assert length(results) == 3
 
@@ -1179,12 +1324,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       new_derived = []
 
       # Iteration 1: find paths of length 2
-      {:ok, prep_chain} = Query.prepare("""
-        SELECT ?s ?o WHERE {
-          ?s <http://example.org/p> ?mid .
-          ?mid <http://example.org/p> ?o .
-        }
-      """)
+      {:ok, prep_chain} =
+        Query.prepare("""
+          SELECT ?s ?o WHERE {
+            ?s <http://example.org/p> ?mid .
+            ?mid <http://example.org/p> ?o .
+          }
+        """)
+
       {:ok, chains} = Query.execute(ctx, prep_chain)
 
       for chain <- chains do
@@ -1195,11 +1342,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       end
 
       # Verify derived triples
-      {:ok, prep_reach} = Query.prepare("""
-        SELECT ?s ?o WHERE { ?s <http://example.org/reachable> ?o }
-      """)
+      {:ok, prep_reach} =
+        Query.prepare("""
+          SELECT ?s ?o WHERE { ?s <http://example.org/reachable> ?o }
+        """)
+
       {:ok, reach_results} = Query.execute(ctx, prep_reach)
-      assert length(reach_results) == 2  # a->c, b->d
+      # a->c, b->d
+      assert length(reach_results) == 2
     end
   end
 
@@ -1212,11 +1362,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Delete non-existent triple
-      {:ok, 0} = Transaction.update(txn, """
-        DELETE DATA {
-          <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 0} =
+        Transaction.update(txn, """
+          DELETE DATA {
+            <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       Transaction.stop(txn)
     end
@@ -1226,22 +1377,26 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
       # Insert same triple twice - both return {:ok, 1} because that's the count
       # of triples in the request, but storage is idempotent
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       # Only one triple should exist (storage is idempotent)
-      {:ok, results} = Transaction.query(txn, """
-        SELECT ?s WHERE { ?s ?p ?o }
-      """)
+      {:ok, results} =
+        Transaction.query(txn, """
+          SELECT ?s WHERE { ?s ?p ?o }
+        """)
+
       assert length(results) == 1
 
       Transaction.stop(txn)
@@ -1257,10 +1412,11 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Invalid syntax - missing closing brace
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o>
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o>
+        """)
 
       assert match?({:error, _}, result)
       Transaction.stop(txn)
@@ -1270,11 +1426,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Invalid IRI (spaces not allowed)
-      result = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/invalid iri> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      result =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/invalid iri> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       assert match?({:error, _}, result)
       Transaction.stop(txn)
@@ -1287,11 +1444,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:error, _} = Transaction.update(txn, "INVALID SPARQL")
 
       # Transaction should still be usable
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> "value" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> "value" .
+          }
+        """)
 
       # Verify insert worked
       {:ok, results} = Transaction.query(txn, "SELECT ?s WHERE { ?s ?p ?o }")
@@ -1304,11 +1462,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # This should work - DELETE WHERE with no matches deletes nothing
-      {:ok, 0} = Transaction.update(txn, """
-        DELETE WHERE {
-          <http://nonexistent.org/x> <http://nonexistent.org/y> ?z .
-        }
-      """)
+      {:ok, 0} =
+        Transaction.update(txn, """
+          DELETE WHERE {
+            <http://nonexistent.org/x> <http://nonexistent.org/y> ?z .
+          }
+        """)
 
       Transaction.stop(txn)
     end
@@ -1317,13 +1476,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert some data
-      {:ok, 10} = Transaction.update(txn, """
-        INSERT DATA {
-          #{for i <- 1..10 do
-            "<http://example.org/item#{i}> <http://example.org/value> \"#{i}\" ."
-          end |> Enum.join("\n")}
-        }
-      """)
+      {:ok, 10} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            #{for i <- 1..10 do
+          "<http://example.org/item#{i}> <http://example.org/value> \"#{i}\" ."
+        end |> Enum.join("\n")}
+          }
+        """)
 
       # Stop the transaction
       Transaction.stop(txn)
@@ -1337,13 +1497,14 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert initial data
-      {:ok, 5} = Transaction.update(txn, """
-        INSERT DATA {
-          #{for i <- 1..5 do
-            "<http://example.org/stable#{i}> <http://example.org/p> \"#{i}\" ."
-          end |> Enum.join("\n")}
-        }
-      """)
+      {:ok, 5} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            #{for i <- 1..5 do
+          "<http://example.org/stable#{i}> <http://example.org/p> \"#{i}\" ."
+        end |> Enum.join("\n")}
+          }
+        """)
 
       # Stop transaction
       Transaction.stop(txn)
@@ -1352,11 +1513,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn2} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Data should still be there
-      {:ok, results} = Transaction.query(txn2, """
-        SELECT (COUNT(?s) AS ?count) WHERE {
-          ?s <http://example.org/p> ?o
-        }
-      """)
+      {:ok, results} =
+        Transaction.query(txn2, """
+          SELECT (COUNT(?s) AS ?count) WHERE {
+            ?s <http://example.org/p> ?o
+          }
+        """)
 
       count = extract_count(hd(results)["count"])
       assert count == 5
@@ -1368,11 +1530,12 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # MODIFY with WHERE that matches nothing
-      {:ok, 0} = Transaction.update(txn, """
-        DELETE { ?s <http://example.org/old> ?o }
-        INSERT { ?s <http://example.org/new> ?o }
-        WHERE { ?s <http://example.org/old> ?o }
-      """)
+      {:ok, 0} =
+        Transaction.update(txn, """
+          DELETE { ?s <http://example.org/old> ?o }
+          INSERT { ?s <http://example.org/new> ?o }
+          WHERE { ?s <http://example.org/old> ?o }
+        """)
 
       # No triples should exist
       {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
@@ -1385,18 +1548,20 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert data
-      {:ok, 1} = Transaction.update(txn, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> "value" .
-        }
-      """)
+      {:ok, 1} =
+        Transaction.update(txn, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> "value" .
+          }
+        """)
 
       # DELETE with WHERE that binds different variable than template expects
       # (this is valid SPARQL - just won't match anything)
-      {:ok, _} = Transaction.update(txn, """
-        DELETE { <http://nonexistent.org/x> ?p ?o }
-        WHERE { ?s <http://example.org/p> ?o }
-      """)
+      {:ok, _} =
+        Transaction.update(txn, """
+          DELETE { <http://nonexistent.org/x> ?p ?o }
+          WHERE { ?s <http://example.org/p> ?o }
+        """)
 
       # Original triple should still exist
       {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")

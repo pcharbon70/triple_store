@@ -46,7 +46,6 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
     predicate_histogram: %{}
   }
 
-
   # ===========================================================================
   # Setup
   # ===========================================================================
@@ -380,11 +379,15 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
       # First round: all misses (10 computes)
       for patterns <- patterns_list do
-        PlanCache.get_or_compute(patterns, fn ->
-          :counters.add(compute_count, 1, 1)
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-          result
-        end, name: cache_name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            :counters.add(compute_count, 1, 1)
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+            result
+          end,
+          name: cache_name
+        )
       end
 
       assert :counters.get(compute_count, 1) == 10
@@ -392,11 +395,15 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
       # 9 more rounds: all hits (no additional computes)
       for _ <- 1..9 do
         for patterns <- patterns_list do
-          PlanCache.get_or_compute(patterns, fn ->
-            :counters.add(compute_count, 1, 1)
-            {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
-            result
-          end, name: cache_name)
+          PlanCache.get_or_compute(
+            patterns,
+            fn ->
+              :counters.add(compute_count, 1, 1)
+              {:ok, result} = JoinEnumeration.enumerate(patterns, @medium_stats)
+              result
+            end,
+            name: cache_name
+          )
         end
       end
 
@@ -416,10 +423,14 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
       # Execute 100 times
       for _ <- 1..100 do
-        PlanCache.get_or_compute(patterns, fn ->
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-          result
-        end, name: cache_name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: cache_name
+        )
       end
 
       stats = PlanCache.stats(name: cache_name)
@@ -437,11 +448,15 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
       compute_count = :counters.new(1, [:atomics])
 
       for patterns <- [patterns1, patterns2, patterns3] do
-        PlanCache.get_or_compute(patterns, fn ->
-          :counters.add(compute_count, 1, 1)
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-          result
-        end, name: cache_name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            :counters.add(compute_count, 1, 1)
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: cache_name
+        )
       end
 
       # Should only compute once (all 3 share the same normalized cache key)
@@ -453,10 +468,14 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
       # Build up hit rate
       for _ <- 1..10 do
-        PlanCache.get_or_compute(patterns, fn ->
-          {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
-          result
-        end, name: cache_name)
+        PlanCache.get_or_compute(
+          patterns,
+          fn ->
+            {:ok, result} = JoinEnumeration.enumerate(patterns, @small_stats)
+            result
+          end,
+          name: cache_name
+        )
       end
 
       stats_before = PlanCache.stats(name: cache_name)
@@ -568,9 +587,10 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
       """
 
       # Time multiple executions
-      {time, {:ok, results}} = :timer.tc(fn ->
-        Query.query(ctx, query)
-      end)
+      {time, {:ok, results}} =
+        :timer.tc(fn ->
+          Query.query(ctx, query)
+        end)
 
       assert length(results) == 20
       # Should complete quickly (< 100ms)

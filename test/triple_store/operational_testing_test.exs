@@ -80,9 +80,12 @@ defmodule TripleStore.OperationalTestingTest do
           assert count_after == 200
 
           # Verify specific triple exists
-          {:ok, specific} = TripleStore.query(restored_store,
-            "SELECT ?v WHERE { <http://example.org/item100> <http://example.org/value> ?v }"
-          )
+          {:ok, specific} =
+            TripleStore.query(
+              restored_store,
+              "SELECT ?v WHERE { <http://example.org/item100> <http://example.org/value> ?v }"
+            )
+
           assert length(specific) == 1
         after
           TripleStore.close(restored_store)
@@ -101,14 +104,16 @@ defmodule TripleStore.OperationalTestingTest do
       try do
         # Load data with unique marker
         marker = "unique_#{:rand.uniform(999_999_999)}"
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA {
-            ex:marker ex:value "#{marker}" .
-            ex:item1 ex:type ex:Thing .
-            ex:item2 ex:type ex:Thing .
-          }
-        """)
+
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA {
+              ex:marker ex:value "#{marker}" .
+              ex:item1 ex:type ex:Thing .
+              ex:item2 ex:type ex:Thing .
+            }
+          """)
 
         # Create backup
         {:ok, _} = Backup.create(store, backup_path)
@@ -119,9 +124,12 @@ defmodule TripleStore.OperationalTestingTest do
         {:ok, restored} = Backup.restore(backup_path, restore_path)
 
         try do
-          {:ok, results} = TripleStore.query(restored,
-            "SELECT ?v WHERE { <http://example.org/marker> <http://example.org/value> ?v }"
-          )
+          {:ok, results} =
+            TripleStore.query(
+              restored,
+              "SELECT ?v WHERE { <http://example.org/marker> <http://example.org/value> ?v }"
+            )
+
           assert length(results) == 1
           # Verify we got some result back (the marker exists)
           result_value = results |> hd() |> Map.get("v")
@@ -159,11 +167,13 @@ defmodule TripleStore.OperationalTestingTest do
                 Logger.warning("Backup rotation attempt failed: #{inspect(reason)}")
                 acc
             end
-            |> tap(fn _ -> Process.sleep(1100) end)  # Delay > 1 second for unique timestamps
+            # Delay > 1 second for unique timestamps
+            |> tap(fn _ -> Process.sleep(1100) end)
           end)
 
         # At least some backups should have succeeded
-        assert successful_count >= 3, "Expected at least 3 successful backups, got #{successful_count}"
+        assert successful_count >= 3,
+               "Expected at least 3 successful backups, got #{successful_count}"
 
         # List backups - rotation should limit to max_backups
         {:ok, backups} = Backup.list(backup_dir)
@@ -187,12 +197,13 @@ defmodule TripleStore.OperationalTestingTest do
         load_test_data(store, 100)
 
         # Add uniquely identifiable data
-        {:ok, _} = TripleStore.update(store, """
-          PREFIX ex: <http://example.org/>
-          INSERT DATA {
-            ex:snapshot_marker ex:created_at "2025-01-01" .
-          }
-        """)
+        {:ok, _} =
+          TripleStore.update(store, """
+            PREFIX ex: <http://example.org/>
+            INSERT DATA {
+              ex:snapshot_marker ex:created_at "2025-01-01" .
+            }
+          """)
 
         # Create full backup
         {:ok, meta} = Backup.create(store, backup_path)
@@ -203,18 +214,24 @@ defmodule TripleStore.OperationalTestingTest do
         Process.sleep(200)
 
         # Restore and verify
-        restore_path = Path.join(System.tmp_dir!(), "snapshot_restore_#{:rand.uniform(1_000_000)}")
+        restore_path =
+          Path.join(System.tmp_dir!(), "snapshot_restore_#{:rand.uniform(1_000_000)}")
+
         {:ok, restored} = Backup.restore(backup_path, restore_path)
 
         try do
           # Should have all triples including marker
           count = get_triple_count(restored)
-          assert count == 101  # 100 + 1 marker
+          # 100 + 1 marker
+          assert count == 101
 
           # Verify marker exists
-          {:ok, results} = TripleStore.query(restored,
-            "SELECT ?d WHERE { <http://example.org/snapshot_marker> <http://example.org/created_at> ?d }"
-          )
+          {:ok, results} =
+            TripleStore.query(
+              restored,
+              "SELECT ?d WHERE { <http://example.org/snapshot_marker> <http://example.org/created_at> ?d }"
+            )
+
           assert length(results) == 1
         after
           TripleStore.close(restored)
@@ -265,12 +282,13 @@ defmodule TripleStore.OperationalTestingTest do
 
         # Execute inserts
         for i <- 1..3 do
-          {:ok, _} = TripleStore.update(store, """
-            PREFIX ex: <http://example.org/>
-            INSERT DATA {
-              ex:item#{i} ex:value #{i} .
-            }
-          """)
+          {:ok, _} =
+            TripleStore.update(store, """
+              PREFIX ex: <http://example.org/>
+              INSERT DATA {
+                ex:item#{i} ex:value #{i} .
+              }
+            """)
         end
 
         metrics = Prometheus.format()
@@ -304,9 +322,10 @@ defmodule TripleStore.OperationalTestingTest do
         assert length(type_lines) > 0
 
         # Metric lines should have name and value
-        metric_lines = Enum.filter(lines, fn line ->
-          String.starts_with?(line, "triple_store_") and not String.starts_with?(line, "#")
-        end)
+        metric_lines =
+          Enum.filter(lines, fn line ->
+            String.starts_with?(line, "triple_store_") and not String.starts_with?(line, "#")
+          end)
 
         for line <- metric_lines do
           # Should have at least "metric_name value" format
@@ -379,16 +398,18 @@ defmodule TripleStore.OperationalTestingTest do
           {:ok, _} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }")
 
           # Insert
-          {:ok, _} = TripleStore.update(store, """
-            PREFIX ex: <http://example.org/>
-            INSERT DATA { ex:test ex:value "test" }
-          """)
+          {:ok, _} =
+            TripleStore.update(store, """
+              PREFIX ex: <http://example.org/>
+              INSERT DATA { ex:test ex:value "test" }
+            """)
 
           # Delete
-          {:ok, _} = TripleStore.update(store, """
-            PREFIX ex: <http://example.org/>
-            DELETE DATA { ex:test ex:value "test" }
-          """)
+          {:ok, _} =
+            TripleStore.update(store, """
+              PREFIX ex: <http://example.org/>
+              DELETE DATA { ex:test ex:value "test" }
+            """)
 
           # Verify events were received
           # Query uses [:triple_store, :sparql, :query, :stop]
@@ -485,7 +506,8 @@ defmodule TripleStore.OperationalTestingTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         {:ok, health3} = Health.health(store)
-        assert health3.triple_count == 100  # 75 + 25 = 100
+        # 75 + 25 = 100
+        assert health3.triple_count == 100
       after
         cleanup_test_store(store, path)
       end
@@ -498,19 +520,21 @@ defmodule TripleStore.OperationalTestingTest do
         load_test_data(store, 100)
 
         # Start concurrent query tasks
-        query_tasks = for _i <- 1..10 do
-          Task.async(fn ->
-            for _j <- 1..5 do
-              TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o } LIMIT 10")
-            end
-          end)
-        end
+        query_tasks =
+          for _i <- 1..10 do
+            Task.async(fn ->
+              for _j <- 1..5 do
+                TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o } LIMIT 10")
+              end
+            end)
+          end
 
         # Run health checks while queries are running
-        health_results = for _i <- 1..5 do
-          {:ok, health} = Health.health(store)
-          health.status
-        end
+        health_results =
+          for _i <- 1..5 do
+            {:ok, health} = Health.health(store)
+            health.status
+          end
 
         # Wait for queries to complete
         Task.await_many(query_tasks, 30_000)
@@ -634,17 +658,18 @@ defmodule TripleStore.OperationalTestingTest do
 
       try do
         # Start multiple insert operations
-        insert_tasks = for i <- 1..5 do
-          Task.async(fn ->
-            TripleStore.update(store, """
-              PREFIX ex: <http://example.org/>
-              INSERT DATA {
-                ex:batch#{i}_item1 ex:value #{i * 100 + 1} .
-                ex:batch#{i}_item2 ex:value #{i * 100 + 2} .
-              }
-            """)
-          end)
-        end
+        insert_tasks =
+          for i <- 1..5 do
+            Task.async(fn ->
+              TripleStore.update(store, """
+                PREFIX ex: <http://example.org/>
+                INSERT DATA {
+                  ex:batch#{i}_item1 ex:value #{i * 100 + 1} .
+                  ex:batch#{i}_item2 ex:value #{i * 100 + 2} .
+                }
+              """)
+            end)
+          end
 
         # Wait for all inserts
         Task.await_many(insert_tasks, 30_000)

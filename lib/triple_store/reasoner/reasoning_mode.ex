@@ -398,7 +398,8 @@ defmodule TripleStore.Reasoner.ReasoningMode do
     {:ok, %{config | max_iterations: value}}
   end
 
-  defp apply_option(_config, :max_iterations, value) when is_integer(value) and value > @max_allowed_iterations do
+  defp apply_option(_config, :max_iterations, value)
+       when is_integer(value) and value > @max_allowed_iterations do
     {:error, {:invalid_option, :max_iterations, "exceeds maximum of #{@max_allowed_iterations}"}}
   end
 
@@ -407,7 +408,8 @@ defmodule TripleStore.Reasoner.ReasoningMode do
     {:ok, %{config | max_depth: value}}
   end
 
-  defp apply_option(_config, :max_depth, value) when is_integer(value) and value > @max_allowed_depth do
+  defp apply_option(_config, :max_depth, value)
+       when is_integer(value) and value > @max_allowed_depth do
     {:error, {:invalid_option, :max_depth, "exceeds maximum of #{@max_allowed_depth}"}}
   end
 

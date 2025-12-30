@@ -67,9 +67,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_class_hierarchy_ontology()
 
       # Add a GradStudent instance
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial, :rdfs)
@@ -89,12 +90,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_class_hierarchy_ontology()
 
       # Add instances at different levels
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
-        {ex_iri("bob"), rdf_type(), ex_iri("Student")},
-        {ex_iri("carol"), rdf_type(), ex_iri("Faculty")},
-        {ex_iri("dave"), rdf_type(), ex_iri("Person")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
+          {ex_iri("bob"), rdf_type(), ex_iri("Student")},
+          {ex_iri("carol"), rdf_type(), ex_iri("Faculty")},
+          {ex_iri("dave"), rdf_type(), ex_iri("Person")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial, :rdfs)
@@ -121,11 +123,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     test "query for specific level returns only that level and below" do
       tbox = create_class_hierarchy_ontology()
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
-        {ex_iri("bob"), rdf_type(), ex_iri("Student")},
-        {ex_iri("carol"), rdf_type(), ex_iri("Person")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
+          {ex_iri("bob"), rdf_type(), ex_iri("Student")},
+          {ex_iri("carol"), rdf_type(), ex_iri("Person")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial, :rdfs)
@@ -149,16 +152,18 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "query with multiple subclass paths returns all inferred types" do
       # Diamond inheritance: Employee < Person, Employee < Worker, both < Agent
-      diamond_tbox = MapSet.new([
-        {ex_iri("Person"), rdfs_subClassOf(), ex_iri("Agent")},
-        {ex_iri("Worker"), rdfs_subClassOf(), ex_iri("Agent")},
-        {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Person")},
-        {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Worker")}
-      ])
+      diamond_tbox =
+        MapSet.new([
+          {ex_iri("Person"), rdfs_subClassOf(), ex_iri("Agent")},
+          {ex_iri("Worker"), rdfs_subClassOf(), ex_iri("Agent")},
+          {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Person")},
+          {ex_iri("Employee"), rdfs_subClassOf(), ex_iri("Worker")}
+        ])
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("Employee")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("Employee")}
+        ])
 
       initial = MapSet.union(diamond_tbox, abox)
       all_facts = materialize(initial, :rdfs)
@@ -181,11 +186,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_transitive_property_ontology()
 
       # Ancestor chain: alice -> bob -> carol -> dave
-      abox = MapSet.new([
-        {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
-        {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")},
-        {ex_iri("dave"), ex_iri("ancestorOf"), ex_iri("carol")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
+          {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")},
+          {ex_iri("dave"), ex_iri("ancestorOf"), ex_iri("carol")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
@@ -209,10 +215,11 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_transitive_property_ontology()
 
       # Part hierarchy: handle partOf door partOf car
-      abox = MapSet.new([
-        {ex_iri("handle"), ex_iri("partOf"), ex_iri("door")},
-        {ex_iri("door"), ex_iri("partOf"), ex_iri("car")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("handle"), ex_iri("partOf"), ex_iri("door")},
+          {ex_iri("door"), ex_iri("partOf"), ex_iri("car")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
@@ -228,11 +235,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_transitive_property_ontology()
 
       # Location hierarchy: room locatedIn building locatedIn campus locatedIn city
-      abox = MapSet.new([
-        {ex_iri("room101"), ex_iri("locatedIn"), ex_iri("building1")},
-        {ex_iri("building1"), ex_iri("locatedIn"), ex_iri("campus")},
-        {ex_iri("campus"), ex_iri("locatedIn"), ex_iri("city")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("room101"), ex_iri("locatedIn"), ex_iri("building1")},
+          {ex_iri("building1"), ex_iri("locatedIn"), ex_iri("campus")},
+          {ex_iri("campus"), ex_iri("locatedIn"), ex_iri("city")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
@@ -249,20 +257,22 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_transitive_property_ontology()
 
       # Two parallel ancestor chains meeting at common ancestor
-      abox = MapSet.new([
-        # Chain 1: alice <- bob <- ancestor1
-        {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
-        {ex_iri("ancestor1"), ex_iri("ancestorOf"), ex_iri("bob")},
-        # Chain 2: carol <- dave <- ancestor1
-        {ex_iri("dave"), ex_iri("ancestorOf"), ex_iri("carol")},
-        {ex_iri("ancestor1"), ex_iri("ancestorOf"), ex_iri("dave")}
-      ])
+      abox =
+        MapSet.new([
+          # Chain 1: alice <- bob <- ancestor1
+          {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
+          {ex_iri("ancestor1"), ex_iri("ancestorOf"), ex_iri("bob")},
+          # Chain 2: carol <- dave <- ancestor1
+          {ex_iri("dave"), ex_iri("ancestorOf"), ex_iri("carol")},
+          {ex_iri("ancestor1"), ex_iri("ancestorOf"), ex_iri("dave")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
 
       # ancestor1 should be ancestor of both alice and carol
-      descendants_of_ancestor1 = select_objects(all_facts, ex_iri("ancestor1"), ex_iri("ancestorOf"))
+      descendants_of_ancestor1 =
+        select_objects(all_facts, ex_iri("ancestor1"), ex_iri("ancestorOf"))
 
       assert ex_iri("bob") in descendants_of_ancestor1
       assert ex_iri("alice") in descendants_of_ancestor1
@@ -273,9 +283,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     test "symmetric property query returns inverse relationships" do
       tbox = create_transitive_property_ontology()
 
-      abox = MapSet.new([
-        {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), ex_iri("knows"), ex_iri("bob")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
@@ -298,9 +309,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
   describe "4.6.3.3 sameAs queries return canonicalized results" do
     test "sameAs is symmetric" do
-      facts = MapSet.new([
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
+        ])
 
       all_facts = materialize(facts)
 
@@ -311,10 +323,11 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "sameAs is transitive" do
-      facts = MapSet.new([
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
-        {ex_iri("alice_smith"), owl_sameAs(), ex_iri("asmith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")},
+          {ex_iri("alice_smith"), owl_sameAs(), ex_iri("asmith")}
+        ])
 
       all_facts = materialize(facts)
 
@@ -334,10 +347,11 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       tbox = create_sameas_ontology()
 
       # alice is Person, alice sameAs alice_smith
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("Person")},
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("Person")},
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
+        ])
 
       initial = MapSet.union(tbox, abox)
       all_facts = materialize(initial)
@@ -350,10 +364,12 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "sameAs propagates property assertions" do
       # alice hasName "Alice", alice sameAs alice_smith
-      facts = MapSet.new([
-        {ex_iri("alice"), ex_iri("hasAge"), {:literal, "30", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}},
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("alice"), ex_iri("hasAge"),
+           {:literal, "30", {:iri, "http://www.w3.org/2001/XMLSchema#integer"}}},
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
+        ])
 
       all_facts = materialize(facts)
 
@@ -366,12 +382,13 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "sameAs chain with multiple entities" do
       # Chain: a sameAs b sameAs c sameAs d
-      facts = MapSet.new([
-        {ex_iri("a"), owl_sameAs(), ex_iri("b")},
-        {ex_iri("b"), owl_sameAs(), ex_iri("c")},
-        {ex_iri("c"), owl_sameAs(), ex_iri("d")},
-        {ex_iri("a"), rdf_type(), ex_iri("Thing")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("a"), owl_sameAs(), ex_iri("b")},
+          {ex_iri("b"), owl_sameAs(), ex_iri("c")},
+          {ex_iri("c"), owl_sameAs(), ex_iri("d")},
+          {ex_iri("a"), rdf_type(), ex_iri("Thing")}
+        ])
 
       all_facts = materialize(facts)
 
@@ -379,6 +396,7 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
       for x <- [ex_iri("a"), ex_iri("b"), ex_iri("c"), ex_iri("d")] do
         same_as_x = select_objects(all_facts, x, owl_sameAs())
         others = [ex_iri("a"), ex_iri("b"), ex_iri("c"), ex_iri("d")] -- [x]
+
         for y <- others do
           assert y in same_as_x, "#{inspect(x)} should be sameAs #{inspect(y)}"
         end
@@ -393,10 +411,11 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
 
     test "sameAs with inverse property propagation" do
       # bob knows alice, alice sameAs alice_smith
-      facts = MapSet.new([
-        {ex_iri("bob"), ex_iri("likes"), ex_iri("alice")},
-        {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
-      ])
+      facts =
+        MapSet.new([
+          {ex_iri("bob"), ex_iri("likes"), ex_iri("alice")},
+          {ex_iri("alice"), owl_sameAs(), ex_iri("alice_smith")}
+        ])
 
       all_facts = materialize(facts)
 
@@ -416,9 +435,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     test "materialized mode pre-computes all inferences" do
       tbox = create_class_hierarchy_ontology()
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
+        ])
 
       initial = MapSet.union(tbox, abox)
 
@@ -440,9 +460,10 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     test "query-time mode computes inferences on demand" do
       tbox = create_class_hierarchy_ontology()
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")}
+        ])
 
       initial = MapSet.union(tbox, abox)
 
@@ -461,13 +482,15 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "materialized and query-time produce identical results" do
-      tbox = MapSet.union(create_class_hierarchy_ontology(), create_transitive_property_ontology())
+      tbox =
+        MapSet.union(create_class_hierarchy_ontology(), create_transitive_property_ontology())
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
-        {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
-        {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("GradStudent")},
+          {ex_iri("bob"), ex_iri("ancestorOf"), ex_iri("alice")},
+          {ex_iri("carol"), ex_iri("ancestorOf"), ex_iri("bob")}
+        ])
 
       initial = MapSet.union(tbox, abox)
 
@@ -539,14 +562,16 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
   describe "additional query patterns" do
     test "query with property chain inference" do
       # subPropertyOf chain: headOf < worksFor < affiliatedWith
-      tbox = MapSet.new([
-        {ex_iri("headOf"), rdfs_subPropertyOf(), ex_iri("worksFor")},
-        {ex_iri("worksFor"), rdfs_subPropertyOf(), ex_iri("affiliatedWith")}
-      ])
+      tbox =
+        MapSet.new([
+          {ex_iri("headOf"), rdfs_subPropertyOf(), ex_iri("worksFor")},
+          {ex_iri("worksFor"), rdfs_subPropertyOf(), ex_iri("affiliatedWith")}
+        ])
 
-      abox = MapSet.new([
-        {ex_iri("alice"), ex_iri("headOf"), ex_iri("dept1")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), ex_iri("headOf"), ex_iri("dept1")}
+        ])
 
       all_facts = materialize(MapSet.union(tbox, abox), :rdfs)
 
@@ -562,13 +587,15 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "query with inverse property inference" do
-      tbox = MapSet.new([
-        {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")}
-      ])
+      tbox =
+        MapSet.new([
+          {ex_iri("parentOf"), owl_inverseOf(), ex_iri("childOf")}
+        ])
 
-      abox = MapSet.new([
-        {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), ex_iri("parentOf"), ex_iri("bob")}
+        ])
 
       all_facts = materialize(MapSet.union(tbox, abox))
 
@@ -579,23 +606,25 @@ defmodule TripleStore.Reasoner.QueryReasoningIntegrationTest do
     end
 
     test "complex query combining multiple inference types" do
-      tbox = MapSet.new([
-        # Class hierarchy
-        {ex_iri("Professor"), rdfs_subClassOf(), ex_iri("Faculty")},
-        {ex_iri("Faculty"), rdfs_subClassOf(), ex_iri("Person")},
+      tbox =
+        MapSet.new([
+          # Class hierarchy
+          {ex_iri("Professor"), rdfs_subClassOf(), ex_iri("Faculty")},
+          {ex_iri("Faculty"), rdfs_subClassOf(), ex_iri("Person")},
 
-        # Property characteristics
-        {ex_iri("collaboratesWith"), rdf_type(), owl_SymmetricProperty()},
+          # Property characteristics
+          {ex_iri("collaboratesWith"), rdf_type(), owl_SymmetricProperty()},
 
-        # Inverse properties
-        {ex_iri("supervises"), owl_inverseOf(), ex_iri("supervisedBy")}
-      ])
+          # Inverse properties
+          {ex_iri("supervises"), owl_inverseOf(), ex_iri("supervisedBy")}
+        ])
 
-      abox = MapSet.new([
-        {ex_iri("alice"), rdf_type(), ex_iri("Professor")},
-        {ex_iri("alice"), ex_iri("collaboratesWith"), ex_iri("bob")},
-        {ex_iri("alice"), ex_iri("supervises"), ex_iri("carol")}
-      ])
+      abox =
+        MapSet.new([
+          {ex_iri("alice"), rdf_type(), ex_iri("Professor")},
+          {ex_iri("alice"), ex_iri("collaboratesWith"), ex_iri("bob")},
+          {ex_iri("alice"), ex_iri("supervises"), ex_iri("carol")}
+        ])
 
       all_facts = materialize(MapSet.union(tbox, abox))
 

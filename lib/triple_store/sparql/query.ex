@@ -863,7 +863,8 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   # Extract query type, pattern, and metadata from AST
-  defp extract_query_info({query_type, props}) when query_type in [:select, :construct, :ask, :describe] do
+  defp extract_query_info({query_type, props})
+       when query_type in [:select, :construct, :ask, :describe] do
     pattern = get_prop(props, "pattern")
     variables = get_prop(props, "variables")
     template = get_prop(props, "template")
@@ -1051,7 +1052,13 @@ defmodule TripleStore.SPARQL.Query do
 
       # Property path pattern
       {:path, subject, path_expr, object} ->
-        PropertyPath.evaluate(%{db: ctx.db, dict_manager: ctx.dict_manager}, %{}, subject, path_expr, object)
+        PropertyPath.evaluate(
+          %{db: ctx.db, dict_manager: ctx.dict_manager},
+          %{},
+          subject,
+          path_expr,
+          object
+        )
 
       nil ->
         # Empty pattern - return unit stream
@@ -1187,12 +1194,18 @@ defmodule TripleStore.SPARQL.Query do
   # Handles both {:variable, name} tuples and [variable: name] keyword lists
   defp extract_variable_names(vars) when is_list(vars) do
     Enum.flat_map(vars, fn
-      {:variable, name} -> [name]
+      {:variable, name} ->
+        [name]
+
       {key, value} when is_atom(key) ->
         # Keyword list format like [variable: "s"]
         if key == :variable, do: [value], else: []
-      name when is_binary(name) -> [name]
-      _ -> []
+
+      name when is_binary(name) ->
+        [name]
+
+      _ ->
+        []
     end)
   end
 
@@ -1261,7 +1274,10 @@ defmodule TripleStore.SPARQL.Query do
 
     # S6: Optional debug logging
     duration_ms = System.convert_time_unit(duration, :native, :millisecond)
-    if log?, do: Logger.debug("[Query] Completed in #{duration_ms}ms with status=#{result_status(result)}")
+
+    if log?,
+      do:
+        Logger.debug("[Query] Completed in #{duration_ms}ms with status=#{result_status(result)}")
 
     result
   rescue

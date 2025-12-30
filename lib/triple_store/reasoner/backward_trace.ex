@@ -140,11 +140,12 @@ defmodule TripleStore.Reasoner.BackwardTrace do
         result.potentially_invalid
       end
 
-    {:ok, %{
-      potentially_invalid: potentially_invalid,
-      trace_depth: result.max_depth_reached,
-      facts_examined: result.facts_examined
-    }}
+    {:ok,
+     %{
+       potentially_invalid: potentially_invalid,
+       trace_depth: result.max_depth_reached,
+       facts_examined: result.facts_examined
+     }}
   end
 
   @doc """

@@ -50,8 +50,12 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     end
 
     test "creates BGP with multiple triples" do
-      t1 = {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}}
-      t2 = {:triple, {:variable, "s"}, {:named_node, "http://example.org/age"}, {:variable, "age"}}
+      t1 =
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}}
+
+      t2 =
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/age"}, {:variable, "age"}}
+
       result = Algebra.bgp([t1, t2])
 
       assert {:bgp, [^t1, ^t2]} = result
@@ -72,8 +76,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
           {:named_node, "http://example.org/object"}
         )
 
-      assert {:triple,
-              {:named_node, "http://example.org/subject"},
+      assert {:triple, {:named_node, "http://example.org/subject"},
               {:named_node, "http://example.org/predicate"},
               {:named_node, "http://example.org/object"}} = result
     end
@@ -86,9 +89,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
           {:literal, :simple, "John"}
         )
 
-      assert {:triple,
-              {:variable, "s"},
-              {:named_node, "http://example.org/name"},
+      assert {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
               {:literal, :simple, "John"}} = result
     end
 
@@ -100,9 +101,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
           {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}
         )
 
-      assert {:triple,
-              {:variable, "s"},
-              {:named_node, "http://example.org/age"},
+      assert {:triple, {:variable, "s"}, {:named_node, "http://example.org/age"},
               {:literal, :typed, "30", "http://www.w3.org/2001/XMLSchema#integer"}} = result
     end
 
@@ -114,9 +113,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
           {:literal, :lang, "Hello", "en"}
         )
 
-      assert {:triple,
-              {:variable, "s"},
-              {:named_node, "http://example.org/label"},
+      assert {:triple, {:variable, "s"}, {:named_node, "http://example.org/label"},
               {:literal, :lang, "Hello", "en"}} = result
     end
   end
@@ -316,7 +313,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
   describe "distinct/1" do
     test "creates distinct node" do
       bgp = Algebra.bgp([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
-      project = Algebra.project(bgp, [variable: "s"])
+      project = Algebra.project(bgp, variable: "s")
 
       result = Algebra.distinct(project)
 
@@ -327,7 +324,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
   describe "reduced/1" do
     test "creates reduced node" do
       bgp = Algebra.bgp([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
-      project = Algebra.project(bgp, [variable: "s"])
+      project = Algebra.project(bgp, variable: "s")
 
       result = Algebra.reduced(project)
 
@@ -343,7 +340,8 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     test "creates order_by with single ascending condition" do
       bgp =
         Algebra.bgp([
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}}
+          {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
+           {:variable, "name"}}
         ])
 
       conditions = [asc: {:variable, "name"}]
@@ -356,7 +354,8 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     test "creates order_by with multiple conditions" do
       bgp =
         Algebra.bgp([
-          {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}}
+          {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
+           {:variable, "name"}}
         ])
 
       conditions = [
@@ -584,7 +583,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
 
     test "project has one child" do
       bgp = Algebra.bgp([])
-      project = Algebra.project(bgp, [variable: "s"])
+      project = Algebra.project(bgp, variable: "s")
 
       children = Algebra.children(project)
 
@@ -596,7 +595,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     test "counts nodes in tree" do
       bgp = Algebra.bgp([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
       filter = Algebra.filter({:bound, {:variable, "s"}}, bgp)
-      project = Algebra.project(filter, [variable: "s"])
+      project = Algebra.project(filter, variable: "s")
 
       count = Algebra.fold(project, 0, fn _node, acc -> acc + 1 end)
 
@@ -606,7 +605,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     test "collects node types" do
       bgp = Algebra.bgp([])
       filter = Algebra.filter({:bound, {:variable, "s"}}, bgp)
-      project = Algebra.project(filter, [variable: "s"])
+      project = Algebra.project(filter, variable: "s")
 
       types = Algebra.fold(project, [], fn node, acc -> [Algebra.node_type(node) | acc] end)
 
@@ -686,7 +685,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
     test "validates nested structure" do
       bgp = Algebra.bgp([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
       filter = Algebra.filter({:bound, {:variable, "s"}}, bgp)
-      project = Algebra.project(filter, [variable: "s"])
+      project = Algebra.project(filter, variable: "s")
       distinct = Algebra.distinct(project)
 
       assert :ok = Algebra.validate(distinct)
@@ -718,7 +717,7 @@ defmodule TripleStore.SPARQL.AlgebraTest do
 
     test "formats nested structure" do
       bgp = Algebra.bgp([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
-      project = Algebra.project(bgp, [variable: "s"])
+      project = Algebra.project(bgp, variable: "s")
       str = Algebra.to_string(project)
 
       assert str =~ "Project"
@@ -777,7 +776,9 @@ defmodule TripleStore.SPARQL.AlgebraTest do
 
     test "extracts variables from parser output" do
       {:ok, {:select, props}} =
-        TripleStore.SPARQL.Parser.parse("SELECT ?s ?name WHERE { ?s <http://example.org/name> ?name }")
+        TripleStore.SPARQL.Parser.parse(
+          "SELECT ?s ?name WHERE { ?s <http://example.org/name> ?name }"
+        )
 
       pattern = Enum.find_value(props, fn {k, v} -> if k == "pattern", do: v end)
       vars = Algebra.variables(pattern)

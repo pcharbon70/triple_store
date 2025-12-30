@@ -185,7 +185,8 @@ defmodule TripleStore.SPARQL.Algebra do
   end
 
   def from_ast(ast) do
-    {:error, {:invalid_ast, "expected {:select|:construct|:ask|:describe, props}, got: #{inspect(ast)}"}}
+    {:error,
+     {:invalid_ast, "expected {:select|:construct|:ask|:describe, props}, got: #{inspect(ast)}"}}
   end
 
   @doc """
@@ -202,11 +203,20 @@ defmodule TripleStore.SPARQL.Algebra do
   @spec from_ast!(tuple()) :: compiled_query()
   def from_ast!(ast) do
     case from_ast(ast) do
-      {:ok, compiled} -> compiled
-      {:error, {:invalid_ast, msg}} -> raise ArgumentError, "AST compilation failed: #{msg}"
-      {:error, {:missing_pattern, type}} -> raise ArgumentError, "AST compilation failed: missing pattern in #{type} query"
-      {:error, {:invalid_pattern, reason}} -> raise ArgumentError, "AST compilation failed: invalid pattern - #{inspect(reason)}"
-      {:error, reason} -> raise ArgumentError, "AST compilation failed: #{inspect(reason)}"
+      {:ok, compiled} ->
+        compiled
+
+      {:error, {:invalid_ast, msg}} ->
+        raise ArgumentError, "AST compilation failed: #{msg}"
+
+      {:error, {:missing_pattern, type}} ->
+        raise ArgumentError, "AST compilation failed: missing pattern in #{type} query"
+
+      {:error, {:invalid_pattern, reason}} ->
+        raise ArgumentError, "AST compilation failed: invalid pattern - #{inspect(reason)}"
+
+      {:error, reason} ->
+        raise ArgumentError, "AST compilation failed: #{inspect(reason)}"
     end
   end
 
@@ -781,7 +791,8 @@ defmodule TripleStore.SPARQL.Algebra do
       iex> {:values, ^vars, ^data} = Algebra.values(vars, data)
 
   """
-  @spec values([rdf_term()], [[rdf_term() | :undef]]) :: {:values, [rdf_term()], [[rdf_term() | :undef]]}
+  @spec values([rdf_term()], [[rdf_term() | :undef]]) ::
+          {:values, [rdf_term()], [[rdf_term() | :undef]]}
   def values(variables, data) do
     {:values, variables, data}
   end
@@ -838,7 +849,8 @@ defmodule TripleStore.SPARQL.Algebra do
       iex> {:path, {:variable, "s"}, ^path, {:variable, "o"}} = Algebra.path({:variable, "s"}, path, {:variable, "o"})
 
   """
-  @spec path(rdf_term(), property_path(), rdf_term()) :: {:path, rdf_term(), property_path(), rdf_term()}
+  @spec path(rdf_term(), property_path(), rdf_term()) ::
+          {:path, rdf_term(), property_path(), rdf_term()}
   def path(subject, property_path, object) do
     {:path, subject, property_path, object}
   end
@@ -982,12 +994,14 @@ defmodule TripleStore.SPARQL.Algebra do
   defp collect_variables(_), do: []
 
   defp collect_expr_variables({:variable, _} = var), do: [var]
+
   defp collect_expr_variables(tuple) when is_tuple(tuple) do
     tuple
     |> Tuple.to_list()
     |> tl()
     |> Enum.flat_map(&collect_expr_variables/1)
   end
+
   defp collect_expr_variables(_), do: []
 
   defp variable?({:variable, _}), do: true
@@ -1092,7 +1106,9 @@ defmodule TripleStore.SPARQL.Algebra do
   defp rebuild_with_children({:extend, _, var, expr}, [pattern]),
     do: {:extend, pattern, var, expr}
 
-  defp rebuild_with_children({:group, _, vars, aggs}, [pattern]), do: {:group, pattern, vars, aggs}
+  defp rebuild_with_children({:group, _, vars, aggs}, [pattern]),
+    do: {:group, pattern, vars, aggs}
+
   defp rebuild_with_children({:project, _, vars}, [pattern]), do: {:project, pattern, vars}
   defp rebuild_with_children({:distinct, _}, [pattern]), do: {:distinct, pattern}
   defp rebuild_with_children({:reduced, _}, [pattern]), do: {:reduced, pattern}
@@ -1151,7 +1167,7 @@ defmodule TripleStore.SPARQL.Algebra do
 
   def validate({:slice, pattern, offset, limit})
       when is_integer(offset) and offset >= 0 and
-             (is_integer(limit) and limit >= 0 or limit == :infinity) do
+             ((is_integer(limit) and limit >= 0) or limit == :infinity) do
     validate(pattern)
   end
 
@@ -1161,7 +1177,10 @@ defmodule TripleStore.SPARQL.Algebra do
   def validate({:values, _, _}), do: {:error, "VALUES variables and data must be lists"}
 
   def validate({:graph, _term, pattern}), do: validate(pattern)
-  def validate({:service, _endpoint, pattern, silent}) when is_boolean(silent), do: validate(pattern)
+
+  def validate({:service, _endpoint, pattern, silent}) when is_boolean(silent),
+    do: validate(pattern)
+
   def validate({:service, _, _, _}), do: {:error, "SERVICE silent flag must be boolean"}
 
   def validate({:path, _s, _path, _o}), do: :ok
@@ -1198,8 +1217,13 @@ defmodule TripleStore.SPARQL.Algebra do
   defp validate_term({:named_node, iri}) when is_binary(iri), do: :ok
   defp validate_term({:blank_node, id}) when is_binary(id), do: :ok
   defp validate_term({:literal, :simple, value}) when is_binary(value), do: :ok
-  defp validate_term({:literal, :lang, value, lang}) when is_binary(value) and is_binary(lang), do: :ok
-  defp validate_term({:literal, :typed, value, dt}) when is_binary(value) and is_binary(dt), do: :ok
+
+  defp validate_term({:literal, :lang, value, lang}) when is_binary(value) and is_binary(lang),
+    do: :ok
+
+  defp validate_term({:literal, :typed, value, dt}) when is_binary(value) and is_binary(dt),
+    do: :ok
+
   defp validate_term(term), do: {:error, "Invalid term: #{inspect(term)}"}
 
   defp validate_all([], _validator), do: :ok
@@ -1302,6 +1326,7 @@ defmodule TripleStore.SPARQL.Algebra do
 
   defp format({:service, endpoint, pattern, silent}, indent) do
     silent_str = if silent, do: " SILENT", else: ""
+
     "Service#{silent_str}(#{format_term(endpoint)},\n#{indent(indent + 2)}#{format(pattern, indent + 2)})"
   end
 

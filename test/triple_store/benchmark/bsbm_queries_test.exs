@@ -124,8 +124,12 @@ defmodule TripleStore.Benchmark.BSBMQueriesTest do
   describe "query content validation" do
     test "all queries have valid SPARQL structure" do
       for query <- BSBMQueries.all() do
-        assert String.contains?(query.sparql, "PREFIX") or String.contains?(query.sparql, "SELECT") or String.contains?(query.sparql, "CONSTRUCT")
-        assert String.contains?(query.sparql, "WHERE") or String.contains?(query.sparql, "CONSTRUCT")
+        assert String.contains?(query.sparql, "PREFIX") or
+                 String.contains?(query.sparql, "SELECT") or
+                 String.contains?(query.sparql, "CONSTRUCT")
+
+        assert String.contains?(query.sparql, "WHERE") or
+                 String.contains?(query.sparql, "CONSTRUCT")
       end
     end
 

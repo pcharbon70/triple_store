@@ -393,7 +393,11 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrderingTest do
 
     test "handles typed literals" do
       patterns = [
-        triple(var("x"), iri("age"), {:literal, "25", "http://www.w3.org/2001/XMLSchema#integer", nil})
+        triple(
+          var("x"),
+          iri("age"),
+          {:literal, "25", "http://www.w3.org/2001/XMLSchema#integer", nil}
+        )
       ]
 
       {:ok, order} = VariableOrdering.compute(patterns)
@@ -415,7 +419,8 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrderingTest do
         triple(var("a"), var("b"), var("c")),
         triple(var("d"), var("e"), var("f")),
         triple(var("g"), var("h"), var("i")),
-        triple(var("j"), iri("link"), var("a"))  # a appears twice
+        # a appears twice
+        triple(var("j"), iri("link"), var("a"))
       ]
 
       {:ok, order} = VariableOrdering.compute(patterns)

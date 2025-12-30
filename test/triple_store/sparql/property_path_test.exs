@@ -985,9 +985,11 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       insert_triple(ctx, {"http://ex.org/c", "http://ex.org/p3", "http://ex.org/d"})
 
       subject = {:named_node, "http://ex.org/a"}
+
       path =
         {:sequence, {:named_node, "http://ex.org/p1"},
          {:sequence, {:named_node, "http://ex.org/p2"}, {:named_node, "http://ex.org/p3"}}}
+
       object = {:variable, "o"}
 
       {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)
@@ -1004,9 +1006,11 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       # a -[p1]-> b <-[p2]- c
       # Path: p1/^p2 from a should reach c
       subject = {:named_node, "http://ex.org/a"}
+
       path =
         {:sequence, {:named_node, "http://ex.org/p1"},
          {:reverse, {:named_node, "http://ex.org/p2"}}}
+
       object = {:variable, "o"}
 
       {:ok, stream} = PropertyPath.evaluate(ctx, %{}, subject, path, object)

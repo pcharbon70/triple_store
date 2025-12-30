@@ -56,6 +56,7 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
         triple(var("x"), 10, var("y")),
         triple(var("y"), 20, var("z"))
       ]
+
       {:ok, exec} = MultiLevel.new(db, patterns)
 
       assert length(exec.var_order) == 3
@@ -121,10 +122,14 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
       # y=5 age z=25
       # y=7 age z=27 (y=7 not in first pattern, shouldn't match)
 
-      insert_triple(db, 1, 10, 5)  # 1 knows 5
-      insert_triple(db, 2, 10, 6)  # 2 knows 6
-      insert_triple(db, 5, 20, 25) # 5 age 25
-      insert_triple(db, 7, 20, 27) # 7 age 27
+      # 1 knows 5
+      insert_triple(db, 1, 10, 5)
+      # 2 knows 6
+      insert_triple(db, 2, 10, 6)
+      # 5 age 25
+      insert_triple(db, 5, 20, 25)
+      # 7 age 27
+      insert_triple(db, 7, 20, 27)
 
       patterns = [
         triple(var("x"), 10, var("y")),
@@ -146,10 +151,14 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
 
     test "finds multiple join results", %{db: db} do
       # Multiple matches for the join
-      insert_triple(db, 1, 10, 5)  # 1 knows 5
-      insert_triple(db, 2, 10, 6)  # 2 knows 6
-      insert_triple(db, 5, 20, 25) # 5 age 25
-      insert_triple(db, 6, 20, 26) # 6 age 26
+      # 1 knows 5
+      insert_triple(db, 1, 10, 5)
+      # 2 knows 6
+      insert_triple(db, 2, 10, 6)
+      # 5 age 25
+      insert_triple(db, 5, 20, 25)
+      # 6 age 26
+      insert_triple(db, 6, 20, 26)
 
       patterns = [
         triple(var("x"), 10, var("y")),
@@ -176,16 +185,22 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
   describe "star queries" do
     test "finds entities matching multiple predicates", %{db: db} do
       # Person 1 has all three properties
-      insert_triple(db, 1, 10, 100)  # 1 knows 100
-      insert_triple(db, 1, 20, 200)  # 1 works_at 200
-      insert_triple(db, 1, 30, 300)  # 1 lives_in 300
+      # 1 knows 100
+      insert_triple(db, 1, 10, 100)
+      # 1 works_at 200
+      insert_triple(db, 1, 20, 200)
+      # 1 lives_in 300
+      insert_triple(db, 1, 30, 300)
 
       # Person 2 has only two properties
-      insert_triple(db, 2, 10, 101)  # 2 knows 101
-      insert_triple(db, 2, 20, 201)  # 2 works_at 201
+      # 2 knows 101
+      insert_triple(db, 2, 10, 101)
+      # 2 works_at 201
+      insert_triple(db, 2, 20, 201)
 
       # Person 3 has only one property
-      insert_triple(db, 3, 10, 102)  # 3 knows 102
+      # 3 knows 102
+      insert_triple(db, 3, 10, 102)
 
       patterns = [
         triple(var("p"), 10, var("a")),
@@ -215,9 +230,12 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
   describe "chain queries" do
     test "follows chain of relationships", %{db: db} do
       # Chain: a -> b -> c -> d
-      insert_triple(db, 1, 10, 2)  # 1 links_to 2
-      insert_triple(db, 2, 10, 3)  # 2 links_to 3
-      insert_triple(db, 3, 10, 4)  # 3 links_to 4
+      # 1 links_to 2
+      insert_triple(db, 1, 10, 2)
+      # 2 links_to 3
+      insert_triple(db, 2, 10, 3)
+      # 3 links_to 4
+      insert_triple(db, 3, 10, 4)
 
       patterns = [
         triple(var("a"), 10, var("b")),
@@ -375,8 +393,10 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
 
     test "handles pattern with same variable twice", %{db: db} do
       # Find self-loops: ?x links_to ?x
-      insert_triple(db, 1, 10, 1)  # Self-loop
-      insert_triple(db, 2, 10, 3)  # Not self-loop
+      # Self-loop
+      insert_triple(db, 1, 10, 1)
+      # Not self-loop
+      insert_triple(db, 2, 10, 3)
 
       # This is a tricky case - same variable in S and O positions
       # Our current implementation treats them as separate, which is correct

@@ -32,11 +32,12 @@ defmodule TripleStore.UpdateTest do
     test "inserts a single triple", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      result = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
     end
@@ -44,13 +45,14 @@ defmodule TripleStore.UpdateTest do
     test "inserts multiple triples", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      result = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-          <http://example.org/bob> <http://example.org/name> "Bob" .
-          <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+            <http://example.org/bob> <http://example.org/name> "Bob" .
+            <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> .
+          }
+        """)
 
       assert {:ok, 3} = result
     end
@@ -59,18 +61,20 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert first
-      {:ok, 1} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Then delete
-      result = Update.update(ctx, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
     end
@@ -78,11 +82,12 @@ defmodule TripleStore.UpdateTest do
     test "returns 0 for non-existent triple deletion", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      result = Update.update(ctx, """
-        DELETE DATA {
-          <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          DELETE DATA {
+            <http://example.org/nonexistent> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       assert {:ok, 0} = result
     end
@@ -98,11 +103,12 @@ defmodule TripleStore.UpdateTest do
     test "handles typed literals", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      result = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
+          }
+        """)
 
       assert {:ok, 1} = result
     end
@@ -110,11 +116,12 @@ defmodule TripleStore.UpdateTest do
     test "handles language-tagged literals", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      result = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice"@en .
-        }
-      """)
+      result =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice"@en .
+          }
+        """)
 
       assert {:ok, 1} = result
     end
@@ -156,8 +163,7 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       triples = [
-        {RDF.iri("http://example.org/s"),
-         RDF.iri("http://example.org/age"),
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/age"),
          RDF.literal(30, datatype: RDF.NS.XSD.integer())}
       ]
 
@@ -169,8 +175,7 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       triples = [
-        {RDF.iri("http://example.org/s"),
-         RDF.iri("http://example.org/name"),
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/name"),
          RDF.literal("Alice", language: "en")}
       ]
 
@@ -198,6 +203,7 @@ defmodule TripleStore.UpdateTest do
       triples = [
         {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("value")}
       ]
+
       {:ok, 1} = Update.insert(ctx, triples)
 
       # Then delete
@@ -209,7 +215,8 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       triples = [
-        {RDF.iri("http://example.org/nonexistent"), RDF.iri("http://example.org/p"), RDF.literal("value")}
+        {RDF.iri("http://example.org/nonexistent"), RDF.iri("http://example.org/p"),
+         RDF.literal("value")}
       ]
 
       result = Update.delete(ctx, triples)
@@ -228,11 +235,12 @@ defmodule TripleStore.UpdateTest do
     test "executes pre-parsed UPDATE AST", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
 
-      {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("""
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse_update("""
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       result = Update.execute(ctx, ast)
       assert {:ok, 1} = result
@@ -244,13 +252,14 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert some data
-      {:ok, 3} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
-          <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
-          <http://example.org/s3> <http://example.org/p> <http://example.org/o3> .
-        }
-      """)
+      {:ok, 3} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
+            <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
+            <http://example.org/s3> <http://example.org/p> <http://example.org/o3> .
+          }
+        """)
 
       # Clear
       result = Update.clear(ctx)
@@ -273,11 +282,12 @@ defmodule TripleStore.UpdateTest do
     test "inserts via transaction manager", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      result = Update.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Update.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -287,18 +297,20 @@ defmodule TripleStore.UpdateTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert first
-      {:ok, 1} = Update.update(txn, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Update.update(txn, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Then delete
-      result = Update.update(txn, """
-        DELETE DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      result =
+        Update.update(txn, """
+          DELETE DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(txn)
@@ -327,6 +339,7 @@ defmodule TripleStore.UpdateTest do
       triples = [
         {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("value")}
       ]
+
       {:ok, 1} = Update.insert(txn, triples)
 
       # Then delete
@@ -340,11 +353,12 @@ defmodule TripleStore.UpdateTest do
     test "executes pre-parsed AST via transaction", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      {:ok, ast} = TripleStore.SPARQL.Parser.parse_update("""
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      {:ok, ast} =
+        TripleStore.SPARQL.Parser.parse_update("""
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       result = Update.execute(txn, ast)
       assert {:ok, 1} = result
@@ -357,12 +371,13 @@ defmodule TripleStore.UpdateTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       # Insert some data
-      {:ok, 2} = Update.update(txn, """
-        INSERT DATA {
-          <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
-          <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
-        }
-      """)
+      {:ok, 2} =
+        Update.update(txn, """
+          INSERT DATA {
+            <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
+            <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
+          }
+        """)
 
       # Clear
       result = Update.clear(txn)
@@ -380,18 +395,19 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert
-      {:ok, 1} = Update.insert(ctx, [
-        {RDF.iri("http://example.org/alice"),
-         RDF.iri("http://example.org/name"),
-         RDF.literal("Alice")}
-      ])
+      {:ok, 1} =
+        Update.insert(ctx, [
+          {RDF.iri("http://example.org/alice"), RDF.iri("http://example.org/name"),
+           RDF.literal("Alice")}
+        ])
 
       # Query
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
 
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 1
@@ -402,21 +418,22 @@ defmodule TripleStore.UpdateTest do
 
       # Insert
       triples = [
-        {RDF.iri("http://example.org/alice"),
-         RDF.iri("http://example.org/name"),
+        {RDF.iri("http://example.org/alice"), RDF.iri("http://example.org/name"),
          RDF.literal("Alice")}
       ]
+
       {:ok, 1} = Update.insert(ctx, triples)
 
       # Delete
       {:ok, 1} = Update.delete(ctx, triples)
 
       # Query - should be empty
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?name WHERE {
-          <http://example.org/alice> <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?name WHERE {
+            <http://example.org/alice> <http://example.org/name> ?name .
+          }
+        """)
 
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 0
@@ -426,22 +443,24 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert
-      {:ok, 2} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
-          <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
-        }
-      """)
+      {:ok, 2} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/s1> <http://example.org/p> <http://example.org/o1> .
+            <http://example.org/s2> <http://example.org/p> <http://example.org/o2> .
+          }
+        """)
 
       # Clear
       {:ok, 2} = Update.clear(ctx)
 
       # Query - should be empty
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?s ?o WHERE {
-          ?s <http://example.org/p> ?o .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?s ?o WHERE {
+            ?s <http://example.org/p> ?o .
+          }
+        """)
 
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 0
@@ -451,35 +470,37 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       # Insert via SPARQL
-      {:ok, 1} = Update.update(ctx, """
-        INSERT DATA {
-          <http://example.org/alice> <http://example.org/name> "Alice" .
-        }
-      """)
+      {:ok, 1} =
+        Update.update(ctx, """
+          INSERT DATA {
+            <http://example.org/alice> <http://example.org/name> "Alice" .
+          }
+        """)
 
       # Insert via direct API
-      {:ok, 1} = Update.insert(ctx, [
-        {RDF.iri("http://example.org/bob"),
-         RDF.iri("http://example.org/name"),
-         RDF.literal("Bob")}
-      ])
+      {:ok, 1} =
+        Update.insert(ctx, [
+          {RDF.iri("http://example.org/bob"), RDF.iri("http://example.org/name"),
+           RDF.literal("Bob")}
+        ])
 
       # Query should find both
-      {:ok, prepared} = Query.prepare("""
-        SELECT ?name WHERE {
-          ?s <http://example.org/name> ?name .
-        }
-      """)
+      {:ok, prepared} =
+        Query.prepare("""
+          SELECT ?name WHERE {
+            ?s <http://example.org/name> ?name .
+          }
+        """)
 
       {:ok, results} = Query.execute(ctx, prepared)
       assert length(results) == 2
 
       # Delete via direct API
-      {:ok, 1} = Update.delete(ctx, [
-        {RDF.iri("http://example.org/alice"),
-         RDF.iri("http://example.org/name"),
-         RDF.literal("Alice")}
-      ])
+      {:ok, 1} =
+        Update.delete(ctx, [
+          {RDF.iri("http://example.org/alice"), RDF.iri("http://example.org/name"),
+           RDF.literal("Alice")}
+        ])
 
       # Query should find only Bob
       {:ok, results2} = Query.execute(ctx, prepared)
@@ -496,11 +517,12 @@ defmodule TripleStore.UpdateTest do
       name = :"test_txn_#{System.unique_integer([:positive])}"
       {:ok, _txn} = Transaction.start_link(db: db, dict_manager: manager, name: name)
 
-      result = Update.update(name, """
-        INSERT DATA {
-          <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-        }
-      """)
+      result =
+        Update.update(name, """
+          INSERT DATA {
+            <http://example.org/s> <http://example.org/p> <http://example.org/o> .
+          }
+        """)
 
       assert {:ok, 1} = result
       Transaction.stop(name)

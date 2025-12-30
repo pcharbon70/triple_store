@@ -250,7 +250,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         profile_opts: opts
       }) do
     case ReasoningProfile.rules_for(profile, opts) do
-      {:ok, rules} -> Enum.map(rules, & &1.name)
+      {:ok, rules} ->
+        Enum.map(rules, & &1.name)
+
       {:error, reason} ->
         require Logger
         Logger.warning("Failed to get rules for profile #{inspect(profile)}: #{inspect(reason)}")
@@ -268,13 +270,14 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
 
   def query_time_rules(%__MODULE__{mode: :hybrid, profile: profile, profile_opts: opts}) do
     # Return all rules minus the materialized ones
-    materialized = materialization_rules(%__MODULE__{
-      mode: :hybrid,
-      profile: profile,
-      profile_opts: opts,
-      mode_config: %{materialized_rules: nil},
-      created_at: DateTime.utc_now()
-    })
+    materialized =
+      materialization_rules(%__MODULE__{
+        mode: :hybrid,
+        profile: profile,
+        profile_opts: opts,
+        mode_config: %{materialized_rules: nil},
+        created_at: DateTime.utc_now()
+      })
 
     case ReasoningProfile.rules_for(profile, opts) do
       {:ok, rules} ->

@@ -224,7 +224,7 @@ defmodule TripleStore.Config.Helpers do
       {:error, "a must be a positive integer"}
 
   """
-  @spec validate_all([(() -> :ok | {:error, String.t()})]) :: :ok | {:error, String.t()}
+  @spec validate_all([(-> :ok | {:error, String.t()})]) :: :ok | {:error, String.t()}
   def validate_all(validations) do
     Enum.reduce_while(validations, :ok, fn validation, :ok ->
       case validation.() do

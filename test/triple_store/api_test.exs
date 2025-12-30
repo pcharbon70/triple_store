@@ -181,8 +181,10 @@ defmodule TripleStore.APITest do
     test "TripleStore module exports specs for public functions" do
       # Get the module's specs using beam_lib
       {:ok, {TripleStore, [abstract_code: {:raw_abstract_v1, forms}]}} =
-        :beam_lib.chunks(TripleStore.module_info(:compile)[:source] |> to_charlist() |> beam_file(),
-          [:abstract_code])
+        :beam_lib.chunks(
+          TripleStore.module_info(:compile)[:source] |> to_charlist() |> beam_file(),
+          [:abstract_code]
+        )
 
       # Extract specs from the abstract code
       specs =
@@ -625,7 +627,11 @@ defmodule TripleStore.APITest do
     end
 
     test "open/2 with create_if_missing: false returns error for non-existent database" do
-      result = TripleStore.open("/tmp/nonexistent_db_#{:rand.uniform(1_000_000)}", create_if_missing: false)
+      result =
+        TripleStore.open("/tmp/nonexistent_db_#{:rand.uniform(1_000_000)}",
+          create_if_missing: false
+        )
+
       assert {:error, :database_not_found} = result
     end
   end
@@ -649,7 +655,8 @@ defmodule TripleStore.APITest do
     end
 
     test "close/1 returns error on already closed store" do
-      path = Path.join(System.tmp_dir!(), "triple_store_close_twice_test_#{:rand.uniform(1_000_000)}")
+      path =
+        Path.join(System.tmp_dir!(), "triple_store_close_twice_test_#{:rand.uniform(1_000_000)}")
 
       on_exit(fn ->
         File.rm_rf!(path)
@@ -665,7 +672,8 @@ defmodule TripleStore.APITest do
     end
 
     test "close!/1 returns :ok" do
-      path = Path.join(System.tmp_dir!(), "triple_store_close_bang_test_#{:rand.uniform(1_000_000)}")
+      path =
+        Path.join(System.tmp_dir!(), "triple_store_close_bang_test_#{:rand.uniform(1_000_000)}")
 
       on_exit(fn ->
         File.rm_rf!(path)
@@ -744,7 +752,8 @@ defmodule TripleStore.APITest do
 
   describe "bang variant error categories" do
     setup do
-      path = Path.join(System.tmp_dir!(), "triple_store_bang_cat_test_#{:rand.uniform(1_000_000)}")
+      path =
+        Path.join(System.tmp_dir!(), "triple_store_bang_cat_test_#{:rand.uniform(1_000_000)}")
 
       on_exit(fn ->
         File.rm_rf!(path)
@@ -783,7 +792,9 @@ defmodule TripleStore.APITest do
       assert error.code == 4004
     end
 
-    test "update! raises with :query_parse_error category for invalid SPARQL UPDATE", %{store: store} do
+    test "update! raises with :query_parse_error category for invalid SPARQL UPDATE", %{
+      store: store
+    } do
       error =
         assert_raise TripleStore.Error, fn ->
           TripleStore.update!(store, "INVALID UPDATE")

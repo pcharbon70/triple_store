@@ -315,7 +315,8 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
       patterns = [
         {:triple, var("x"), 1, var("y")},
         {:triple, var("y"), 2, var("z")},
-        {:triple, var("a"), 3, var("b")}  # Disconnected
+        # Disconnected
+        {:triple, var("a"), 3, var("b")}
       ]
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
@@ -419,8 +420,10 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
 
       # Should produce pairwise join plan (not Leapfrog for chain)
       case plan.tree do
-        {:leapfrog, _, _} -> :ok  # Leapfrog is acceptable
-        {:join, _, _, _, _} -> :ok  # Pairwise is also acceptable
+        # Leapfrog is acceptable
+        {:leapfrog, _, _} -> :ok
+        # Pairwise is also acceptable
+        {:join, _, _, _, _} -> :ok
       end
     end
   end

@@ -146,12 +146,13 @@ defmodule TripleStore.Reasoner.Incremental do
   def add_in_memory(new_triples, existing, rules, opts \\ [])
 
   def add_in_memory([], existing, _rules, _opts) do
-    {:ok, existing, %{
-      explicit_added: 0,
-      derived_count: 0,
-      iterations: 0,
-      duration_ms: 0
-    }}
+    {:ok, existing,
+     %{
+       explicit_added: 0,
+       derived_count: 0,
+       iterations: 0,
+       duration_ms: 0
+     }}
   end
 
   def add_in_memory(new_triples, existing, rules, opts) when is_list(new_triples) do
@@ -330,12 +331,13 @@ defmodule TripleStore.Reasoner.Incremental do
   def add_with_reasoning(db, triples, rules, opts \\ [])
 
   def add_with_reasoning(_db, [], _rules, _opts) do
-    {:ok, %{
-      explicit_added: 0,
-      derived_count: 0,
-      iterations: 0,
-      duration_ms: 0
-    }}
+    {:ok,
+     %{
+       explicit_added: 0,
+       derived_count: 0,
+       iterations: 0,
+       duration_ms: 0
+     }}
   end
 
   def add_with_reasoning(db, triples, rules, opts) when is_list(triples) do
@@ -356,12 +358,13 @@ defmodule TripleStore.Reasoner.Incremental do
          {:ok, stats} <- run_db_reasoning(db, novel_triples, rules, source, semi_naive_opts) do
       duration_ms = System.monotonic_time(:millisecond) - start_time
 
-      {:ok, %{
-        explicit_added: length(novel_triples),
-        derived_count: stats.total_derived,
-        iterations: stats.iterations,
-        duration_ms: duration_ms
-      }}
+      {:ok,
+       %{
+         explicit_added: length(novel_triples),
+         derived_count: stats.total_derived,
+         iterations: stats.iterations,
+         duration_ms: duration_ms
+       }}
     end
   end
 
@@ -391,7 +394,9 @@ defmodule TripleStore.Reasoner.Incremental do
     end
 
     try do
-      case SemiNaive.materialize(lookup_fn, store_fn, rules, prospective_facts, emit_telemetry: false) do
+      case SemiNaive.materialize(lookup_fn, store_fn, rules, prospective_facts,
+             emit_telemetry: false
+           ) do
         {:ok, _stats} ->
           all_derived = Agent.get(agent, & &1)
           new_derivations = MapSet.difference(all_derived, prospective_facts)
@@ -454,13 +459,14 @@ defmodule TripleStore.Reasoner.Incremental do
   defp insert_explicit_facts(db, triples), do: Index.insert_triples(db, triples)
 
   defp run_db_reasoning(_db, [], _rules, _source, _opts) do
-    {:ok, %{
-      iterations: 0,
-      total_derived: 0,
-      derivations_per_iteration: [],
-      duration_ms: 0,
-      rules_applied: 0
-    }}
+    {:ok,
+     %{
+       iterations: 0,
+       total_derived: 0,
+       derivations_per_iteration: [],
+       duration_ms: 0,
+       rules_applied: 0
+     }}
   end
 
   defp run_db_reasoning(db, new_facts, rules, source, opts) do

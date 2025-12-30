@@ -25,28 +25,34 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
     end
 
     test "creates config with mode options" do
-      {:ok, config} = ReasoningConfig.new(
-        mode: :materialized,
-        parallel: true,
-        max_iterations: 500
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          mode: :materialized,
+          parallel: true,
+          max_iterations: 500
+        )
+
       assert config.mode_config.parallel == true
       assert config.mode_config.max_iterations == 500
     end
 
     test "creates config with profile options" do
-      {:ok, config} = ReasoningConfig.new(
-        profile: :owl2rl,
-        exclude: [:eq_ref]
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          profile: :owl2rl,
+          exclude: [:eq_ref]
+        )
+
       assert config.profile_opts[:exclude] == [:eq_ref]
     end
 
     test "creates hybrid config with custom materialized rules" do
-      {:ok, config} = ReasoningConfig.new(
-        mode: :hybrid,
-        materialized_rules: [:scm_sco, :cax_sco]
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          mode: :hybrid,
+          materialized_rules: [:scm_sco, :cax_sco]
+        )
+
       assert config.mode_config.materialized_rules == [:scm_sco, :cax_sco]
     end
 
@@ -158,10 +164,12 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
     end
 
     test "returns materialized rules for hybrid mode" do
-      {:ok, config} = ReasoningConfig.new(
-        mode: :hybrid,
-        materialized_rules: [:scm_sco, :cax_sco]
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          mode: :hybrid,
+          materialized_rules: [:scm_sco, :cax_sco]
+        )
+
       rules = ReasoningConfig.materialization_rules(config)
       assert rules == [:scm_sco, :cax_sco]
     end
@@ -198,10 +206,12 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
     end
 
     test "returns query_time_rules for hybrid mode" do
-      {:ok, config} = ReasoningConfig.new(
-        mode: :hybrid,
-        query_time_rules: [:prp_trp, :eq_sym]
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          mode: :hybrid,
+          query_time_rules: [:prp_trp, :eq_sym]
+        )
+
       rules = ReasoningConfig.query_time_rules(config)
       assert rules == [:prp_trp, :eq_sym]
     end
@@ -287,13 +297,14 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
 
   describe "complex configurations" do
     test "hybrid with custom rules and exclusions" do
-      {:ok, config} = ReasoningConfig.new(
-        profile: :owl2rl,
-        mode: :hybrid,
-        materialized_rules: [:scm_sco, :cax_sco, :prp_dom],
-        query_time_rules: [:prp_trp, :prp_symp],
-        cache_results: true
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          profile: :owl2rl,
+          mode: :hybrid,
+          materialized_rules: [:scm_sco, :cax_sco, :prp_dom],
+          query_time_rules: [:prp_trp, :prp_symp],
+          cache_results: true
+        )
 
       assert config.mode_config.cache_results == true
       assert ReasoningConfig.materialization_rules(config) == [:scm_sco, :cax_sco, :prp_dom]
@@ -301,24 +312,26 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
     end
 
     test "materialized with parallel and custom iterations" do
-      {:ok, config} = ReasoningConfig.new(
-        profile: :owl2rl,
-        mode: :materialized,
-        parallel: true,
-        max_iterations: 2000
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          profile: :owl2rl,
+          mode: :materialized,
+          parallel: true,
+          max_iterations: 2000
+        )
 
       assert config.mode_config.parallel == true
       assert config.mode_config.max_iterations == 2000
     end
 
     test "query_time with custom depth and caching" do
-      {:ok, config} = ReasoningConfig.new(
-        profile: :rdfs,
-        mode: :query_time,
-        max_depth: 20,
-        cache_results: true
-      )
+      {:ok, config} =
+        ReasoningConfig.new(
+          profile: :rdfs,
+          mode: :query_time,
+          max_depth: 20,
+          cache_results: true
+        )
 
       assert config.mode_config.max_depth == 20
       assert config.mode_config.cache_results == true
