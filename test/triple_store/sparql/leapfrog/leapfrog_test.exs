@@ -1,10 +1,10 @@
 defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Leapfrog.Leapfrog
-  alias TripleStore.SPARQL.Leapfrog.TrieIterator
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.SPARQL.Leapfrog.Leapfrog
+  alias TripleStore.SPARQL.Leapfrog.TrieIterator
 
   @moduletag :integration
 
@@ -463,8 +463,8 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
       # List 2: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20 (even numbers - no overlap with list 1)
       # But we want data that will cause iterations before exhaustion
       # So let's use data that converges eventually but requires seeking
-      for s <- [1, 10, 100, 1000, 10000], do: insert_triple(db, s, 10, 100)
-      for s <- [2, 20, 200, 2000, 20000], do: insert_triple(db, s, 20, 200)
+      for s <- [1, 10, 100, 1000, 10_000], do: insert_triple(db, s, 10, 100)
+      for s <- [2, 20, 200, 2000, 20_000], do: insert_triple(db, s, 20, 200)
 
       {:ok, iter1} = TrieIterator.new(db, :pos, <<10::64-big, 100::64-big>>, 2)
       {:ok, iter2} = TrieIterator.new(db, :pos, <<20::64-big, 200::64-big>>, 2)

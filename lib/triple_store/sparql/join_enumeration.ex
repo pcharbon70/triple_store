@@ -286,6 +286,7 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   # Exhaustive Enumeration
   # ===========================================================================
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp exhaustive_enumerate(patterns, stats) do
     n = length(patterns)
     join_graph = build_join_graph(patterns)
@@ -328,6 +329,7 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp build_left_deep_plan(order, indexed_patterns, join_graph, stats, opts \\ []) do
     allow_cartesian = Keyword.get(opts, :allow_cartesian, false)
 
@@ -411,6 +413,7 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   # DPccp Algorithm
   # ===========================================================================
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp dpccp_enumerate(patterns, stats) do
     n = length(patterns)
     join_graph = build_join_graph(patterns)
@@ -489,6 +492,7 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   end
 
   # Generate connected complement pairs (ccp)
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp generate_ccp(subset, join_graph) do
     subset_list = MapSet.to_list(subset)
     n = MapSet.size(subset)

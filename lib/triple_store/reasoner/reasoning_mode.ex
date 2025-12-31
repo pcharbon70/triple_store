@@ -432,9 +432,8 @@ defmodule TripleStore.Reasoner.ReasoningMode do
   defp validate_rules(config) do
     available = MapSet.new(ReasoningProfile.available_rules())
 
-    with :ok <- validate_rule_list(config[:materialized_rules], available, :materialized_rules),
-         :ok <- validate_rule_list(config[:query_time_rules], available, :query_time_rules) do
-      :ok
+    with :ok <- validate_rule_list(config[:materialized_rules], available, :materialized_rules) do
+      validate_rule_list(config[:query_time_rules], available, :query_time_rules)
     end
   end
 

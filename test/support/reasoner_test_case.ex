@@ -56,14 +56,14 @@ defmodule TripleStore.ReasonerTestCase do
       import TripleStore.Test.ReasonerHelpers
 
       alias TripleStore.Reasoner.{
-        SemiNaive,
-        ReasoningProfile,
+        DeleteWithReasoning,
+        Incremental,
+        PatternMatcher,
         ReasoningConfig,
         ReasoningMode,
-        PatternMatcher,
-        Incremental,
-        DeleteWithReasoning,
+        ReasoningProfile,
         ReasoningStatus,
+        SemiNaive,
         TBoxCache
       }
 

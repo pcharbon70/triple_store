@@ -43,6 +43,13 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Parser
 
+  # Suppress MapSet opaque type warnings in predicate extraction functions
+  @dialyzer {:nowarn_function, extract_predicates_from_operations: 1}
+  @dialyzer {:nowarn_function, extract_predicates_from_operation: 1}
+  @dialyzer {:nowarn_function, extract_predicates_from_quads: 1}
+  @dialyzer {:nowarn_function, extract_predicates_from_template: 1}
+  @dialyzer {:nowarn_function, extract_predicates_from_pattern: 1}
+
   # ===========================================================================
   # Types
   # ===========================================================================
@@ -513,6 +520,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   # Batch size for chunked clear operations to prevent OOM
   @clear_batch_size 10_000
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp clear_all_triples(ctx) do
     # Stream triples and delete in batches to prevent OOM on large databases
     case Index.lookup(ctx.db, {:var, :var, :var}) do
@@ -745,9 +753,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       end)
 
     # Execute deletes first, then puts
-    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes)),
-         :ok <- if(puts == [], do: :ok, else: NIF.write_batch(db, puts)) do
-      :ok
+    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes)) do
+      if(puts == [], do: :ok, else: NIF.write_batch(db, puts))
     end
   end
 
@@ -757,11 +764,10 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   @doc false
   @spec invalidate_cache_for_operations([term()]) :: :ok
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def invalidate_cache_for_operations(operations) do
     # Skip if cache is not running
-    unless cache_running?() do
-      :ok
-    else
+    if cache_running?() do
       predicates = extract_predicates_from_operations(operations)
 
       if predicates == :full_invalidation do
@@ -780,6 +786,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
             QueryCache.invalidate_predicates(predicates)
         end
       end
+    else
+      :ok
     end
   end
 
@@ -792,6 +800,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   # Extracts predicates from update operations
   # Returns :full_invalidation for complex operations we can't analyze
+  @spec extract_predicates_from_operations(list()) :: MapSet.t() | :full_invalidation
   defp extract_predicates_from_operations(operations) do
     Enum.reduce_while(operations, MapSet.new(), fn op, acc ->
       case extract_predicates_from_operation(op) do
@@ -801,6 +810,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     end)
   end
 
+  @spec extract_predicates_from_operation(term()) :: MapSet.t() | :full_invalidation
   defp extract_predicates_from_operation({:insert_data, quads}) do
     extract_predicates_from_quads(quads)
   end
@@ -850,6 +860,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   # Extract predicates from quads (INSERT DATA, DELETE DATA)
+  @spec extract_predicates_from_quads(list()) :: MapSet.t()
   defp extract_predicates_from_quads(quads) do
     Enum.reduce(quads, MapSet.new(), fn quad, acc ->
       case extract_predicate_from_quad(quad) do
@@ -865,6 +876,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp extract_predicate_from_quad(_), do: nil
 
   # Extract predicates from template patterns (DELETE/INSERT WHERE)
+  @spec extract_predicates_from_template(list() | term()) :: MapSet.t()
   defp extract_predicates_from_template(template) when is_list(template) do
     Enum.reduce(template, MapSet.new(), fn pattern, acc ->
       MapSet.union(acc, extract_predicates_from_pattern(pattern))
@@ -874,6 +886,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp extract_predicates_from_template(_), do: MapSet.new()
 
   # Extract predicates from WHERE patterns
+  @spec extract_predicates_from_pattern(term()) :: MapSet.t()
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp extract_predicates_from_pattern({:bgp, triples}) when is_list(triples) do
     Enum.reduce(triples, MapSet.new(), fn triple, acc ->
       case triple do

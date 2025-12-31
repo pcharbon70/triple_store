@@ -49,13 +49,14 @@ defmodule ModuleClustersQuery do
       header("📦 MODULE CLUSTERS", "Code organization by namespace")
 
       # Get all modules
-      {:ok, results} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?mod_name WHERE {
-          ?mod a s:Module .
-          ?mod s:moduleName ?mod_name .
-        }
-      """)
+      {:ok, results} =
+        TripleStore.query(store, """
+          PREFIX s: <https://w3id.org/elixir-code/structure#>
+          SELECT ?mod_name WHERE {
+            ?mod a s:Module .
+            ?mod s:moduleName ?mod_name .
+          }
+        """)
 
       modules = Enum.map(results, fn row -> extract(row["mod_name"]) end)
 
@@ -73,66 +74,74 @@ defmodule ModuleClustersQuery do
         |> Enum.sort_by(fn {_, count, _} -> -count end)
 
       # Visual output
-      max_count = by_namespace |> Enum.map(fn {_, c, _} -> c end) |> Enum.max()
-      scale = max(1, div(max_count, 40))
-
-      IO.puts("  Namespace                         Modules")
-      separator()
-
-      Enum.each(by_namespace, fn {namespace, count, _mods} ->
-        bar_width = div(count, scale)
-        visual = String.duplicate("█", bar_width)
-        IO.puts("  #{String.pad_trailing(namespace, 32)} #{pad_num(count)} #{visual}")
-      end)
-
-      # Detailed breakdown for top clusters
-      IO.puts("")
-      IO.puts("  📋 TOP CLUSTER DETAILS:")
-      separator()
-
-      by_namespace
-      |> Enum.take(5)
-      |> Enum.each(fn {namespace, count, mods} ->
+      if by_namespace == [] do
+        IO.puts("  ⚠️  No module data found in the store.")
+        IO.puts("     Make sure you have loaded code analysis RDF data first.")
         IO.puts("")
-        IO.puts("  #{namespace} (#{count} modules)")
+        IO.puts("  💡 Tip: Run the data loader to populate the store with codebase triples")
+      else
+        max_count = by_namespace |> Enum.map(fn {_, c, _} -> c end) |> Enum.max()
+        scale = max(1, div(max_count, 40))
 
-        # Show sub-namespaces
-        sub_ns =
-          mods
-          |> Enum.group_by(fn name ->
-            parts = String.split(name, ".")
-            if length(parts) >= 3 do
-              Enum.take(parts, 3) |> Enum.join(".")
-            else
-              name
-            end
-          end)
-          |> Enum.map(fn {ns, ms} -> {ns, length(ms)} end)
-          |> Enum.sort_by(fn {_, c} -> -c end)
-          |> Enum.take(5)
+        IO.puts("  Namespace                         Modules")
+        separator()
 
-        Enum.each(sub_ns, fn {sub, sub_count} ->
-          short = String.replace(sub, namespace <> ".", "")
-          IO.puts("    └─ #{String.pad_trailing(short, 28)} #{sub_count}")
+        Enum.each(by_namespace, fn {namespace, count, _mods} ->
+          bar_width = div(count, scale)
+          visual = String.duplicate("█", bar_width)
+          IO.puts("  #{String.pad_trailing(namespace, 32)} #{pad_num(count)} #{visual}")
         end)
-      end)
 
-      # Stats
-      IO.puts("")
-      IO.puts("  📊 CLUSTER STATISTICS:")
-      separator()
-      IO.puts("  Total namespaces: #{length(by_namespace)}")
-      IO.puts("  Total modules: #{length(modules)}")
+        # Detailed breakdown for top clusters
+        IO.puts("")
+        IO.puts("  📋 TOP CLUSTER DETAILS:")
+        separator()
 
-      large = Enum.count(by_namespace, fn {_, c, _} -> c >= 20 end)
-      medium = Enum.count(by_namespace, fn {_, c, _} -> c >= 5 and c < 20 end)
-      small = Enum.count(by_namespace, fn {_, c, _} -> c < 5 end)
+        by_namespace
+        |> Enum.take(5)
+        |> Enum.each(fn {namespace, count, mods} ->
+          IO.puts("")
+          IO.puts("  #{namespace} (#{count} modules)")
 
-      IO.puts("")
-      IO.puts("  Cluster sizes:")
-      IO.puts("    Large (20+):  #{large}")
-      IO.puts("    Medium (5-19): #{medium}")
-      IO.puts("    Small (<5):   #{small}")
+          # Show sub-namespaces
+          sub_ns =
+            mods
+            |> Enum.group_by(fn name ->
+              parts = String.split(name, ".")
+
+              if length(parts) >= 3 do
+                Enum.take(parts, 3) |> Enum.join(".")
+              else
+                name
+              end
+            end)
+            |> Enum.map(fn {ns, ms} -> {ns, length(ms)} end)
+            |> Enum.sort_by(fn {_, c} -> -c end)
+            |> Enum.take(5)
+
+          Enum.each(sub_ns, fn {sub, sub_count} ->
+            short = String.replace(sub, namespace <> ".", "")
+            IO.puts("    └─ #{String.pad_trailing(short, 28)} #{sub_count}")
+          end)
+        end)
+
+        # Stats
+        IO.puts("")
+        IO.puts("  📊 CLUSTER STATISTICS:")
+        separator()
+        IO.puts("  Total namespaces: #{length(by_namespace)}")
+        IO.puts("  Total modules: #{length(modules)}")
+
+        large = Enum.count(by_namespace, fn {_, c, _} -> c >= 20 end)
+        medium = Enum.count(by_namespace, fn {_, c, _} -> c >= 5 and c < 20 end)
+        small = Enum.count(by_namespace, fn {_, c, _} -> c < 5 end)
+
+        IO.puts("")
+        IO.puts("  Cluster sizes:")
+        IO.puts("    Large (20+):  #{large}")
+        IO.puts("    Medium (5-19): #{medium}")
+        IO.puts("    Small (<5):   #{small}")
+      end
     end)
   end
 end

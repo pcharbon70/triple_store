@@ -1,9 +1,9 @@
 defmodule TripleStore.SPARQL.Leapfrog.MultiLevelTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Leapfrog.MultiLevel
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.SPARQL.Leapfrog.MultiLevel
 
   @moduletag :integration
 

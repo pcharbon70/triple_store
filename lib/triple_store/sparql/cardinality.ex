@@ -151,7 +151,7 @@ defmodule TripleStore.SPARQL.Cardinality do
 
     # If predicate is bound and in histogram, don't apply predicate selectivity again
     predicate_sel =
-      if is_constant?(predicate) and has_predicate_count?(predicate, stats) do
+      if constant?(predicate) and has_predicate_count?(predicate, stats) do
         1.0
       else
         predicate_sel
@@ -385,7 +385,7 @@ defmodule TripleStore.SPARQL.Cardinality do
   # Get count for a predicate from histogram
   @spec get_predicate_count(term(), stats()) :: {:ok, non_neg_integer()} | :not_found
   defp get_predicate_count(predicate, stats) do
-    with true <- is_constant?(predicate),
+    with true <- constant?(predicate),
          id when is_integer(id) <- get_constant_id(predicate),
          histogram when is_map(histogram) <- Map.get(stats, :predicate_histogram),
          count when is_integer(count) <- Map.get(histogram, id) do
@@ -408,7 +408,7 @@ defmodule TripleStore.SPARQL.Cardinality do
   # Calculate selectivity for a position (subject, predicate, or object)
   @spec position_selectivity(term(), :subject | :predicate | :object, stats()) :: float()
   defp position_selectivity(term, position, stats) do
-    if is_constant?(term) do
+    if constant?(term) do
       # Bound constant: selectivity = 1/distinct_count
       distinct_count = distinct_count_for_position(position, stats)
       1.0 / max(distinct_count, 1)
@@ -539,9 +539,9 @@ defmodule TripleStore.SPARQL.Cardinality do
   # ===========================================================================
 
   # Check if a term is a constant (not a variable)
-  @spec is_constant?(term()) :: boolean()
-  defp is_constant?({:variable, _}), do: false
-  defp is_constant?(_), do: true
+  @spec constant?(term()) :: boolean()
+  defp constant?({:variable, _}), do: false
+  defp constant?(_), do: true
 
   # Get the ID from a constant term
   @spec get_constant_id(term()) :: non_neg_integer() | nil

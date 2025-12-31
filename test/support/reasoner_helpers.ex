@@ -25,7 +25,7 @@ defmodule TripleStore.Test.ReasonerHelpers do
   the W3C specifications.
   """
 
-  alias TripleStore.Reasoner.{SemiNaive, ReasoningProfile, PatternMatcher}
+  alias TripleStore.Reasoner.{PatternMatcher, ReasoningProfile, SemiNaive}
 
   # ============================================================================
   # Namespace Constants

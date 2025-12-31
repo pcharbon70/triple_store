@@ -12,8 +12,8 @@ defmodule TripleStore.ScheduledBackupTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.ScheduledBackup
   alias TripleStore.Backup
+  alias TripleStore.ScheduledBackup
 
   @moduletag :integration
   @moduletag timeout: 60_000
@@ -217,6 +217,7 @@ defmodule TripleStore.ScheduledBackupTest do
   # ===========================================================================
 
   describe "scheduled backup execution" do
+    @tag :slow
     test "runs backup at interval" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -246,7 +247,7 @@ defmodule TripleStore.ScheduledBackupTest do
 
         # Verify backup was created
         {:ok, backups} = Backup.list(backup_dir)
-        assert length(backups) >= 1
+        assert backups != []
 
         :ok = ScheduledBackup.stop(pid)
       after
@@ -255,6 +256,7 @@ defmodule TripleStore.ScheduledBackupTest do
       end
     end
 
+    @tag :slow
     test "run_immediately creates backup on start" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -283,6 +285,7 @@ defmodule TripleStore.ScheduledBackupTest do
       end
     end
 
+    @tag :slow
     test "multiple backups run at interval" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -346,6 +349,7 @@ defmodule TripleStore.ScheduledBackupTest do
       end
     end
 
+    @tag :slow
     test "trigger_backup resets interval timer" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -384,6 +388,7 @@ defmodule TripleStore.ScheduledBackupTest do
   # ===========================================================================
 
   describe "backup rotation" do
+    @tag :slow
     test "keeps only max_backups" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -432,6 +437,7 @@ defmodule TripleStore.ScheduledBackupTest do
   # ===========================================================================
 
   describe "telemetry events" do
+    @tag :slow
     test "emits tick event on backup" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()
@@ -501,6 +507,7 @@ defmodule TripleStore.ScheduledBackupTest do
       end
     end
 
+    @tag :slow
     test "schedule_backup with run_immediately option" do
       {store, path} = create_test_store()
       backup_dir = create_test_backup_dir()

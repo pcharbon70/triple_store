@@ -78,12 +78,12 @@ defmodule TripleStore.Reasoner.Namespaces do
   def rdf_type, do: @rdf <> "type"
 
   @doc "Returns the rdfs:subClassOf IRI."
-  @spec rdfs_subClassOf() :: String.t()
-  def rdfs_subClassOf, do: @rdfs <> "subClassOf"
+  @spec rdfs_sub_class_of() :: String.t()
+  def rdfs_sub_class_of, do: @rdfs <> "subClassOf"
 
   @doc "Returns the rdfs:subPropertyOf IRI."
-  @spec rdfs_subPropertyOf() :: String.t()
-  def rdfs_subPropertyOf, do: @rdfs <> "subPropertyOf"
+  @spec rdfs_sub_property_of() :: String.t()
+  def rdfs_sub_property_of, do: @rdfs <> "subPropertyOf"
 
   @doc "Returns the rdfs:domain IRI."
   @spec rdfs_domain() :: String.t()
@@ -94,48 +94,48 @@ defmodule TripleStore.Reasoner.Namespaces do
   def rdfs_range, do: @rdfs <> "range"
 
   @doc "Returns the owl:sameAs IRI."
-  @spec owl_sameAs() :: String.t()
-  def owl_sameAs, do: @owl <> "sameAs"
+  @spec owl_same_as() :: String.t()
+  def owl_same_as, do: @owl <> "sameAs"
 
   @doc "Returns the owl:TransitiveProperty IRI."
-  @spec owl_TransitiveProperty() :: String.t()
-  def owl_TransitiveProperty, do: @owl <> "TransitiveProperty"
+  @spec owl_transitive_property() :: String.t()
+  def owl_transitive_property, do: @owl <> "TransitiveProperty"
 
   @doc "Returns the owl:SymmetricProperty IRI."
-  @spec owl_SymmetricProperty() :: String.t()
-  def owl_SymmetricProperty, do: @owl <> "SymmetricProperty"
+  @spec owl_symmetric_property() :: String.t()
+  def owl_symmetric_property, do: @owl <> "SymmetricProperty"
 
   @doc "Returns the owl:inverseOf IRI."
-  @spec owl_inverseOf() :: String.t()
-  def owl_inverseOf, do: @owl <> "inverseOf"
+  @spec owl_inverse_of() :: String.t()
+  def owl_inverse_of, do: @owl <> "inverseOf"
 
   @doc "Returns the owl:FunctionalProperty IRI."
-  @spec owl_FunctionalProperty() :: String.t()
-  def owl_FunctionalProperty, do: @owl <> "FunctionalProperty"
+  @spec owl_functional_property() :: String.t()
+  def owl_functional_property, do: @owl <> "FunctionalProperty"
 
   @doc "Returns the owl:InverseFunctionalProperty IRI."
-  @spec owl_InverseFunctionalProperty() :: String.t()
-  def owl_InverseFunctionalProperty, do: @owl <> "InverseFunctionalProperty"
+  @spec owl_inverse_functional_property() :: String.t()
+  def owl_inverse_functional_property, do: @owl <> "InverseFunctionalProperty"
 
   @doc "Returns the owl:hasValue IRI."
-  @spec owl_hasValue() :: String.t()
-  def owl_hasValue, do: @owl <> "hasValue"
+  @spec owl_has_value() :: String.t()
+  def owl_has_value, do: @owl <> "hasValue"
 
   @doc "Returns the owl:onProperty IRI."
-  @spec owl_onProperty() :: String.t()
-  def owl_onProperty, do: @owl <> "onProperty"
+  @spec owl_on_property() :: String.t()
+  def owl_on_property, do: @owl <> "onProperty"
 
   @doc "Returns the owl:someValuesFrom IRI."
-  @spec owl_someValuesFrom() :: String.t()
-  def owl_someValuesFrom, do: @owl <> "someValuesFrom"
+  @spec owl_some_values_from() :: String.t()
+  def owl_some_values_from, do: @owl <> "someValuesFrom"
 
   @doc "Returns the owl:allValuesFrom IRI."
-  @spec owl_allValuesFrom() :: String.t()
-  def owl_allValuesFrom, do: @owl <> "allValuesFrom"
+  @spec owl_all_values_from() :: String.t()
+  def owl_all_values_from, do: @owl <> "allValuesFrom"
 
   @doc "Returns the owl:Thing IRI."
-  @spec owl_Thing() :: String.t()
-  def owl_Thing, do: @owl <> "Thing"
+  @spec owl_thing() :: String.t()
+  def owl_thing, do: @owl <> "Thing"
 
   # ============================================================================
   # IRI Utilities

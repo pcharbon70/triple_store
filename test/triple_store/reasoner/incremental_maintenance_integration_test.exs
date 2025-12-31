@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.IncrementalMaintenanceIntegrationTest do
   @moduledoc """
   Integration tests for the complete incremental maintenance system.

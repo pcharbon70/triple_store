@@ -1,9 +1,9 @@
 defmodule TripleStore.Reasoner.DerivedStoreTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.Reasoner.DerivedStore
 
   @moduletag :integration
 
@@ -386,8 +386,8 @@ defmodule TripleStore.Reasoner.DerivedStoreTest do
   # ============================================================================
 
   describe "integration with SemiNaive" do
-    alias TripleStore.Reasoner.SemiNaive
     alias TripleStore.Reasoner.Rule
+    alias TripleStore.Reasoner.SemiNaive
 
     test "materialize stores derived facts to database", %{db: _db} do
       # Create a simple transitive rule using term-level representation

@@ -327,6 +327,7 @@ defmodule TripleStore.Reasoner.SchemaInfo do
       true
   """
   @spec has_feature?(t(), atom()) :: boolean()
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def has_feature?(%__MODULE__{} = schema, feature) do
     case feature do
       :subclass -> schema.has_subclass

@@ -507,9 +507,8 @@ defmodule TripleStore.SPARQL.Expression do
   def evaluate({:function_call, "CONCAT", args}, bindings) when is_list(args) do
     results =
       Enum.map(args, fn arg ->
-        with {:ok, val} <- evaluate(arg, bindings),
-             {:ok, str} <- to_string_value(val) do
-          {:ok, str}
+        with {:ok, val} <- evaluate(arg, bindings) do
+          to_string_value(val)
         end
       end)
 
@@ -819,19 +818,22 @@ defmodule TripleStore.SPARQL.Expression do
     end)
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def evaluate({:in_expr, needle_expr, haystack}, bindings) when is_list(haystack) do
-    with {:ok, needle} <- evaluate(needle_expr, bindings) do
-      result =
-        Enum.any?(haystack, fn hay_expr ->
-          case evaluate(hay_expr, bindings) do
-            {:ok, hay} -> rdf_equal?(needle, hay)
-            :error -> false
-          end
-        end)
+    case evaluate(needle_expr, bindings) do
+      {:ok, needle} ->
+        result =
+          Enum.any?(haystack, fn hay_expr ->
+            case evaluate(hay_expr, bindings) do
+              {:ok, hay} -> rdf_equal?(needle, hay)
+              :error -> false
+            end
+          end)
 
-      {:ok, make_boolean(result)}
-    else
-      _ -> :error
+        {:ok, make_boolean(result)}
+
+      _ ->
+        :error
     end
   end
 
@@ -975,8 +977,8 @@ defmodule TripleStore.SPARQL.Expression do
   @doc """
   Checks if an expression is a constant (no variable references).
   """
-  @spec is_constant?(expression()) :: boolean()
-  def is_constant?(expr) do
+  @spec constant?(expression()) :: boolean()
+  def constant?(expr) do
     expression_variables(expr) == []
   end
 

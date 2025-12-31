@@ -76,6 +76,7 @@ defmodule TripleStore.Statistics.CacheTest do
       Cache.stop(cache)
     end
 
+    @tag :slow
     test "returns cached statistics with data", %{db: db} do
       triples = [
         {1000, 100, 2000},
@@ -141,6 +142,7 @@ defmodule TripleStore.Statistics.CacheTest do
       Cache.stop(cache)
     end
 
+    @tag :slow
     test "returns correct histogram", %{db: db} do
       triples = [
         {1000, 100, 2000},
@@ -235,6 +237,7 @@ defmodule TripleStore.Statistics.CacheTest do
   # ===========================================================================
 
   describe "refresh/1" do
+    @tag :slow
     test "forces synchronous refresh", %{db: db} do
       :ok = Index.insert_triple(db, {1000, 100, 2000})
 
@@ -282,6 +285,7 @@ defmodule TripleStore.Statistics.CacheTest do
   # ===========================================================================
 
   describe "periodic refresh" do
+    @tag :slow
     test "automatically refreshes after interval", %{db: db} do
       :ok = Index.insert_triple(db, {1000, 100, 2000})
 
@@ -324,6 +328,7 @@ defmodule TripleStore.Statistics.CacheTest do
   # ===========================================================================
 
   describe "edge cases" do
+    @tag :slow
     test "handles large datasets", %{db: db} do
       # Insert 100 triples
       triples =
@@ -368,6 +373,7 @@ defmodule TripleStore.Statistics.CacheTest do
       Cache.stop(cache)
     end
 
+    @tag :slow
     test "handles concurrent access", %{db: db} do
       triples =
         for i <- 1..50 do

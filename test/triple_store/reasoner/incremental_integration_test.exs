@@ -52,14 +52,6 @@ defmodule TripleStore.Reasoner.IncrementalIntegrationTest do
     ])
   end
 
-  # Materializes the base ontology and returns the full fact set.
-  defp materialize_base(tbox, abox_facts \\ []) do
-    initial = Enum.reduce(abox_facts, tbox, &MapSet.put(&2, &1))
-    {:ok, rules} = ReasoningProfile.rules_for(:rdfs)
-    {:ok, all_facts, _stats} = SemiNaive.materialize_in_memory(rules, initial)
-    all_facts
-  end
-
   # ============================================================================
   # 4.6.2.1: Test add instance -> new type inferences derived
   # ============================================================================

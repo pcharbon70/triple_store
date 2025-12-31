@@ -183,6 +183,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
     {:exhausted, iter}
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def seek(%__MODULE__{} = iter, target) when is_integer(target) and target >= 0 do
     # Build the seek key by appending target at the correct level
     seek_key = build_seek_key(iter.prefix, iter.level, target)

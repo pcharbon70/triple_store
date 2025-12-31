@@ -331,8 +331,7 @@ defmodule TripleStore.Config.CompactionTest do
     test "returns list of metrics" do
       metrics = Compaction.monitoring_metrics()
 
-      assert is_list(metrics)
-      assert length(metrics) > 0
+      assert [_ | _] = metrics
     end
 
     test "each metric has required fields" do
@@ -371,8 +370,7 @@ defmodule TripleStore.Config.CompactionTest do
     test "returns list of indicators" do
       indicators = Compaction.lag_indicators()
 
-      assert is_list(indicators)
-      assert length(indicators) > 0
+      assert [_ | _] = indicators
     end
 
     test "each indicator has thresholds and action" do

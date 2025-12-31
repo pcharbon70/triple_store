@@ -8,8 +8,8 @@ defmodule TripleStore.HealthTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Health
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Health
 
   # Helper to create a mock store
   defp create_mock_store do

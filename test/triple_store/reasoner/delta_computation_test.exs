@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.VariableNames
 defmodule TripleStore.Reasoner.DeltaComputationTest do
   use ExUnit.Case, async: true
 
@@ -16,9 +17,9 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
   defp iri(suffix), do: {:iri, @ex <> suffix}
   defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp owl_sameAs, do: {:iri, @owl <> "sameAs"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
+  defp rdfs_sub_class_of, do: {:iri, @rdfs <> "subClassOf"}
+  defp owl_same_as, do: {:iri, @owl <> "sameAs"}
+  defp owl_transitive_property, do: {:iri, @owl <> "TransitiveProperty"}
 
   # Create a simple lookup function from a fact set
   defp make_lookup(facts) do
@@ -46,8 +47,8 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       all_facts =
         MapSet.new([
           {iri("alice"), rdf_type(), iri("Person")},
-          {iri("Person"), rdfs_subClassOf(), iri("Animal")},
-          {iri("Animal"), rdfs_subClassOf(), iri("Thing")}
+          {iri("Person"), rdfs_sub_class_of(), iri("Animal")},
+          {iri("Animal"), rdfs_sub_class_of(), iri("Thing")}
         ])
 
       # Delta: alice is a Person
@@ -78,7 +79,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       all_facts =
         MapSet.new([
           {iri("alice"), rdf_type(), iri("Person")},
-          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+          {iri("Person"), rdfs_sub_class_of(), iri("Animal")}
         ])
 
       delta =
@@ -158,7 +159,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     test "respects max_derivations limit" do
       # Create many facts that will derive many new triples
       persons = for i <- 1..200, do: {iri("person#{i}"), rdf_type(), iri("Human")}
-      hierarchy = [{iri("Human"), rdfs_subClassOf(), iri("Animal")}]
+      hierarchy = [{iri("Human"), rdfs_sub_class_of(), iri("Animal")}]
 
       all_facts = MapSet.new(persons ++ hierarchy)
       delta = MapSet.new(persons)
@@ -189,15 +190,15 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     test "applies subClassOf transitivity rule" do
       all_facts =
         MapSet.new([
-          {iri("A"), rdfs_subClassOf(), iri("B")},
-          {iri("B"), rdfs_subClassOf(), iri("C")},
-          {iri("C"), rdfs_subClassOf(), iri("D")}
+          {iri("A"), rdfs_sub_class_of(), iri("B")},
+          {iri("B"), rdfs_sub_class_of(), iri("C")},
+          {iri("C"), rdfs_sub_class_of(), iri("D")}
         ])
 
       # Delta: A subClassOf B (new fact)
       delta =
         MapSet.new([
-          {iri("A"), rdfs_subClassOf(), iri("B")}
+          {iri("A"), rdfs_sub_class_of(), iri("B")}
         ])
 
       existing = MapSet.new()
@@ -214,7 +215,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
         )
 
       # Should derive: A subClassOf C (via A->B->C)
-      assert MapSet.member?(new_facts, {iri("A"), rdfs_subClassOf(), iri("C")})
+      assert MapSet.member?(new_facts, {iri("A"), rdfs_sub_class_of(), iri("C")})
     end
 
     test "handles transitive property rule (prp_trp)" do
@@ -222,7 +223,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
       all_facts =
         MapSet.new([
-          {prop, rdf_type(), owl_TransitiveProperty()},
+          {prop, rdf_type(), owl_transitive_property()},
           {iri("box1"), prop, iri("box2")},
           {iri("box2"), prop, iri("box3")}
         ])
@@ -258,12 +259,12 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
     test "applies sameAs symmetry rule" do
       all_facts =
         MapSet.new([
-          {iri("alice"), owl_sameAs(), iri("alice_smith")}
+          {iri("alice"), owl_same_as(), iri("alice_smith")}
         ])
 
       delta =
         MapSet.new([
-          {iri("alice"), owl_sameAs(), iri("alice_smith")}
+          {iri("alice"), owl_same_as(), iri("alice_smith")}
         ])
 
       existing = MapSet.new()
@@ -280,19 +281,19 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
         )
 
       # Should derive: alice_smith sameAs alice
-      assert MapSet.member?(new_facts, {iri("alice_smith"), owl_sameAs(), iri("alice")})
+      assert MapSet.member?(new_facts, {iri("alice_smith"), owl_same_as(), iri("alice")})
     end
 
     test "applies sameAs transitivity rule" do
       all_facts =
         MapSet.new([
-          {iri("alice"), owl_sameAs(), iri("bob")},
-          {iri("bob"), owl_sameAs(), iri("charlie")}
+          {iri("alice"), owl_same_as(), iri("bob")},
+          {iri("bob"), owl_same_as(), iri("charlie")}
         ])
 
       delta =
         MapSet.new([
-          {iri("alice"), owl_sameAs(), iri("bob")}
+          {iri("alice"), owl_same_as(), iri("bob")}
         ])
 
       existing = MapSet.new()
@@ -309,7 +310,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
         )
 
       # Should derive: alice sameAs charlie
-      assert MapSet.member?(new_facts, {iri("alice"), owl_sameAs(), iri("charlie")})
+      assert MapSet.member?(new_facts, {iri("alice"), owl_same_as(), iri("charlie")})
     end
   end
 
@@ -355,7 +356,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
       facts =
         MapSet.new([
           {iri("alice"), rdf_type(), iri("Person")},
-          {iri("Person"), rdfs_subClassOf(), iri("Animal")}
+          {iri("Person"), rdfs_sub_class_of(), iri("Animal")}
         ])
 
       delta =
@@ -367,7 +368,7 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
 
       patterns = [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c1")),
-        Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c2"))
+        Rule.pattern(Rule.var("c1"), rdfs_sub_class_of(), Rule.var("c2"))
       ]
 
       lookup = make_lookup(facts)
@@ -558,14 +559,14 @@ defmodule TripleStore.Reasoner.DeltaComputationTest do
         MapSet.new([
           {iri("alice"), rdf_type(), iri("Student")},
           {iri("bob"), rdf_type(), iri("Student")},
-          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+          {iri("Student"), rdfs_sub_class_of(), iri("Person")}
         ])
 
       # Delta includes both a type assertion and a subclass assertion
       delta =
         MapSet.new([
           {iri("alice"), rdf_type(), iri("Student")},
-          {iri("Student"), rdfs_subClassOf(), iri("Person")}
+          {iri("Student"), rdfs_sub_class_of(), iri("Person")}
         ])
 
       existing = MapSet.new()

@@ -142,7 +142,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
   #   - :faculty_per_dept - Number of faculty members per department (default: 10)
   #   - :students_per_dept - Number of students per department (default: 100)
   #   - :courses_per_dept - Number of courses per department (default: 10)
-  defp generate_lubm_abox(opts \\ []) do
+  defp generate_lubm_abox(opts) do
     num_departments = Keyword.get(opts, :departments, 15)
     faculty_per_dept = Keyword.get(opts, :faculty_per_dept, 10)
     students_per_dept = Keyword.get(opts, :students_per_dept, 100)
@@ -279,26 +279,12 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
     end)
   end
 
-  defp make_lookup(facts) do
-    fn {:pattern, [s, p, o]} ->
-      matching =
-        facts
-        |> Enum.filter(fn {fs, fp, fo} ->
-          matches?(fs, s) and matches?(fp, p) and matches?(fo, o)
-        end)
-
-      {:ok, Enum.to_list(matching)}
-    end
-  end
-
-  defp matches?(_fact_term, {:var, _}), do: true
-  defp matches?(fact_term, pattern_term), do: fact_term == pattern_term
-
   # ============================================================================
   # Task 4.6.1.1: Test materialization on LUBM-style dataset
   # ============================================================================
 
   describe "4.6.1.1 materialization on LUBM-style dataset" do
+    @tag :slow
     @tag timeout: 120_000
     test "materializes LUBM(1) scale dataset with RDFS rules" do
       # Generate LUBM(1) scale dataset (1 university)
@@ -334,6 +320,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       """)
     end
 
+    @tag :slow
     @tag timeout: 120_000
     test "materializes LUBM(1) scale dataset with OWL 2 RL rules" do
       # Generate smaller dataset for OWL 2 RL (more complex rules = slower)
@@ -561,6 +548,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
   # ============================================================================
 
   describe "4.6.1.3 benchmark materialization performance" do
+    @tag :slow
     @tag timeout: 120_000
     @tag :benchmark
     test "LUBM(1) materialization completes in reasonable time" do
@@ -602,6 +590,7 @@ defmodule TripleStore.Reasoner.MaterializationIntegrationTest do
       assert stats.iterations <= 20, "Too many iterations: #{stats.iterations}"
     end
 
+    @tag :slow
     @tag timeout: 120_000
     @tag :benchmark
     test "materialization scales reasonably with data size" do

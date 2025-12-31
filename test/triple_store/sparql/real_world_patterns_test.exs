@@ -13,17 +13,17 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.SPARQL.{Query, PlanCache}
+  alias TripleStore.SPARQL.PlanCache
+  alias TripleStore.SPARQL.Query
   alias TripleStore.Update
 
-  import TripleStore.Test.IntegrationHelpers, only: [extract_count: 1, get_iri: 1]
+  import TripleStore.Test.IntegrationHelpers, only: [get_iri: 1]
 
   @moduletag :real_world_patterns
 
   @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
   @rdfs "http://www.w3.org/2000/01/rdf-schema#"
   @ex "http://example.org/"
-  @schema "http://schema.org/"
 
   setup do
     test_id = :erlang.unique_integer([:positive])

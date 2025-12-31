@@ -2,6 +2,8 @@ defmodule TripleStore.BackupTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backup
+  alias TripleStore.Dictionary.Manager, as: DictManager
+  alias TripleStore.Dictionary.SequenceCounter
 
   @moduletag :backup
 
@@ -134,6 +136,7 @@ defmodule TripleStore.BackupTest do
   end
 
   describe "verify/1" do
+    @tag :slow
     test "validates a correct backup", %{store: store, backup_dir: backup_dir} do
       backup_path = Path.join(backup_dir, "verify_test")
       {:ok, _} = Backup.create(store, backup_path)
@@ -157,6 +160,7 @@ defmodule TripleStore.BackupTest do
   end
 
   describe "list/1" do
+    @tag :slow
     test "lists all backups in directory", %{store: store, backup_dir: backup_dir} do
       # Create multiple backups
       for i <- 1..3 do
@@ -336,8 +340,8 @@ defmodule TripleStore.BackupTest do
       {:ok, _} = TripleStore.load_string(store, turtle, :turtle)
 
       # Get counter state before backup
-      {:ok, counter} = TripleStore.Dictionary.Manager.get_counter(store.dict_manager)
-      {:ok, original_counters} = TripleStore.Dictionary.SequenceCounter.export(counter)
+      {:ok, counter} = DictManager.get_counter(store.dict_manager)
+      {:ok, original_counters} = SequenceCounter.export(counter)
 
       # Create backup
       {:ok, _} = Backup.create(store, backup_path)
@@ -348,9 +352,9 @@ defmodule TripleStore.BackupTest do
 
       # Get restored counter state
       {:ok, restored_counter} =
-        TripleStore.Dictionary.Manager.get_counter(restored_store.dict_manager)
+        DictManager.get_counter(restored_store.dict_manager)
 
-      {:ok, restored_counters} = TripleStore.Dictionary.SequenceCounter.export(restored_counter)
+      {:ok, restored_counters} = SequenceCounter.export(restored_counter)
 
       # Restored counters should be at least original + safety_margin
       safety = TripleStore.Dictionary.safety_margin()

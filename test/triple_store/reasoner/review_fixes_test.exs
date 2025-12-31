@@ -14,11 +14,11 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
 
   alias TripleStore.Reasoner.{
     Namespaces,
-    SchemaInfo,
     Rule,
-    Rules,
     RuleCompiler,
     RuleOptimizer,
+    Rules,
+    SchemaInfo,
     Telemetry
   }
 
@@ -41,8 +41,8 @@ defmodule TripleStore.Reasoner.ReviewFixesTest do
 
     test "provides common IRI helpers" do
       assert Namespaces.rdf_type() == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-      assert Namespaces.rdfs_subClassOf() == "http://www.w3.org/2000/01/rdf-schema#subClassOf"
-      assert Namespaces.owl_sameAs() == "http://www.w3.org/2002/07/owl#sameAs"
+      assert Namespaces.rdfs_sub_class_of() == "http://www.w3.org/2000/01/rdf-schema#subClassOf"
+      assert Namespaces.owl_same_as() == "http://www.w3.org/2002/07/owl#sameAs"
     end
 
     test "extracts local name from hash-based IRI" do

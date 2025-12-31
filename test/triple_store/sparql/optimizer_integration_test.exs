@@ -16,10 +16,10 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
   import TripleStore.Test.IntegrationHelpers, only: [var: 1, triple: 3]
 
-  alias TripleStore.SPARQL.{Query, PlanCache, JoinEnumeration, CostModel}
-  alias TripleStore.Index
-  alias TripleStore.Dictionary.Manager
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
+  alias TripleStore.SPARQL.{CostModel, JoinEnumeration, PlanCache, Query}
 
   @moduletag :tmp_dir
 

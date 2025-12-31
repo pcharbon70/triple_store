@@ -21,7 +21,6 @@ defmodule TripleStore.APITestingTest do
 
   import TripleStore.Test.IntegrationHelpers,
     only: [
-      create_test_store: 0,
       create_test_store: 1,
       cleanup_test_store: 2,
       cleanup_test_path: 1
@@ -758,7 +757,7 @@ defmodule TripleStore.APITestingTest do
 
       try do
         # timeout option works
-        {:ok, _} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }", timeout: 10000)
+        {:ok, _} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }", timeout: 10_000)
 
         # optimize option works
         {:ok, _} = TripleStore.query(store, "SELECT * WHERE { ?s ?p ?o }", optimize: true)

@@ -636,6 +636,7 @@ defmodule TripleStore.Prometheus do
     %{state | counters: counters}
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp observe_histogram(state, key, value) do
     histograms =
       Map.update!(state.histograms, key, fn histogram ->

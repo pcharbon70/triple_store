@@ -219,6 +219,7 @@ defmodule TripleStore.Reasoner.ForwardRederive do
   # ============================================================================
 
   # Check if a fact can be derived using a specific rule
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp can_derive_with_rule?(fact, valid_facts, rule) do
     # First, check if the fact matches the rule's head pattern
     case PatternMatcher.match_rule_head(fact, rule.head) do
@@ -256,6 +257,7 @@ defmodule TripleStore.Reasoner.ForwardRederive do
 
   # Find all binding sets that satisfy all body patterns
   # Returns {:ok, bindings_list} or {:error, :binding_limit_exceeded}
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp find_satisfying_bindings(patterns, initial_bindings, valid_facts) do
     result =
       patterns

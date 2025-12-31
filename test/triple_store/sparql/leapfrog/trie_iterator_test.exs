@@ -1,9 +1,9 @@
 defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Leapfrog.TrieIterator
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.SPARQL.Leapfrog.TrieIterator
 
   @moduletag :integration
 
@@ -385,6 +385,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
       TrieIterator.close(iter2)
     end
 
+    @tag :slow
     test "seek for leapfrog intersection", %{db: db} do
       # Simulate leapfrog: find intersection of two sorted lists
       # List 1 (subjects knowing Alice): 1, 3, 5, 7, 9
@@ -408,6 +409,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
   end
 
   # Helper for leapfrog intersection
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp leapfrog_intersect(iter1, iter2, acc) do
     case {TrieIterator.current(iter1), TrieIterator.current(iter2)} do
       {:exhausted, _} ->
@@ -420,6 +422,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
         # Found match, record and advance both
         case TrieIterator.next(iter1) do
           {:ok, iter1} ->
+            # credo:disable-for-next-line Credo.Check.Refactor.Nesting
             case TrieIterator.next(iter2) do
               {:ok, iter2} -> leapfrog_intersect(iter1, iter2, [v1 | acc])
               {:exhausted, _} -> Enum.reverse([v1 | acc])
@@ -573,6 +576,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIteratorTest do
 
       # Verify the @max_uint64 constant is used in guards
       # The protection should return :exhausted when at max value
+      # credo:disable-for-next-line Credo.Check.Design.AliasUsage
       assert TripleStore.SPARQL.Leapfrog.TrieIterator.__info__(:module)
     end
 

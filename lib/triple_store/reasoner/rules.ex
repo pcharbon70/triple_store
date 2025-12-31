@@ -218,10 +218,10 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :scm_sco,
       [
-        Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c2")),
-        Rule.pattern(Rule.var("c2"), rdfs_subClassOf(), Rule.var("c3"))
+        Rule.pattern(Rule.var("c1"), rdfs_sub_class_of(), Rule.var("c2")),
+        Rule.pattern(Rule.var("c2"), rdfs_sub_class_of(), Rule.var("c3"))
       ],
-      Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c3")),
+      Rule.pattern(Rule.var("c1"), rdfs_sub_class_of(), Rule.var("c3")),
       description: "rdfs:subClassOf transitivity",
       profile: :rdfs
     )
@@ -237,10 +237,10 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :scm_spo,
       [
-        Rule.pattern(Rule.var("p1"), rdfs_subPropertyOf(), Rule.var("p2")),
-        Rule.pattern(Rule.var("p2"), rdfs_subPropertyOf(), Rule.var("p3"))
+        Rule.pattern(Rule.var("p1"), rdfs_sub_property_of(), Rule.var("p2")),
+        Rule.pattern(Rule.var("p2"), rdfs_sub_property_of(), Rule.var("p3"))
       ],
-      Rule.pattern(Rule.var("p1"), rdfs_subPropertyOf(), Rule.var("p3")),
+      Rule.pattern(Rule.var("p1"), rdfs_sub_property_of(), Rule.var("p3")),
       description: "rdfs:subPropertyOf transitivity",
       profile: :rdfs
     )
@@ -257,7 +257,7 @@ defmodule TripleStore.Reasoner.Rules do
       :cax_sco,
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c1")),
-        Rule.pattern(Rule.var("c1"), rdfs_subClassOf(), Rule.var("c2"))
+        Rule.pattern(Rule.var("c1"), rdfs_sub_class_of(), Rule.var("c2"))
       ],
       Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c2")),
       description: "Class membership through subclass",
@@ -275,7 +275,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_spo1,
       [
-        Rule.pattern(Rule.var("p1"), rdfs_subPropertyOf(), Rule.var("p2")),
+        Rule.pattern(Rule.var("p1"), rdfs_sub_property_of(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
       ],
       Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y")),
@@ -336,7 +336,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_trp,
       [
-        Rule.pattern(Rule.var("p"), rdf_type(), owl_TransitiveProperty()),
+        Rule.pattern(Rule.var("p"), rdf_type(), owl_transitive_property()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
         Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("z"))
       ],
@@ -356,7 +356,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_symp,
       [
-        Rule.pattern(Rule.var("p"), rdf_type(), owl_SymmetricProperty()),
+        Rule.pattern(Rule.var("p"), rdf_type(), owl_symmetric_property()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
       ],
       Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("x")),
@@ -375,7 +375,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_inv1,
       [
-        Rule.pattern(Rule.var("p1"), owl_inverseOf(), Rule.var("p2")),
+        Rule.pattern(Rule.var("p1"), owl_inverse_of(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
       ],
       Rule.pattern(Rule.var("y"), Rule.var("p2"), Rule.var("x")),
@@ -394,7 +394,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_inv2,
       [
-        Rule.pattern(Rule.var("p1"), owl_inverseOf(), Rule.var("p2")),
+        Rule.pattern(Rule.var("p1"), owl_inverse_of(), Rule.var("p2")),
         Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y"))
       ],
       Rule.pattern(Rule.var("y"), Rule.var("p1"), Rule.var("x")),
@@ -415,12 +415,12 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_fp,
       [
-        Rule.pattern(Rule.var("p"), rdf_type(), owl_FunctionalProperty()),
+        Rule.pattern(Rule.var("p"), rdf_type(), owl_functional_property()),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y1")),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y2")),
         Rule.not_equal(Rule.var("y1"), Rule.var("y2"))
       ],
-      Rule.pattern(Rule.var("y1"), owl_sameAs(), Rule.var("y2")),
+      Rule.pattern(Rule.var("y1"), owl_same_as(), Rule.var("y2")),
       description: "Functional property derives equality",
       profile: :owl2rl
     )
@@ -438,12 +438,12 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :prp_ifp,
       [
-        Rule.pattern(Rule.var("p"), rdf_type(), owl_InverseFunctionalProperty()),
+        Rule.pattern(Rule.var("p"), rdf_type(), owl_inverse_functional_property()),
         Rule.pattern(Rule.var("x1"), Rule.var("p"), Rule.var("y")),
         Rule.pattern(Rule.var("x2"), Rule.var("p"), Rule.var("y")),
         Rule.not_equal(Rule.var("x1"), Rule.var("x2"))
       ],
-      Rule.pattern(Rule.var("x1"), owl_sameAs(), Rule.var("x2")),
+      Rule.pattern(Rule.var("x1"), owl_same_as(), Rule.var("x2")),
       description: "Inverse functional property derives equality",
       profile: :owl2rl
     )
@@ -469,7 +469,7 @@ defmodule TripleStore.Reasoner.Rules do
         # Match any triple to find resources
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
       ],
-      Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("x")),
+      Rule.pattern(Rule.var("x"), owl_same_as(), Rule.var("x")),
       description: "owl:sameAs reflexivity (subject)",
       profile: :owl2rl
     )
@@ -485,9 +485,9 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :eq_sym,
       [
-        Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("y"))
+        Rule.pattern(Rule.var("x"), owl_same_as(), Rule.var("y"))
       ],
-      Rule.pattern(Rule.var("y"), owl_sameAs(), Rule.var("x")),
+      Rule.pattern(Rule.var("y"), owl_same_as(), Rule.var("x")),
       description: "owl:sameAs symmetry",
       profile: :owl2rl
     )
@@ -503,10 +503,10 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :eq_trans,
       [
-        Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("y")),
-        Rule.pattern(Rule.var("y"), owl_sameAs(), Rule.var("z"))
+        Rule.pattern(Rule.var("x"), owl_same_as(), Rule.var("y")),
+        Rule.pattern(Rule.var("y"), owl_same_as(), Rule.var("z"))
       ],
-      Rule.pattern(Rule.var("x"), owl_sameAs(), Rule.var("z")),
+      Rule.pattern(Rule.var("x"), owl_same_as(), Rule.var("z")),
       description: "owl:sameAs transitivity",
       profile: :owl2rl
     )
@@ -522,7 +522,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :eq_rep_s,
       [
-        Rule.pattern(Rule.var("s1"), owl_sameAs(), Rule.var("s2")),
+        Rule.pattern(Rule.var("s1"), owl_same_as(), Rule.var("s2")),
         Rule.pattern(Rule.var("s1"), Rule.var("p"), Rule.var("o"))
       ],
       Rule.pattern(Rule.var("s2"), Rule.var("p"), Rule.var("o")),
@@ -543,7 +543,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :eq_rep_p,
       [
-        Rule.pattern(Rule.var("p1"), owl_sameAs(), Rule.var("p2")),
+        Rule.pattern(Rule.var("p1"), owl_same_as(), Rule.var("p2")),
         Rule.pattern(Rule.var("s"), Rule.var("p1"), Rule.var("o"))
       ],
       Rule.pattern(Rule.var("s"), Rule.var("p2"), Rule.var("o")),
@@ -562,7 +562,7 @@ defmodule TripleStore.Reasoner.Rules do
     Rule.new(
       :eq_rep_o,
       [
-        Rule.pattern(Rule.var("o1"), owl_sameAs(), Rule.var("o2")),
+        Rule.pattern(Rule.var("o1"), owl_same_as(), Rule.var("o2")),
         Rule.pattern(Rule.var("s"), Rule.var("p"), Rule.var("o1"))
       ],
       Rule.pattern(Rule.var("s"), Rule.var("p"), Rule.var("o2")),
@@ -589,8 +589,8 @@ defmodule TripleStore.Reasoner.Rules do
       :cls_hv1,
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c")),
-        Rule.pattern(Rule.var("c"), owl_hasValue(), Rule.var("v")),
-        Rule.pattern(Rule.var("c"), owl_onProperty(), Rule.var("p"))
+        Rule.pattern(Rule.var("c"), owl_has_value(), Rule.var("v")),
+        Rule.pattern(Rule.var("c"), owl_on_property(), Rule.var("p"))
       ],
       Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("v")),
       description: "hasValue restriction infers property value",
@@ -612,8 +612,8 @@ defmodule TripleStore.Reasoner.Rules do
       :cls_hv2,
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("v")),
-        Rule.pattern(Rule.var("c"), owl_hasValue(), Rule.var("v")),
-        Rule.pattern(Rule.var("c"), owl_onProperty(), Rule.var("p"))
+        Rule.pattern(Rule.var("c"), owl_has_value(), Rule.var("v")),
+        Rule.pattern(Rule.var("c"), owl_on_property(), Rule.var("p"))
       ],
       Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("c")),
       description: "hasValue restriction infers class membership",
@@ -635,8 +635,8 @@ defmodule TripleStore.Reasoner.Rules do
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
         Rule.pattern(Rule.var("y"), rdf_type(), Rule.var("c")),
-        Rule.pattern(Rule.var("r"), owl_someValuesFrom(), Rule.var("c")),
-        Rule.pattern(Rule.var("r"), owl_onProperty(), Rule.var("p"))
+        Rule.pattern(Rule.var("r"), owl_some_values_from(), Rule.var("c")),
+        Rule.pattern(Rule.var("r"), owl_on_property(), Rule.var("p"))
       ],
       Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("r")),
       description: "someValuesFrom restriction infers class membership",
@@ -658,8 +658,8 @@ defmodule TripleStore.Reasoner.Rules do
       :cls_svf2,
       [
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
-        Rule.pattern(Rule.var("r"), owl_someValuesFrom(), owl_Thing()),
-        Rule.pattern(Rule.var("r"), owl_onProperty(), Rule.var("p"))
+        Rule.pattern(Rule.var("r"), owl_some_values_from(), owl_thing()),
+        Rule.pattern(Rule.var("r"), owl_on_property(), Rule.var("p"))
       ],
       Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("r")),
       description: "someValuesFrom owl:Thing restriction",
@@ -681,8 +681,8 @@ defmodule TripleStore.Reasoner.Rules do
       [
         Rule.pattern(Rule.var("x"), rdf_type(), Rule.var("r")),
         Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
-        Rule.pattern(Rule.var("r"), owl_allValuesFrom(), Rule.var("c")),
-        Rule.pattern(Rule.var("r"), owl_onProperty(), Rule.var("p"))
+        Rule.pattern(Rule.var("r"), owl_all_values_from(), Rule.var("c")),
+        Rule.pattern(Rule.var("r"), owl_on_property(), Rule.var("p"))
       ],
       Rule.pattern(Rule.var("y"), rdf_type(), Rule.var("c")),
       description: "allValuesFrom restriction infers value type",
@@ -695,20 +695,20 @@ defmodule TripleStore.Reasoner.Rules do
   # ============================================================================
 
   defp rdf_type, do: Rule.iri(@rdf <> "type")
-  defp rdfs_subClassOf, do: Rule.iri(@rdfs <> "subClassOf")
-  defp rdfs_subPropertyOf, do: Rule.iri(@rdfs <> "subPropertyOf")
+  defp rdfs_sub_class_of, do: Rule.iri(@rdfs <> "subClassOf")
+  defp rdfs_sub_property_of, do: Rule.iri(@rdfs <> "subPropertyOf")
   defp rdfs_domain, do: Rule.iri(@rdfs <> "domain")
   defp rdfs_range, do: Rule.iri(@rdfs <> "range")
 
-  defp owl_sameAs, do: Rule.iri(@owl <> "sameAs")
-  defp owl_TransitiveProperty, do: Rule.iri(@owl <> "TransitiveProperty")
-  defp owl_SymmetricProperty, do: Rule.iri(@owl <> "SymmetricProperty")
-  defp owl_inverseOf, do: Rule.iri(@owl <> "inverseOf")
-  defp owl_FunctionalProperty, do: Rule.iri(@owl <> "FunctionalProperty")
-  defp owl_InverseFunctionalProperty, do: Rule.iri(@owl <> "InverseFunctionalProperty")
-  defp owl_hasValue, do: Rule.iri(@owl <> "hasValue")
-  defp owl_onProperty, do: Rule.iri(@owl <> "onProperty")
-  defp owl_someValuesFrom, do: Rule.iri(@owl <> "someValuesFrom")
-  defp owl_allValuesFrom, do: Rule.iri(@owl <> "allValuesFrom")
-  defp owl_Thing, do: Rule.iri(@owl <> "Thing")
+  defp owl_same_as, do: Rule.iri(@owl <> "sameAs")
+  defp owl_transitive_property, do: Rule.iri(@owl <> "TransitiveProperty")
+  defp owl_symmetric_property, do: Rule.iri(@owl <> "SymmetricProperty")
+  defp owl_inverse_of, do: Rule.iri(@owl <> "inverseOf")
+  defp owl_functional_property, do: Rule.iri(@owl <> "FunctionalProperty")
+  defp owl_inverse_functional_property, do: Rule.iri(@owl <> "InverseFunctionalProperty")
+  defp owl_has_value, do: Rule.iri(@owl <> "hasValue")
+  defp owl_on_property, do: Rule.iri(@owl <> "onProperty")
+  defp owl_some_values_from, do: Rule.iri(@owl <> "someValuesFrom")
+  defp owl_all_values_from, do: Rule.iri(@owl <> "allValuesFrom")
+  defp owl_thing, do: Rule.iri(@owl <> "Thing")
 end

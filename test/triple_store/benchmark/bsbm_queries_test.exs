@@ -134,7 +134,7 @@ defmodule TripleStore.Benchmark.BSBMQueriesTest do
     end
 
     test "queries with parameters have no remaining placeholders after substitution" do
-      for query <- BSBMQueries.all(), length(query.params) > 0 do
+      for query <- BSBMQueries.all(), query.params != [] do
         {:ok, substituted} = BSBMQueries.get(query.id, [])
         refute String.contains?(substituted.sparql, "{product_type}")
         refute String.contains?(substituted.sparql, "{product}")

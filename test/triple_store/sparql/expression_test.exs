@@ -762,21 +762,21 @@ defmodule TripleStore.SPARQL.ExpressionTest do
     end
   end
 
-  describe "is_constant?/1" do
+  describe "constant?/1" do
     test "returns true for literal" do
-      assert Expression.is_constant?(int(42))
+      assert Expression.constant?(int(42))
     end
 
     test "returns true for constant expression" do
-      assert Expression.is_constant?({:add, int(1), int(2)})
+      assert Expression.constant?({:add, int(1), int(2)})
     end
 
     test "returns false for variable" do
-      refute Expression.is_constant?({:variable, "x"})
+      refute Expression.constant?({:variable, "x"})
     end
 
     test "returns false for expression with variable" do
-      refute Expression.is_constant?({:add, {:variable, "x"}, int(1)})
+      refute Expression.constant?({:add, {:variable, "x"}, int(1)})
     end
   end
 

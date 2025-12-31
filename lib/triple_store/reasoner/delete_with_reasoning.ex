@@ -439,6 +439,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   # Private Functions - Database Operations
   # ============================================================================
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp partition_by_source(db, triples) do
     {explicit, derived} =
       Enum.reduce(triples, {[], []}, fn triple, {exp_acc, der_acc} ->

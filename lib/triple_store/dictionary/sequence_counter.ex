@@ -294,11 +294,9 @@ defmodule TripleStore.Dictionary.SequenceCounter do
 
   # Safely decode binary to term
   defp safe_binary_to_term(content) do
-    try do
-      {:ok, :erlang.binary_to_term(content, [:safe])}
-    rescue
-      ArgumentError -> {:error, :invalid_format}
-    end
+    {:ok, :erlang.binary_to_term(content, [:safe])}
+  rescue
+    ArgumentError -> {:error, :invalid_format}
   end
 
   # Validate counter file structure

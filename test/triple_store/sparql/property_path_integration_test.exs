@@ -206,7 +206,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
       """
 
       {:ok, results} = Query.query(ctx, sparql)
-      assert length(results) == 0
+      assert Enum.empty?(results)
     end
   end
 
@@ -823,7 +823,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
       {:ok, results} = Query.query(ctx, sparql)
       # At least Thing
-      assert length(results) >= 1
+      assert not Enum.empty?(results)
     end
 
     test "path with no matching triples returns empty for one-or-more", %{ctx: ctx} do

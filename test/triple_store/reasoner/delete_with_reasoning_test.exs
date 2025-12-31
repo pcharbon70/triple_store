@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
+# credo:disable-for-this-file Credo.Check.Readability.VariableNames
 defmodule TripleStore.Reasoner.DeleteWithReasoningTest do
   use ExUnit.Case, async: true
 

@@ -80,18 +80,18 @@ defmodule TripleStore.Reasoner.RuleTest do
       assert cond == {:not_equal, {:var, "x"}, {:var, "y"}}
     end
 
-    test "is_iri/1 creates an is-IRI condition" do
-      cond = Rule.is_iri(Rule.var("x"))
+    test "iri?/1 creates an is-IRI condition" do
+      cond = Rule.iri?(Rule.var("x"))
       assert cond == {:is_iri, {:var, "x"}}
     end
 
-    test "is_blank/1 creates an is-blank condition" do
-      cond = Rule.is_blank(Rule.var("x"))
+    test "blank?/1 creates an is-blank condition" do
+      cond = Rule.blank?(Rule.var("x"))
       assert cond == {:is_blank, {:var, "x"}}
     end
 
-    test "is_literal/1 creates an is-literal condition" do
-      cond = Rule.is_literal(Rule.var("x"))
+    test "literal?/1 creates an is-literal condition" do
+      cond = Rule.literal?(Rule.var("x"))
       assert cond == {:is_literal, {:var, "x"}}
     end
 
@@ -110,12 +110,12 @@ defmodule TripleStore.Reasoner.RuleTest do
       assert Rule.rdf_type() == {:iri, "#{@rdf}type"}
     end
 
-    test "rdfs_subClassOf returns rdfs:subClassOf IRI" do
-      assert Rule.rdfs_subClassOf() == {:iri, "#{@rdfs}subClassOf"}
+    test "rdfs_sub_class_of returns rdfs:subClassOf IRI" do
+      assert Rule.rdfs_sub_class_of() == {:iri, "#{@rdfs}subClassOf"}
     end
 
-    test "rdfs_subPropertyOf returns rdfs:subPropertyOf IRI" do
-      assert Rule.rdfs_subPropertyOf() == {:iri, "#{@rdfs}subPropertyOf"}
+    test "rdfs_sub_property_of returns rdfs:subPropertyOf IRI" do
+      assert Rule.rdfs_sub_property_of() == {:iri, "#{@rdfs}subPropertyOf"}
     end
 
     test "rdfs_domain returns rdfs:domain IRI" do
@@ -126,20 +126,20 @@ defmodule TripleStore.Reasoner.RuleTest do
       assert Rule.rdfs_range() == {:iri, "#{@rdfs}range"}
     end
 
-    test "owl_sameAs returns owl:sameAs IRI" do
-      assert Rule.owl_sameAs() == {:iri, "#{@owl}sameAs"}
+    test "owl_same_as returns owl:sameAs IRI" do
+      assert Rule.owl_same_as() == {:iri, "#{@owl}sameAs"}
     end
 
-    test "owl_TransitiveProperty returns owl:TransitiveProperty IRI" do
-      assert Rule.owl_TransitiveProperty() == {:iri, "#{@owl}TransitiveProperty"}
+    test "owl_transitive_property returns owl:TransitiveProperty IRI" do
+      assert Rule.owl_transitive_property() == {:iri, "#{@owl}TransitiveProperty"}
     end
 
-    test "owl_SymmetricProperty returns owl:SymmetricProperty IRI" do
-      assert Rule.owl_SymmetricProperty() == {:iri, "#{@owl}SymmetricProperty"}
+    test "owl_symmetric_property returns owl:SymmetricProperty IRI" do
+      assert Rule.owl_symmetric_property() == {:iri, "#{@owl}SymmetricProperty"}
     end
 
-    test "owl_inverseOf returns owl:inverseOf IRI" do
-      assert Rule.owl_inverseOf() == {:iri, "#{@owl}inverseOf"}
+    test "owl_inverse_of returns owl:inverseOf IRI" do
+      assert Rule.owl_inverse_of() == {:iri, "#{@owl}inverseOf"}
     end
   end
 
@@ -151,7 +151,7 @@ defmodule TripleStore.Reasoner.RuleTest do
     test "creates a rule with required fields" do
       body = [
         Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c1")),
-        Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2"))
+        Rule.pattern(Rule.var("c1"), Rule.rdfs_sub_class_of(), Rule.var("c2"))
       ]
 
       head = Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c2"))
@@ -294,7 +294,7 @@ defmodule TripleStore.Reasoner.RuleTest do
           [
             Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
             Rule.not_equal(Rule.var("x"), Rule.var("y")),
-            Rule.is_iri(Rule.var("x"))
+            Rule.iri?(Rule.var("x"))
           ],
           Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
         )
@@ -350,7 +350,7 @@ defmodule TripleStore.Reasoner.RuleTest do
     test "returns only conditions from body" do
       p1 = Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y"))
       c1 = Rule.not_equal(Rule.var("x"), Rule.var("y"))
-      c2 = Rule.is_iri(Rule.var("x"))
+      c2 = Rule.iri?(Rule.var("x"))
 
       rule =
         Rule.new(
@@ -477,58 +477,58 @@ defmodule TripleStore.Reasoner.RuleTest do
       assert Rule.evaluate_condition(cond, binding) == false
     end
 
-    test "is_iri returns true for IRI" do
+    test "iri? returns true for IRI" do
       binding = %{"x" => {:iri, "#{@ex}a"}}
-      cond = Rule.is_iri(Rule.var("x"))
+      cond = Rule.iri?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == true
     end
 
-    test "is_iri returns false for literal" do
+    test "iri? returns false for literal" do
       binding = %{"x" => {:literal, :simple, "hello"}}
-      cond = Rule.is_iri(Rule.var("x"))
+      cond = Rule.iri?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == false
     end
 
-    test "is_blank returns true for blank node" do
+    test "blank? returns true for blank node" do
       binding = %{"x" => {:blank_node, "b1"}}
-      cond = Rule.is_blank(Rule.var("x"))
+      cond = Rule.blank?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == true
     end
 
-    test "is_blank returns false for IRI" do
+    test "blank? returns false for IRI" do
       binding = %{"x" => {:iri, "#{@ex}a"}}
-      cond = Rule.is_blank(Rule.var("x"))
+      cond = Rule.blank?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == false
     end
 
-    test "is_literal returns true for simple literal" do
+    test "literal? returns true for simple literal" do
       binding = %{"x" => {:literal, :simple, "hello"}}
-      cond = Rule.is_literal(Rule.var("x"))
+      cond = Rule.literal?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == true
     end
 
-    test "is_literal returns true for typed literal" do
+    test "literal? returns true for typed literal" do
       binding = %{"x" => {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}}
-      cond = Rule.is_literal(Rule.var("x"))
+      cond = Rule.literal?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == true
     end
 
-    test "is_literal returns true for lang literal" do
+    test "literal? returns true for lang literal" do
       binding = %{"x" => {:literal, :lang, "hello", "en"}}
-      cond = Rule.is_literal(Rule.var("x"))
+      cond = Rule.literal?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == true
     end
 
-    test "is_literal returns false for IRI" do
+    test "literal? returns false for IRI" do
       binding = %{"x" => {:iri, "#{@ex}a"}}
-      cond = Rule.is_literal(Rule.var("x"))
+      cond = Rule.literal?(Rule.var("x"))
 
       assert Rule.evaluate_condition(cond, binding) == false
     end
@@ -563,7 +563,7 @@ defmodule TripleStore.Reasoner.RuleTest do
           [
             Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
             Rule.not_equal(Rule.var("x"), Rule.var("y")),
-            Rule.is_iri(Rule.var("x"))
+            Rule.iri?(Rule.var("x"))
           ],
           Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
         )
@@ -581,7 +581,7 @@ defmodule TripleStore.Reasoner.RuleTest do
             Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}p"), Rule.var("y")),
             Rule.not_equal(Rule.var("x"), Rule.var("y")),
             # This will fail
-            Rule.is_literal(Rule.var("x"))
+            Rule.literal?(Rule.var("x"))
           ],
           Rule.pattern(Rule.var("x"), Rule.iri("#{@ex}q"), Rule.var("y"))
         )
@@ -617,7 +617,7 @@ defmodule TripleStore.Reasoner.RuleTest do
           :cax_sco,
           [
             Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c1")),
-            Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2"))
+            Rule.pattern(Rule.var("c1"), Rule.rdfs_sub_class_of(), Rule.var("c2"))
           ],
           Rule.pattern(Rule.var("x"), Rule.rdf_type(), Rule.var("c2")),
           description: "Class membership through subclass",
@@ -636,10 +636,10 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :scm_sco,
           [
-            Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c2")),
-            Rule.pattern(Rule.var("c2"), Rule.rdfs_subClassOf(), Rule.var("c3"))
+            Rule.pattern(Rule.var("c1"), Rule.rdfs_sub_class_of(), Rule.var("c2")),
+            Rule.pattern(Rule.var("c2"), Rule.rdfs_sub_class_of(), Rule.var("c3"))
           ],
-          Rule.pattern(Rule.var("c1"), Rule.rdfs_subClassOf(), Rule.var("c3")),
+          Rule.pattern(Rule.var("c1"), Rule.rdfs_sub_class_of(), Rule.var("c3")),
           description: "rdfs:subClassOf transitivity",
           profile: :rdfs
         )
@@ -655,7 +655,7 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :prp_trp,
           [
-            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_TransitiveProperty()),
+            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_transitive_property()),
             Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y")),
             Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("z"))
           ],
@@ -675,7 +675,7 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :prp_symp,
           [
-            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_SymmetricProperty()),
+            Rule.pattern(Rule.var("p"), Rule.rdf_type(), Rule.owl_symmetric_property()),
             Rule.pattern(Rule.var("x"), Rule.var("p"), Rule.var("y"))
           ],
           Rule.pattern(Rule.var("y"), Rule.var("p"), Rule.var("x")),
@@ -731,8 +731,8 @@ defmodule TripleStore.Reasoner.RuleTest do
       rule =
         Rule.new(
           :eq_sym,
-          [Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y"))],
-          Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("x")),
+          [Rule.pattern(Rule.var("x"), Rule.owl_same_as(), Rule.var("y"))],
+          Rule.pattern(Rule.var("y"), Rule.owl_same_as(), Rule.var("x")),
           description: "owl:sameAs symmetry",
           profile: :owl2rl
         )
@@ -748,10 +748,10 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :eq_trans,
           [
-            Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
-            Rule.pattern(Rule.var("y"), Rule.owl_sameAs(), Rule.var("z"))
+            Rule.pattern(Rule.var("x"), Rule.owl_same_as(), Rule.var("y")),
+            Rule.pattern(Rule.var("y"), Rule.owl_same_as(), Rule.var("z"))
           ],
-          Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("z")),
+          Rule.pattern(Rule.var("x"), Rule.owl_same_as(), Rule.var("z")),
           description: "owl:sameAs transitivity",
           profile: :owl2rl
         )
@@ -767,7 +767,7 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :prp_inv1,
           [
-            Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
+            Rule.pattern(Rule.var("p1"), Rule.owl_inverse_of(), Rule.var("p2")),
             Rule.pattern(Rule.var("x"), Rule.var("p1"), Rule.var("y"))
           ],
           Rule.pattern(Rule.var("y"), Rule.var("p2"), Rule.var("x")),
@@ -786,7 +786,7 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :prp_inv2,
           [
-            Rule.pattern(Rule.var("p1"), Rule.owl_inverseOf(), Rule.var("p2")),
+            Rule.pattern(Rule.var("p1"), Rule.owl_inverse_of(), Rule.var("p2")),
             Rule.pattern(Rule.var("x"), Rule.var("p2"), Rule.var("y"))
           ],
           Rule.pattern(Rule.var("y"), Rule.var("p1"), Rule.var("x")),
@@ -806,10 +806,10 @@ defmodule TripleStore.Reasoner.RuleTest do
         Rule.new(
           :example_with_condition,
           [
-            Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
+            Rule.pattern(Rule.var("x"), Rule.owl_same_as(), Rule.var("y")),
             Rule.not_equal(Rule.var("x"), Rule.var("y"))
           ],
-          Rule.pattern(Rule.var("x"), Rule.owl_sameAs(), Rule.var("y")),
+          Rule.pattern(Rule.var("x"), Rule.owl_same_as(), Rule.var("y")),
           description: "Example rule with not_equal condition"
         )
 

@@ -14,13 +14,13 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
   import TripleStore.Test.IntegrationHelpers, only: [extract_count: 1, ast_to_rdf: 1]
 
-  alias TripleStore.Transaction
-  alias TripleStore.Update
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager, as: DictManager
-  alias TripleStore.SPARQL.Query
   alias TripleStore.SPARQL.PlanCache
+  alias TripleStore.SPARQL.Query
   alias TripleStore.SPARQL.UpdateExecutor
+  alias TripleStore.Transaction
+  alias TripleStore.Update
 
   @moduletag :update_integration
 
@@ -135,7 +135,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
           }
         """)
 
-      assert length(results2) == 0
+      assert Enum.empty?(results2)
 
       Transaction.stop(txn)
     end
@@ -308,7 +308,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         """)
 
       {:ok, active_results} = Query.execute(ctx, prepared1)
-      assert length(active_results) == 0
+      assert Enum.empty?(active_results)
 
       # Verify archived status exists
       {:ok, prepared2} =
@@ -644,7 +644,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         """)
 
       {:ok, v1_results} = Query.execute(ctx, prep1)
-      assert length(v1_results) == 0
+      assert Enum.empty?(v1_results)
 
       # Verify all docs now have version "2"
       {:ok, prep2} =
@@ -697,7 +697,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         """)
 
       {:ok, knows_alice} = Query.execute(ctx, prep1)
-      assert length(knows_alice) == 0
+      assert Enum.empty?(knows_alice)
 
       # Verify: alice "knownBy" bob and charlie
       {:ok, prep2} =
@@ -767,6 +767,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   # extract_count/1 and ast_to_rdf/1 imported from IntegrationHelpers
 
   describe "concurrent queries during update see consistent state (Task 3.5.2.2)" do
+    @tag :slow
     test "multiple readers see consistent snapshots during heavy writes", %{
       db: db,
       manager: manager
@@ -955,6 +956,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   # ---------------------------------------------------------------------------
 
   describe "large batch updates (10K+ triples)" do
+    @tag :slow
     @tag timeout: 120_000
     test "insert 10K triples in single batch", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
@@ -986,6 +988,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       assert result_count == 10_000
     end
 
+    @tag :slow
     @tag timeout: 120_000
     test "delete 10K triples via DELETE WHERE", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
@@ -1022,7 +1025,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         """)
 
       {:ok, results} = Query.execute(ctx, prepared)
-      assert length(results) == 0
+      assert Enum.empty?(results)
     end
 
     @tag timeout: 120_000
@@ -1082,9 +1085,10 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
         """)
 
       {:ok, pending_results} = Query.execute(ctx, prep2)
-      assert length(pending_results) == 0
+      assert Enum.empty?(pending_results)
     end
 
+    @tag :slow
     @tag timeout: 120_000
     test "chunked insert of 50K triples", %{db: db, manager: manager} do
       ctx = %{db: db, dict_manager: manager}
@@ -1127,11 +1131,9 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
   # ---------------------------------------------------------------------------
 
   describe "update with inference implications (prepare for Phase 4)" do
-    @moduledoc """
-    These tests verify that the update system provides hooks and patterns
-    that will support reasoning in Phase 4. They don't implement actual
-    inference but ensure the infrastructure is ready.
-    """
+    # These tests verify that the update system provides hooks and patterns
+    # that will support reasoning in Phase 4. They don't implement actual
+    # inference but ensure the infrastructure is ready.
 
     test "updates can track which triples were added for forward chaining", %{
       db: db,
@@ -1200,7 +1202,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
       {:ok, results} = Query.execute(ctx, prep)
       # With broken link, no transitive superclasses
-      assert length(results) == 0
+      assert Enum.empty?(results)
     end
 
     test "MODIFY pattern suitable for materialization updates", %{db: db, manager: manager} do
@@ -1539,7 +1541,7 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
 
       # No triples should exist
       {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
-      assert length(results) == 0
+      assert Enum.empty?(results)
 
       Transaction.stop(txn)
     end

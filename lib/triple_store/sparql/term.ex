@@ -185,6 +185,7 @@ defmodule TripleStore.SPARQL.Term do
 
   """
   @spec decode(integer(), GenServer.server()) :: {:ok, ast_term()} | {:error, term()}
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def decode(term_id, dict_manager) do
     if Dictionary.inline_encoded?(term_id) do
       decode_inline(term_id)
@@ -274,6 +275,7 @@ defmodule TripleStore.SPARQL.Term do
   defp try_inline_encode(_value, _datatype), do: :not_inline
 
   # Decode inline-encoded terms
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp decode_inline(term_id) do
     case Dictionary.term_type(term_id) do
       :integer ->

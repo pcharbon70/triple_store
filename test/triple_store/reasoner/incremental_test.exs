@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.IncrementalTest do
   use ExUnit.Case, async: true
 
@@ -16,9 +17,7 @@ defmodule TripleStore.Reasoner.IncrementalTest do
   defp iri(suffix), do: {:iri, @ex <> suffix}
   defp rdf_type, do: {:iri, @rdf <> "type"}
   defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
   defp owl_sameAs, do: {:iri, @owl <> "sameAs"}
-  defp owl_TransitiveProperty, do: {:iri, @owl <> "TransitiveProperty"}
 
   # ============================================================================
   # Tests: add_in_memory/4 - Basic Functionality

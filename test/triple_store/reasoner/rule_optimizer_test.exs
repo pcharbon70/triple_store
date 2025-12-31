@@ -271,7 +271,7 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       batches = RuleOptimizer.batch_rules(rules)
 
       batch = hd(batches)
-      assert length(batch.shared_patterns) >= 1
+      assert batch.shared_patterns != []
       assert shared_pattern in batch.shared_patterns
     end
 
@@ -322,7 +322,7 @@ defmodule TripleStore.Reasoner.RuleOptimizerTest do
       shareable = RuleOptimizer.find_shareable_rules(rules)
 
       # r1 and r2 share the common pattern
-      assert length(shareable) >= 1
+      assert shareable != []
 
       {rule1, rule2, shared} = hd(shareable)
       assert rule1.name in [:r1, :r2]

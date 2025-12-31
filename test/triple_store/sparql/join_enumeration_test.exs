@@ -521,7 +521,7 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
   defp check_all_joins_connected({:scan, _}), do: true
   defp check_all_joins_connected({:leapfrog, _, _}), do: true
 
-  defp check_all_joins_connected({:join, _strategy, left, right, vars}) do
+  defp check_all_joins_connected({:join, _strategy, left, right, _vars}) do
     # Empty vars means Cartesian product - but we allow it as fallback
     check_all_joins_connected(left) and check_all_joins_connected(right)
   end

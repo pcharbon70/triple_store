@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.BackwardTraceTest do
   use ExUnit.Case, async: true
 

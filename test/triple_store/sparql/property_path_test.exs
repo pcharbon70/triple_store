@@ -714,7 +714,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       results = collect_results(stream)
 
       # alice knows+ alice requires at least one step and path back
-      assert length(results) == 0
+      assert results == []
     end
 
     test "reverse - object bound, subject unbound", %{ctx: ctx} do
@@ -809,7 +809,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       results = collect_results(stream)
 
       # Charlie is 2 steps from alice, so no match
-      assert length(results) == 0
+      assert results == []
     end
 
     test "reverse - object bound, subject unbound", %{ctx: ctx} do
@@ -1068,7 +1068,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
       results = collect_results(stream)
 
       # No path from a to d
-      assert length(results) == 0
+      assert results == []
     end
 
     test "bidirectional search handles cycle correctly", %{ctx: ctx} do

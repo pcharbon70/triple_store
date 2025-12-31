@@ -944,13 +944,12 @@ defmodule TripleStore.Query.Cache do
   defp estimate_entry_memory(result) do
     # Use :erlang.external_size for a rough estimate without actually serializing
     # This is faster than term_to_binary and gives a reasonable approximation
-    try do
-      :erlang.external_size(result)
-    rescue
-      _ -> 0
-    end
+    :erlang.external_size(result)
+  rescue
+    _ -> 0
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evict_until_memory_available(state, needed_bytes) do
     if state.current_memory_bytes + needed_bytes <= state.max_memory_bytes do
       state
@@ -1100,28 +1099,26 @@ defmodule TripleStore.Query.Cache do
   defp validate_persistence_path(state, path) when is_binary(path) do
     expanded_path = Path.expand(path)
 
-    cond do
+    if state.allowed_persistence_dir != nil do
       # If allowed_persistence_dir is configured, path must be within it
-      state.allowed_persistence_dir != nil ->
-        allowed_dir = Path.expand(state.allowed_persistence_dir)
+      allowed_dir = Path.expand(state.allowed_persistence_dir)
 
-        if String.starts_with?(expanded_path, allowed_dir <> "/") or expanded_path == allowed_dir do
-          {:ok, expanded_path}
-        else
-          Logger.warning(
-            "Path traversal attempt blocked: #{path} is not within #{state.allowed_persistence_dir}"
-          )
-
-          {:error, :path_not_allowed}
-        end
-
-      # If no restriction, allow any valid absolute path (but warn in logs)
-      true ->
-        Logger.debug(
-          "Persistence path used without allowed_persistence_dir restriction: #{expanded_path}"
+      if String.starts_with?(expanded_path, allowed_dir <> "/") or expanded_path == allowed_dir do
+        {:ok, expanded_path}
+      else
+        Logger.warning(
+          "Path traversal attempt blocked: #{path} is not within #{state.allowed_persistence_dir}"
         )
 
-        {:ok, expanded_path}
+        {:error, :path_not_allowed}
+      end
+    else
+      # If no restriction, allow any valid absolute path (but warn in logs)
+      Logger.debug(
+        "Persistence path used without allowed_persistence_dir restriction: #{expanded_path}"
+      )
+
+      {:ok, expanded_path}
     end
   end
 
@@ -1195,10 +1192,6 @@ defmodule TripleStore.Query.Cache do
   defp load_entries_from_data(_state, %{version: version}) when is_integer(version) do
     Logger.warning("Unsupported cache file version: #{version}")
     {:error, {:unsupported_version, version}}
-  end
-
-  defp load_entries_from_data(_state, _data) do
-    {:error, :invalid_format}
   end
 
   # ===========================================================================

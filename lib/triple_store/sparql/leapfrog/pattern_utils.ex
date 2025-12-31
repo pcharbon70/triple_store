@@ -155,9 +155,9 @@ defmodule TripleStore.SPARQL.Leapfrog.PatternUtils do
   - `false` if the term is a variable
 
   """
-  @spec is_constant?(term()) :: boolean()
-  def is_constant?({:variable, _}), do: false
-  def is_constant?(_), do: true
+  @spec constant?(term()) :: boolean()
+  def constant?({:variable, _}), do: false
+  def constant?(_), do: true
 
   @doc """
   Checks if a term is bound (either a constant or a bound variable).
@@ -173,14 +173,14 @@ defmodule TripleStore.SPARQL.Leapfrog.PatternUtils do
   - `false` otherwise
 
   """
-  @spec is_bound_or_const?(term(), MapSet.t(variable())) :: boolean()
-  def is_bound_or_const?({:variable, name}, bound_vars), do: MapSet.member?(bound_vars, name)
-  def is_bound_or_const?({:named_node, _}, _), do: true
-  def is_bound_or_const?({:literal, _, _}, _), do: true
-  def is_bound_or_const?({:literal, _, _, _}, _), do: true
-  def is_bound_or_const?({:blank_node, _}, _), do: true
-  def is_bound_or_const?(id, _) when is_integer(id), do: true
-  def is_bound_or_const?(_, _), do: false
+  @spec bound_or_const?(term(), MapSet.t(variable())) :: boolean()
+  def bound_or_const?({:variable, name}, bound_vars), do: MapSet.member?(bound_vars, name)
+  def bound_or_const?({:named_node, _}, _), do: true
+  def bound_or_const?({:literal, _, _}, _), do: true
+  def bound_or_const?({:literal, _, _, _}, _), do: true
+  def bound_or_const?({:blank_node, _}, _), do: true
+  def bound_or_const?(id, _) when is_integer(id), do: true
+  def bound_or_const?(_, _), do: false
 
   @doc """
   Gets the value of a term (constant or from bindings).

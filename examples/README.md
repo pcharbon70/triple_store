@@ -2,18 +2,39 @@
 
 This directory contains example scripts demonstrating how to use TripleStore to analyze codebases represented as RDF knowledge graphs.
 
-## Prerequisites
+## Quick Start
 
-Before running these scripts, load the sample data:
+Just run the examples - the script handles data loading automatically:
 
 ```bash
-mix run -e '
-{:ok, store} = TripleStore.open("./tmp/ash_data")
-{:ok, count} = TripleStore.load(store, "examples/ash.ttl")
-IO.puts("Loaded #{count} triples")
-TripleStore.close(store)
-'
+./examples/run_all.sh
 ```
+
+On first run, it will prompt you to load the sample data (~313k triples from the Ash Framework codebase). This takes about 20 seconds.
+
+## Usage
+
+```bash
+# Run all examples
+./examples/run_all.sh
+
+# Run a specific example
+./examples/run_all.sh hub_modules.exs
+
+# List available examples
+./examples/run_all.sh --list
+
+# Check data status
+./examples/run_all.sh --status
+
+# Load/reload data manually
+./examples/run_all.sh --load
+
+# Show help
+./examples/run_all.sh --help
+```
+
+## Sample Data
 
 The `ash.ttl` file contains an RDF representation of the [Ash Framework](https://ash-hq.org/) codebase, including modules, functions, types, and call relationships.
 

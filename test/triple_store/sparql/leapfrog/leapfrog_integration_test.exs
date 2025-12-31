@@ -10,10 +10,10 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Leapfrog.MultiLevel
-  alias TripleStore.SPARQL.JoinEnumeration
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
+  alias TripleStore.SPARQL.JoinEnumeration
+  alias TripleStore.SPARQL.Leapfrog.MultiLevel
 
   @moduletag :integration
 
@@ -65,6 +65,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
       {:ok, stream} ->
         stream
         |> Enum.flat_map(fn {s_id, p_id, o_id} ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           case extend_binding(binding, s, p, o, s_id, p_id, o_id) do
             {:ok, new_binding} -> [new_binding]
             :mismatch -> []
@@ -87,9 +88,8 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
   defp extend_binding(binding, s, p, o, s_id, p_id, o_id) do
     with {:ok, b1} <- bind_var(binding, s, s_id),
-         {:ok, b2} <- bind_var(b1, p, p_id),
-         {:ok, b3} <- bind_var(b2, o, o_id) do
-      {:ok, b3}
+         {:ok, b2} <- bind_var(b1, p, p_id) do
+      bind_var(b2, o, o_id)
     end
   end
 
@@ -574,7 +574,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
       stats = %{
         triple_count: 100_000,
-        predicate_counts: %{10 => 10000}
+        predicate_counts: %{10 => 10_000}
       }
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, stats)
@@ -595,7 +595,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
       stats = %{
         triple_count: 100_000,
-        predicate_counts: %{10 => 10000}
+        predicate_counts: %{10 => 10_000}
       }
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, stats)
@@ -619,7 +619,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
       stats = %{
         triple_count: 1_000_000,
-        predicate_counts: Enum.into(1..8, %{}, fn i -> {i * 10, 10000} end)
+        predicate_counts: Enum.into(1..8, %{}, fn i -> {i * 10, 10_000} end)
       }
 
       {:ok, plan} = JoinEnumeration.enumerate(patterns, stats)

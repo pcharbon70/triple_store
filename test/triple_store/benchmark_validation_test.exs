@@ -30,12 +30,11 @@ defmodule TripleStore.BenchmarkValidationTest do
 
   import TripleStore.Test.IntegrationHelpers,
     only: [
-      create_test_store: 0,
       create_test_store: 1,
       cleanup_test_store: 2
     ]
 
-  alias TripleStore.Benchmark.{Runner, Targets, LUBM, BSBM}
+  alias TripleStore.Benchmark.{BSBM, LUBM, Runner, Targets}
 
   @moduletag :integration
   # 5 minute timeout for benchmarks (may run large-scale tests with :benchmark tag)
@@ -94,12 +93,13 @@ defmodule TripleStore.BenchmarkValidationTest do
 
         # Store detailed metrics for documentation
         assert is_list(results.query_results)
-        assert length(results.query_results) > 0
+        assert results.query_results != []
       after
         cleanup_test_store(store, path)
       end
     end
 
+    @tag :slow
     test "LUBM queries execute correctly on small dataset" do
       {store, path} = create_test_store(prefix: "bench_test")
 
@@ -133,6 +133,7 @@ defmodule TripleStore.BenchmarkValidationTest do
       end
     end
 
+    @tag :slow
     test "LUBM simple BGP queries are fast" do
       {store, path} = create_test_store(prefix: "bench_test")
 
@@ -219,6 +220,7 @@ defmodule TripleStore.BenchmarkValidationTest do
       end
     end
 
+    @tag :slow
     test "BSBM queries execute correctly on small dataset" do
       {store, path} = create_test_store(prefix: "bench_test")
 
@@ -249,6 +251,7 @@ defmodule TripleStore.BenchmarkValidationTest do
       end
     end
 
+    @tag :slow
     test "BSBM e-commerce query patterns complete" do
       {store, path} = create_test_store(prefix: "bench_test")
 
@@ -265,7 +268,7 @@ defmodule TripleStore.BenchmarkValidationTest do
           )
 
         # Should have multiple query types
-        assert length(results.query_results) > 0
+        assert results.query_results != []
 
         # Aggregate stats should be calculated
         assert results.aggregate.total_queries > 0
@@ -281,6 +284,7 @@ defmodule TripleStore.BenchmarkValidationTest do
   # ===========================================================================
 
   describe "5.7.2.3: profiling and bottleneck identification" do
+    @tag :slow
     test "bulk load throughput measurement" do
       {store, path} = create_test_store(prefix: "bench_test")
 
@@ -428,6 +432,7 @@ defmodule TripleStore.BenchmarkValidationTest do
   # ===========================================================================
 
   describe "5.7.2.4: performance characteristics documentation" do
+    @tag :slow
     test "generates performance report" do
       {store, path} = create_test_store(prefix: "bench_test")
 

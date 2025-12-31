@@ -23,7 +23,6 @@ defmodule TripleStore.FullSystemIntegrationTest do
 
   import TripleStore.Test.IntegrationHelpers,
     only: [
-      create_test_store: 0,
       create_test_store: 1,
       cleanup_test_store: 2,
       cleanup_test_path: 1,
@@ -67,6 +66,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
   # ===========================================================================
 
   describe "5.7.1.1: load -> query -> update -> query cycle" do
+    @tag :slow
     test "complete CRUD cycle with Turtle data" do
       {store, path} = create_test_store(prefix: "fsi_test")
 
@@ -151,6 +151,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
       end
     end
 
+    @tag :slow
     test "load from RDF.Graph, query, insert, query cycle" do
       {store, path} = create_test_store(prefix: "fsi_test")
 
@@ -209,6 +210,7 @@ defmodule TripleStore.FullSystemIntegrationTest do
       end
     end
 
+    @tag :slow
     test "multiple update cycles maintain data integrity" do
       {store, path} = create_test_store(prefix: "fsi_test")
 

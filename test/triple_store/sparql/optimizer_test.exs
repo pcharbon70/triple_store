@@ -1,8 +1,8 @@
 defmodule TripleStore.SPARQL.OptimizerTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.Algebra
+  alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.Parser
 
   @xsd_integer "http://www.w3.org/2001/XMLSchema#integer"
@@ -1134,7 +1134,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       stats = %{
         {:predicate_count, "http://ex.org/rare"} => 5,
-        {:predicate_count, "http://ex.org/common"} => 50000
+        {:predicate_count, "http://ex.org/common"} => 50_000
       }
 
       result = Optimizer.reorder_bgp_patterns({:bgp, [common_pred, rare_pred]}, stats)
@@ -1202,7 +1202,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       pattern = triple(var("s"), iri("http://ex.org/rare"), var("o"))
 
       stats_rare = %{{:predicate_count, "http://ex.org/rare"} => 5}
-      stats_common = %{{:predicate_count, "http://ex.org/rare"} => 50000}
+      stats_common = %{{:predicate_count, "http://ex.org/rare"} => 50_000}
 
       score_rare = Optimizer.estimate_selectivity(pattern, MapSet.new(), stats_rare)
       score_common = Optimizer.estimate_selectivity(pattern, MapSet.new(), stats_common)
@@ -1380,7 +1380,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       stats = %{
         {:predicate_count, "http://ex.org/rare"} => 5,
-        {:predicate_count, "http://ex.org/common"} => 50000
+        {:predicate_count, "http://ex.org/common"} => 50_000
       }
 
       result = Optimizer.optimize({:bgp, [common_pred, rare_pred]}, stats: stats)

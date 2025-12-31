@@ -1,7 +1,7 @@
 defmodule TripleStore.Reasoner.ReasoningStatusTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.Reasoner.{ReasoningStatus, ReasoningConfig}
+  alias TripleStore.Reasoner.{ReasoningConfig, ReasoningStatus}
 
   # ============================================================================
   # Test Helpers

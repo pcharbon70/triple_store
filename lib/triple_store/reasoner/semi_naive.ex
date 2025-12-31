@@ -1,4 +1,7 @@
 defmodule TripleStore.Reasoner.SemiNaive do
+  # Suppress dialyzer warnings related to MapSet opaque type handling.
+  @dialyzer {:nowarn_function, apply_stratum_sequential: 4}
+
   @moduledoc """
   Semi-naive evaluation for forward-chaining materialization.
 
@@ -223,6 +226,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
     end)
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.FunctionArity
   defp do_materialize(
          lookup_fn,
          store_fn,

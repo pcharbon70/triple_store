@@ -214,9 +214,6 @@ defmodule TripleStore.SPARQL.Algebra do
 
       {:error, {:invalid_pattern, reason}} ->
         raise ArgumentError, "AST compilation failed: invalid pattern - #{inspect(reason)}"
-
-      {:error, reason} ->
-        raise ArgumentError, "AST compilation failed: #{inspect(reason)}"
     end
   end
 

@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
+# credo:disable-for-this-file Credo.Check.Readability.AliasOrder
 defmodule TripleStore.Reasoner.Section42IntegrationTest do
   @moduledoc """
   Comprehensive integration tests for Section 4.2: Semi-Naive Evaluation.
@@ -12,7 +14,7 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias TripleStore.Reasoner.{SemiNaive, DeltaComputation, DerivedStore, Rules}
+  alias TripleStore.Reasoner.{DeltaComputation, DerivedStore, Rule, Rules, SemiNaive}
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Index
 
@@ -694,7 +696,7 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
       # Define a simple transitive rule
       rule =
-        TripleStore.Reasoner.Rule.new(
+        Rule.new(
           :ancestor,
           [
             {:pattern, [{:var, :x}, parent, {:var, :y}]},
