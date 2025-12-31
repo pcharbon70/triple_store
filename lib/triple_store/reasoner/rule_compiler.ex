@@ -65,7 +65,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   atom table exhaustion.
   """
 
-  alias TripleStore.Reasoner.{Rule, SchemaInfo, Namespaces, ReasoningProfile}
+  alias TripleStore.Reasoner.{Namespaces, ReasoningProfile, Rule, SchemaInfo}
+  alias TripleStore.SPARQL.Query
 
   require Logger
 
@@ -402,21 +403,21 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
     schema_info =
       SchemaInfo.new(
-        has_subclass: has_predicate?(ctx, Namespaces.rdfs_subClassOf()),
-        has_subproperty: has_predicate?(ctx, Namespaces.rdfs_subPropertyOf()),
+        has_subclass: has_predicate?(ctx, Namespaces.rdfs_sub_class_of()),
+        has_subproperty: has_predicate?(ctx, Namespaces.rdfs_sub_property_of()),
         has_domain: has_predicate?(ctx, Namespaces.rdfs_domain()),
         has_range: has_predicate?(ctx, Namespaces.rdfs_range()),
-        has_sameas: has_predicate?(ctx, Namespaces.owl_sameAs()),
+        has_sameas: has_predicate?(ctx, Namespaces.owl_same_as()),
         has_restrictions: has_restrictions?(ctx),
         transitive_properties:
-          get_typed_properties(ctx, Namespaces.owl_TransitiveProperty(), max_props),
+          get_typed_properties(ctx, Namespaces.owl_transitive_property(), max_props),
         symmetric_properties:
-          get_typed_properties(ctx, Namespaces.owl_SymmetricProperty(), max_props),
+          get_typed_properties(ctx, Namespaces.owl_symmetric_property(), max_props),
         inverse_properties: get_inverse_properties(ctx, max_props),
         functional_properties:
-          get_typed_properties(ctx, Namespaces.owl_FunctionalProperty(), max_props),
+          get_typed_properties(ctx, Namespaces.owl_functional_property(), max_props),
         inverse_functional_properties:
-          get_typed_properties(ctx, Namespaces.owl_InverseFunctionalProperty(), max_props),
+          get_typed_properties(ctx, Namespaces.owl_inverse_functional_property(), max_props),
         max_properties: max_props
       )
 
@@ -436,6 +437,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     Enum.filter(rules, &rule_applicable?(&1, schema))
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp rule_applicable?(rule, schema_info) do
     case rule.name do
       # RDFS rules
@@ -475,10 +477,6 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp get_field(%SchemaInfo{} = schema, field, default) do
     Map.get(schema, field, default)
-  end
-
-  defp get_field(map, field, default) when is_map(map) do
-    Map.get(map, field, default)
   end
 
   # ============================================================================
@@ -666,7 +664,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   end
 
   defp get_inverse_properties(ctx, max_count) do
-    case query_pairs?(ctx, Namespaces.owl_inverseOf(), max_count) do
+    case query_pairs?(ctx, Namespaces.owl_inverse_of(), max_count) do
       {:ok, pairs} ->
         pairs
 
@@ -677,10 +675,10 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   end
 
   defp has_restrictions?(ctx) do
-    has_predicate?(ctx, Namespaces.owl_hasValue()) or
-      has_predicate?(ctx, Namespaces.owl_someValuesFrom()) or
-      has_predicate?(ctx, Namespaces.owl_allValuesFrom()) or
-      has_predicate?(ctx, Namespaces.owl_onProperty())
+    has_predicate?(ctx, Namespaces.owl_has_value()) or
+      has_predicate?(ctx, Namespaces.owl_some_values_from()) or
+      has_predicate?(ctx, Namespaces.owl_all_values_from()) or
+      has_predicate?(ctx, Namespaces.owl_on_property())
   end
 
   # Query helpers with SPARQL injection prevention
@@ -689,7 +687,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       sparql = "ASK { #{pattern} }"
 
       try do
-        case TripleStore.SPARQL.Query.query(ctx, sparql) do
+        case Query.query(ctx, sparql) do
           {:ok, true} -> {:ok, true}
           {:ok, false} -> {:ok, false}
           # Non-empty result
@@ -713,7 +711,7 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       sparql = "SELECT DISTINCT ?s WHERE { ?s <#{pred_safe}> <#{obj_safe}> } LIMIT #{max_count}"
 
       try do
-        case TripleStore.SPARQL.Query.query(ctx, sparql) do
+        case Query.query(ctx, sparql) do
           {:ok, results} ->
             subjects =
               Enum.map(results, fn r ->
@@ -741,12 +739,13 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     end
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp query_pairs?(ctx, predicate, max_count) do
     with {:ok, pred_safe} <- validate_iri_for_query(predicate) do
       sparql = "SELECT DISTINCT ?s ?o WHERE { ?s <#{pred_safe}> ?o } LIMIT #{max_count}"
 
       try do
-        case TripleStore.SPARQL.Query.query(ctx, sparql) do
+        case Query.query(ctx, sparql) do
           {:ok, results} ->
             pairs =
               Enum.map(results, fn r ->
@@ -785,31 +784,11 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     end
   end
 
+  # Note: Only the (nil, predicate, nil) case is currently used.
+  # Other clauses are commented out since dialyzer detects them as unreachable.
   defp build_pattern_safe(nil, predicate, nil) do
     with {:ok, pred} <- validate_iri_for_query(predicate) do
       {:ok, "?s <#{pred}> ?o"}
-    end
-  end
-
-  defp build_pattern_safe(nil, predicate, object) do
-    with {:ok, pred} <- validate_iri_for_query(predicate),
-         {:ok, obj} <- validate_iri_for_query(object) do
-      {:ok, "?s <#{pred}> <#{obj}>"}
-    end
-  end
-
-  defp build_pattern_safe(subject, predicate, nil) do
-    with {:ok, subj} <- validate_iri_for_query(subject),
-         {:ok, pred} <- validate_iri_for_query(predicate) do
-      {:ok, "<#{subj}> <#{pred}> ?o"}
-    end
-  end
-
-  defp build_pattern_safe(subject, predicate, object) do
-    with {:ok, subj} <- validate_iri_for_query(subject),
-         {:ok, pred} <- validate_iri_for_query(predicate),
-         {:ok, obj} <- validate_iri_for_query(object) do
-      {:ok, "<#{subj}> <#{pred}> <#{obj}>"}
     end
   end
 

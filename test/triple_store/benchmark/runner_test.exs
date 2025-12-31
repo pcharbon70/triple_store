@@ -69,7 +69,7 @@ defmodule TripleStore.Benchmark.RunnerTest do
     test "formats milliseconds" do
       assert Runner.format_duration(1000) == "1.0ms"
       assert Runner.format_duration(1500) == "1.5ms"
-      assert Runner.format_duration(12345) == "12.35ms"
+      assert Runner.format_duration(12_345) == "12.35ms"
     end
 
     test "formats seconds" do
@@ -220,7 +220,7 @@ defmodule TripleStore.Benchmark.RunnerTest do
 
     test "percentile handles large datasets correctly" do
       # Generate 10000 values
-      values = Enum.map(1..10000, fn _ -> :rand.uniform(1000) end)
+      values = Enum.map(1..10_000, fn _ -> :rand.uniform(1000) end)
 
       p50 = Runner.percentile(values, 50)
       p95 = Runner.percentile(values, 95)

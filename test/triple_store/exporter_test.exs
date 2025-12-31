@@ -213,6 +213,7 @@ defmodule TripleStore.ExporterTest do
       {:ok, files_dir: files_dir}
     end
 
+    @tag :slow
     test "exports to Turtle file", %{db: db, manager: manager, files_dir: files_dir} do
       triples = [
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("v1")},
@@ -232,6 +233,7 @@ defmodule TripleStore.ExporterTest do
       assert String.contains?(content, "http://example.org/s2")
     end
 
+    @tag :slow
     test "exports to N-Triples file", %{db: db, manager: manager, files_dir: files_dir} do
       triples = [
         {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("value")}

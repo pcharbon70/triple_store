@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.VariableNames
 defmodule TripleStore.Reasoner.RulesTest do
   @moduledoc """
   Tests for the OWL 2 RL rule definitions.
@@ -221,7 +222,7 @@ defmodule TripleStore.Reasoner.RulesTest do
 
     test "chains through intermediate" do
       rule = Rules.prp_trp()
-      patterns = Rule.body_patterns(rule)
+      _patterns = Rule.body_patterns(rule)
 
       # Should have x->y and y->z patterns
       vars = Rule.variables(rule)

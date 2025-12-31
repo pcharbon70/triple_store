@@ -2,6 +2,10 @@ defmodule TripleStore.SPARQL.Optimizer do
   @moduledoc """
   SPARQL query optimizer implementing rule-based transformations.
 
+  @dialyzer directives are used to suppress opaque type warnings that occur
+  when Dialyzer traces through MapSet construction in private functions.
+  This is a known issue with Dialyzer and opaque types.
+
   This module provides optimization passes that transform SPARQL algebra trees
   to improve query execution performance. Optimizations include:
 
@@ -238,6 +242,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Check if algebra contains constants that could be folded
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp has_foldable_constants?(algebra) do
     case algebra do
       {:filter, expr, pattern} ->
@@ -272,43 +277,44 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Check if expression contains constant sub-expressions
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp has_constant_expression?(expr) do
     case expr do
       {:add, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:subtract, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:multiply, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:divide, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:and, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:or, left, right} ->
-        (Expression.is_constant?(left) and Expression.is_constant?(right)) or
+        (Expression.constant?(left) and Expression.constant?(right)) or
           has_constant_expression?(left) or has_constant_expression?(right)
 
       {:not, arg} ->
-        Expression.is_constant?(arg) or has_constant_expression?(arg)
+        Expression.constant?(arg) or has_constant_expression?(arg)
 
       {:equal, left, right} ->
-        Expression.is_constant?(left) and Expression.is_constant?(right)
+        Expression.constant?(left) and Expression.constant?(right)
 
       {:greater, left, right} ->
-        Expression.is_constant?(left) and Expression.is_constant?(right)
+        Expression.constant?(left) and Expression.constant?(right)
 
       {:less, left, right} ->
-        Expression.is_constant?(left) and Expression.is_constant?(right)
+        Expression.constant?(left) and Expression.constant?(right)
 
       _ ->
         false
@@ -383,10 +389,10 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp log_start(algebra) do
     node_count = count_nodes(algebra)
+    root_type = elem(algebra, 0)
 
-    Logger.debug("[Optimizer] Starting optimization pipeline",
-      nodes: node_count,
-      root_type: elem(algebra, 0)
+    Logger.debug(
+      "[Optimizer] Starting optimization pipeline (nodes: #{node_count}, root_type: #{inspect(root_type)})"
     )
   end
 
@@ -400,14 +406,15 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp log_complete(result) do
     node_count = count_nodes(result)
+    root_type = elem(result, 0)
 
-    Logger.debug("[Optimizer] Optimization complete",
-      nodes: node_count,
-      root_type: elem(result, 0)
+    Logger.debug(
+      "[Optimizer] Optimization complete (nodes: #{node_count}, root_type: #{inspect(root_type)})"
     )
   end
 
   # Count nodes in algebra tree
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp count_nodes(algebra) do
     case algebra do
       {:bgp, patterns} -> 1 + length(patterns)
@@ -926,6 +933,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   # ===========================================================================
 
   # Fold constants in an expression, returning a simplified expression
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp fold_expression(expr) do
     case expr do
       # Literals and variables are already in simplest form
@@ -1018,7 +1026,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     folded_left = fold_expression(left)
     folded_right = fold_expression(right)
 
-    if Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) do
+    if Expression.constant?(folded_left) and Expression.constant?(folded_right) do
       case Expression.evaluate({op, folded_left, folded_right}, %{}) do
         {:ok, result} -> result
         :error -> {op, folded_left, folded_right}
@@ -1032,7 +1040,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp fold_unary_minus(arg) do
     folded = fold_expression(arg)
 
-    if Expression.is_constant?(folded) do
+    if Expression.constant?(folded) do
       case Expression.evaluate({:unary_minus, folded}, %{}) do
         {:ok, result} -> result
         :error -> {:unary_minus, folded}
@@ -1047,7 +1055,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     folded_left = fold_expression(left)
     folded_right = fold_expression(right)
 
-    if Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) do
+    if Expression.constant?(folded_left) and Expression.constant?(folded_right) do
       case Expression.evaluate({op, folded_left, folded_right}, %{}) do
         {:ok, result} -> result
         :error -> {op, folded_left, folded_right}
@@ -1058,29 +1066,30 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Fold logical AND with short-circuit optimization
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp fold_logical_and(left, right) do
     folded_left = fold_expression(left)
     folded_right = fold_expression(right)
 
     cond do
       # false && anything = false
-      is_false_literal?(folded_left) ->
+      false_literal?(folded_left) ->
         folded_left
 
       # true && x = x
-      is_true_literal?(folded_left) ->
+      true_literal?(folded_left) ->
         folded_right
 
       # x && false = false
-      is_false_literal?(folded_right) ->
+      false_literal?(folded_right) ->
         folded_right
 
       # x && true = x
-      is_true_literal?(folded_right) ->
+      true_literal?(folded_right) ->
         folded_left
 
       # Both constant - evaluate
-      Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
+      Expression.constant?(folded_left) and Expression.constant?(folded_right) ->
         case Expression.evaluate({:and, folded_left, folded_right}, %{}) do
           {:ok, result} -> result
           :error -> {:and, folded_left, folded_right}
@@ -1092,29 +1101,30 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Fold logical OR with short-circuit optimization
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp fold_logical_or(left, right) do
     folded_left = fold_expression(left)
     folded_right = fold_expression(right)
 
     cond do
       # true || anything = true
-      is_true_literal?(folded_left) ->
+      true_literal?(folded_left) ->
         folded_left
 
       # false || x = x
-      is_false_literal?(folded_left) ->
+      false_literal?(folded_left) ->
         folded_right
 
       # x || true = true
-      is_true_literal?(folded_right) ->
+      true_literal?(folded_right) ->
         folded_right
 
       # x || false = x
-      is_false_literal?(folded_right) ->
+      false_literal?(folded_right) ->
         folded_left
 
       # Both constant - evaluate
-      Expression.is_constant?(folded_left) and Expression.is_constant?(folded_right) ->
+      Expression.constant?(folded_left) and Expression.constant?(folded_right) ->
         case Expression.evaluate({:or, folded_left, folded_right}, %{}) do
           {:ok, result} -> result
           :error -> {:or, folded_left, folded_right}
@@ -1130,10 +1140,10 @@ defmodule TripleStore.SPARQL.Optimizer do
     folded = fold_expression(arg)
 
     cond do
-      is_true_literal?(folded) ->
+      true_literal?(folded) ->
         make_boolean(false)
 
-      is_false_literal?(folded) ->
+      false_literal?(folded) ->
         make_boolean(true)
 
       # Double negation: NOT(NOT(x)) = x
@@ -1141,7 +1151,7 @@ defmodule TripleStore.SPARQL.Optimizer do
         {:not, inner} = folded
         inner
 
-      Expression.is_constant?(folded) ->
+      Expression.constant?(folded) ->
         case Expression.evaluate({:not, folded}, %{}) do
           {:ok, result} -> result
           :error -> {:not, folded}
@@ -1159,8 +1169,8 @@ defmodule TripleStore.SPARQL.Optimizer do
     folded_else = fold_expression(else_expr)
 
     cond do
-      is_true_literal?(folded_cond) -> folded_then
-      is_false_literal?(folded_cond) -> folded_else
+      true_literal?(folded_cond) -> folded_then
+      false_literal?(folded_cond) -> folded_else
       true -> {:if_expr, folded_cond, folded_then, folded_else}
     end
   end
@@ -1172,7 +1182,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     # Check if first argument is a constant that evaluates successfully
     case folded_args do
       [first | _] when is_tuple(first) ->
-        if Expression.is_constant?(first) do
+        if Expression.constant?(first) do
           case Expression.evaluate(first, %{}) do
             {:ok, _} ->
               # First arg is a valid constant - return it
@@ -1180,6 +1190,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
             :error ->
               # First arg is an error constant - skip it and recurse
+              # credo:disable-for-next-line Credo.Check.Refactor.Nesting
               case folded_args do
                 [_] -> {:coalesce, folded_args}
                 [_ | rest] -> fold_coalesce_remaining(rest)
@@ -1209,7 +1220,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     # Filter out known-error constants but keep variables and valid constants
     remaining =
       Enum.filter(args, fn arg ->
-        not Expression.is_constant?(arg) or
+        not Expression.constant?(arg) or
           match?({:ok, _}, Expression.evaluate(arg, %{}))
       end)
 
@@ -1224,7 +1235,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp fold_function_call(name, args) do
     folded_args = Enum.map(args, &fold_expression/1)
 
-    if Enum.all?(folded_args, &Expression.is_constant?/1) do
+    if Enum.all?(folded_args, &Expression.constant?/1) do
       case Expression.evaluate({:function_call, name, folded_args}, %{}) do
         {:ok, result} -> result
         _ -> {:function_call, name, folded_args}
@@ -1240,12 +1251,13 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Determine if a filter expression is always true, always false, or variable
   defp evaluate_constant_filter(expr) do
-    if Expression.is_constant?(expr) do
+    if Expression.constant?(expr) do
       case Expression.evaluate(expr, %{}) do
         {:ok, result} ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           cond do
-            is_true_literal?(result) -> :always_true
-            is_false_literal?(result) -> :always_false
+            true_literal?(result) -> :always_true
+            false_literal?(result) -> :always_false
             true -> :not_constant
           end
 
@@ -1258,22 +1270,22 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Check if a term is the boolean true literal
-  defp is_true_literal?({:literal, :typed, "true", "http://www.w3.org/2001/XMLSchema#boolean"}),
+  defp true_literal?({:literal, :typed, "true", "http://www.w3.org/2001/XMLSchema#boolean"}),
     do: true
 
-  defp is_true_literal?({:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#boolean"}),
+  defp true_literal?({:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#boolean"}),
     do: true
 
-  defp is_true_literal?(_), do: false
+  defp true_literal?(_), do: false
 
   # Check if a term is the boolean false literal
-  defp is_false_literal?({:literal, :typed, "false", "http://www.w3.org/2001/XMLSchema#boolean"}),
+  defp false_literal?({:literal, :typed, "false", "http://www.w3.org/2001/XMLSchema#boolean"}),
     do: true
 
-  defp is_false_literal?({:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#boolean"}),
+  defp false_literal?({:literal, :typed, "0", "http://www.w3.org/2001/XMLSchema#boolean"}),
     do: true
 
-  defp is_false_literal?(_), do: false
+  defp false_literal?(_), do: false
 
   # Create a boolean literal
   defp make_boolean(true),
@@ -1477,6 +1489,15 @@ defmodule TripleStore.SPARQL.Optimizer do
   # Pattern Reordering Logic
   # ===========================================================================
 
+  # Suppress MapSet opaque type warnings in pattern reordering functions
+  @dialyzer {:nowarn_function, reorder_patterns: 2}
+  @dialyzer {:nowarn_function, greedy_reorder: 4}
+  @dialyzer {:nowarn_function, estimate_selectivity: 1}
+  @dialyzer {:nowarn_function, estimate_selectivity: 2}
+  @dialyzer {:nowarn_function, estimate_selectivity: 3}
+  @dialyzer {:nowarn_function, position_score: 4}
+  @dialyzer {:nowarn_function, pattern_variables: 1}
+
   # Reorder patterns considering selectivity and variable binding propagation
   @spec reorder_patterns(list(), map()) :: list()
   defp reorder_patterns([], _stats), do: []
@@ -1489,6 +1510,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Greedy reordering: pick most selective pattern at each step
+  @spec greedy_reorder(list(), MapSet.t(), map(), list()) :: list()
   defp greedy_reorder([], _bound_vars, _stats, acc) do
     Enum.reverse(acc)
   end
@@ -1560,6 +1582,8 @@ defmodule TripleStore.SPARQL.Optimizer do
   def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
 
   # Score a single position in a triple pattern
+  @spec position_score(term(), MapSet.t(), atom(), map()) :: float()
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp position_score(term, bound_vars, position, stats) do
     case term do
       # Bound term (literal or IRI) - very selective
@@ -1589,6 +1613,7 @@ defmodule TripleStore.SPARQL.Optimizer do
           1.0
         else
           # Unbound variable - not selective
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           case position do
             :subject -> 100.0
             :predicate -> 50.0
@@ -1622,7 +1647,7 @@ defmodule TripleStore.SPARQL.Optimizer do
         # Moderately common predicate
         10.0
 
-      count when count < 10000 ->
+      count when count < 10_000 ->
         # Common predicate
         50.0
 
@@ -1633,6 +1658,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Extract variable names from a triple pattern
+  @spec pattern_variables(tuple()) :: MapSet.t(String.t())
   defp pattern_variables({:triple, subject, predicate, object}) do
     [subject, predicate, object]
     |> Enum.flat_map(&term_variables/1)
@@ -1641,6 +1667,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp pattern_variables(_), do: MapSet.new()
 
+  @spec term_variables(term()) :: [String.t()]
   defp term_variables({:variable, name}), do: [name]
   defp term_variables(_), do: []
 end

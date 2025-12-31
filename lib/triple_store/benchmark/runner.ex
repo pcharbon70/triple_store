@@ -1,4 +1,6 @@
 defmodule TripleStore.Benchmark.Runner do
+  alias TripleStore.SPARQL.Query
+
   @moduledoc """
   Benchmark execution infrastructure for measuring triple store performance.
 
@@ -34,7 +36,7 @@ defmodule TripleStore.Benchmark.Runner do
 
   """
 
-  alias TripleStore.Benchmark.{LUBMQueries, BSBMQueries}
+  alias TripleStore.Benchmark.{BSBMQueries, LUBMQueries}
 
   @type benchmark :: :lubm | :bsbm
   @type query_result :: %{
@@ -395,14 +397,12 @@ defmodule TripleStore.Benchmark.Runner do
   defp execute_query(db, sparql) do
     # Try to execute the query using the SPARQL query interface
     # This is a placeholder - the actual implementation depends on the store's API
-    try do
-      case TripleStore.SPARQL.Query.execute(db, sparql) do
-        {:ok, results} -> {:ok, results}
-        {:error, reason} -> {:error, reason}
-      end
-    rescue
-      e -> {:error, e}
+    case Query.execute(db, sparql) do
+      {:ok, results} -> {:ok, results}
+      {:error, reason} -> {:error, reason}
     end
+  rescue
+    e -> {:error, e}
   end
 
   # ===========================================================================

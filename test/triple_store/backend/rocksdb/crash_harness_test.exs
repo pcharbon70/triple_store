@@ -24,6 +24,7 @@ defmodule TripleStore.Backend.RocksDB.CrashHarnessTest do
     {output, status}
   end
 
+  @tag :slow
   test "iterator remains usable after db close (subprocess)" do
     script = """
     alias TripleStore.Backend.RocksDB.NIF
@@ -45,6 +46,7 @@ defmodule TripleStore.Backend.RocksDB.CrashHarnessTest do
     assert output =~ "next: {:ok, \"key1\", \"value1\"}"
   end
 
+  @tag :slow
   test "snapshot remains usable after db close (subprocess)" do
     script = """
     alias TripleStore.Backend.RocksDB.NIF

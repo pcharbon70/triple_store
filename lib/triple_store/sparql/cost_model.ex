@@ -231,6 +231,7 @@ defmodule TripleStore.SPARQL.CostModel do
 
   """
   @spec leapfrog_cost([number()], [String.t()], stats()) :: cost()
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def leapfrog_cost(pattern_cards, join_vars, stats) when is_list(pattern_cards) do
     k = length(pattern_cards)
 
@@ -554,17 +555,17 @@ defmodule TripleStore.SPARQL.CostModel do
 
   defp count_bound_positions(s, p, o) do
     [s, p, o]
-    |> Enum.count(&is_bound?/1)
+    |> Enum.count(&bound?/1)
   end
 
-  defp is_bound?({:variable, _}), do: false
-  defp is_bound?({:blank_node, _}), do: false
-  defp is_bound?(_), do: true
+  defp bound?({:variable, _}), do: false
+  defp bound?({:blank_node, _}), do: false
+  defp bound?(_), do: true
 
   defp needs_post_filter?({:triple, s, p, o}) do
     # S?O pattern uses OSP index but needs to filter by subject
     # which requires reading O-S pairs and checking S matches
-    is_bound?(s) and not is_bound?(p) and is_bound?(o)
+    bound?(s) and not bound?(p) and bound?(o)
   end
 
   defp estimate_leapfrog_output(pattern_cards, join_vars, stats) do

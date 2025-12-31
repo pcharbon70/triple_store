@@ -1,10 +1,10 @@
 defmodule TripleStore.SPARQL.ExecutorTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Executor
-  alias TripleStore.Index
-  alias TripleStore.Dictionary.Manager
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
+  alias TripleStore.SPARQL.Executor
 
   @moduletag :tmp_dir
 

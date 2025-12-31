@@ -23,8 +23,8 @@ Implemented the TBox caching system for class hierarchies, enabling O(1) lookup 
 | `subclasses/2` | Returns all subclasses of a class |
 | `superclasses_from/2` | Returns superclasses from a precomputed hierarchy |
 | `subclasses_from/2` | Returns subclasses from a precomputed hierarchy |
-| `is_superclass?/3` | Checks if one class is a superclass of another |
-| `is_subclass?/3` | Checks if one class is a subclass of another |
+| `superclass?/3` | Checks if one class is a superclass of another |
+| `subclass?/3` | Checks if one class is a subclass of another |
 
 #### Cache Management Functions
 

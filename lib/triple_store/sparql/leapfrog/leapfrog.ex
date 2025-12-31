@@ -324,6 +324,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   """
   @spec stream(t()) :: Enumerable.t()
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def stream(%__MODULE__{} = lf) do
     Stream.unfold(lf, fn lf ->
       case search_or_next(lf) do
@@ -366,6 +367,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   end
 
   # Core leapfrog search algorithm
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp do_search(iterators, lf) do
     # Check iteration limit
     if lf.iteration_count >= lf.max_iterations do

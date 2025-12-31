@@ -270,14 +270,8 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
 
   def query_time_rules(%__MODULE__{mode: :hybrid, profile: profile, profile_opts: opts}) do
     # Return all rules minus the materialized ones
-    materialized =
-      materialization_rules(%__MODULE__{
-        mode: :hybrid,
-        profile: profile,
-        profile_opts: opts,
-        mode_config: %{materialized_rules: nil},
-        created_at: DateTime.utc_now()
-      })
+    # Default to RDFS rules for hybrid mode when no explicit materialized_rules are set
+    materialized = Rules.rdfs_rule_names()
 
     case ReasoningProfile.rules_for(profile, opts) do
       {:ok, rules} ->

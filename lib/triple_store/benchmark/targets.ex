@@ -1,4 +1,6 @@
 defmodule TripleStore.Benchmark.Targets do
+  alias TripleStore.Benchmark.Runner
+
   @moduledoc """
   Performance targets for the triple store benchmark suite.
 
@@ -395,7 +397,7 @@ defmodule TripleStore.Benchmark.Targets do
     if Enum.empty?(relevant) do
       nil
     else
-      TripleStore.Benchmark.Runner.percentile(relevant, 95)
+      Runner.percentile(relevant, 95)
     end
   end
 

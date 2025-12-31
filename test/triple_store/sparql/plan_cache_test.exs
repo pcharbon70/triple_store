@@ -461,7 +461,7 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
       assert PlanCache.get(query, name: name) == {:ok, :empty_plan}
     end
 
-    test "handles atom variable names", %{name: name} do
+    test "handles atom variable names", %{name: _name} do
       query1 = {:triple, {:variable, :x}, 1, {:variable, :y}}
       query2 = {:triple, {:variable, "x"}, 1, {:variable, "y"}}
 
@@ -473,7 +473,7 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
     end
 
     test "concurrent access is safe", %{name: name} do
-      query = {:triple, {:variable, "x"}, 1, {:variable, "y"}}
+      _query = {:triple, {:variable, "x"}, 1, {:variable, "y"}}
 
       # Spawn multiple processes accessing cache concurrently
       tasks =

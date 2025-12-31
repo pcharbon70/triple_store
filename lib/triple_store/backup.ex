@@ -381,10 +381,6 @@ defmodule TripleStore.Backup do
     end
   end
 
-  defp restore_counter_state(_backup_path, _store) do
-    :ok
-  end
-
   @doc """
   Verifies the integrity of a backup.
 
@@ -469,7 +465,10 @@ defmodule TripleStore.Backup do
     backup_name = "#{prefix}_#{timestamp}_#{String.pad_leading(to_string(ms), 3, "0")}"
     backup_path = Path.join(backup_dir, backup_name)
 
-    with {:ok, metadata} <- create(store, backup_path, opts),
+    # Filter out rotate-specific options before passing to create/3
+    create_opts = Keyword.drop(opts, [:max_backups, :prefix])
+
+    with {:ok, metadata} <- create(store, backup_path, create_opts),
          :ok <- cleanup_old_backups(backup_dir, prefix, max_backups) do
       {:ok, metadata}
     end
@@ -576,6 +575,7 @@ defmodule TripleStore.Backup do
   end
 
   # Check source directory for symlinks (security measure)
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp check_for_symlinks(path) do
     case File.lstat(path) do
       {:ok, %File.Stat{type: :symlink}} ->
@@ -859,11 +859,9 @@ defmodule TripleStore.Backup do
 
   # Safely decode binary to term - prevents arbitrary code execution
   defp safe_binary_to_term(content) do
-    try do
-      {:ok, :erlang.binary_to_term(content, [:safe])}
-    rescue
-      ArgumentError -> {:error, :invalid_format}
-    end
+    {:ok, :erlang.binary_to_term(content, [:safe])}
+  rescue
+    ArgumentError -> {:error, :invalid_format}
   end
 
   defp build_metadata_from_stored(path, stored) do
@@ -942,9 +940,6 @@ defmodule TripleStore.Backup do
 
       {:error, :not_a_directory} ->
         :ok
-
-      error ->
-        error
     end
   end
 end

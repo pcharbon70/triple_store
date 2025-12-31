@@ -5,11 +5,9 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Reasoner.{Rule, Rules, RuleCompiler}
+  alias TripleStore.Reasoner.{Rule, RuleCompiler, Rules}
 
-  @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  @rdfs "http://www.w3.org/2000/01/rdf-schema#"
-  @owl "http://www.w3.org/2002/07/owl#"
+  # Namespace prefixes (used for documentation clarity)
   @ex "http://example.org/"
 
   # ============================================================================
@@ -531,7 +529,7 @@ defmodule TripleStore.Reasoner.RuleCompilerTest do
       assert length(compiled.rules) == 23
 
       # Should have specialized rules
-      assert length(compiled.specialized_rules) > 0
+      assert compiled.specialized_rules != []
 
       # Check some specific specialized rules exist
       specialized_names = Enum.map(compiled.specialized_rules, &to_string(&1.name))

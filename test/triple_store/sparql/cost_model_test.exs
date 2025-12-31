@@ -526,7 +526,7 @@ defmodule TripleStore.SPARQL.CostModelTest do
     end
 
     test "pattern cost handles integer IDs" do
-      pattern = {:triple, 12345, 67890, 11111}
+      pattern = {:triple, 12_345, 67_890, 11_111}
       cost = CostModel.pattern_cost(pattern, @medium_stats)
       assert cost.total > 0
     end

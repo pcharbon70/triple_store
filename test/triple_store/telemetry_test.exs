@@ -14,7 +14,7 @@ defmodule TripleStore.TelemetryTest do
     test "returns a list of event names" do
       events = Telemetry.all_events()
       assert is_list(events)
-      assert length(events) > 0
+      assert events != []
 
       # All events should be lists of atoms
       for event <- events do

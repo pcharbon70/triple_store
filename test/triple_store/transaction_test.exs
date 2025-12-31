@@ -1,10 +1,11 @@
 defmodule TripleStore.TransactionTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Transaction
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager, as: DictManager
+  alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.PlanCache
+  alias TripleStore.Transaction
 
   @moduletag :transaction
 
@@ -303,7 +304,7 @@ defmodule TripleStore.TransactionTest do
 
       # Parse the update
       {:ok, ast} =
-        TripleStore.SPARQL.Parser.parse_update("""
+        Parser.parse_update("""
           INSERT DATA {
             <http://example.org/s> <http://example.org/p> <http://example.org/o> .
           }

@@ -202,6 +202,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @clear_batch_size 1000
 
   @spec clear_all(db_ref()) :: {:ok, non_neg_integer()} | {:error, term()}
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def clear_all(db) do
     # Use batched deletion to avoid loading all keys into memory
     case NIF.prefix_stream(db, @derived_cf, <<>>) do
@@ -384,6 +385,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   """
   @spec make_lookup_fn(db_ref(), source()) :: (pattern() ->
                                                  {:ok, [id_triple()]} | {:error, term()})
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def make_lookup_fn(db, source) do
     fn pattern ->
       # Convert from Rule pattern format to Index pattern format

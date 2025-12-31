@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
 defmodule TripleStore.Reasoner.TBoxCacheTest do
   use ExUnit.Case, async: true
 
@@ -223,7 +224,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
     end
   end
 
-  describe "is_superclass?/3" do
+  describe "superclass?/3" do
     test "returns true for direct superclass" do
       facts =
         MapSet.new([
@@ -232,7 +233,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
-      assert TBoxCache.is_superclass?(hierarchy, iri("Student"), iri("Person"))
+      assert TBoxCache.superclass?(hierarchy, iri("Student"), iri("Person"))
     end
 
     test "returns true for transitive superclass" do
@@ -244,7 +245,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
-      assert TBoxCache.is_superclass?(hierarchy, iri("GradStudent"), iri("Person"))
+      assert TBoxCache.superclass?(hierarchy, iri("GradStudent"), iri("Person"))
     end
 
     test "returns false for non-superclass" do
@@ -255,11 +256,11 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
-      refute TBoxCache.is_superclass?(hierarchy, iri("Person"), iri("Student"))
+      refute TBoxCache.superclass?(hierarchy, iri("Person"), iri("Student"))
     end
   end
 
-  describe "is_subclass?/3" do
+  describe "subclass?/3" do
     test "returns true for direct subclass" do
       facts =
         MapSet.new([
@@ -268,7 +269,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
-      assert TBoxCache.is_subclass?(hierarchy, iri("Person"), iri("Student"))
+      assert TBoxCache.subclass?(hierarchy, iri("Person"), iri("Student"))
     end
 
     test "returns false for non-subclass" do
@@ -279,7 +280,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
 
       {:ok, hierarchy} = TBoxCache.compute_class_hierarchy_in_memory(facts)
 
-      refute TBoxCache.is_subclass?(hierarchy, iri("Student"), iri("Person"))
+      refute TBoxCache.subclass?(hierarchy, iri("Student"), iri("Person"))
     end
   end
 
@@ -1335,7 +1336,7 @@ defmodule TripleStore.Reasoner.TBoxCacheTest do
       assert length(categorized.property_hierarchy) == 1
       assert length(categorized.property_characteristics) == 1
       assert length(categorized.inverse_properties) == 1
-      assert length(categorized.domain_range) == 0
+      assert categorized.domain_range == []
     end
 
     test "categorizes domain/range triples" do

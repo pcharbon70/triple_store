@@ -8,8 +8,8 @@ defmodule TripleStore.PrometheusTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Prometheus
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Prometheus
 
   # Unique name for each test to avoid conflicts
   defp unique_name do
@@ -95,8 +95,7 @@ defmodule TripleStore.PrometheusTest do
     test "returns a list of metric definitions" do
       definitions = Prometheus.metric_definitions()
 
-      assert is_list(definitions)
-      assert length(definitions) > 0
+      assert [_ | _] = definitions
 
       Enum.each(definitions, fn def ->
         assert is_map(def)

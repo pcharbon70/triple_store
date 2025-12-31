@@ -1,11 +1,12 @@
 defmodule TripleStore.UpdateTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Update
-  alias TripleStore.Transaction
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager, as: DictManager
+  alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.Query
+  alias TripleStore.Transaction
+  alias TripleStore.Update
 
   @moduletag :update_api
 
@@ -163,8 +164,12 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       triples = [
-        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/age"),
-         RDF.literal(30, datatype: RDF.NS.XSD.integer())}
+        {
+          RDF.iri("http://example.org/s"),
+          RDF.iri("http://example.org/age"),
+          # credo:disable-for-next-line Credo.Check.Design.AliasUsage
+          RDF.literal(30, datatype: RDF.NS.XSD.integer())
+        }
       ]
 
       result = Update.insert(ctx, triples)
@@ -236,7 +241,7 @@ defmodule TripleStore.UpdateTest do
       ctx = %{db: db, dict_manager: manager}
 
       {:ok, ast} =
-        TripleStore.SPARQL.Parser.parse_update("""
+        Parser.parse_update("""
           INSERT DATA {
             <http://example.org/s> <http://example.org/p> <http://example.org/o> .
           }
@@ -354,7 +359,7 @@ defmodule TripleStore.UpdateTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       {:ok, ast} =
-        TripleStore.SPARQL.Parser.parse_update("""
+        Parser.parse_update("""
           INSERT DATA {
             <http://example.org/s> <http://example.org/p> <http://example.org/o> .
           }
@@ -436,7 +441,7 @@ defmodule TripleStore.UpdateTest do
         """)
 
       {:ok, results} = Query.execute(ctx, prepared)
-      assert length(results) == 0
+      assert results == []
     end
 
     test "cleared data is not queryable", %{db: db, manager: manager} do
@@ -463,7 +468,7 @@ defmodule TripleStore.UpdateTest do
         """)
 
       {:ok, results} = Query.execute(ctx, prepared)
-      assert length(results) == 0
+      assert results == []
     end
 
     test "SPARQL UPDATE and direct API are interoperable", %{db: db, manager: manager} do

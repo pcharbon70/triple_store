@@ -22,13 +22,11 @@ defmodule TripleStore.OperationalTestingTest do
 
   import TripleStore.Test.IntegrationHelpers,
     only: [
-      create_test_store: 0,
       create_test_store: 1,
       cleanup_test_store: 2,
       cleanup_test_path: 1,
       open_with_retry: 1,
       wait_for_lock_release: 0,
-      wait_for_lock_release: 1,
       load_test_data: 2,
       get_triple_count: 1,
       ensure_prometheus_started: 0
@@ -36,8 +34,8 @@ defmodule TripleStore.OperationalTestingTest do
 
   alias TripleStore.Backup
   alias TripleStore.Health
-  alias TripleStore.Prometheus
   alias TripleStore.Metrics
+  alias TripleStore.Prometheus
 
   @moduletag :integration
   # 2 minute timeout for operational tests (backup/restore, multiple open/close cycles)
@@ -48,6 +46,7 @@ defmodule TripleStore.OperationalTestingTest do
   # ===========================================================================
 
   describe "5.7.3.1: backup/restore cycle preserves all data" do
+    @tag :slow
     test "full backup and restore preserves all triples" do
       {store, path} = create_test_store(prefix: "ops_backup")
       backup_path = Path.join(System.tmp_dir!(), "backup_test_#{:rand.uniform(1_000_000)}")
@@ -97,6 +96,7 @@ defmodule TripleStore.OperationalTestingTest do
       end
     end
 
+    @tag :slow
     test "backup preserves data with unique markers" do
       {store, path} = create_test_store(prefix: "ops_marker")
       backup_path = Path.join(System.tmp_dir!(), "marker_backup_#{:rand.uniform(1_000_000)}")
@@ -144,6 +144,7 @@ defmodule TripleStore.OperationalTestingTest do
       end
     end
 
+    @tag :slow
     test "backup rotation keeps only N most recent backups" do
       {store, path} = create_test_store(prefix: "ops_rotation")
       backup_dir = Path.join(System.tmp_dir!(), "rotation_test_#{:rand.uniform(1_000_000)}")
@@ -188,6 +189,7 @@ defmodule TripleStore.OperationalTestingTest do
       end
     end
 
+    @tag :slow
     test "backup creates restorable snapshot" do
       {store, path} = create_test_store(prefix: "ops_snapshot")
       backup_path = Path.join(System.tmp_dir!(), "snapshot_test_#{:rand.uniform(1_000_000)}")
@@ -249,6 +251,7 @@ defmodule TripleStore.OperationalTestingTest do
   # ===========================================================================
 
   describe "5.7.3.2: telemetry integration with Prometheus" do
+    @tag :slow
     test "Prometheus metrics are collected for queries" do
       {store, path} = create_test_store(prefix: "ops_prom")
 
@@ -318,8 +321,8 @@ defmodule TripleStore.OperationalTestingTest do
         help_lines = Enum.filter(lines, &String.starts_with?(&1, "# HELP"))
         type_lines = Enum.filter(lines, &String.starts_with?(&1, "# TYPE"))
 
-        assert length(help_lines) > 0
-        assert length(type_lines) > 0
+        assert help_lines != []
+        assert type_lines != []
 
         # Metric lines should have name and value
         metric_lines =
@@ -617,6 +620,7 @@ defmodule TripleStore.OperationalTestingTest do
   # ===========================================================================
 
   describe "5.7.3.4: graceful shutdown and restart" do
+    @tag :slow
     test "data persists after graceful close and reopen" do
       path = Path.join(System.tmp_dir!(), "shutdown_test_#{:rand.uniform(1_000_000)}")
 

@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
+# credo:disable-for-this-file Credo.Check.Readability.AliasOrder
 defmodule TripleStore.Reasoner.TelemetryTest do
   # async: false because telemetry handlers are global
   use ExUnit.Case, async: false
@@ -76,6 +78,7 @@ defmodule TripleStore.Reasoner.TelemetryTest do
   # ============================================================================
 
   describe "materialize telemetry" do
+    @tag :slow
     test "emits start event with correct metadata", %{test_id: test_id} do
       pid = self()
 

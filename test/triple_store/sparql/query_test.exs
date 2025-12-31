@@ -11,10 +11,10 @@ defmodule TripleStore.SPARQL.QueryTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.SPARQL.Query
-  alias TripleStore.Index
-  alias TripleStore.Dictionary.Manager
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary.Manager
+  alias TripleStore.Index
+  alias TripleStore.SPARQL.Query
 
   @moduletag :tmp_dir
 

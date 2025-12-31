@@ -380,7 +380,7 @@ subclasses = TBoxCache.subclasses_from(hierarchy, {:iri, "Person"})
 # => MapSet.new([{:iri, "Student"}, {:iri, "Employee"}])
 
 # Check relationships
-TBoxCache.is_superclass?(hierarchy, {:iri, "Student"}, {:iri, "Person"})
+TBoxCache.superclass?(hierarchy, {:iri, "Student"}, {:iri, "Person"})
 # => true
 
 # Compute and store in persistent_term for global access

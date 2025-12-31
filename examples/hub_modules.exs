@@ -45,13 +45,14 @@ defmodule HubModulesQuery do
       header("🔗 HUB MODULES", "Most connected modules in the codebase")
 
       # Count incoming calls (how many call sites target each module)
-      {:ok, incoming} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?mod_name WHERE {
-          ?callsite s:callsFunction ?callee .
-          ?callsite s:moduleName ?mod_name .
-        }
-      """)
+      {:ok, incoming} =
+        TripleStore.query(store, """
+          PREFIX s: <https://w3id.org/elixir-code/structure#>
+          SELECT ?mod_name WHERE {
+            ?callsite s:callsFunction ?callee .
+            ?callsite s:moduleName ?mod_name .
+          }
+        """)
 
       incoming_counts =
         incoming
@@ -59,12 +60,13 @@ defmodule HubModulesQuery do
         |> Enum.frequencies()
 
       # Count outgoing calls (how many calls originate from each module)
-      {:ok, outgoing} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?callsite WHERE {
-          ?callsite s:callsFunction ?callee .
-        }
-      """)
+      {:ok, outgoing} =
+        TripleStore.query(store, """
+          PREFIX s: <https://w3id.org/elixir-code/structure#>
+          SELECT ?callsite WHERE {
+            ?callsite s:callsFunction ?callee .
+          }
+        """)
 
       outgoing_counts =
         outgoing
@@ -100,11 +102,20 @@ defmodule HubModulesQuery do
 
       # Summary insights
       IO.puts("")
-      {top_mod, top_in, top_out, _top_total} = hd(hub_scores)
-      IO.puts("  📊 Top hub: #{top_mod}")
-      IO.puts("     #{top_in} incoming calls, #{top_out} outgoing calls")
-      IO.puts("")
-      IO.puts("  💡 Tip: Use impact_analysis.exs to see what depends on a specific module")
+
+      case hub_scores do
+        [{top_mod, top_in, top_out, _top_total} | _] ->
+          IO.puts("  📊 Top hub: #{top_mod}")
+          IO.puts("     #{top_in} incoming calls, #{top_out} outgoing calls")
+          IO.puts("")
+          IO.puts("  💡 Tip: Use impact_analysis.exs to see what depends on a specific module")
+
+        [] ->
+          IO.puts("  ⚠️  No module call data found in the store.")
+          IO.puts("     Make sure you have loaded code analysis RDF data first.")
+          IO.puts("")
+          IO.puts("  💡 Tip: Run the data loader to populate the store with codebase triples")
+      end
     end)
   end
 end

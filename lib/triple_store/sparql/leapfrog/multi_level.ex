@@ -38,7 +38,7 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   This enables efficient backtracking without recreating iterators.
   """
 
-  alias TripleStore.SPARQL.Leapfrog.{TrieIterator, Leapfrog, VariableOrdering, PatternUtils}
+  alias TripleStore.SPARQL.Leapfrog.{Leapfrog, PatternUtils, TrieIterator, VariableOrdering}
 
   # ===========================================================================
   # Types
@@ -370,6 +370,8 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   # ===========================================================================
 
   # Enter a new level (create iterators and find first value)
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp enter_level(exec, level_idx) do
     variable = Enum.at(exec.var_order, level_idx)
 
@@ -529,6 +531,7 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   end
 
   # Choose the best index and build prefix for a pattern
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp choose_index_and_prefix({:triple, s, p, o}, target_var, bindings) do
     s_val = get_term_value(s, bindings)
     p_val = get_term_value(p, bindings)

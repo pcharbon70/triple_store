@@ -52,13 +52,14 @@ defmodule ComplexityQuery do
       header("🔀 COMPLEXITY ANALYSIS", "Modules with most outgoing dependencies")
 
       # Count outgoing calls per module
-      {:ok, results} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?callsite ?called_mod WHERE {
-          ?callsite s:callsFunction ?callee .
-          ?callsite s:moduleName ?called_mod .
-        }
-      """)
+      {:ok, results} =
+        TripleStore.query(store, """
+          PREFIX s: <https://w3id.org/elixir-code/structure#>
+          SELECT ?callsite ?called_mod WHERE {
+            ?callsite s:callsFunction ?callee .
+            ?callsite s:moduleName ?called_mod .
+          }
+        """)
 
       by_caller =
         results
@@ -100,36 +101,44 @@ defmodule ComplexityQuery do
       IO.puts("  Simple (<20 calls):        #{simple} modules")
 
       # Show what the most complex module calls
-      {most_complex, _} = hd(by_caller)
+      case by_caller do
+        [{most_complex, _} | _] ->
+          IO.puts("")
+          IO.puts("  🔍 MOST COMPLEX: #{most_complex}")
+          separator()
 
-      IO.puts("")
-      IO.puts("  🔍 MOST COMPLEX: #{most_complex}")
-      separator()
+          {:ok, deps} =
+            TripleStore.query(store, """
+              PREFIX s: <https://w3id.org/elixir-code/structure#>
+              SELECT ?called_mod WHERE {
+                ?callsite s:callsFunction ?callee .
+                ?callsite s:moduleName ?called_mod .
+                FILTER(CONTAINS(STR(?callsite), "#{most_complex}/"))
+              }
+            """)
 
-      {:ok, deps} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?called_mod WHERE {
-          ?callsite s:callsFunction ?callee .
-          ?callsite s:moduleName ?called_mod .
-          FILTER(CONTAINS(STR(?callsite), "#{most_complex}/"))
-        }
-      """)
+          dep_modules =
+            deps
+            |> Enum.map(fn row -> extract(row["called_mod"]) end)
+            |> Enum.frequencies()
+            |> Enum.sort_by(fn {_, c} -> -c end)
+            |> Enum.take(10)
 
-      dep_modules =
-        deps
-        |> Enum.map(fn row -> extract(row["called_mod"]) end)
-        |> Enum.frequencies()
-        |> Enum.sort_by(fn {_, c} -> -c end)
-        |> Enum.take(10)
+          IO.puts("  Top dependencies:")
 
-      IO.puts("  Top dependencies:")
-      Enum.each(dep_modules, fn {mod, count} ->
-        IO.puts("    #{String.pad_trailing(mod, 35)} #{count} calls")
-      end)
+          Enum.each(dep_modules, fn {mod, count} ->
+            IO.puts("    #{String.pad_trailing(mod, 35)} #{count} calls")
+          end)
 
-      IO.puts("")
-      IO.puts("  💡 Tip: High complexity often indicates orchestration logic.")
-      IO.puts("     Consider extracting smaller, focused functions.")
+          IO.puts("")
+          IO.puts("  💡 Tip: High complexity often indicates orchestration logic.")
+          IO.puts("     Consider extracting smaller, focused functions.")
+
+        [] ->
+          IO.puts("")
+          IO.puts("  ⚠️  No call data found in the store.")
+          IO.puts("     Make sure you have loaded code analysis RDF data first.")
+      end
     end)
   end
 end

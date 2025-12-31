@@ -52,6 +52,7 @@ defmodule TripleStore.SPARQL.Executor do
 
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
+  alias TripleStore.SPARQL.Expression
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
   alias TripleStore.SPARQL.Term
@@ -233,6 +234,7 @@ defmodule TripleStore.SPARQL.Executor do
             # Convert matching triples to bindings
             binding_stream =
               Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
+                # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                 case extend_binding_from_match(binding, s, p, o, s_id, p_id, o_id, dict_manager) do
                   {:ok, new_binding} -> [new_binding]
                   {:error, _} -> []
@@ -311,9 +313,8 @@ defmodule TripleStore.SPARQL.Executor do
   # Extend a binding with values from a matched triple
   defp extend_binding_from_match(binding, s, p, o, s_id, p_id, o_id, dict_manager) do
     with {:ok, binding1} <- maybe_bind(binding, s, s_id, dict_manager),
-         {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager),
-         {:ok, binding3} <- maybe_bind(binding2, o, o_id, dict_manager) do
-      {:ok, binding3}
+         {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager) do
+      maybe_bind(binding2, o, o_id, dict_manager)
     end
   end
 
@@ -520,6 +521,7 @@ defmodule TripleStore.SPARQL.Executor do
 
             left_bindings ->
               Enum.flat_map(left_bindings, fn left_binding ->
+                # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                 case merge_bindings(left_binding, right_binding) do
                   {:ok, merged} -> [merged]
                   :incompatible -> []
@@ -570,9 +572,11 @@ defmodule TripleStore.SPARQL.Executor do
       # Find all compatible right bindings
       matches =
         Enum.flat_map(right_list, fn right_binding ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           case merge_bindings(left_binding, right_binding) do
             {:ok, merged} ->
               # Apply filter if provided
+              # credo:disable-for-next-line Credo.Check.Refactor.Nesting
               if filter_fn.(merged), do: [merged], else: []
 
             :incompatible ->
@@ -1006,9 +1010,6 @@ defmodule TripleStore.SPARQL.Executor do
 
       :error ->
         :error
-
-      {:error, _} ->
-        :error
     end
   end
 
@@ -1158,6 +1159,7 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Check for NaN (not a number)
   # Uses IEEE 754 property: NaN != NaN
+  # credo:disable-for-next-line Credo.Check.Warning.OperationOnSameValues
   defp nan?(n) when is_float(n), do: n != n
   defp nan?(_), do: false
 
@@ -1457,28 +1459,27 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # Compare literals - try numeric comparison first, then lexicographic
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp compare_literals(a, b) do
     a_numeric = try_numeric_value(a)
     b_numeric = try_numeric_value(b)
 
-    cond do
-      a_numeric != nil and b_numeric != nil ->
-        cond do
-          a_numeric < b_numeric -> :lt
-          a_numeric > b_numeric -> :gt
-          true -> :eq
-        end
+    if a_numeric != nil and b_numeric != nil do
+      cond do
+        a_numeric < b_numeric -> :lt
+        a_numeric > b_numeric -> :gt
+        true -> :eq
+      end
+    else
+      # Fall back to lexicographic comparison
+      a_str = literal_sort_key(a)
+      b_str = literal_sort_key(b)
 
-      true ->
-        # Fall back to lexicographic comparison
-        a_str = literal_sort_key(a)
-        b_str = literal_sort_key(b)
-
-        cond do
-          a_str < b_str -> :lt
-          a_str > b_str -> :gt
-          true -> :eq
-        end
+      cond do
+        a_str < b_str -> :lt
+        a_str > b_str -> :gt
+        true -> :eq
+      end
     end
   end
 
@@ -1855,7 +1856,7 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp evaluate_expression(expr, binding) do
-    TripleStore.SPARQL.Expression.evaluate(expr, binding)
+    Expression.evaluate(expr, binding)
   end
 
   # ---------------------------------------------------------------------------
@@ -2183,6 +2184,7 @@ defmodule TripleStore.SPARQL.Executor do
       stream
       |> Stream.flat_map(fn binding ->
         Enum.flat_map(vars, fn var ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           case Map.get(binding, var) do
             nil -> []
             term -> [term]
@@ -2267,9 +2269,11 @@ defmodule TripleStore.SPARQL.Executor do
     all_triples =
       resources
       |> Enum.flat_map(fn resource ->
+        # credo:disable-for-next-line Credo.Check.Refactor.Nesting
         case resource_to_id(db, resource) do
           {:ok, id} ->
             # Use Index pattern format: {:bound, id} for bound, :var for variable
+            # credo:disable-for-next-line Credo.Check.Refactor.Nesting
             case Index.lookup_all(db, {{:bound, id}, :var, :var}) do
               {:ok, triples} ->
                 triples
@@ -2357,6 +2361,7 @@ defmodule TripleStore.SPARQL.Executor do
 
       new_triples =
         Enum.flat_map(new_bnodes, fn bnode_id ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
           case Index.lookup_all(db, {{:bound, bnode_id}, :var, :var}) do
             {:ok, bnode_triples} -> bnode_triples
             _ -> []

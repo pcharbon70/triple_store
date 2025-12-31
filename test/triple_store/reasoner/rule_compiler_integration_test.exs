@@ -11,7 +11,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Reasoner.{Rule, Rules, RuleCompiler, RuleOptimizer}
+  alias TripleStore.Reasoner.{Rule, RuleCompiler, RuleOptimizer, Rules}
 
   @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
   @rdfs "http://www.w3.org/2000/01/rdf-schema#"
@@ -449,11 +449,11 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
       all_rules = RuleCompiler.get_rules(compiled)
 
       # Should have generic and specialized rules
-      assert length(all_rules) > 0
+      assert all_rules != []
 
       # Check specialized rules exist
       specialized = RuleCompiler.get_specialized_rules(compiled)
-      assert length(specialized) > 0
+      assert specialized != []
     end
   end
 
@@ -587,7 +587,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       # Should have specialized rules
       specialized = RuleCompiler.get_specialized_rules(compiled)
-      assert length(specialized) > 0
+      assert specialized != []
 
       # Specialized rules should have bound properties
       for rule <- specialized do
@@ -618,7 +618,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
       batches = RuleOptimizer.batch_rules(rules)
 
       # Should have at least one batch
-      assert length(batches) > 0
+      assert batches != []
 
       # Each batch should have rules and metadata
       for batch <- batches do

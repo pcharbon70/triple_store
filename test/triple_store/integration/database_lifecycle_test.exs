@@ -78,6 +78,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       cleanup_path(path)
     end
 
+    @tag :slow
     test "dictionary IDs persist after close and reopen" do
       path = unique_path()
 
@@ -145,6 +146,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       cleanup_path(path)
     end
 
+    @tag :slow
     test "statistics reflect persisted data after restart" do
       path = unique_path()
 
@@ -186,6 +188,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
   # ===========================================================================
 
   describe "concurrent read operations during writes" do
+    @tag :slow
     test "reads do not block during writes" do
       path = unique_path()
       {:ok, db} = NIF.open(path)
@@ -336,6 +339,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       cleanup_path(path)
     end
 
+    @tag :slow
     test "database handles reopening same path multiple times" do
       path = unique_path()
 
@@ -489,6 +493,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       cleanup_path(path2)
     end
 
+    @tag :slow
     test "statistics caches for different databases are independent" do
       path1 = unique_path()
       path2 = unique_path()

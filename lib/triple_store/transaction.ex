@@ -529,32 +529,28 @@ defmodule TripleStore.Transaction do
   defp invalidate_cache(nil), do: :ok
 
   defp invalidate_cache(plan_cache) do
-    try do
-      PlanCache.invalidate(name: plan_cache)
-    rescue
-      e ->
-        Logger.warning("Plan cache invalidation failed: #{inspect(e)}")
-        :ok
-    catch
-      :exit, reason ->
-        Logger.warning("Plan cache invalidation crashed: #{inspect(reason)}")
-        :ok
-    end
+    PlanCache.invalidate(name: plan_cache)
+  rescue
+    e ->
+      Logger.warning("Plan cache invalidation failed: #{inspect(e)}")
+      :ok
+  catch
+    :exit, reason ->
+      Logger.warning("Plan cache invalidation crashed: #{inspect(reason)}")
+      :ok
   end
 
   defp call_stats_callback(nil), do: :ok
 
   defp call_stats_callback(callback) when is_function(callback, 0) do
-    try do
-      callback.()
-    rescue
-      e ->
-        Logger.warning("Stats callback failed: #{inspect(e)}")
-        :ok
-    catch
-      :exit, reason ->
-        Logger.warning("Stats callback crashed: #{inspect(reason)}")
-        :ok
-    end
+    callback.()
+  rescue
+    e ->
+      Logger.warning("Stats callback failed: #{inspect(e)}")
+      :ok
+  catch
+    :exit, reason ->
+      Logger.warning("Stats callback crashed: #{inspect(reason)}")
+      :ok
   end
 end

@@ -26,8 +26,10 @@ defmodule TripleStore.LoaderTest do
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
-      if Process.alive?(manager) do
+      try do
         Manager.stop(manager)
+      catch
+        :exit, _ -> :ok
       end
 
       NIF.close(db)

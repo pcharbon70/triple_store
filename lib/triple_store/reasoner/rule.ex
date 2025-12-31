@@ -277,33 +277,33 @@ defmodule TripleStore.Reasoner.Rule do
 
   ## Examples
 
-      iex> Rule.is_iri(Rule.var("x"))
+      iex> Rule.iri?(Rule.var("x"))
       {:is_iri, {:var, "x"}}
   """
-  @spec is_iri(rule_term()) :: condition()
-  def is_iri(term), do: {:is_iri, term}
+  @spec iri?(rule_term()) :: condition()
+  def iri?(term), do: {:is_iri, term}
 
   @doc """
   Creates an is-blank-node condition.
 
   ## Examples
 
-      iex> Rule.is_blank(Rule.var("x"))
+      iex> Rule.blank?(Rule.var("x"))
       {:is_blank, {:var, "x"}}
   """
-  @spec is_blank(rule_term()) :: condition()
-  def is_blank(term), do: {:is_blank, term}
+  @spec blank?(rule_term()) :: condition()
+  def blank?(term), do: {:is_blank, term}
 
   @doc """
   Creates an is-literal condition.
 
   ## Examples
 
-      iex> Rule.is_literal(Rule.var("x"))
+      iex> Rule.literal?(Rule.var("x"))
       {:is_literal, {:var, "x"}}
   """
-  @spec is_literal(rule_term()) :: condition()
-  def is_literal(term), do: {:is_literal, term}
+  @spec literal?(rule_term()) :: condition()
+  def literal?(term), do: {:is_literal, term}
 
   @doc """
   Creates a bound condition.
@@ -327,12 +327,12 @@ defmodule TripleStore.Reasoner.Rule do
   def rdf_type, do: {:iri, Namespaces.rdf_type()}
 
   @doc "Returns the rdfs:subClassOf IRI"
-  @spec rdfs_subClassOf() :: iri_term()
-  def rdfs_subClassOf, do: {:iri, Namespaces.rdfs_subClassOf()}
+  @spec rdfs_sub_class_of() :: iri_term()
+  def rdfs_sub_class_of, do: {:iri, Namespaces.rdfs_sub_class_of()}
 
   @doc "Returns the rdfs:subPropertyOf IRI"
-  @spec rdfs_subPropertyOf() :: iri_term()
-  def rdfs_subPropertyOf, do: {:iri, Namespaces.rdfs_subPropertyOf()}
+  @spec rdfs_sub_property_of() :: iri_term()
+  def rdfs_sub_property_of, do: {:iri, Namespaces.rdfs_sub_property_of()}
 
   @doc "Returns the rdfs:domain IRI"
   @spec rdfs_domain() :: iri_term()
@@ -343,44 +343,44 @@ defmodule TripleStore.Reasoner.Rule do
   def rdfs_range, do: {:iri, Namespaces.rdfs_range()}
 
   @doc "Returns the owl:sameAs IRI"
-  @spec owl_sameAs() :: iri_term()
-  def owl_sameAs, do: {:iri, Namespaces.owl_sameAs()}
+  @spec owl_same_as() :: iri_term()
+  def owl_same_as, do: {:iri, Namespaces.owl_same_as()}
 
   @doc "Returns the owl:TransitiveProperty IRI"
-  @spec owl_TransitiveProperty() :: iri_term()
-  def owl_TransitiveProperty, do: {:iri, Namespaces.owl_TransitiveProperty()}
+  @spec owl_transitive_property() :: iri_term()
+  def owl_transitive_property, do: {:iri, Namespaces.owl_transitive_property()}
 
   @doc "Returns the owl:SymmetricProperty IRI"
-  @spec owl_SymmetricProperty() :: iri_term()
-  def owl_SymmetricProperty, do: {:iri, Namespaces.owl_SymmetricProperty()}
+  @spec owl_symmetric_property() :: iri_term()
+  def owl_symmetric_property, do: {:iri, Namespaces.owl_symmetric_property()}
 
   @doc "Returns the owl:inverseOf IRI"
-  @spec owl_inverseOf() :: iri_term()
-  def owl_inverseOf, do: {:iri, Namespaces.owl_inverseOf()}
+  @spec owl_inverse_of() :: iri_term()
+  def owl_inverse_of, do: {:iri, Namespaces.owl_inverse_of()}
 
   @doc "Returns the owl:FunctionalProperty IRI"
-  @spec owl_FunctionalProperty() :: iri_term()
-  def owl_FunctionalProperty, do: {:iri, Namespaces.owl_FunctionalProperty()}
+  @spec owl_functional_property() :: iri_term()
+  def owl_functional_property, do: {:iri, Namespaces.owl_functional_property()}
 
   @doc "Returns the owl:InverseFunctionalProperty IRI"
-  @spec owl_InverseFunctionalProperty() :: iri_term()
-  def owl_InverseFunctionalProperty, do: {:iri, Namespaces.owl_InverseFunctionalProperty()}
+  @spec owl_inverse_functional_property() :: iri_term()
+  def owl_inverse_functional_property, do: {:iri, Namespaces.owl_inverse_functional_property()}
 
   @doc "Returns the owl:hasValue IRI"
-  @spec owl_hasValue() :: iri_term()
-  def owl_hasValue, do: {:iri, Namespaces.owl_hasValue()}
+  @spec owl_has_value() :: iri_term()
+  def owl_has_value, do: {:iri, Namespaces.owl_has_value()}
 
   @doc "Returns the owl:onProperty IRI"
-  @spec owl_onProperty() :: iri_term()
-  def owl_onProperty, do: {:iri, Namespaces.owl_onProperty()}
+  @spec owl_on_property() :: iri_term()
+  def owl_on_property, do: {:iri, Namespaces.owl_on_property()}
 
   @doc "Returns the owl:someValuesFrom IRI"
-  @spec owl_someValuesFrom() :: iri_term()
-  def owl_someValuesFrom, do: {:iri, Namespaces.owl_someValuesFrom()}
+  @spec owl_some_values_from() :: iri_term()
+  def owl_some_values_from, do: {:iri, Namespaces.owl_some_values_from()}
 
   @doc "Returns the owl:allValuesFrom IRI"
-  @spec owl_allValuesFrom() :: iri_term()
-  def owl_allValuesFrom, do: {:iri, Namespaces.owl_allValuesFrom()}
+  @spec owl_all_values_from() :: iri_term()
+  def owl_all_values_from, do: {:iri, Namespaces.owl_all_values_from()}
 
   # ============================================================================
   # Analysis Functions
@@ -793,6 +793,7 @@ defmodule TripleStore.Reasoner.Rule do
   """
   @spec explain_applicability(t(), map()) ::
           {:applicable, String.t()} | {:not_applicable, String.t()}
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def explain_applicability(%__MODULE__{name: name} = _rule, schema_info) do
     case name do
       :prp_trp ->
@@ -890,10 +891,9 @@ defmodule TripleStore.Reasoner.Rule do
   defp explain_body(body) do
     body
     |> Enum.with_index(1)
-    |> Enum.map(fn {elem, i} ->
+    |> Enum.map_join("\n", fn {elem, i} ->
       "  #{i}. #{explain_element(elem)}"
     end)
-    |> Enum.join("\n")
   end
 
   defp explain_element({:pattern, _} = pattern), do: explain_pattern(pattern)

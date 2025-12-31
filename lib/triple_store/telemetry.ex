@@ -78,6 +78,8 @@ defmodule TripleStore.Telemetry do
 
   """
 
+  alias TripleStore.Reasoner.Telemetry, as: ReasonerTelemetry
+
   require Logger
 
   # ===========================================================================
@@ -390,7 +392,7 @@ defmodule TripleStore.Telemetry do
   """
   @spec reasoner_events() :: [[atom()]]
   def reasoner_events do
-    TripleStore.Reasoner.Telemetry.event_names()
+    ReasonerTelemetry.event_names()
   end
 
   # ===========================================================================
@@ -571,7 +573,7 @@ defmodule TripleStore.Telemetry do
       duration_ms = TripleStore.Telemetry.to_milliseconds(duration)
 
   """
-  @spec to_milliseconds(integer()) :: float()
+  @spec to_milliseconds(integer()) :: integer()
   def to_milliseconds(duration) do
     System.convert_time_unit(duration, :native, :millisecond)
   end
@@ -728,6 +730,7 @@ defmodule TripleStore.Telemetry do
   end
 
   # Detect SPARQL query type from query string
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp detect_query_type(query) do
     query_upper = String.upcase(query)
 

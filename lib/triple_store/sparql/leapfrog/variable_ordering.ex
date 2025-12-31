@@ -177,15 +177,16 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   """
   @spec best_index_for(variable(), triple_pattern(), MapSet.t(variable())) ::
           {:spo | :pos | :osp, [variable()]}
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def best_index_for(variable, {:triple, subject, predicate, object}, bound_vars) do
     # Determine positions in the pattern
     s_var = PatternUtils.extract_var_name(subject)
     p_var = PatternUtils.extract_var_name(predicate)
     o_var = PatternUtils.extract_var_name(object)
 
-    s_bound = PatternUtils.is_bound_or_const?(subject, bound_vars)
-    p_bound = PatternUtils.is_bound_or_const?(predicate, bound_vars)
-    o_bound = PatternUtils.is_bound_or_const?(object, bound_vars)
+    s_bound = PatternUtils.bound_or_const?(subject, bound_vars)
+    p_bound = PatternUtils.bound_or_const?(predicate, bound_vars)
+    o_bound = PatternUtils.bound_or_const?(object, bound_vars)
 
     # Find where our target variable is
     var_position =
@@ -329,6 +330,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
   # ===========================================================================
 
   # Estimate selectivity for a variable in a specific pattern
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp pattern_selectivity_for_variable({:triple, s, p, o}, var_name, stats) do
     # Base selectivity from position
     position_sel =
@@ -345,7 +347,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
     # Adjust based on other bound terms in the pattern
     bound_adjustment =
       [s, p, o]
-      |> Enum.count(&PatternUtils.is_constant?/1)
+      |> Enum.count(&PatternUtils.constant?/1)
       |> case do
         # No constants - least selective
         0 -> 1.0
@@ -366,7 +368,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrdering do
             count when count < 10 -> 0.1
             count when count < 100 -> 0.3
             count when count < 1000 -> 0.5
-            count when count < 10000 -> 0.8
+            count when count < 10_000 -> 0.8
             _ -> 1.0
           end
 

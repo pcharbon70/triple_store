@@ -149,12 +149,13 @@ defmodule TripleStore do
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager, as: DictManager
   alias TripleStore.Loader
-  alias TripleStore.SPARQL.Query
-  alias TripleStore.Transaction
-  alias TripleStore.Reasoner.SemiNaive
   alias TripleStore.Reasoner.ReasoningProfile
+  alias TripleStore.Reasoner.ReasoningStatus
+  alias TripleStore.Reasoner.SemiNaive
+  alias TripleStore.SPARQL.Query
   alias TripleStore.Statistics
   alias TripleStore.Telemetry
+  alias TripleStore.Transaction
 
   require Logger
 
@@ -764,15 +765,15 @@ defmodule TripleStore do
     # Use path-based key for status lookup
     key = path_to_status_key(path)
 
-    case TripleStore.Reasoner.ReasoningStatus.load(key) do
+    case ReasoningStatus.load(key) do
       {:ok, status} ->
-        summary = TripleStore.Reasoner.ReasoningStatus.summary(status)
+        summary = ReasoningStatus.summary(status)
 
         result =
           Map.put(
             summary,
             :needs_rematerialization,
-            TripleStore.Reasoner.ReasoningStatus.needs_rematerialization?(status)
+            ReasoningStatus.needs_rematerialization?(status)
           )
 
         {:ok, result}

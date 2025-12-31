@@ -478,6 +478,7 @@ defmodule TripleStore.Config.RocksDB do
 
   defp get_memsup_memory do
     # Use apply to avoid compile-time warning when :memsup is not available
+    # credo:disable-for-next-line Credo.Check.Refactor.Apply
     case apply(:memsup, :get_system_memory_data, []) do
       data when is_list(data) ->
         # Try total_memory first, fall back to system_total_memory

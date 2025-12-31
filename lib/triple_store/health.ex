@@ -266,6 +266,7 @@ defmodule TripleStore.Health do
   @spec health(store(), health_opts()) :: {:ok, health_result()} | {:error, term()}
   def health(store, opts \\ [])
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def health(%{db: db, dict_manager: dict_manager}, opts) do
     include_all = Keyword.get(opts, :include_all, false)
     include_stats = Keyword.get(opts, :include_stats, true) or include_all
@@ -640,32 +641,28 @@ defmodule TripleStore.Health do
   """
   @spec summary(store(), health_opts()) :: {:ok, map()}
   def summary(store, opts \\ []) do
-    case health(store, opts) do
-      {:ok, health} ->
-        summary = %{
-          status: Atom.to_string(health.status),
-          database_open: health.database_open,
-          components: %{
-            dict_manager: health.dict_manager_alive,
-            plan_cache: health.plan_cache_alive,
-            query_cache: health.query_cache_alive,
-            metrics: health.metrics_alive
-          },
-          checked_at: DateTime.to_iso8601(health.checked_at)
-        }
+    {:ok, health} = health(store, opts)
 
-        summary =
-          summary
-          |> maybe_add(:triple_count, Map.get(health, :triple_count))
-          |> maybe_add(:index_sizes, Map.get(health, :index_sizes))
-          |> maybe_add(:memory, Map.get(health, :memory))
-          |> maybe_add(:compaction, Map.get(health, :compaction))
+    summary = %{
+      status: Atom.to_string(health.status),
+      database_open: health.database_open,
+      components: %{
+        dict_manager: health.dict_manager_alive,
+        plan_cache: health.plan_cache_alive,
+        query_cache: health.query_cache_alive,
+        metrics: health.metrics_alive
+      },
+      checked_at: DateTime.to_iso8601(health.checked_at)
+    }
 
-        {:ok, summary}
+    summary =
+      summary
+      |> maybe_add(:triple_count, Map.get(health, :triple_count))
+      |> maybe_add(:index_sizes, Map.get(health, :index_sizes))
+      |> maybe_add(:memory, Map.get(health, :memory))
+      |> maybe_add(:compaction, Map.get(health, :compaction))
 
-      error ->
-        error
-    end
+    {:ok, summary}
   end
 
   # ===========================================================================

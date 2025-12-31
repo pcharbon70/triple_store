@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Readability.FunctionNames
+# credo:disable-for-this-file Credo.Check.Readability.AliasOrder
 defmodule TripleStore.Reasoner.SemiNaiveTest do
   use ExUnit.Case, async: true
 
@@ -111,6 +113,7 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
   # ============================================================================
 
   describe "transitive closure" do
+    @tag :slow
     test "computes full transitive closure of subClassOf" do
       # Chain: A -> B -> C -> D -> E
       initial =
@@ -373,7 +376,7 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
       # Verify lookup was called
       calls = Agent.get(lookup_calls, & &1)
-      assert length(calls) > 0
+      assert calls != []
 
       # Verify store contains derived facts
       final_facts = Agent.get(store_agent, & &1)

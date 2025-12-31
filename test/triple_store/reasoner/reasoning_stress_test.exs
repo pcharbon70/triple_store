@@ -72,6 +72,7 @@ defmodule TripleStore.Reasoner.ReasoningStressTest do
       assert has_triple?(result, {ex_iri("e25"), owl_sameAs(), ex_iri("e49")})
     end
 
+    @tag :slow
     @tag timeout: 120_000
     @tag :benchmark
     test "sameAs chain with property propagation" do

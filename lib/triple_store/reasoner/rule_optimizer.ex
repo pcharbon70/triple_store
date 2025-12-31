@@ -46,7 +46,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
       dead_rules = RuleOptimizer.find_dead_rules(rules, schema_info)
   """
 
-  alias TripleStore.Reasoner.{Rule, Namespaces}
+  alias TripleStore.Reasoner.{Namespaces, Rule}
 
   # ============================================================================
   # Selectivity Constants
@@ -205,7 +205,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
         r2 <- rules,
         r1.name < r2.name,
         shared = find_common_patterns(r1, r2),
-        length(shared) > 0 do
+        shared != [] do
       {r1, r2, shared}
     end
   end
@@ -244,6 +244,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
   Checks if a specific rule is dead (cannot fire).
   """
   @spec rule_dead?(Rule.t(), schema_info()) :: boolean()
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def rule_dead?(%Rule{} = rule, schema_info) do
     case rule.name do
       # Rules requiring transitive properties
@@ -494,7 +495,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
 
   defp classify_batch(rules, shared_patterns) do
     cond do
-      length(shared_patterns) > 0 and length(rules) > 1 ->
+      shared_patterns != [] and match?([_, _ | _], rules) ->
         :same_predicate
 
       same_head_structure?(rules) ->
@@ -600,6 +601,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
     end)
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp check_inverse_rule_dead(name_str, schema_info) do
     inverse_props = schema_info[:inverse_properties] || []
 

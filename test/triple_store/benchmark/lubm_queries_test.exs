@@ -126,7 +126,7 @@ defmodule TripleStore.Benchmark.LUBMQueriesTest do
     end
 
     test "queries with parameters have placeholder patterns" do
-      for query <- LUBMQueries.all(), length(query.params) > 0 do
+      for query <- LUBMQueries.all(), query.params != [] do
         # After substitution with defaults, no placeholders should remain
         {:ok, substituted} = LUBMQueries.get(query.id, [])
         refute String.contains?(substituted.sparql, "{uni}")

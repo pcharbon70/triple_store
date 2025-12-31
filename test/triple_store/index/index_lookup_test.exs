@@ -312,6 +312,7 @@ defmodule TripleStore.Index.IndexLookupTest do
       assert Enum.to_list(stream) == [{max, max, max}]
     end
 
+    @tag :slow
     test "handles many triples efficiently", %{db: db} do
       triples =
         for i <- 1..1000 do

@@ -108,7 +108,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrderingTest do
 
       stats = %{
         {:predicate_count, "http://example.org/rare"} => 5,
-        {:predicate_count, "http://example.org/common"} => 10000
+        {:predicate_count, "http://example.org/common"} => 10_000
       }
 
       {:ok, order} = VariableOrdering.compute(patterns, stats)
@@ -279,7 +279,7 @@ defmodule TripleStore.SPARQL.Leapfrog.VariableOrderingTest do
       patterns = [triple(var("x"), iri("http://rare"), var("y"))]
 
       stats_rare = %{{:predicate_count, "http://rare"} => 5}
-      stats_common = %{{:predicate_count, "http://rare"} => 50000}
+      stats_common = %{{:predicate_count, "http://rare"} => 50_000}
 
       sel_rare = VariableOrdering.estimate_selectivity("x", patterns, stats_rare)
       sel_common = VariableOrdering.estimate_selectivity("x", patterns, stats_common)

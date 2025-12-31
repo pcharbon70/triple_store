@@ -30,8 +30,8 @@ defmodule TripleStore.Benchmark.BSBMTest do
     end
 
     test "generates deterministic output with same seed" do
-      graph1 = BSBM.generate(100, seed: 12345)
-      graph2 = BSBM.generate(100, seed: 12345)
+      graph1 = BSBM.generate(100, seed: 12_345)
+      graph2 = BSBM.generate(100, seed: 12_345)
 
       triples1 = MapSet.new(RDF.Graph.triples(graph1))
       triples2 = MapSet.new(RDF.Graph.triples(graph2))
@@ -40,8 +40,8 @@ defmodule TripleStore.Benchmark.BSBMTest do
     end
 
     test "generates different output with different seeds" do
-      graph1 = BSBM.generate(100, seed: 11111)
-      graph2 = BSBM.generate(100, seed: 22222)
+      graph1 = BSBM.generate(100, seed: 11_111)
+      graph2 = BSBM.generate(100, seed: 22_222)
 
       triples1 = MapSet.new(RDF.Graph.triples(graph1))
       triples2 = MapSet.new(RDF.Graph.triples(graph2))
@@ -91,8 +91,8 @@ defmodule TripleStore.Benchmark.BSBMTest do
     end
 
     test "stream generates same triples as generate with same seed" do
-      graph = BSBM.generate(50, seed: 99999)
-      stream = BSBM.stream(50, seed: 99999)
+      graph = BSBM.generate(50, seed: 99_999)
+      stream = BSBM.stream(50, seed: 99_999)
 
       graph_triples = MapSet.new(RDF.Graph.triples(graph))
       stream_triples = MapSet.new(Enum.to_list(stream))
@@ -185,7 +185,7 @@ defmodule TripleStore.Benchmark.BSBMTest do
       type_triples = Enum.filter(RDF.Graph.triples(graph), fn {_, p, _} -> p == rdf_type end)
 
       # Should have type declarations
-      assert length(type_triples) > 0
+      assert type_triples != []
 
       # All type objects should be BSBM classes or ProductType instances
       for {_, _, o} <- type_triples do
@@ -204,7 +204,7 @@ defmodule TripleStore.Benchmark.BSBMTest do
         |> Enum.filter(&is_struct(&1, RDF.Literal))
 
       # Should have some literals (labels, prices, etc.)
-      assert length(literals) > 0
+      assert literals != []
 
       # Check that literals have values
       for lit <- literals do
@@ -224,7 +224,7 @@ defmodule TripleStore.Benchmark.BSBMTest do
         end)
 
       # Should have date literals (validFrom, validTo, reviewDate)
-      assert length(date_literals) > 0
+      assert date_literals != []
 
       # Check date format
       for lit <- date_literals do

@@ -1,4 +1,7 @@
 defmodule TripleStore.Reasoner.DeltaComputation do
+  # Suppress dialyzer warnings related to MapSet opaque type handling.
+  @dialyzer {:nowarn_function, apply_rule_delta: 5}
+
   @moduledoc """
   Delta computation for semi-naive evaluation of reasoning rules.
 
@@ -62,7 +65,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   @type triple :: {Rule.rule_term(), Rule.rule_term(), Rule.rule_term()}
 
   @typedoc "A set of facts (triples)"
-  @type fact_set :: MapSet.t(triple())
+  @type fact_set :: MapSet.t()
 
   @typedoc "Index mapping predicates to facts with that predicate"
   @type predicate_index :: %{Rule.rule_term() => [triple()]}
@@ -187,6 +190,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
           non_neg_integer(),
           [Rule.condition()]
         ) :: [Rule.binding()]
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def generate_bindings(lookup_fn, patterns, delta, delta_index, delta_pos, conditions) do
     patterns
     |> Enum.with_index()
@@ -357,6 +361,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     |> Enum.reject(fn triple -> MapSet.member?(existing, triple) end)
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp get_matching_facts(lookup_fn, pattern, delta, delta_index, use_delta) do
     if use_delta do
       # Match from delta facts
@@ -409,14 +414,12 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     p_bound = pattern_element(p)
     o_bound = pattern_element(o)
 
-    cond do
+    if s_bound != :var and p_bound != :var and o_bound != :var do
       # All ground - exact triple check
-      s_bound != :var and p_bound != :var and o_bound != :var ->
-        {:ground, {s, p, o}}
-
+      {:ground, {s, p, o}}
+    else
       # Need to look up
-      true ->
-        {:lookup, {:pattern, [s, p, o]}}
+      {:lookup, {:pattern, [s, p, o]}}
     end
   end
 

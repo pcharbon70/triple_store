@@ -67,7 +67,7 @@ defmodule TripleStore.SPARQL.Query do
 
   """
 
-  alias TripleStore.SPARQL.{Parser, Optimizer, Executor, PropertyPath}
+  alias TripleStore.SPARQL.{Executor, Expression, Optimizer, Parser, PropertyPath}
   require Logger
 
   # ===========================================================================
@@ -806,6 +806,7 @@ defmodule TripleStore.SPARQL.Query do
   defp validate_select_query(_), do: {:error, :invalid_query}
 
   # Build lazy stream from pattern
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp build_stream(ctx, pattern, metadata, project_vars) do
     case execute_pattern(ctx, pattern) do
       {:ok, stream} ->
@@ -949,6 +950,8 @@ defmodule TripleStore.SPARQL.Query do
     {:error, {:pattern_depth_exceeded, depth}}
   end
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp execute_pattern(ctx, pattern, depth) do
     case pattern do
       {:bgp, triples} ->
@@ -1027,7 +1030,7 @@ defmodule TripleStore.SPARQL.Query do
         with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           extended =
             Stream.map(stream, fn binding ->
-              case TripleStore.SPARQL.Expression.evaluate(expr, binding) do
+              case Expression.evaluate(expr, binding) do
                 {:ok, value} -> Map.put(binding, var_name, value)
                 :error -> binding
               end

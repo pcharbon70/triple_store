@@ -53,7 +53,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   end
 
   # Generate a list of chain edges (node1 -> node2 -> node3 -> ...)
-  defp chain_graph(min_length \\ 2, max_length \\ 20) do
+  defp chain_graph(min_length, max_length) do
     StreamData.list_of(node_name(), min_length: min_length, max_length: max_length)
     |> StreamData.map(fn nodes ->
       nodes = Enum.uniq(nodes)
@@ -62,7 +62,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
         {"#{@ex}#{from}", "#{@ex}next", "#{@ex}#{to}"}
       end
     end)
-    |> StreamData.filter(&(length(&1) > 0))
+    |> StreamData.filter(&(&1 != []))
   end
 
   # ===========================================================================
@@ -215,7 +215,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
     # Delete all triples by querying and deleting each
     {:ok, results} = Query.query(ctx, "SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
 
-    if length(results) > 0 do
+    if results != [] do
       rdf_triples =
         Enum.map(results, fn r ->
           {to_rdf_term(r["s"]), to_rdf_term(r["p"]), to_rdf_term(r["o"])}

@@ -47,16 +47,17 @@ defmodule ApiSurfaceQuery do
       header("📚 API SURFACE", "Public functions per module")
 
       # Get public functions per module
-      {:ok, results} = TripleStore.query(store, """
-        PREFIX s: <https://w3id.org/elixir-code/structure#>
-        SELECT ?mod_name ?func_name WHERE {
-          ?mod a s:Module .
-          ?mod s:moduleName ?mod_name .
-          ?mod s:containsFunction ?func .
-          ?func a s:PublicFunction .
-          ?func s:functionName ?func_name .
-        }
-      """)
+      {:ok, results} =
+        TripleStore.query(store, """
+          PREFIX s: <https://w3id.org/elixir-code/structure#>
+          SELECT ?mod_name ?func_name WHERE {
+            ?mod a s:Module .
+            ?mod s:moduleName ?mod_name .
+            ?mod s:containsFunction ?func .
+            ?func a s:PublicFunction .
+            ?func s:functionName ?func_name .
+          }
+        """)
 
       by_module =
         results
@@ -81,36 +82,46 @@ defmodule ApiSurfaceQuery do
       counts = Enum.map(by_module, fn {_, funcs} -> length(funcs) end)
       total_funcs = Enum.sum(counts)
       total_mods = length(by_module)
-      avg = Float.round(total_funcs / total_mods, 1)
 
-      small = Enum.count(counts, &(&1 <= 10))
-      medium = Enum.count(counts, &(&1 > 10 and &1 <= 30))
-      large = Enum.count(counts, &(&1 > 30 and &1 <= 50))
-      xlarge = Enum.count(counts, &(&1 > 50))
+      case top_25 do
+        [{largest_mod, largest_funcs} | _] ->
+          avg = Float.round(total_funcs / total_mods, 1)
 
-      IO.puts("")
-      IO.puts("  📊 DISTRIBUTION:")
-      separator()
-      IO.puts("  Total modules: #{total_mods}")
-      IO.puts("  Total public functions: #{total_funcs}")
-      IO.puts("  Average per module: #{avg}")
-      IO.puts("")
-      IO.puts("  Size breakdown:")
-      IO.puts("    Small (1-10):     #{small} modules")
-      IO.puts("    Medium (11-30):   #{medium} modules")
-      IO.puts("    Large (31-50):    #{large} modules")
-      IO.puts("    X-Large (50+):    #{xlarge} modules")
+          small = Enum.count(counts, &(&1 <= 10))
+          medium = Enum.count(counts, &(&1 > 10 and &1 <= 30))
+          large = Enum.count(counts, &(&1 > 30 and &1 <= 50))
+          xlarge = Enum.count(counts, &(&1 > 50))
 
-      # Show functions for the largest module
-      IO.puts("")
-      {largest_mod, largest_funcs} = hd(top_25)
-      IO.puts("  📋 Largest module: #{largest_mod} (#{length(largest_funcs)} functions)")
-      IO.puts("     Sample functions:")
-      largest_funcs
-      |> Enum.take(10)
-      |> Enum.each(fn f -> IO.puts("       - #{f}") end)
-      if length(largest_funcs) > 10 do
-        IO.puts("       ... and #{length(largest_funcs) - 10} more")
+          IO.puts("")
+          IO.puts("  📊 DISTRIBUTION:")
+          separator()
+          IO.puts("  Total modules: #{total_mods}")
+          IO.puts("  Total public functions: #{total_funcs}")
+          IO.puts("  Average per module: #{avg}")
+          IO.puts("")
+          IO.puts("  Size breakdown:")
+          IO.puts("    Small (1-10):     #{small} modules")
+          IO.puts("    Medium (11-30):   #{medium} modules")
+          IO.puts("    Large (31-50):    #{large} modules")
+          IO.puts("    X-Large (50+):    #{xlarge} modules")
+
+          # Show functions for the largest module
+          IO.puts("")
+          IO.puts("  📋 Largest module: #{largest_mod} (#{length(largest_funcs)} functions)")
+          IO.puts("     Sample functions:")
+
+          largest_funcs
+          |> Enum.take(10)
+          |> Enum.each(fn f -> IO.puts("       - #{f}") end)
+
+          if length(largest_funcs) > 10 do
+            IO.puts("       ... and #{length(largest_funcs) - 10} more")
+          end
+
+        [] ->
+          IO.puts("")
+          IO.puts("  ⚠️  No module/function data found in the store.")
+          IO.puts("     Make sure you have loaded code analysis RDF data first.")
       end
     end)
   end

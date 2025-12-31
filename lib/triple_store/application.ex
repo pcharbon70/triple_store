@@ -102,7 +102,7 @@ defmodule TripleStore.Application do
       :ok = TripleStore.Application.stop_stats_cache(MyStats)
 
   """
-  @spec stop_stats_cache(atom()) :: :ok | {:error, term()}
+  @spec stop_stats_cache(atom()) :: :ok
   def stop_stats_cache(name) do
     case Supervisor.terminate_child(TripleStore.Supervisor, name) do
       :ok ->
@@ -111,9 +111,6 @@ defmodule TripleStore.Application do
 
       {:error, :not_found} ->
         :ok
-
-      error ->
-        error
     end
   end
 end
