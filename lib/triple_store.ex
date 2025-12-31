@@ -148,6 +148,7 @@ defmodule TripleStore do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager, as: DictManager
+  alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Loader
   alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningStatus
@@ -173,7 +174,8 @@ defmodule TripleStore do
 
   @typedoc "Options for opening a store"
   @type open_opts :: [
-          create_if_missing: boolean()
+          create_if_missing: boolean(),
+          dictionary_shards: pos_integer() | nil
         ]
 
   @typedoc "Options for querying"
@@ -224,6 +226,10 @@ defmodule TripleStore do
   ## Options
 
   - `:create_if_missing` - Create database if it doesn't exist (default: true)
+  - `:dictionary_shards` - Number of dictionary manager shards for parallel
+    term encoding. When set to a value > 1, uses `ShardedManager` instead of
+    the single `Manager` GenServer. Recommended for bulk loading workloads.
+    Default: nil (uses single Manager)
 
   ## Returns
 
@@ -237,10 +243,14 @@ defmodule TripleStore do
       # With options
       {:ok, store} = TripleStore.open("./data", create_if_missing: true)
 
+      # With sharded dictionary for bulk loading (uses CPU core count shards)
+      {:ok, store} = TripleStore.open("./data", dictionary_shards: System.schedulers_online())
+
   """
   @spec open(Path.t(), open_opts()) :: {:ok, store()} | {:error, term()}
   def open(path, opts \\ []) do
     create_if_missing = Keyword.get(opts, :create_if_missing, true)
+    dictionary_shards = Keyword.get(opts, :dictionary_shards)
 
     with :ok <- validate_path(path) do
       Telemetry.span(:store, :open, %{path: Path.basename(path)}, fn ->
@@ -249,7 +259,7 @@ defmodule TripleStore do
           {{:error, :database_not_found}, %{}}
         else
           with {:ok, db} <- NIF.open(path),
-               {:ok, dict_manager} <- DictManager.start_link(db: db) do
+               {:ok, dict_manager} <- start_dict_manager(db, dictionary_shards) do
             store = %{
               db: db,
               dict_manager: dict_manager,
@@ -262,6 +272,14 @@ defmodule TripleStore do
         end
       end)
     end
+  end
+
+  # Starts either ShardedManager or regular Manager based on shard count
+  defp start_dict_manager(db, nil), do: DictManager.start_link(db: db)
+  defp start_dict_manager(db, 1), do: DictManager.start_link(db: db)
+
+  defp start_dict_manager(db, shard_count) when is_integer(shard_count) and shard_count > 1 do
+    ShardedManager.start_link(db: db, shards: shard_count)
   end
 
   @doc """

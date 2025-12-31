@@ -47,12 +47,16 @@ defmodule TripleStore.Dictionary.Manager do
   ## Options
 
   - `:db` - Required. Database reference from RocksDB NIF
+  - `:counter` - Optional. External sequence counter reference. If not provided,
+    a new counter will be started. Use this when sharing a counter across
+    multiple managers (e.g., in ShardedManager).
   - `:name` - Optional. GenServer name for registration
 
   ## Examples
 
       {:ok, manager} = Manager.start_link(db: db_ref)
       {:ok, manager} = Manager.start_link(db: db_ref, name: MyManager)
+      {:ok, manager} = Manager.start_link(db: db_ref, counter: shared_counter)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -157,14 +161,28 @@ defmodule TripleStore.Dictionary.Manager do
   @impl true
   def init(opts) do
     db = Keyword.fetch!(opts, :db)
+    external_counter = Keyword.get(opts, :counter)
 
-    # Start the sequence counter
-    case SequenceCounter.start_link(db: db) do
-      {:ok, counter} ->
-        {:ok, %{db: db, counter: counter}}
+    # Use external counter if provided, otherwise start a new one
+    case get_or_start_counter(db, external_counter) do
+      {:ok, counter, owns_counter} ->
+        {:ok, %{db: db, counter: counter, owns_counter: owns_counter}}
 
       {:error, reason} ->
         {:stop, reason}
+    end
+  end
+
+  defp get_or_start_counter(_db, counter) when is_pid(counter) do
+    # External counter provided - we don't own it
+    {:ok, counter, false}
+  end
+
+  defp get_or_start_counter(db, nil) do
+    # No external counter - start our own
+    case SequenceCounter.start_link(db: db) do
+      {:ok, counter} -> {:ok, counter, true}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -210,7 +228,11 @@ defmodule TripleStore.Dictionary.Manager do
 
   @impl true
   def terminate(_reason, state) do
-    SequenceCounter.stop(state.counter)
+    # Only stop the counter if we own it (i.e., we created it)
+    if state.owns_counter do
+      SequenceCounter.stop(state.counter)
+    end
+
     :ok
   end
 
