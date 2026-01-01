@@ -133,6 +133,45 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   def next_id(_counter, _type), do: {:error, :invalid_type}
 
   @doc """
+  Allocates a range of IDs for the given dictionary type.
+
+  Atomically reserves `count` sequential IDs and returns the starting
+  sequence number. This is more efficient than calling `next_id/2`
+  repeatedly when allocating many IDs.
+
+  ## Arguments
+
+  - `counter` - Counter reference (pid or name)
+  - `type` - One of `:uri`, `:bnode`, or `:literal`
+  - `count` - Number of IDs to allocate (must be positive)
+
+  ## Returns
+
+  - `{:ok, start_seq}` - Starting sequence number (use start_seq to start_seq + count - 1)
+  - `{:error, :sequence_overflow}` - Not enough IDs available
+  - `{:error, :invalid_type}` - Unknown type
+  - `{:error, :invalid_count}` - Count must be positive
+
+  ## Examples
+
+      # Allocate 100 URIs at once
+      {:ok, start} = SequenceCounter.allocate_range(counter, :uri, 100)
+      # Use sequences start, start+1, ..., start+99
+  """
+  @spec allocate_range(counter(), dict_type(), pos_integer()) ::
+          {:ok, non_neg_integer()} | {:error, atom()}
+  def allocate_range(counter, type, count)
+      when type in [:uri, :bnode, :literal] and is_integer(count) and count > 0 do
+    GenServer.call(counter, {:allocate_range, type, count})
+  end
+
+  def allocate_range(_counter, type, _count) when type not in [:uri, :bnode, :literal] do
+    {:error, :invalid_type}
+  end
+
+  def allocate_range(_counter, _type, _count), do: {:error, :invalid_count}
+
+  @doc """
   Gets the current sequence value for a type without incrementing.
 
   Useful for diagnostics and monitoring.
@@ -382,6 +421,43 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   end
 
   @impl true
+  def handle_call({:allocate_range, type, count}, _from, state) do
+    start_time = System.monotonic_time()
+    type_index = @type_indices[type]
+
+    # Atomic increment by count - returns new value (end of range)
+    end_seq = :atomics.add_get(state.counter_ref, type_index, count)
+    start_seq = end_seq - count + 1
+
+    # Check for overflow
+    if end_seq > Dictionary.max_sequence() do
+      # Roll back the increment
+      :atomics.sub(state.counter_ref, type_index, count)
+
+      :telemetry.execute(
+        [:triple_store, :dictionary, :sequence_overflow],
+        %{count: count},
+        %{type: type}
+      )
+
+      {:reply, {:error, :sequence_overflow}, state}
+    else
+      # Update allocation count and maybe flush
+      state = maybe_flush_counter_range(state, type, end_seq, count)
+
+      duration = System.monotonic_time() - start_time
+
+      :telemetry.execute(
+        [:triple_store, :dictionary, :range_allocated],
+        %{duration: duration, start_sequence: start_seq, count: count},
+        %{type: type}
+      )
+
+      {:reply, {:ok, start_seq}, state}
+    end
+  end
+
+  @impl true
   def handle_call({:current, type}, _from, state) do
     type_index = @type_indices[type]
     current = :atomics.get(state.counter_ref, type_index)
@@ -472,6 +548,19 @@ defmodule TripleStore.Dictionary.SequenceCounter do
 
     if new_alloc_count >= Dictionary.flush_interval() do
       do_flush_counter(state, type, new_seq, new_allocations)
+    else
+      state
+    end
+  end
+
+  @spec maybe_flush_counter_range(map(), dict_type(), non_neg_integer(), pos_integer()) :: map()
+  defp maybe_flush_counter_range(state, type, end_seq, count) do
+    new_alloc_count = state.allocations_since_flush[type] + count
+    new_allocations = Map.put(state.allocations_since_flush, type, new_alloc_count)
+    state = %{state | allocations_since_flush: new_allocations}
+
+    if new_alloc_count >= Dictionary.flush_interval() do
+      do_flush_counter(state, type, end_seq, new_allocations)
     else
       state
     end

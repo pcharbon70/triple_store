@@ -35,7 +35,6 @@ defmodule TripleStore.Dictionary.Manager do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary
-  alias TripleStore.Dictionary.Batch
   alias TripleStore.Dictionary.SequenceCounter
   alias TripleStore.Dictionary.StringToId
 
@@ -433,8 +432,142 @@ defmodule TripleStore.Dictionary.Manager do
   @spec do_get_or_create_ids(reference(), SequenceCounter.counter(), :ets.tid(), [rdf_term()]) ::
           {:ok, [Dictionary.term_id()]} | {:error, term()}
   defp do_get_or_create_ids(db, counter, cache, terms) do
-    Batch.map_collect_success(terms, &do_get_or_create_id(db, counter, cache, &1))
+    do_get_or_create_ids_batch(db, counter, cache, terms)
   end
+
+  # Optimized batch processing with range allocation
+  @spec do_get_or_create_ids_batch(reference(), SequenceCounter.counter(), :ets.tid(), [rdf_term()]) ::
+          {:ok, [Dictionary.term_id()]} | {:error, term()}
+  defp do_get_or_create_ids_batch(db, counter, cache, terms) do
+    # Phase 1: Encode all terms and check existing IDs
+    {encoded_terms, encode_errors} = encode_and_lookup_terms(db, cache, terms)
+
+    if encode_errors != [] do
+      {:error, {:encode_failed, hd(encode_errors)}}
+    else
+      # Phase 2: Group terms needing new IDs by type
+      needs_ids = for {idx, key, term, nil} <- encoded_terms, do: {idx, key, term}
+
+      if needs_ids == [] do
+        # All terms already have IDs
+        ids = for {_idx, _key, _term, id} <- encoded_terms, do: id
+        {:ok, ids}
+      else
+        # Phase 3: Allocate ID ranges per type
+        case allocate_ranges_for_terms(counter, needs_ids) do
+          {:ok, type_ranges} ->
+            # Phase 4: Assign IDs and store
+            case assign_and_store_ids(db, cache, needs_ids, type_ranges, encoded_terms) do
+              {:ok, id_map} ->
+                # Collect results in original order
+                ids =
+                  Enum.map(encoded_terms, fn {idx, _key, _term, existing_id} ->
+                    existing_id || Map.fetch!(id_map, idx)
+                  end)
+
+                {:ok, ids}
+
+              error ->
+                error
+            end
+
+          error ->
+            error
+        end
+      end
+    end
+  end
+
+  # Encode terms and look up existing IDs
+  defp encode_and_lookup_terms(db, cache, terms) do
+    terms
+    |> Enum.with_index()
+    |> Enum.reduce({[], []}, fn {term, idx}, {acc, errors} ->
+      case StringToId.encode_term(term) do
+        {:ok, key} ->
+          # Check cache first, then RocksDB
+          existing_id =
+            case :ets.lookup(cache, key) do
+              [{^key, id}] ->
+                id
+
+              [] ->
+                case NIF.get(db, :str2id, key) do
+                  {:ok, <<id::64-big>>} ->
+                    :ets.insert(cache, {key, id})
+                    id
+
+                  :not_found ->
+                    nil
+
+                  {:error, _} ->
+                    nil
+                end
+            end
+
+          {[{idx, key, term, existing_id} | acc], errors}
+
+        {:error, reason} ->
+          {acc, [{idx, reason} | errors]}
+      end
+    end)
+    |> then(fn {encoded, errors} -> {Enum.reverse(encoded), Enum.reverse(errors)} end)
+  end
+
+  # Allocate ID ranges for each term type
+  defp allocate_ranges_for_terms(counter, needs_ids) do
+    # Count terms by type
+    type_counts =
+      needs_ids
+      |> Enum.reduce(%{uri: 0, bnode: 0, literal: 0}, fn {_idx, _key, term}, acc ->
+        type = get_term_type(term)
+        Map.update!(acc, type, &(&1 + 1))
+      end)
+
+    # Allocate ranges for each type that has terms
+    type_counts
+    |> Enum.filter(fn {_type, count} -> count > 0 end)
+    |> Enum.reduce_while({:ok, %{}}, fn {type, count}, {:ok, ranges} ->
+      case SequenceCounter.allocate_range(counter, type, count) do
+        {:ok, start_seq} ->
+          {:cont, {:ok, Map.put(ranges, type, {start_seq, 0})}}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  # Assign IDs from ranges and store in RocksDB
+  defp assign_and_store_ids(db, cache, needs_ids, type_ranges, _encoded_terms) do
+    # Track current offset for each type
+    {results, _final_ranges} =
+      Enum.reduce(needs_ids, {%{}, type_ranges}, fn {idx, key, term}, {id_map, ranges} ->
+        type = get_term_type(term)
+        type_tag = type_to_tag(type)
+        {start_seq, offset} = Map.fetch!(ranges, type)
+
+        seq = start_seq + offset
+        id = Dictionary.encode_id(type_tag, seq)
+        id_binary = <<id::64-big>>
+
+        # Store in RocksDB
+        :ok = NIF.put(db, :str2id, key, id_binary)
+        :ok = NIF.put(db, :id2str, id_binary, key)
+
+        # Populate cache
+        :ets.insert(cache, {key, id})
+
+        new_ranges = Map.put(ranges, type, {start_seq, offset + 1})
+        {Map.put(id_map, idx, id), new_ranges}
+      end)
+
+    {:ok, results}
+  end
+
+  defp type_to_tag(:uri), do: Dictionary.type_uri()
+  defp type_to_tag(:bnode), do: Dictionary.type_bnode()
+  defp type_to_tag(:literal), do: Dictionary.type_literal()
 
   @spec get_term_type(rdf_term()) :: :uri | :bnode | :literal
   defp get_term_type(%RDF.IRI{}), do: :uri

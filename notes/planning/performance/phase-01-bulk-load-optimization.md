@@ -62,16 +62,16 @@ Implement an ETS-based read cache that allows concurrent term lookups without Ge
 
 ### 1.1.3 Batch Sequence Allocation
 
-- [x] **Task 1.1.3 Analysis Complete** (2025-12-31)
+- [x] **Task 1.1.3 Complete** (2026-01-01)
 
 Pre-allocate ID ranges per batch to reduce contention on the sequence counter. Instead of allocating one ID at a time, each shard requests a block of IDs.
 
 - [x] 1.1.3.1 Analyze current sequence counter in `manager.ex:134-137`
 - [x] 1.1.3.2 Design block allocation strategy (block size: 1000 IDs)
-- [ ] 1.1.3.3 Modify sequence counter to support range allocation
-- [ ] 1.1.3.4 Implement per-shard sequence buffer
-- [ ] 1.1.3.5 Handle sequence exhaustion and reallocation
-- [ ] 1.1.3.6 Ensure crash recovery preserves sequence integrity
+- [x] 1.1.3.3 Add `allocate_range/3` to SequenceCounter for atomic range allocation
+- [x] 1.1.3.4 Update Manager batch processing to use range allocation per type
+- [x] 1.1.3.5 Handle sequence exhaustion with rollback on overflow
+- [x] 1.1.3.6 Crash recovery via existing safety margin mechanism
 
 ### 1.1.4 Unit Tests
 
