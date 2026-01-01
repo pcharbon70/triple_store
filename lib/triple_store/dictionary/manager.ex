@@ -482,6 +482,8 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec lookup_in_cache_or_db(reference(), :ets.tid(), binary()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp lookup_in_cache_or_db(db, cache, key) do
     case :ets.lookup(cache, key) do
       [{^key, id}] -> {:ok, id}
@@ -489,6 +491,8 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec lookup_in_rocksdb(reference(), :ets.tid(), binary()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp lookup_in_rocksdb(db, cache, key) do
     case NIF.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} ->
@@ -547,6 +551,12 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec process_encoded_terms(
+          reference(),
+          SequenceCounter.counter(),
+          :ets.tid(),
+          [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
+        ) :: {:ok, [Dictionary.term_id()]} | {:error, term()}
   defp process_encoded_terms(db, counter, cache, encoded_terms) do
     needs_ids = for {idx, key, term, nil} <- encoded_terms, do: {idx, key, term}
 
@@ -559,6 +569,13 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec create_missing_ids(
+          reference(),
+          SequenceCounter.counter(),
+          :ets.tid(),
+          [{non_neg_integer(), binary(), rdf_term()}],
+          [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
+        ) :: {:ok, [Dictionary.term_id()]} | {:error, term()}
   defp create_missing_ids(db, counter, cache, needs_ids, encoded_terms) do
     with {:ok, type_ranges} <- allocate_ranges_for_terms(counter, needs_ids),
          {:ok, id_map} <- assign_and_store_ids(db, cache, needs_ids, type_ranges, encoded_terms) do
@@ -571,7 +588,9 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  # Encode terms and look up existing IDs
+  @spec encode_and_lookup_terms(reference(), :ets.tid(), [rdf_term()]) ::
+          {[{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}],
+           [{non_neg_integer(), term()}]}
   defp encode_and_lookup_terms(db, cache, terms) do
     terms
     |> Enum.with_index()
@@ -584,6 +603,9 @@ defmodule TripleStore.Dictionary.Manager do
     |> then(fn {encoded, errors} -> {Enum.reverse(encoded), Enum.reverse(errors)} end)
   end
 
+  @spec encode_and_lookup_term(reference(), :ets.tid(), rdf_term(), non_neg_integer()) ::
+          {:ok, {non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}}
+          | {:error, term()}
   defp encode_and_lookup_term(db, cache, term, idx) do
     case StringToId.encode_term(term) do
       {:ok, key} ->
@@ -595,6 +617,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec lookup_existing_id(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
   defp lookup_existing_id(db, cache, key) do
     case :ets.lookup(cache, key) do
       [{^key, id}] -> id
@@ -602,6 +625,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec lookup_existing_id_in_db(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
   defp lookup_existing_id_in_db(db, cache, key) do
     case NIF.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} ->

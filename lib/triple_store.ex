@@ -307,6 +307,7 @@ defmodule TripleStore do
     NIF.close(db)
   end
 
+  @spec stop_dict_manager(pid() | term()) :: :ok | nil
   defp stop_dict_manager(dict_manager) when is_pid(dict_manager) do
     if Process.alive?(dict_manager) do
       do_stop_dict_manager(dict_manager)
@@ -315,6 +316,7 @@ defmodule TripleStore do
 
   defp stop_dict_manager(_), do: :ok
 
+  @spec do_stop_dict_manager(pid()) :: :ok
   defp do_stop_dict_manager(dict_manager) do
     case Process.info(dict_manager, :dictionary) do
       {:dictionary, dict} ->
@@ -325,6 +327,7 @@ defmodule TripleStore do
     end
   end
 
+  @spec stop_by_type(pid(), term()) :: :ok
   defp stop_by_type(pid, {:supervisor, Supervisor.Default, 1}) do
     ShardedManager.stop(pid)
   end
@@ -333,6 +336,7 @@ defmodule TripleStore do
     GenServer.stop(pid, :normal)
   end
 
+  @spec safe_genserver_stop(pid()) :: :ok
   defp safe_genserver_stop(pid) do
     GenServer.stop(pid, :normal)
   catch

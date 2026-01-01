@@ -193,6 +193,12 @@ defmodule TripleStore.Dictionary.ShardedManager do
     assemble_results(results)
   end
 
+  @spec spawn_shard_tasks(
+          [{non_neg_integer(), [{non_neg_integer(), rdf_term()}]}],
+          [pid()],
+          pid() | nil
+        ) ::
+          [Task.t()]
   defp spawn_shard_tasks(partitioned, shards, task_supervisor) do
     Enum.map(partitioned, fn {shard_idx, indexed_terms} ->
       shard = Enum.at(shards, shard_idx)
@@ -200,6 +206,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
     end)
   end
 
+  @spec spawn_shard_task(pid(), [{non_neg_integer(), rdf_term()}], pid() | nil) :: Task.t()
   defp spawn_shard_task(shard, indexed_terms, task_supervisor) do
     task_fn = fn -> process_shard_terms(shard, indexed_terms) end
 
@@ -210,6 +217,8 @@ defmodule TripleStore.Dictionary.ShardedManager do
     end
   end
 
+  @spec process_shard_terms(pid(), [{non_neg_integer(), rdf_term()}]) ::
+          {:ok, [{non_neg_integer(), term_id()}]} | {:error, term()}
   defp process_shard_terms(shard, indexed_terms) do
     terms_only = Enum.map(indexed_terms, fn {_idx, term} -> term end)
 
@@ -223,6 +232,8 @@ defmodule TripleStore.Dictionary.ShardedManager do
     end
   end
 
+  @spec assemble_results([{:ok, [{non_neg_integer(), term_id()}]} | {:error, term()}]) ::
+          {:ok, [term_id()]} | {:error, term()}
   defp assemble_results(results) do
     case collect_results(results) do
       {:ok, indexed_ids} ->
@@ -363,6 +374,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
     :ok
   end
 
+  @spec safe_supervisor_stop(pid() | term()) :: :ok | nil
   defp safe_supervisor_stop(pid) when is_pid(pid) do
     if Process.alive?(pid) do
       Supervisor.stop(pid, :normal)
@@ -374,6 +386,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
 
   defp safe_supervisor_stop(_), do: :ok
 
+  @spec safe_counter_stop(pid() | term()) :: :ok | nil
   defp safe_counter_stop(pid) when is_pid(pid) do
     if Process.alive?(pid) do
       SequenceCounter.stop(pid)
