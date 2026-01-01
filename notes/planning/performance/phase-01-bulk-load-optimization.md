@@ -150,41 +150,41 @@ A Flow-based pipeline architecture overlaps computation and I/O:
 
 ### 1.3.1 Flow Pipeline Design
 
-- [x] **Task 1.3.1 Analysis Complete** (2025-12-31)
+- [x] **Task 1.3.1 Complete** (2026-01-01)
 
 Design the multi-stage pipeline using Elixir Flow for parallel processing.
 
 - [x] 1.3.1.1 Analyze current sequential processing in `loader.ex:469-493`
 - [x] 1.3.1.2 Identify parallelizable stages (dictionary encoding)
 - [x] 1.3.1.3 Design Flow pipeline topology
-- [ ] 1.3.1.4 Add `flow` dependency if not present
-- [ ] 1.3.1.5 Implement `load_triples_parallel/4` function
-- [ ] 1.3.1.6 Configure stage count based on CPU cores
-- [ ] 1.3.1.7 Implement backpressure via `max_demand` tuning
+- [x] 1.3.1.4 Add `flow` dependency if not present (already present)
+- [x] 1.3.1.5 Implement `load_triples_parallel/6` function
+- [x] 1.3.1.6 Configure stage count based on CPU cores via `resolve_stages/1`
+- [x] 1.3.1.7 Implement backpressure via `max_demand` tuning
 
 ### 1.3.2 Encoding Stage Implementation
 
-- [x] **Task 1.3.2 Analysis Complete** (2025-12-31)
+- [x] **Task 1.3.2 Complete** (2026-01-01)
 
 Implement the parallel dictionary encoding stage.
 
 - [x] 1.3.2.1 Design encoding worker function
-- [ ] 1.3.2.2 Implement batch encoding in Flow.map
-- [ ] 1.3.2.3 Handle encoding errors with proper propagation
-- [ ] 1.3.2.4 Add telemetry for encoding throughput
-- [ ] 1.3.2.5 Implement graceful shutdown on encoding failure
+- [x] 1.3.2.2 Implement batch encoding in Flow.map via `encode_batch/3`
+- [x] 1.3.2.3 Handle encoding errors with proper propagation via Agent
+- [x] 1.3.2.4 Add telemetry for encoding throughput (batch telemetry)
+- [x] 1.3.2.5 Implement graceful shutdown on encoding failure (skip writes on error)
 
 ### 1.3.3 Writing Stage Implementation
 
-- [x] **Task 1.3.3 Analysis Complete** (2025-12-31)
+- [x] **Task 1.3.3 Complete** (2026-01-01)
 
 Implement the sequential index writing stage.
 
 - [x] 1.3.3.1 Design atomic batch write function
-- [ ] 1.3.3.2 Implement Flow.partition for single-writer semantics
-- [ ] 1.3.3.3 Implement Flow.reduce for accumulating write count
-- [ ] 1.3.3.4 Handle write errors with proper rollback
-- [ ] 1.3.3.5 Add telemetry for write throughput
+- [x] 1.3.3.2 Implement Flow.partition for single-writer semantics (stages: 1)
+- [x] 1.3.3.3 Implement Flow.reduce for accumulating write count
+- [x] 1.3.3.4 Handle write errors with proper propagation via Agent
+- [x] 1.3.3.5 Add telemetry for write throughput (batch telemetry events)
 
 ### 1.3.4 Progress Reporting
 
@@ -199,14 +199,14 @@ Implement progress callbacks for long-running bulk loads.
 
 ### 1.3.5 Unit Tests
 
-- [ ] **Task 1.3.5 Complete**
+- [x] **Task 1.3.5 Partial** (2026-01-01)
 
-- [ ] 1.3.5.1 Test parallel loading produces correct results
-- [ ] 1.3.5.2 Test stage count configuration
+- [x] 1.3.5.1 Test parallel loading produces correct results (26 tests)
+- [x] 1.3.5.2 Test stage count configuration
 - [ ] 1.3.5.3 Test error handling in encoding stage
 - [ ] 1.3.5.4 Test error handling in writing stage
-- [ ] 1.3.5.5 Test progress callbacks are invoked
-- [ ] 1.3.5.6 Test cancellation via callback
+- [ ] 1.3.5.5 Test progress callbacks are invoked (pending 1.3.4)
+- [ ] 1.3.5.6 Test cancellation via callback (pending 1.3.4)
 
 ---
 

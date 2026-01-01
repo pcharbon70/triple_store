@@ -9,7 +9,8 @@ defmodule TripleStore.Loader do
 
   - **Batched writes**: Groups triples into configurable batch sizes (default 10,000)
   - **Dynamic batch sizing**: Automatically adjusts batch size based on memory budget
-  - **Sequential processing**: Uses `Enum.reduce_while` with batched writes for reliable loading
+  - **Parallel processing**: Flow-based pipeline with configurable stage count
+  - **Sequential fallback**: Uses `Enum.reduce_while` when parallel mode disabled
   - **Progress reporting**: Emits Telemetry events for monitoring
   - **Format support**: Turtle, N-Triples, N-Quads, RDF/XML, TriG, JSON-LD
   - **Path validation**: File paths are validated to prevent path traversal attacks
@@ -37,6 +38,17 @@ defmodule TripleStore.Loader do
   - `:medium` - 10,000 triples/batch (default, balanced)
   - `:high` - 50,000 triples/batch (for systems with ample memory)
   - `:auto` - Detects system memory and selects appropriate size
+
+  ## Parallel Loading
+
+  Use the `:parallel` option to enable Flow-based parallel processing:
+
+  - `:parallel` - Enable parallel encoding (default: `true`)
+  - `:stages` - Number of parallel encoding stages (default: `System.schedulers_online()`)
+  - `:max_demand` - Maximum demand per stage for backpressure (default: 5)
+
+  The parallel pipeline overlaps dictionary encoding (CPU-bound) with index writing
+  (I/O-bound), improving throughput on multi-core systems.
 
   ## Important Limitations
 
@@ -105,6 +117,9 @@ defmodule TripleStore.Loader do
   @type load_opts :: [
           batch_size: pos_integer(),
           memory_budget: memory_budget(),
+          parallel: boolean(),
+          stages: pos_integer(),
+          max_demand: pos_integer(),
           format: atom() | nil,
           base_iri: String.t() | nil,
           max_file_size: pos_integer() | nil
@@ -119,6 +134,12 @@ defmodule TripleStore.Loader do
   @max_batch_size 100_000
   # 100MB
   @default_max_file_size 100_000_000
+
+  # Parallel loading defaults
+  @default_parallel true
+  @default_max_demand 5
+  @min_stages 1
+  @max_stages 64
 
   # Memory budget to batch size mapping
   @memory_budget_sizes %{
@@ -195,7 +216,7 @@ defmodule TripleStore.Loader do
 
     with_telemetry(start_metadata, fn ->
       triples = RDF.Graph.triples(graph)
-      load_triples(db, manager, triples, batch_size)
+      load_triples(db, manager, triples, batch_size, opts)
     end)
   end
 
@@ -264,7 +285,7 @@ defmodule TripleStore.Loader do
            :ok <- check_file_size(validated_path, max_file_size),
            {:ok, graph} <- parse_file(validated_path, format) do
         triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size)
+        load_triples(db, manager, triples, batch_size, opts)
       end
     end)
   end
@@ -310,7 +331,7 @@ defmodule TripleStore.Loader do
     case parse_string(content, format, parse_opts) do
       {:ok, graph} ->
         triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size)
+        load_triples(db, manager, triples, batch_size, opts)
 
       {:error, _} = error ->
         error
@@ -354,7 +375,7 @@ defmodule TripleStore.Loader do
           {:ok, non_neg_integer()} | {:error, term()}
   def load_stream(db, manager, triple_stream, opts \\ []) do
     batch_size = resolve_batch_size(opts)
-    load_triples(db, manager, triple_stream, batch_size)
+    load_triples(db, manager, triple_stream, batch_size, opts)
   end
 
   # ===========================================================================
@@ -477,9 +498,24 @@ defmodule TripleStore.Loader do
   # Private - Core Loading Logic
   # ===========================================================================
 
-  @spec load_triples(db_ref(), manager(), Enumerable.t(), pos_integer()) ::
+  @spec load_triples(db_ref(), manager(), Enumerable.t(), pos_integer(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  defp load_triples(db, manager, triples, batch_size) do
+  defp load_triples(db, manager, triples, batch_size, opts) do
+    parallel? = Keyword.get(opts, :parallel, @default_parallel)
+
+    if parallel? do
+      stages = resolve_stages(opts)
+      max_demand = Keyword.get(opts, :max_demand, @default_max_demand)
+      load_triples_parallel(db, manager, triples, batch_size, stages, max_demand)
+    else
+      load_triples_sequential(db, manager, triples, batch_size)
+    end
+  end
+
+  # Sequential loading - original implementation
+  @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  defp load_triples_sequential(db, manager, triples, batch_size) do
     triples
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
@@ -505,6 +541,98 @@ defmodule TripleStore.Loader do
     end)
   end
 
+  # Parallel loading - Flow-based pipeline
+  # Stage 1: Chunking (from stream)
+  # Stage 2: Dictionary encoding (parallel, CPU-bound)
+  # Stage 3: Index writing (sequential via partition, I/O-bound)
+  @spec load_triples_parallel(
+          db_ref(),
+          manager(),
+          Enumerable.t(),
+          pos_integer(),
+          pos_integer(),
+          pos_integer()
+        ) :: {:ok, non_neg_integer()} | {:error, term()}
+  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand) do
+    # Use an Agent to track errors since Flow runs in separate processes
+    {:ok, error_agent} = Agent.start_link(fn -> nil end)
+
+    try do
+      result =
+        triples
+        |> Stream.chunk_every(batch_size)
+        |> Flow.from_enumerable(stages: stages, max_demand: max_demand)
+        # Stage 2: Parallel dictionary encoding
+        |> Flow.map(fn batch ->
+          encode_batch(manager, batch, error_agent)
+        end)
+        # Stage 3: Sequential writing via single partition
+        |> Flow.partition(stages: 1, max_demand: max_demand)
+        |> Flow.reduce(fn -> {0, 0} end, fn encoded_batch, {total, batch_num} ->
+          write_encoded_batch(db, encoded_batch, batch_num + 1, error_agent, total)
+        end)
+        |> Flow.emit(:state)
+        |> Enum.to_list()
+
+      # Check for errors that occurred during processing
+      case Agent.get(error_agent, & &1) do
+        nil ->
+          # Sum up totals from all partitions (should be just one)
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:ok, total}
+
+        error ->
+          error
+      end
+    after
+      Agent.stop(error_agent)
+    end
+  end
+
+  # Encode a batch of RDF triples to internal representation
+  @spec encode_batch(manager(), [RDF.Triple.t()], pid()) ::
+          {:ok, list()} | {:error, term()}
+  defp encode_batch(manager, rdf_triples, error_agent) do
+    case Adapter.from_rdf_triples(manager, rdf_triples) do
+      {:ok, internal_triples} ->
+        {:ok, internal_triples}
+
+      {:error, reason} = error ->
+        Agent.update(error_agent, fn _ -> error end)
+        {:error, reason}
+    end
+  end
+
+  # Write encoded batch to indices and update totals
+  @spec write_encoded_batch(db_ref(), {:ok, list()} | {:error, term()}, pos_integer(), pid(), non_neg_integer()) ::
+          {non_neg_integer(), pos_integer()}
+  defp write_encoded_batch(_db, {:error, _reason}, batch_num, _error_agent, total) do
+    # Skip writing on encoding error, error already recorded
+    {total, batch_num}
+  end
+
+  defp write_encoded_batch(db, {:ok, internal_triples}, batch_num, error_agent, total) do
+    batch_start = System.monotonic_time()
+
+    case Index.insert_triples(db, internal_triples) do
+      :ok ->
+        batch_count = length(internal_triples)
+        batch_duration = System.monotonic_time() - batch_start
+
+        :telemetry.execute(
+          [:triple_store, :loader, :batch],
+          %{count: batch_count, duration: batch_duration},
+          %{batch_number: batch_num}
+        )
+
+        {total + batch_count, batch_num}
+
+      {:error, _reason} = error ->
+        Agent.update(error_agent, fn _ -> error end)
+        {total, batch_num}
+    end
+  end
+
   @spec process_batch(db_ref(), manager(), [RDF.Triple.t()]) :: :ok | {:error, term()}
   defp process_batch(db, manager, rdf_triples) do
     case Adapter.from_rdf_triples(manager, rdf_triples) do
@@ -513,6 +641,18 @@ defmodule TripleStore.Loader do
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  # Resolve stage count from options, defaulting to CPU cores
+  @spec resolve_stages(keyword()) :: pos_integer()
+  defp resolve_stages(opts) do
+    case Keyword.get(opts, :stages) do
+      nil -> System.schedulers_online()
+      n when is_integer(n) and n >= @min_stages and n <= @max_stages -> n
+      n when is_integer(n) and n < @min_stages -> @min_stages
+      n when is_integer(n) and n > @max_stages -> @max_stages
+      _ -> System.schedulers_online()
     end
   end
 
