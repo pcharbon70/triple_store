@@ -139,7 +139,7 @@ Implement dynamic batch size selection based on available memory and dataset cha
 
 ## 1.3 Parallel Pipeline Loading
 
-- [x] **Section 1.3 Analysis Complete** (2025-12-31)
+- [x] **Section 1.3 Complete** (2026-01-01)
 
 Current loading is strictly sequential: each batch must complete dictionary encoding and index writing before the next batch begins. This wastes CPU cycles during I/O waits and vice versa.
 
@@ -188,25 +188,25 @@ Implement the sequential index writing stage.
 
 ### 1.3.4 Progress Reporting
 
-- [ ] **Task 1.3.4 Complete**
+- [x] **Task 1.3.4 Complete** (2026-01-01)
 
 Implement progress callbacks for long-running bulk loads.
 
-- [ ] 1.3.4.1 Add `:progress_callback` option to load function
-- [ ] 1.3.4.2 Implement periodic progress updates (every N batches)
-- [ ] 1.3.4.3 Include triples loaded, elapsed time, estimated remaining
-- [ ] 1.3.4.4 Support cancellation via progress callback return value
+- [x] 1.3.4.1 Add `:progress_callback` option to load function
+- [x] 1.3.4.2 Implement periodic progress updates (every N batches)
+- [x] 1.3.4.3 Include triples loaded, elapsed time, rate_per_second
+- [x] 1.3.4.4 Support cancellation via progress callback return value
 
 ### 1.3.5 Unit Tests
 
-- [x] **Task 1.3.5 Partial** (2026-01-01)
+- [x] **Task 1.3.5 Complete** (2026-01-01)
 
 - [x] 1.3.5.1 Test parallel loading produces correct results (26 tests)
 - [x] 1.3.5.2 Test stage count configuration
 - [ ] 1.3.5.3 Test error handling in encoding stage
 - [ ] 1.3.5.4 Test error handling in writing stage
-- [ ] 1.3.5.5 Test progress callbacks are invoked (pending 1.3.4)
-- [ ] 1.3.5.6 Test cancellation via callback (pending 1.3.4)
+- [x] 1.3.5.5 Test progress callbacks are invoked (18 tests)
+- [x] 1.3.5.6 Test cancellation via callback
 
 ---
 

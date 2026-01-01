@@ -50,6 +50,31 @@ defmodule TripleStore.Loader do
   The parallel pipeline overlaps dictionary encoding (CPU-bound) with index writing
   (I/O-bound), improving throughput on multi-core systems.
 
+  ## Progress Reporting
+
+  Use the `:progress_callback` option to monitor long-running bulk loads:
+
+  - `:progress_callback` - Function called periodically with progress info
+  - `:progress_interval` - Call callback every N batches (default: 10)
+
+  The callback receives a map with:
+  - `triples_loaded` - Number of triples loaded so far
+  - `batch_number` - Current batch number (1-indexed)
+  - `elapsed_ms` - Elapsed time in milliseconds
+  - `rate_per_second` - Current loading rate (triples/second)
+
+  Return `:continue` to proceed or `:halt` to cancel loading.
+
+  ### Example
+
+      Loader.load_file(db, manager, "large_file.ttl",
+        progress_callback: fn info ->
+          IO.puts("Loaded \#{info.triples_loaded} triples (\#{info.rate_per_second}/s)")
+          :continue
+        end,
+        progress_interval: 5
+      )
+
   ## Important Limitations
 
   ### Named Graphs Not Supported
@@ -113,6 +138,30 @@ defmodule TripleStore.Loader do
   @typedoc "Memory budget options for automatic batch sizing"
   @type memory_budget :: :low | :medium | :high | :auto
 
+  @typedoc """
+  Progress information passed to progress callbacks.
+
+  Fields:
+  - `triples_loaded` - Number of triples loaded so far
+  - `batch_number` - Current batch number (1-indexed)
+  - `elapsed_ms` - Elapsed time in milliseconds since loading started
+  - `rate_per_second` - Current loading rate (triples/second)
+  """
+  @type progress_info :: %{
+          triples_loaded: non_neg_integer(),
+          batch_number: pos_integer(),
+          elapsed_ms: non_neg_integer(),
+          rate_per_second: float()
+        }
+
+  @typedoc """
+  Progress callback function type.
+
+  Called periodically during loading to report progress.
+  Return `:continue` to continue loading, or `:halt` to cancel.
+  """
+  @type progress_callback :: (progress_info() -> :continue | :halt)
+
   @typedoc "Loading options"
   @type load_opts :: [
           batch_size: pos_integer(),
@@ -120,6 +169,8 @@ defmodule TripleStore.Loader do
           parallel: boolean(),
           stages: pos_integer(),
           max_demand: pos_integer(),
+          progress_callback: progress_callback() | nil,
+          progress_interval: pos_integer(),
           format: atom() | nil,
           base_iri: String.t() | nil,
           max_file_size: pos_integer() | nil
@@ -140,6 +191,10 @@ defmodule TripleStore.Loader do
   @default_max_demand 5
   @min_stages 1
   @max_stages 64
+
+  # Progress reporting defaults
+  # Report progress every N batches (default: every 10 batches)
+  @default_progress_interval 10
 
   # Memory budget to batch size mapping
   @memory_budget_sizes %{
@@ -499,32 +554,42 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @spec load_triples(db_ref(), manager(), Enumerable.t(), pos_integer(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp load_triples(db, manager, triples, batch_size, opts) do
     parallel? = Keyword.get(opts, :parallel, @default_parallel)
+    progress_callback = Keyword.get(opts, :progress_callback)
+    progress_interval = Keyword.get(opts, :progress_interval, @default_progress_interval)
+    start_time = System.monotonic_time(:millisecond)
+
+    progress_opts = %{
+      callback: progress_callback,
+      interval: progress_interval,
+      start_time: start_time
+    }
 
     if parallel? do
       stages = resolve_stages(opts)
       max_demand = Keyword.get(opts, :max_demand, @default_max_demand)
-      load_triples_parallel(db, manager, triples, batch_size, stages, max_demand)
+      load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts)
     else
-      load_triples_sequential(db, manager, triples, batch_size)
+      load_triples_sequential(db, manager, triples, batch_size, progress_opts)
     end
   end
 
   # Sequential loading - original implementation
-  @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  defp load_triples_sequential(db, manager, triples, batch_size) do
+  @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_triples_sequential(db, manager, triples, batch_size, progress_opts) do
     triples
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
     |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
       batch_start = System.monotonic_time()
+      batch_count = length(batch)
 
       case process_batch(db, manager, batch) do
         :ok ->
-          batch_count = length(batch)
+          new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
 
           :telemetry.execute(
@@ -533,7 +598,14 @@ defmodule TripleStore.Loader do
             %{batch_number: batch_number}
           )
 
-          {:cont, {:ok, total + batch_count}}
+          # Check if we should report progress and handle cancellation
+          case maybe_report_progress(progress_opts, batch_number, new_total) do
+            :continue ->
+              {:cont, {:ok, new_total}}
+
+            :halt ->
+              {:halt, {:halted, new_total}}
+          end
 
         {:error, reason} ->
           {:halt, {:error, reason}}
@@ -551,11 +623,13 @@ defmodule TripleStore.Loader do
           Enumerable.t(),
           pos_integer(),
           pos_integer(),
-          pos_integer()
-        ) :: {:ok, non_neg_integer()} | {:error, term()}
-  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand) do
-    # Use an Agent to track errors since Flow runs in separate processes
+          pos_integer(),
+          map()
+        ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts) do
+    # Use Agents to track errors and halted state since Flow runs in separate processes
     {:ok, error_agent} = Agent.start_link(fn -> nil end)
+    {:ok, halt_agent} = Agent.start_link(fn -> false end)
 
     try do
       result =
@@ -564,28 +638,47 @@ defmodule TripleStore.Loader do
         |> Flow.from_enumerable(stages: stages, max_demand: max_demand)
         # Stage 2: Parallel dictionary encoding
         |> Flow.map(fn batch ->
-          encode_batch(manager, batch, error_agent)
+          # Check if halted before encoding
+          if Agent.get(halt_agent, & &1) do
+            {:halted, []}
+          else
+            encode_batch(manager, batch, error_agent)
+          end
         end)
         # Stage 3: Sequential writing via single partition
         |> Flow.partition(stages: 1, max_demand: max_demand)
         |> Flow.reduce(fn -> {0, 0} end, fn encoded_batch, {total, batch_num} ->
-          write_encoded_batch(db, encoded_batch, batch_num + 1, error_agent, total)
+          write_encoded_batch_with_progress(
+            db,
+            encoded_batch,
+            batch_num + 1,
+            error_agent,
+            halt_agent,
+            total,
+            progress_opts
+          )
         end)
         |> Flow.emit(:state)
         |> Enum.to_list()
 
-      # Check for errors that occurred during processing
-      case Agent.get(error_agent, & &1) do
-        nil ->
+      # Check for errors or halt that occurred during processing
+      cond do
+        Agent.get(halt_agent, & &1) ->
+          # Halted by progress callback
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:halted, total}
+
+        error = Agent.get(error_agent, & &1) ->
+          error
+
+        true ->
           # Sum up totals from all partitions (should be just one)
           total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
           {:ok, total}
-
-        error ->
-          error
       end
     after
       Agent.stop(error_agent)
+      Agent.stop(halt_agent)
     end
   end
 
@@ -603,33 +696,82 @@ defmodule TripleStore.Loader do
     end
   end
 
-  # Write encoded batch to indices and update totals
-  @spec write_encoded_batch(db_ref(), {:ok, list()} | {:error, term()}, pos_integer(), pid(), non_neg_integer()) ::
-          {non_neg_integer(), pos_integer()}
-  defp write_encoded_batch(_db, {:error, _reason}, batch_num, _error_agent, total) do
+  # Write encoded batch with progress reporting (for parallel loading)
+  @spec write_encoded_batch_with_progress(
+          db_ref(),
+          {:ok, list()} | {:error, term()} | {:halted, list()},
+          pos_integer(),
+          pid(),
+          pid(),
+          non_neg_integer(),
+          map()
+        ) :: {non_neg_integer(), pos_integer()}
+  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_agent, total, _progress_opts) do
     # Skip writing on encoding error, error already recorded
     {total, batch_num}
   end
 
-  defp write_encoded_batch(db, {:ok, internal_triples}, batch_num, error_agent, total) do
-    batch_start = System.monotonic_time()
+  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_agent, total, _progress_opts) do
+    # Skip writing when halted
+    {total, batch_num}
+  end
 
-    case Index.insert_triples(db, internal_triples) do
-      :ok ->
-        batch_count = length(internal_triples)
-        batch_duration = System.monotonic_time() - batch_start
+  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_agent, total, progress_opts) do
+    # Check if already halted
+    if Agent.get(halt_agent, & &1) do
+      {total, batch_num}
+    else
+      batch_start = System.monotonic_time()
 
-        :telemetry.execute(
-          [:triple_store, :loader, :batch],
-          %{count: batch_count, duration: batch_duration},
-          %{batch_number: batch_num}
-        )
+      case Index.insert_triples(db, internal_triples) do
+        :ok ->
+          batch_count = length(internal_triples)
+          new_total = total + batch_count
+          batch_duration = System.monotonic_time() - batch_start
 
-        {total + batch_count, batch_num}
+          :telemetry.execute(
+            [:triple_store, :loader, :batch],
+            %{count: batch_count, duration: batch_duration},
+            %{batch_number: batch_num}
+          )
 
-      {:error, _reason} = error ->
-        Agent.update(error_agent, fn _ -> error end)
-        {total, batch_num}
+          # Report progress and handle cancellation
+          case maybe_report_progress(progress_opts, batch_num, new_total) do
+            :continue ->
+              {new_total, batch_num}
+
+            :halt ->
+              Agent.update(halt_agent, fn _ -> true end)
+              {new_total, batch_num}
+          end
+
+        {:error, _reason} = error ->
+          Agent.update(error_agent, fn _ -> error end)
+          {total, batch_num}
+      end
+    end
+  end
+
+  # Report progress if callback is set and interval is reached
+  @spec maybe_report_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
+  defp maybe_report_progress(%{callback: nil}, _batch_number, _total), do: :continue
+
+  defp maybe_report_progress(%{callback: callback, interval: interval, start_time: start_time}, batch_number, total) do
+    # Only report on interval boundaries
+    if rem(batch_number, interval) == 0 do
+      elapsed_ms = System.monotonic_time(:millisecond) - start_time
+      rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
+
+      progress_info = %{
+        triples_loaded: total,
+        batch_number: batch_number,
+        elapsed_ms: elapsed_ms,
+        rate_per_second: rate
+      }
+
+      callback.(progress_info)
+    else
+      :continue
     end
   end
 
@@ -660,8 +802,8 @@ defmodule TripleStore.Loader do
   # Private - Telemetry Helper
   # ===========================================================================
 
-  @spec with_telemetry(map(), (-> {:ok, non_neg_integer()} | {:error, term()})) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+  @spec with_telemetry(map(), (-> {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()})) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp with_telemetry(start_metadata, func) do
     start_time = System.monotonic_time()
 
@@ -683,6 +825,17 @@ defmodule TripleStore.Loader do
           )
 
           {:ok, count}
+
+        {:halted, count} ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :loader, :stop],
+            %{total_count: count, duration: duration, halted: true},
+            Map.take(start_metadata, [:source, :path])
+          )
+
+          {:halted, count}
 
         {:error, _} = error ->
           error
