@@ -97,11 +97,15 @@ defmodule TripleStore.Dictionary.ReadCacheTest do
 
       # First lookup - cache miss
       {:ok, id1} = Manager.get_or_create_id(manager, uri)
-      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1}, %{type: :miss}}
+
+      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1},
+                      %{type: :miss}}
 
       # Second lookup - cache hit
       {:ok, id2} = Manager.get_or_create_id(manager, uri)
-      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1}, %{type: :hit}}
+
+      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1},
+                      %{type: :hit}}
 
       assert id1 == id2
 
@@ -241,7 +245,9 @@ defmodule TripleStore.Dictionary.ReadCacheTest do
       uri = RDF.iri("http://example.org/telemetry/miss")
 
       {:ok, _id} = Manager.get_or_create_id(manager, uri)
-      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1}, %{type: :miss}}
+
+      assert_receive {:telemetry, [:triple_store, :dictionary, :cache], %{count: 1},
+                      %{type: :miss}}
 
       :telemetry.detach("cache-miss-handler")
       Manager.stop(manager)
@@ -333,7 +339,12 @@ defmodule TripleStore.Dictionary.ReadCacheTest do
         send(test_pid, {:telemetry, event, measurements, metadata})
       end
 
-      :telemetry.attach("sharded-cache-handler", [:triple_store, :dictionary, :cache], handler, nil)
+      :telemetry.attach(
+        "sharded-cache-handler",
+        [:triple_store, :dictionary, :cache],
+        handler,
+        nil
+      )
 
       uri = RDF.iri("http://example.org/sharded/cache/test")
 
@@ -463,7 +474,10 @@ defmodule TripleStore.Dictionary.ReadCacheTest do
       results = Task.await_many(tasks)
 
       # All should succeed
-      assert Enum.all?(results, fn {:ok, _} -> true; _ -> false end)
+      assert Enum.all?(results, fn
+               {:ok, _} -> true
+               _ -> false
+             end)
 
       Manager.stop(manager)
     end

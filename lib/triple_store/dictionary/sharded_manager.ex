@@ -183,48 +183,47 @@ defmodule TripleStore.Dictionary.ShardedManager do
 
   def get_or_create_ids(sharded, terms, opts) do
     timeout = Keyword.get(opts, :timeout, get_batch_timeout(sharded))
-    shard_count = get_shard_count(sharded)
     shards = get_shards(sharded)
-
-    # Partition terms by shard, keeping track of original indices
-    partitioned = partition_by_shard(terms, shard_count)
-
-    # Process each shard's terms in parallel using Task.Supervisor if available,
-    # otherwise fall back to regular Tasks with proper error handling
+    partitioned = partition_by_shard(terms, length(shards))
     task_supervisor = get_task_supervisor(sharded)
 
-    tasks =
-      Enum.map(partitioned, fn {shard_idx, indexed_terms} ->
-        shard = Enum.at(shards, shard_idx)
-        terms_only = Enum.map(indexed_terms, fn {_idx, term} -> term end)
-
-        task_fn = fn ->
-          case Manager.get_or_create_ids(shard, terms_only) do
-            {:ok, ids} ->
-              # Zip IDs back with original indices
-              indexed_ids =
-                indexed_terms
-                |> Enum.zip(ids)
-                |> Enum.map(fn {{idx, _term}, id} -> {idx, id} end)
-
-              {:ok, indexed_ids}
-
-            error ->
-              error
-          end
-        end
-
-        if task_supervisor do
-          Task.Supervisor.async_nolink(task_supervisor, task_fn)
-        else
-          Task.async(task_fn)
-        end
-      end)
-
-    # Collect results with timeout, handling potential task failures
+    tasks = spawn_shard_tasks(partitioned, shards, task_supervisor)
     results = safe_await_many(tasks, timeout, task_supervisor)
 
-    # Check for errors and reassemble in original order
+    assemble_results(results)
+  end
+
+  defp spawn_shard_tasks(partitioned, shards, task_supervisor) do
+    Enum.map(partitioned, fn {shard_idx, indexed_terms} ->
+      shard = Enum.at(shards, shard_idx)
+      spawn_shard_task(shard, indexed_terms, task_supervisor)
+    end)
+  end
+
+  defp spawn_shard_task(shard, indexed_terms, task_supervisor) do
+    task_fn = fn -> process_shard_terms(shard, indexed_terms) end
+
+    if task_supervisor do
+      Task.Supervisor.async_nolink(task_supervisor, task_fn)
+    else
+      Task.async(task_fn)
+    end
+  end
+
+  defp process_shard_terms(shard, indexed_terms) do
+    terms_only = Enum.map(indexed_terms, fn {_idx, term} -> term end)
+
+    case Manager.get_or_create_ids(shard, terms_only) do
+      {:ok, ids} ->
+        indexed_ids = Enum.zip_with(indexed_terms, ids, fn {idx, _term}, id -> {idx, id} end)
+        {:ok, indexed_ids}
+
+      error ->
+        error
+    end
+  end
+
+  defp assemble_results(results) do
     case collect_results(results) do
       {:ok, indexed_ids} ->
         ids =
@@ -338,7 +337,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
   """
   @spec stop(t()) :: :ok
   def stop(sharded) do
-    # Get the shared counter and cache before stopping
+    # Get resources before stopping
     counter_key = {:sharded_manager_counter, sharded}
     cache_key = {:sharded_manager_cache, sharded}
     shards_key = {:sharded_manager_shards, sharded}
@@ -349,45 +348,39 @@ defmodule TripleStore.Dictionary.ShardedManager do
     shared_cache = safe_persistent_term_get(cache_key)
     task_supervisor = safe_persistent_term_get(task_sup_key)
 
-    # Stop the supervisor (and all child managers), handling already-stopped case
-    if is_pid(sharded) and Process.alive?(sharded) do
-      try do
-        Supervisor.stop(sharded, :normal)
-      catch
-        :exit, {:noproc, _} -> :ok
-        :exit, :noproc -> :ok
-      end
-    end
-
-    # Stop the task supervisor if we started one
-    if task_supervisor && is_pid(task_supervisor) && Process.alive?(task_supervisor) do
-      try do
-        Supervisor.stop(task_supervisor, :normal)
-      catch
-        :exit, {:noproc, _} -> :ok
-        :exit, :noproc -> :ok
-      end
-    end
-
-    # Clean up the shared counter
-    if shared_counter && is_pid(shared_counter) && Process.alive?(shared_counter) do
-      SequenceCounter.stop(shared_counter)
-    end
-
-    # Clean up the shared cache
-    if shared_cache do
-      safe_ets_delete(shared_cache)
-    end
+    # Stop processes
+    safe_supervisor_stop(sharded)
+    safe_supervisor_stop(task_supervisor)
+    safe_counter_stop(shared_counter)
+    safe_ets_delete(shared_cache)
 
     # Remove all persistent_term entries
-    safe_persistent_term_erase(counter_key)
-    safe_persistent_term_erase(cache_key)
-    safe_persistent_term_erase(shards_key)
-    safe_persistent_term_erase(timeout_key)
-    safe_persistent_term_erase(task_sup_key)
+    Enum.each(
+      [counter_key, cache_key, shards_key, timeout_key, task_sup_key],
+      &safe_persistent_term_erase/1
+    )
 
     :ok
   end
+
+  defp safe_supervisor_stop(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      Supervisor.stop(pid, :normal)
+    end
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, :noproc -> :ok
+  end
+
+  defp safe_supervisor_stop(_), do: :ok
+
+  defp safe_counter_stop(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      SequenceCounter.stop(pid)
+    end
+  end
+
+  defp safe_counter_stop(_), do: :ok
 
   @doc """
   Gets the shared sequence counter.
@@ -597,8 +590,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
   defp term_hash_key(%RDF.BlankNode{value: value}), do: {:bnode, value}
 
   defp term_hash_key(%RDF.Literal{} = lit) do
-    {:literal, RDF.Literal.lexical(lit), RDF.Literal.datatype_id(lit),
-     RDF.Literal.language(lit)}
+    {:literal, RDF.Literal.lexical(lit), RDF.Literal.datatype_id(lit), RDF.Literal.language(lit)}
   end
 
   # ===========================================================================

@@ -303,34 +303,40 @@ defmodule TripleStore do
   """
   @spec close(store()) :: :ok | {:error, term()}
   def close(%{db: db, dict_manager: dict_manager} = _store) do
-    # Stop the dictionary manager
-    # ShardedManager is a Supervisor, Manager is a GenServer - handle both
-    if is_pid(dict_manager) and Process.alive?(dict_manager) do
-      # Check if it's a Supervisor by looking at the initial_call in process info
-      case Process.info(dict_manager, :dictionary) do
-        {:dictionary, dict} ->
-          initial_call = Keyword.get(dict, :"$initial_call", nil)
-
-          if initial_call == {:supervisor, Supervisor.Default, 1} do
-            # It's a Supervisor (ShardedManager) - use its stop function
-            ShardedManager.stop(dict_manager)
-          else
-            # It's a GenServer (Manager) - use GenServer.stop
-            GenServer.stop(dict_manager, :normal)
-          end
-
-        nil ->
-          # Process may have exited, try GenServer.stop as fallback
-          try do
-            GenServer.stop(dict_manager, :normal)
-          catch
-            :exit, _ -> :ok
-          end
-      end
-    end
-
-    # Close the database
+    stop_dict_manager(dict_manager)
     NIF.close(db)
+  end
+
+  defp stop_dict_manager(dict_manager) when is_pid(dict_manager) do
+    if Process.alive?(dict_manager) do
+      do_stop_dict_manager(dict_manager)
+    end
+  end
+
+  defp stop_dict_manager(_), do: :ok
+
+  defp do_stop_dict_manager(dict_manager) do
+    case Process.info(dict_manager, :dictionary) do
+      {:dictionary, dict} ->
+        stop_by_type(dict_manager, Keyword.get(dict, :"$initial_call", nil))
+
+      nil ->
+        safe_genserver_stop(dict_manager)
+    end
+  end
+
+  defp stop_by_type(pid, {:supervisor, Supervisor.Default, 1}) do
+    ShardedManager.stop(pid)
+  end
+
+  defp stop_by_type(pid, _) do
+    GenServer.stop(pid, :normal)
+  end
+
+  defp safe_genserver_stop(pid) do
+    GenServer.stop(pid, :normal)
+  catch
+    :exit, _ -> :ok
   end
 
   @doc """

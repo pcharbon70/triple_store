@@ -144,7 +144,8 @@ defmodule TripleStore.Dictionary.Manager do
   - `:not_found` - If term doesn't exist
   - `{:error, reason}` - On failure
   """
-  @spec lookup_id(manager(), rdf_term()) :: {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  @spec lookup_id(manager(), rdf_term()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   def lookup_id(manager, term) do
     # Try cache lookup first
     case cache_lookup(manager, term) do
@@ -312,7 +313,14 @@ defmodule TripleStore.Dictionary.Manager do
     # Use external counter if provided, otherwise start a new one
     case get_or_start_counter(db, external_counter) do
       {:ok, counter, owns_counter} ->
-        {:ok, %{db: db, counter: counter, owns_counter: owns_counter, cache: cache, owns_cache: owns_cache}}
+        {:ok,
+         %{
+           db: db,
+           counter: counter,
+           owns_counter: owns_counter,
+           cache: cache,
+           owns_cache: owns_cache
+         }}
 
       {:error, reason} ->
         # Clean up cache if counter fails
@@ -324,12 +332,14 @@ defmodule TripleStore.Dictionary.Manager do
 
   defp get_or_create_cache(nil) do
     # Create new ETS table with read concurrency for parallel lookups
-    cache = :ets.new(:dictionary_cache, [
-      :set,
-      :public,
-      {:read_concurrency, true},
-      {:write_concurrency, false}
-    ])
+    cache =
+      :ets.new(:dictionary_cache, [
+        :set,
+        :public,
+        {:read_concurrency, true},
+        {:write_concurrency, false}
+      ])
+
     {cache, true}
   end
 
@@ -467,35 +477,39 @@ defmodule TripleStore.Dictionary.Manager do
   @spec do_lookup_id(reference(), :ets.tid(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp do_lookup_id(db, cache, term) do
-    case StringToId.encode_term(term) do
-      {:ok, key} ->
-        # Check cache first
-        case :ets.lookup(cache, key) do
-          [{^key, id}] ->
-            {:ok, id}
+    with {:ok, key} <- StringToId.encode_term(term) do
+      lookup_in_cache_or_db(db, cache, key)
+    end
+  end
 
-          [] ->
-            # Fall back to RocksDB
-            case NIF.get(db, :str2id, key) do
-              {:ok, <<id::64-big>>} ->
-                # Populate cache for future lookups
-                :ets.insert(cache, {key, id})
-                {:ok, id}
+  defp lookup_in_cache_or_db(db, cache, key) do
+    case :ets.lookup(cache, key) do
+      [{^key, id}] -> {:ok, id}
+      [] -> lookup_in_rocksdb(db, cache, key)
+    end
+  end
 
-              :not_found ->
-                :not_found
+  defp lookup_in_rocksdb(db, cache, key) do
+    case NIF.get(db, :str2id, key) do
+      {:ok, <<id::64-big>>} ->
+        :ets.insert(cache, {key, id})
+        {:ok, id}
 
-              {:error, _} = error ->
-                error
-            end
-        end
+      :not_found ->
+        :not_found
 
       {:error, _} = error ->
         error
     end
   end
 
-  @spec create_and_store_id(reference(), SequenceCounter.counter(), :ets.tid(), binary(), rdf_term()) ::
+  @spec create_and_store_id(
+          reference(),
+          SequenceCounter.counter(),
+          :ets.tid(),
+          binary(),
+          rdf_term()
+        ) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
   defp create_and_store_id(db, counter, cache, key, term) do
     term_type = get_term_type(term)
@@ -517,45 +531,43 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   # Optimized batch processing with range allocation
-  @spec do_get_or_create_ids_batch(reference(), SequenceCounter.counter(), :ets.tid(), [rdf_term()]) ::
+  @spec do_get_or_create_ids_batch(reference(), SequenceCounter.counter(), :ets.tid(), [
+          rdf_term()
+        ]) ::
           {:ok, [Dictionary.term_id()]} | {:error, term()}
   defp do_get_or_create_ids_batch(db, counter, cache, terms) do
-    # Phase 1: Encode all terms and check existing IDs
     {encoded_terms, encode_errors} = encode_and_lookup_terms(db, cache, terms)
 
-    if encode_errors != [] do
-      {:error, {:encode_failed, hd(encode_errors)}}
-    else
-      # Phase 2: Group terms needing new IDs by type
-      needs_ids = for {idx, key, term, nil} <- encoded_terms, do: {idx, key, term}
+    case encode_errors do
+      [first_error | _] ->
+        {:error, {:encode_failed, first_error}}
 
-      if needs_ids == [] do
-        # All terms already have IDs
-        ids = for {_idx, _key, _term, id} <- encoded_terms, do: id
-        {:ok, ids}
-      else
-        # Phase 3: Allocate ID ranges per type
-        case allocate_ranges_for_terms(counter, needs_ids) do
-          {:ok, type_ranges} ->
-            # Phase 4: Assign IDs and store
-            case assign_and_store_ids(db, cache, needs_ids, type_ranges, encoded_terms) do
-              {:ok, id_map} ->
-                # Collect results in original order
-                ids =
-                  Enum.map(encoded_terms, fn {idx, _key, _term, existing_id} ->
-                    existing_id || Map.fetch!(id_map, idx)
-                  end)
+      [] ->
+        process_encoded_terms(db, counter, cache, encoded_terms)
+    end
+  end
 
-                {:ok, ids}
+  defp process_encoded_terms(db, counter, cache, encoded_terms) do
+    needs_ids = for {idx, key, term, nil} <- encoded_terms, do: {idx, key, term}
 
-              error ->
-                error
-            end
+    case needs_ids do
+      [] ->
+        {:ok, for({_idx, _key, _term, id} <- encoded_terms, do: id)}
 
-          error ->
-            error
-        end
-      end
+      _ ->
+        create_missing_ids(db, counter, cache, needs_ids, encoded_terms)
+    end
+  end
+
+  defp create_missing_ids(db, counter, cache, needs_ids, encoded_terms) do
+    with {:ok, type_ranges} <- allocate_ranges_for_terms(counter, needs_ids),
+         {:ok, id_map} <- assign_and_store_ids(db, cache, needs_ids, type_ranges, encoded_terms) do
+      ids =
+        Enum.map(encoded_terms, fn {idx, _key, _term, existing_id} ->
+          existing_id || Map.fetch!(id_map, idx)
+        end)
+
+      {:ok, ids}
     end
   end
 
@@ -564,35 +576,41 @@ defmodule TripleStore.Dictionary.Manager do
     terms
     |> Enum.with_index()
     |> Enum.reduce({[], []}, fn {term, idx}, {acc, errors} ->
-      case StringToId.encode_term(term) do
-        {:ok, key} ->
-          # Check cache first, then RocksDB
-          existing_id =
-            case :ets.lookup(cache, key) do
-              [{^key, id}] ->
-                id
-
-              [] ->
-                case NIF.get(db, :str2id, key) do
-                  {:ok, <<id::64-big>>} ->
-                    :ets.insert(cache, {key, id})
-                    id
-
-                  :not_found ->
-                    nil
-
-                  {:error, _} ->
-                    nil
-                end
-            end
-
-          {[{idx, key, term, existing_id} | acc], errors}
-
-        {:error, reason} ->
-          {acc, [{idx, reason} | errors]}
+      case encode_and_lookup_term(db, cache, term, idx) do
+        {:ok, entry} -> {[entry | acc], errors}
+        {:error, reason} -> {acc, [{idx, reason} | errors]}
       end
     end)
     |> then(fn {encoded, errors} -> {Enum.reverse(encoded), Enum.reverse(errors)} end)
+  end
+
+  defp encode_and_lookup_term(db, cache, term, idx) do
+    case StringToId.encode_term(term) do
+      {:ok, key} ->
+        existing_id = lookup_existing_id(db, cache, key)
+        {:ok, {idx, key, term, existing_id}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp lookup_existing_id(db, cache, key) do
+    case :ets.lookup(cache, key) do
+      [{^key, id}] -> id
+      [] -> lookup_existing_id_in_db(db, cache, key)
+    end
+  end
+
+  defp lookup_existing_id_in_db(db, cache, key) do
+    case NIF.get(db, :str2id, key) do
+      {:ok, <<id::64-big>>} ->
+        :ets.insert(cache, {key, id})
+        id
+
+      _ ->
+        nil
+    end
   end
 
   # Allocate ID ranges for each term type
