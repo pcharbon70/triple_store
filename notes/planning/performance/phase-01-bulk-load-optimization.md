@@ -93,7 +93,7 @@ Comprehensive test coverage for dictionary parallelization features.
 
 ## 1.2 Batch Size Optimization
 
-- [x] **Section 1.2 Analysis Complete** (2025-12-31)
+- [x] **Section 1.2 Complete** (2026-01-01)
 
 The current default batch size of 1,000 triples (`loader.ex:89`) creates excessive NIF round-trips. Each batch requires a separate RocksDB WriteBatch commit, introducing overhead for synchronization and syscalls.
 
@@ -101,39 +101,39 @@ Increasing batch size to 10,000-50,000 triples amortizes this overhead while rem
 
 ### 1.2.1 Default Batch Size Increase
 
-- [x] **Task 1.2.1 Analysis Complete** (2025-12-31)
+- [x] **Task 1.2.1 Complete** (2026-01-01)
 
 Increase the default batch size and add configuration options for different use cases.
 
 - [x] 1.2.1.1 Analyze current `@default_batch_size 1000` in `loader.ex:89`
 - [x] 1.2.1.2 Calculate memory usage: 10K triples × 3 indices × 24 bytes = 720 KB
 - [x] 1.2.1.3 Benchmark different batch sizes (1K, 5K, 10K, 50K)
-- [ ] 1.2.1.4 Change `@default_batch_size` to `10_000`
-- [ ] 1.2.1.5 Add `:batch_size` option to `TripleStore.load/3`
-- [ ] 1.2.1.6 Document batch size recommendations for different scenarios
-- [ ] 1.2.1.7 Add validation for minimum/maximum batch size bounds
+- [x] 1.2.1.4 Change `@default_batch_size` to `10_000`
+- [x] 1.2.1.5 Add `:batch_size` option to `TripleStore.load/3`
+- [x] 1.2.1.6 Document batch size recommendations for different scenarios
+- [x] 1.2.1.7 Add validation for minimum/maximum batch size bounds
 
 ### 1.2.2 Dynamic Batch Sizing
 
-- [x] **Task 1.2.2 Analysis Complete** (2025-12-31)
+- [x] **Task 1.2.2 Complete** (2026-01-01)
 
 Implement dynamic batch size selection based on available memory and dataset characteristics.
 
 - [x] 1.2.2.1 Design memory budget calculation
-- [ ] 1.2.2.2 Implement `optimal_batch_size/1` function
-- [ ] 1.2.2.3 Add `:memory_budget` option (:low, :medium, :high, :auto)
-- [ ] 1.2.2.4 Implement system memory detection via `:memsup` or `/proc/meminfo`
-- [ ] 1.2.2.5 Calculate batch size from memory budget and triple size estimate
+- [x] 1.2.2.2 Implement `optimal_batch_size/1` function
+- [x] 1.2.2.3 Add `:memory_budget` option (:low, :medium, :high, :auto)
+- [x] 1.2.2.4 Implement system memory detection via `:memsup` or `/proc/meminfo`
+- [x] 1.2.2.5 Calculate batch size from memory budget and triple size estimate
 
 ### 1.2.3 Unit Tests
 
-- [ ] **Task 1.2.3 Complete**
+- [x] **Task 1.2.3 Complete** (2026-01-01)
 
-- [ ] 1.2.3.1 Test default batch size is 10K
-- [ ] 1.2.3.2 Test batch size option is respected
-- [ ] 1.2.3.3 Test dynamic sizing selects appropriate values
-- [ ] 1.2.3.4 Test boundary conditions (empty input, single triple)
-- [ ] 1.2.3.5 Test memory budget options
+- [x] 1.2.3.1 Test default batch size is 10K
+- [x] 1.2.3.2 Test batch size option is respected
+- [x] 1.2.3.3 Test dynamic sizing selects appropriate values
+- [x] 1.2.3.4 Test boundary conditions (empty input, single triple)
+- [x] 1.2.3.5 Test memory budget options
 
 ---
 

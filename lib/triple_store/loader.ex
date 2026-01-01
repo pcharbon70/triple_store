@@ -7,12 +7,36 @@ defmodule TripleStore.Loader do
 
   ## Features
 
-  - **Batched writes**: Groups triples into configurable batch sizes (default 1000)
+  - **Batched writes**: Groups triples into configurable batch sizes (default 10,000)
+  - **Dynamic batch sizing**: Automatically adjusts batch size based on memory budget
   - **Sequential processing**: Uses `Enum.reduce_while` with batched writes for reliable loading
   - **Progress reporting**: Emits Telemetry events for monitoring
   - **Format support**: Turtle, N-Triples, N-Quads, RDF/XML, TriG, JSON-LD
   - **Path validation**: File paths are validated to prevent path traversal attacks
   - **File size limits**: Configurable maximum file size (default 100MB)
+
+  ## Batch Size Configuration
+
+  The batch size controls how many triples are processed together before writing
+  to the database. Larger batches reduce NIF round-trip overhead but use more memory.
+
+  | Scenario | Recommended | Memory Usage |
+  |----------|-------------|--------------|
+  | Low memory (<4GB) | 5,000 | ~360 KB |
+  | Standard (4-16GB) | 10,000 | ~720 KB |
+  | High memory (>16GB) | 50,000 | ~3.6 MB |
+  | Bulk import | 100,000 | ~7.2 MB |
+
+  Memory usage estimate: batch_size × 3 indices × 24 bytes per key ≈ 72 bytes/triple
+
+  ### Memory Budget Options
+
+  Use the `:memory_budget` option for automatic batch sizing:
+
+  - `:low` - 5,000 triples/batch (for memory-constrained systems)
+  - `:medium` - 10,000 triples/batch (default, balanced)
+  - `:high` - 50,000 triples/batch (for systems with ample memory)
+  - `:auto` - Detects system memory and selects appropriate size
 
   ## Important Limitations
 
@@ -74,9 +98,13 @@ defmodule TripleStore.Loader do
   @typedoc "Dictionary manager process"
   @type manager :: Manager.manager()
 
+  @typedoc "Memory budget options for automatic batch sizing"
+  @type memory_budget :: :low | :medium | :high | :auto
+
   @typedoc "Loading options"
   @type load_opts :: [
           batch_size: pos_integer(),
+          memory_budget: memory_budget(),
           format: atom() | nil,
           base_iri: String.t() | nil,
           max_file_size: pos_integer() | nil
@@ -86,9 +114,23 @@ defmodule TripleStore.Loader do
   # Constants
   # ===========================================================================
 
-  @default_batch_size 1000
+  @default_batch_size 10_000
+  @min_batch_size 100
+  @max_batch_size 100_000
   # 100MB
   @default_max_file_size 100_000_000
+
+  # Memory budget to batch size mapping
+  @memory_budget_sizes %{
+    low: 5_000,
+    medium: 10_000,
+    high: 50_000
+  }
+
+  # Memory thresholds for :auto mode (in bytes)
+  # < 4GB = low, 4-16GB = medium, > 16GB = high
+  @memory_threshold_low 4 * 1024 * 1024 * 1024
+  @memory_threshold_high 16 * 1024 * 1024 * 1024
 
   # Supported RDF file formats
   @supported_formats %{
@@ -143,7 +185,7 @@ defmodule TripleStore.Loader do
   @spec load_graph(db_ref(), manager(), RDF.Graph.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_graph(db, manager, %RDF.Graph{} = graph, opts \\ []) do
-    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    batch_size = resolve_batch_size(opts)
 
     start_metadata = %{
       source: :graph,
@@ -211,7 +253,7 @@ defmodule TripleStore.Loader do
   @spec load_file(db_ref(), manager(), Path.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_file(db, manager, path, opts \\ []) do
-    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    batch_size = resolve_batch_size(opts)
     max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
 
     start_metadata = %{source: :file, path: Path.basename(path)}
@@ -260,7 +302,7 @@ defmodule TripleStore.Loader do
   @spec load_string(db_ref(), manager(), String.t(), atom(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_string(db, manager, content, format, opts \\ []) do
-    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    batch_size = resolve_batch_size(opts)
     base_iri = Keyword.get(opts, :base_iri)
 
     parse_opts = if base_iri, do: [base_iri: base_iri], else: []
@@ -311,7 +353,7 @@ defmodule TripleStore.Loader do
   @spec load_stream(db_ref(), manager(), Enumerable.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_stream(db, manager, triple_stream, opts \\ []) do
-    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+    batch_size = resolve_batch_size(opts)
     load_triples(db, manager, triple_stream, batch_size)
   end
 
@@ -710,5 +752,153 @@ defmodule TripleStore.Loader do
     else
       {:error, :jsonld_not_available}
     end
+  end
+
+  # ===========================================================================
+  # Private Functions - Batch Size
+  # ===========================================================================
+
+  @spec resolve_batch_size(keyword()) :: pos_integer()
+  defp resolve_batch_size(opts) do
+    cond do
+      # Explicit batch_size takes precedence
+      batch_size = Keyword.get(opts, :batch_size) ->
+        validate_batch_size(batch_size)
+
+      # memory_budget option
+      memory_budget = Keyword.get(opts, :memory_budget) ->
+        optimal_batch_size(memory_budget)
+
+      # Default
+      true ->
+        @default_batch_size
+    end
+  end
+
+  @spec validate_batch_size(pos_integer()) :: pos_integer()
+  defp validate_batch_size(size)
+       when is_integer(size) and size >= @min_batch_size and size <= @max_batch_size do
+    size
+  end
+
+  defp validate_batch_size(size) when is_integer(size) and size < @min_batch_size do
+    @min_batch_size
+  end
+
+  defp validate_batch_size(size) when is_integer(size) and size > @max_batch_size do
+    @max_batch_size
+  end
+
+  defp validate_batch_size(_), do: @default_batch_size
+
+  @doc """
+  Returns the optimal batch size based on memory budget.
+
+  ## Arguments
+
+  - `budget` - Memory budget: `:low`, `:medium`, `:high`, or `:auto`
+
+  ## Returns
+
+  - Batch size appropriate for the given memory budget
+
+  ## Examples
+
+      iex> Loader.optimal_batch_size(:low)
+      5000
+
+      iex> Loader.optimal_batch_size(:medium)
+      10000
+
+      iex> Loader.optimal_batch_size(:high)
+      50000
+
+      iex> Loader.optimal_batch_size(:auto)
+      # Returns size based on detected system memory
+  """
+  @spec optimal_batch_size(memory_budget()) :: pos_integer()
+  def optimal_batch_size(:auto) do
+    case detect_system_memory() do
+      {:ok, memory_bytes} -> batch_size_for_memory(memory_bytes)
+      {:error, _} -> @default_batch_size
+    end
+  end
+
+  def optimal_batch_size(budget) when budget in [:low, :medium, :high] do
+    Map.get(@memory_budget_sizes, budget, @default_batch_size)
+  end
+
+  def optimal_batch_size(_), do: @default_batch_size
+
+  @spec batch_size_for_memory(non_neg_integer()) :: pos_integer()
+  defp batch_size_for_memory(memory_bytes) when memory_bytes < @memory_threshold_low do
+    @memory_budget_sizes[:low]
+  end
+
+  defp batch_size_for_memory(memory_bytes) when memory_bytes > @memory_threshold_high do
+    @memory_budget_sizes[:high]
+  end
+
+  defp batch_size_for_memory(_memory_bytes) do
+    @memory_budget_sizes[:medium]
+  end
+
+  @spec detect_system_memory() :: {:ok, non_neg_integer()} | {:error, :not_available}
+  # credo:disable-for-lines:12 Credo.Check.Refactor.Apply
+  defp detect_system_memory do
+    cond do
+      # Try :memsup if available (requires os_mon application)
+      Code.ensure_loaded?(:memsup) and function_exported?(:memsup, :get_system_memory_data, 0) ->
+        try do
+          data = apply(:memsup, :get_system_memory_data, [])
+          total = Keyword.get(data, :total_memory, 0)
+          {:ok, total}
+        rescue
+          _ -> read_proc_meminfo()
+        end
+
+      # Fall back to /proc/meminfo on Linux
+      File.exists?("/proc/meminfo") ->
+        read_proc_meminfo()
+
+      true ->
+        {:error, :not_available}
+    end
+  end
+
+  @spec read_proc_meminfo() :: {:ok, non_neg_integer()} | {:error, :not_available}
+  defp read_proc_meminfo do
+    case File.read("/proc/meminfo") do
+      {:ok, content} ->
+        case Regex.run(~r/MemTotal:\s+(\d+)\s+kB/, content) do
+          [_, kb_str] ->
+            kb = String.to_integer(kb_str)
+            {:ok, kb * 1024}
+
+          nil ->
+            {:error, :not_available}
+        end
+
+      {:error, _} ->
+        {:error, :not_available}
+    end
+  end
+
+  @doc """
+  Returns batch size configuration constants.
+
+  Useful for testing and introspection.
+
+  ## Returns
+
+  Map with `:default`, `:min`, and `:max` batch size values.
+  """
+  @spec batch_size_config() :: %{default: pos_integer(), min: pos_integer(), max: pos_integer()}
+  def batch_size_config do
+    %{
+      default: @default_batch_size,
+      min: @min_batch_size,
+      max: @max_batch_size
+    }
   end
 end
