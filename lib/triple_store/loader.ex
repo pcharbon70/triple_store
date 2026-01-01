@@ -405,37 +405,10 @@ defmodule TripleStore.Loader do
           RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()
         ) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def insert(db, manager, %RDF.Graph{} = graph) do
-    triples = RDF.Graph.triples(graph)
-    insert_triples(db, manager, triples)
-  end
-
-  def insert(db, manager, %RDF.Description{} = description) do
-    triples = RDF.Description.triples(description)
-    insert_triples(db, manager, triples)
-  end
-
-  def insert(db, manager, triples) when is_list(triples) do
-    insert_triples(db, manager, triples)
-  end
-
-  def insert(db, manager, {_s, _p, _o} = triple) do
-    insert_triples(db, manager, [triple])
-  end
-
-  defp insert_triples(_db, _manager, []), do: {:ok, 0}
-
-  defp insert_triples(db, manager, triples) do
-    case Adapter.from_rdf_triples(manager, triples) do
-      {:ok, internal_triples} ->
-        case Index.insert_triples(db, internal_triples) do
-          :ok -> {:ok, length(internal_triples)}
-          {:error, _} = error -> error
-        end
-
-      {:error, _} = error ->
-        error
-    end
+  def insert(db, manager, input) do
+    input
+    |> normalize_to_triples()
+    |> modify_triples(db, manager, &Index.insert_triples/2)
   end
 
   @doc """
@@ -469,36 +442,34 @@ defmodule TripleStore.Loader do
           RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()
         ) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def delete(db, manager, %RDF.Graph{} = graph) do
-    triples = RDF.Graph.triples(graph)
-    delete_triples(db, manager, triples)
+  def delete(db, manager, input) do
+    input
+    |> normalize_to_triples()
+    |> modify_triples(db, manager, &Index.delete_triples/2)
   end
 
-  def delete(db, manager, %RDF.Description{} = description) do
-    triples = RDF.Description.triples(description)
-    delete_triples(db, manager, triples)
-  end
+  # Normalize various input formats to a list of triples
+  @spec normalize_to_triples(
+          RDF.Triple.t()
+          | [RDF.Triple.t()]
+          | RDF.Graph.t()
+          | RDF.Description.t()
+        ) :: [RDF.Triple.t()]
+  defp normalize_to_triples(%RDF.Graph{} = graph), do: RDF.Graph.triples(graph)
+  defp normalize_to_triples(%RDF.Description{} = desc), do: RDF.Description.triples(desc)
+  defp normalize_to_triples(triples) when is_list(triples), do: triples
+  defp normalize_to_triples({_s, _p, _o} = triple), do: [triple]
 
-  def delete(db, manager, triples) when is_list(triples) do
-    delete_triples(db, manager, triples)
-  end
+  # Generic triple modification (insert or delete)
+  @spec modify_triples([RDF.Triple.t()], db_ref(), manager(), (reference(), list() ->
+                                                                 :ok | {:error, term()})) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  defp modify_triples([], _db, _manager, _index_fn), do: {:ok, 0}
 
-  def delete(db, manager, {_s, _p, _o} = triple) do
-    delete_triples(db, manager, [triple])
-  end
-
-  defp delete_triples(_db, _manager, []), do: {:ok, 0}
-
-  defp delete_triples(db, manager, triples) do
-    case Adapter.from_rdf_triples(manager, triples) do
-      {:ok, internal_triples} ->
-        case Index.delete_triples(db, internal_triples) do
-          :ok -> {:ok, length(internal_triples)}
-          {:error, _} = error -> error
-        end
-
-      {:error, _} = error ->
-        error
+  defp modify_triples(triples, db, manager, index_fn) do
+    with {:ok, internal_triples} <- Adapter.from_rdf_triples(manager, triples),
+         :ok <- index_fn.(db, internal_triples) do
+      {:ok, length(internal_triples)}
     end
   end
 
@@ -712,45 +683,37 @@ defmodule TripleStore.Loader do
 
   defp extract_default_graph(error), do: error
 
-  # RDF/XML parsing - apply/3 is intentional to avoid compile-time dependency on optional module
+  # RDF/XML parsing - uses optional module helper to avoid compile-time dependency
   @spec parse_rdfxml_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
-  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_rdfxml_file(path) do
-    if Code.ensure_loaded?(RDF.XML) do
-      apply(RDF.XML, :read_file, [path])
-    else
-      {:error, :rdfxml_not_available}
-    end
+    call_optional_module(RDF.XML, :read_file, [path], :rdfxml_not_available)
   end
 
   @spec parse_rdfxml_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
-  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_rdfxml_string(content, opts) do
-    if Code.ensure_loaded?(RDF.XML) do
-      apply(RDF.XML, :read_string, [content, opts])
-    else
-      {:error, :rdfxml_not_available}
-    end
+    call_optional_module(RDF.XML, :read_string, [content, opts], :rdfxml_not_available)
   end
 
-  # JSON-LD parsing - apply/3 is intentional to avoid compile-time dependency on optional module
+  # JSON-LD parsing - uses optional module helper to avoid compile-time dependency
   @spec parse_jsonld_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
-  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_jsonld_file(path) do
-    if Code.ensure_loaded?(JSON.LD) do
-      apply(JSON.LD, :read_file, [path])
-    else
-      {:error, :jsonld_not_available}
-    end
+    call_optional_module(JSON.LD, :read_file, [path], :jsonld_not_available)
   end
 
   @spec parse_jsonld_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
-  # credo:disable-for-lines:7 Credo.Check.Refactor.Apply
   defp parse_jsonld_string(content, opts) do
-    if Code.ensure_loaded?(JSON.LD) do
-      apply(JSON.LD, :read_string, [content, opts])
+    call_optional_module(JSON.LD, :read_string, [content, opts], :jsonld_not_available)
+  end
+
+  # Helper to call functions on optional modules without compile-time dependency
+  # credo:disable-for-next-line Credo.Check.Refactor.Apply
+  @spec call_optional_module(module(), atom(), list(), atom()) ::
+          {:ok, RDF.Graph.t()} | {:error, atom()}
+  defp call_optional_module(module, function, args, error_key) do
+    if Code.ensure_loaded?(module) do
+      apply(module, function, args)
     else
-      {:error, :jsonld_not_available}
+      {:error, error_key}
     end
   end
 
@@ -760,22 +723,14 @@ defmodule TripleStore.Loader do
 
   @spec resolve_batch_size(keyword()) :: pos_integer()
   defp resolve_batch_size(opts) do
-    cond do
-      # Explicit batch_size takes precedence
-      batch_size = Keyword.get(opts, :batch_size) ->
-        validate_batch_size(batch_size)
-
-      # memory_budget option
-      memory_budget = Keyword.get(opts, :memory_budget) ->
-        optimal_batch_size(memory_budget)
-
-      # Default
-      true ->
-        @default_batch_size
+    case {Keyword.get(opts, :batch_size), Keyword.get(opts, :memory_budget)} do
+      {nil, nil} -> @default_batch_size
+      {nil, budget} -> optimal_batch_size(budget)
+      {size, _} -> validate_batch_size(size)
     end
   end
 
-  @spec validate_batch_size(pos_integer()) :: pos_integer()
+  @spec validate_batch_size(term()) :: pos_integer()
   defp validate_batch_size(size)
        when is_integer(size) and size >= @min_batch_size and size <= @max_batch_size do
     size
@@ -868,19 +823,11 @@ defmodule TripleStore.Loader do
 
   @spec read_proc_meminfo() :: {:ok, non_neg_integer()} | {:error, :not_available}
   defp read_proc_meminfo do
-    case File.read("/proc/meminfo") do
-      {:ok, content} ->
-        case Regex.run(~r/MemTotal:\s+(\d+)\s+kB/, content) do
-          [_, kb_str] ->
-            kb = String.to_integer(kb_str)
-            {:ok, kb * 1024}
-
-          nil ->
-            {:error, :not_available}
-        end
-
-      {:error, _} ->
-        {:error, :not_available}
+    with {:ok, content} <- File.read("/proc/meminfo"),
+         [_, kb_str] <- Regex.run(~r/MemTotal:\s+(\d+)\s+kB/, content) do
+      {:ok, String.to_integer(kb_str) * 1024}
+    else
+      _ -> {:error, :not_available}
     end
   end
 

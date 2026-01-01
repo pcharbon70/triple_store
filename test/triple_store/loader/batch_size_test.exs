@@ -9,15 +9,33 @@ defmodule TripleStore.Loader.BatchSizeTest do
   - optimal_batch_size/1 function
   - batch_size_config/0 function
   - Integration with load functions
+  - Edge input handling
   """
 
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
 
   @test_db_base "/tmp/batch_size_test"
+
+  # ===========================================================================
+  # Test Helpers
+  # ===========================================================================
+
+  defp setup_test_db(suffix) do
+    test_path = "#{@test_db_base}_#{suffix}_#{:erlang.unique_integer([:positive])}"
+    {:ok, db} = NIF.open(test_path)
+    {:ok, manager} = Manager.start_link(db: db)
+    {db, manager, test_path}
+  end
+
+  defp cleanup_test_db(manager, db, test_path) do
+    if Process.alive?(manager), do: Manager.stop(manager)
+    NIF.close(db)
+    File.rm_rf(test_path)
+  end
 
   # ===========================================================================
   # 1.2.1: Default Batch Size Configuration
@@ -41,7 +59,7 @@ defmodule TripleStore.Loader.BatchSizeTest do
 
     test "returns a map with all keys" do
       config = Loader.batch_size_config()
-      assert Map.keys(config) |> Enum.sort() == [:default, :max, :min]
+      assert MapSet.new(Map.keys(config)) == MapSet.new([:default, :max, :min])
     end
   end
 
@@ -87,14 +105,10 @@ defmodule TripleStore.Loader.BatchSizeTest do
     # modifying the loader, but we can verify the functions accept the options.
 
     setup do
-      test_path = "#{@test_db_base}_load_#{:erlang.unique_integer([:positive])}"
-      {:ok, db} = NIF.open(test_path)
-      {:ok, manager} = Manager.start_link(db: db)
+      {db, manager, test_path} = setup_test_db("load")
 
       on_exit(fn ->
-        if Process.alive?(manager), do: Manager.stop(manager)
-        NIF.close(db)
-        File.rm_rf(test_path)
+        cleanup_test_db(manager, db, test_path)
       end)
 
       {:ok, db: db, manager: manager}
@@ -137,14 +151,10 @@ defmodule TripleStore.Loader.BatchSizeTest do
 
   describe "batch size bounds" do
     setup do
-      test_path = "#{@test_db_base}_bounds_#{:erlang.unique_integer([:positive])}"
-      {:ok, db} = NIF.open(test_path)
-      {:ok, manager} = Manager.start_link(db: db)
+      {db, manager, test_path} = setup_test_db("bounds")
 
       on_exit(fn ->
-        if Process.alive?(manager), do: Manager.stop(manager)
-        NIF.close(db)
-        File.rm_rf(test_path)
+        cleanup_test_db(manager, db, test_path)
       end)
 
       {:ok, db: db, manager: manager}
@@ -152,13 +162,13 @@ defmodule TripleStore.Loader.BatchSizeTest do
 
     test "accepts batch size at minimum bound", %{db: db, manager: manager} do
       graph = RDF.Graph.new()
-      # Should clamp to min, not error
+      # Should work with min value
       assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: 100)
     end
 
     test "accepts batch size at maximum bound", %{db: db, manager: manager} do
       graph = RDF.Graph.new()
-      # Should clamp to max, not error
+      # Should work with max value
       assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: 100_000)
     end
 
@@ -172,6 +182,60 @@ defmodule TripleStore.Loader.BatchSizeTest do
       graph = RDF.Graph.new()
       # Should clamp to max, not error
       assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: 200_000)
+    end
+  end
+
+  # ===========================================================================
+  # Edge Input Handling
+  # ===========================================================================
+
+  describe "edge input handling" do
+    setup do
+      {db, manager, test_path} = setup_test_db("edge")
+
+      on_exit(fn ->
+        cleanup_test_db(manager, db, test_path)
+      end)
+
+      {:ok, db: db, manager: manager}
+    end
+
+    test "handles zero batch size (uses default)", %{db: db, manager: manager} do
+      graph = RDF.Graph.new()
+      # Zero is below minimum, should use default
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: 0)
+    end
+
+    test "handles negative batch size (uses default)", %{db: db, manager: manager} do
+      graph = RDF.Graph.new()
+      # Negative is not a valid integer for this purpose, should use default
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: -100)
+    end
+
+    test "handles string batch size (uses default)", %{db: db, manager: manager} do
+      graph = RDF.Graph.new()
+      # String is not an integer, should use default
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: "10000")
+    end
+
+    test "handles float batch size (uses default)", %{db: db, manager: manager} do
+      graph = RDF.Graph.new()
+      # Float is not an integer, should use default
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: 10.5)
+    end
+
+    test "handles nil batch size with no memory_budget (uses default)", %{
+      db: db,
+      manager: manager
+    } do
+      graph = RDF.Graph.new()
+      # nil batch_size with no memory_budget should use default
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, batch_size: nil)
+    end
+
+    test "handles empty options (uses default)", %{db: db, manager: manager} do
+      graph = RDF.Graph.new()
+      assert {:ok, 0} = Loader.load_graph(db, manager, graph, [])
     end
   end
 
