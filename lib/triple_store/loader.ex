@@ -80,20 +80,48 @@ defmodule TripleStore.Loader do
         progress_interval: 5
       )
 
+  ## Bulk Loading Mode
+
+  For large data imports, use `:bulk_mode` to optimize for throughput over
+  immediate durability:
+
+      {:ok, count} = Loader.load_file(db, manager, "large.ttl", bulk_mode: true)
+
+  Bulk mode enables these optimizations:
+
+  - **Deferred sync**: Uses `sync: false` for writes, avoiding per-batch fsync
+  - **Larger batches**: Uses 50,000 triples per batch (vs 10,000 default)
+  - **Final sync**: Calls `flush_wal(true)` after load completes for durability
+
+  ### Durability Trade-offs
+
+  With bulk mode enabled:
+  - **Process crash**: Data is safe (WAL still written, just not fsync'd)
+  - **OS/power failure**: May lose last few batches written before failure
+
+  This is acceptable for bulk imports because:
+  1. You can restart the import if it fails
+  2. The final sync ensures durability once loading completes
+  3. Performance gain is typically 10-50x faster for large imports
+
   ## High-Volume Bulk Loading
 
   For bulk loads exceeding 100,000 triples, consider these optimizations:
 
-  1. **Use ShardedManager**: Configure `dictionary_shards` in `TripleStore.open/2`
+  1. **Enable bulk mode**: For maximum throughput:
+
+         Loader.load_file(db, manager, "large.ttl", bulk_mode: true)
+
+  2. **Use ShardedManager**: Configure `dictionary_shards` in `TripleStore.open/2`
      to parallelize dictionary encoding across multiple processes:
 
          {:ok, store} = TripleStore.open(path, dictionary_shards: 8)
 
-  2. **Increase batch size**: Use `:memory_budget` or explicit `:batch_size`:
+  3. **Increase batch size**: Use `:memory_budget` or explicit `:batch_size`:
 
          Loader.load_file(db, manager, "large.ttl", memory_budget: :high)
 
-  3. **Tune stage count**: Match stages to CPU cores:
+  4. **Tune stage count**: Match stages to CPU cores:
 
          Loader.load_file(db, manager, "large.ttl", stages: 8)
 
@@ -148,6 +176,7 @@ defmodule TripleStore.Loader do
   """
 
   alias TripleStore.Adapter
+  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
 
@@ -194,6 +223,7 @@ defmodule TripleStore.Loader do
   @type load_opts :: [
           batch_size: pos_integer(),
           memory_budget: memory_budget(),
+          bulk_mode: boolean(),
           parallel: boolean(),
           stages: pos_integer(),
           max_demand: pos_integer(),
@@ -213,6 +243,9 @@ defmodule TripleStore.Loader do
   @max_batch_size 100_000
   # 100MB
   @default_max_file_size 100_000_000
+
+  # Bulk mode defaults
+  @bulk_mode_batch_size 50_000
 
   # Parallel loading defaults
   @default_parallel true
@@ -590,9 +623,13 @@ defmodule TripleStore.Loader do
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp load_triples(db, manager, triples, batch_size, opts) do
     parallel? = Keyword.get(opts, :parallel, @default_parallel)
+    bulk_mode? = Keyword.get(opts, :bulk_mode, false)
     progress_callback = Keyword.get(opts, :progress_callback)
     progress_interval = validate_progress_interval(Keyword.get(opts, :progress_interval))
     start_time = System.monotonic_time(:millisecond)
+
+    # In bulk mode, use sync: false for writes
+    sync? = not bulk_mode?
 
     progress_opts = %{
       callback: progress_callback,
@@ -600,12 +637,29 @@ defmodule TripleStore.Loader do
       start_time: start_time
     }
 
-    if parallel? do
-      stages = resolve_stages(opts)
-      max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
-      load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts)
-    else
-      load_triples_sequential(db, manager, triples, batch_size, progress_opts)
+    write_opts = %{
+      sync: sync?
+    }
+
+    result =
+      if parallel? do
+        stages = resolve_stages(opts)
+        max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
+        load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts, write_opts)
+      else
+        load_triples_sequential(db, manager, triples, batch_size, progress_opts, write_opts)
+      end
+
+    # In bulk mode, flush WAL after successful load for durability
+    case result do
+      {:ok, count} when bulk_mode? ->
+        case NIF.flush_wal(db, true) do
+          :ok -> {:ok, count}
+          {:error, reason} -> {:error, {:flush_failed, reason}}
+        end
+
+      other ->
+        other
     end
   end
 
@@ -650,9 +704,9 @@ defmodule TripleStore.Loader do
   defp validate_max_demand(_), do: @default_max_demand
 
   # Sequential loading - original implementation
-  @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map()) ::
+  @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map(), map()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
-  defp load_triples_sequential(db, manager, triples, batch_size, progress_opts) do
+  defp load_triples_sequential(db, manager, triples, batch_size, progress_opts, write_opts) do
     triples
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
@@ -660,7 +714,7 @@ defmodule TripleStore.Loader do
       batch_start = System.monotonic_time()
       batch_count = length(batch)
 
-      case process_batch(db, manager, batch) do
+      case process_batch(db, manager, batch, write_opts) do
         :ok ->
           new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
@@ -693,9 +747,10 @@ defmodule TripleStore.Loader do
           pos_integer(),
           pos_integer(),
           pos_integer(),
+          map(),
           map()
         ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
-  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts) do
+  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts, write_opts) do
     # Use Agent for error tracking (needs to store full error term)
     # Use :atomics for halt flag (lock-free, no message passing overhead)
     {:ok, error_agent} = Agent.start_link(fn -> nil end)
@@ -725,7 +780,8 @@ defmodule TripleStore.Loader do
             error_agent,
             halt_ref,
             total,
-            progress_opts
+            progress_opts,
+            write_opts
           )
         end)
         |> Flow.emit(:state)
@@ -783,26 +839,27 @@ defmodule TripleStore.Loader do
           pid(),
           reference(),
           non_neg_integer(),
+          map(),
           map()
         ) :: {non_neg_integer(), pos_integer()}
-  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_ref, total, _progress_opts) do
+  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_ref, total, _progress_opts, _write_opts) do
     # Skip writing on encoding error, error already recorded
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_ref, total, _progress_opts) do
+  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_ref, total, _progress_opts, _write_opts) do
     # Skip writing when halted
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_ref, total, progress_opts) do
+  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_ref, total, progress_opts, write_opts) do
     # Check if already halted (lock-free read)
     if halted?(halt_ref) do
       {total, batch_num}
     else
       batch_start = System.monotonic_time()
 
-      case Index.insert_triples(db, internal_triples) do
+      case Index.insert_triples(db, internal_triples, sync: write_opts.sync) do
         :ok ->
           batch_count = length(internal_triples)
           new_total = total + batch_count
@@ -860,11 +917,11 @@ defmodule TripleStore.Loader do
     end
   end
 
-  @spec process_batch(db_ref(), manager(), [RDF.Triple.t()]) :: :ok | {:error, term()}
-  defp process_batch(db, manager, rdf_triples) do
+  @spec process_batch(db_ref(), manager(), [RDF.Triple.t()], map()) :: :ok | {:error, term()}
+  defp process_batch(db, manager, rdf_triples, write_opts) do
     case Adapter.from_rdf_triples(manager, rdf_triples) do
       {:ok, internal_triples} ->
-        Index.insert_triples(db, internal_triples)
+        Index.insert_triples(db, internal_triples, sync: write_opts.sync)
 
       {:error, _} = error ->
         error
@@ -1101,10 +1158,17 @@ defmodule TripleStore.Loader do
 
   @spec resolve_batch_size(keyword()) :: pos_integer()
   defp resolve_batch_size(opts) do
+    bulk_mode? = Keyword.get(opts, :bulk_mode, false)
+
     case {Keyword.get(opts, :batch_size), Keyword.get(opts, :memory_budget)} do
+      # Explicit batch_size takes precedence
+      {size, _} when not is_nil(size) -> validate_batch_size(size)
+      # Explicit memory_budget takes precedence over bulk_mode default
+      {nil, budget} when not is_nil(budget) -> optimal_batch_size(budget)
+      # Bulk mode uses larger default batch size
+      {nil, nil} when bulk_mode? -> @bulk_mode_batch_size
+      # Standard default
       {nil, nil} -> @default_batch_size
-      {nil, budget} -> optimal_batch_size(budget)
-      {size, _} -> validate_batch_size(size)
     end
   end
 

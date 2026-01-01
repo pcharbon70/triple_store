@@ -231,15 +231,15 @@ Add sync control parameter to NIF write functions.
 
 ### 1.4.2 Bulk Load Mode
 
-- [x] **Task 1.4.2 Analysis Complete** (2025-12-31)
+- [x] **Task 1.4.2 Complete** (2026-01-01)
 
 Implement bulk load mode with optimized write settings.
 
 - [x] 1.4.2.1 Design bulk load configuration preset
-- [ ] 1.4.2.2 Add `:bulk_mode` option to loader
-- [ ] 1.4.2.3 When bulk_mode: `sync=false`, larger batches
-- [ ] 1.4.2.4 Implement final sync after bulk load complete
-- [ ] 1.4.2.5 Document bulk mode trade-offs (durability vs speed)
+- [x] 1.4.2.2 Add `:bulk_mode` option to loader
+- [x] 1.4.2.3 When bulk_mode: `sync=false`, larger batches
+- [x] 1.4.2.4 Implement final sync after bulk load complete
+- [x] 1.4.2.5 Document bulk mode trade-offs (durability vs speed)
 
 ### 1.4.3 Unit Tests
 

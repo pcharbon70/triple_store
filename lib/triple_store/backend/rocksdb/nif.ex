@@ -97,6 +97,37 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   def close(_db_ref), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Flushes the Write-Ahead Log (WAL) to disk.
+
+  This ensures all buffered writes are persisted to the WAL. When `sync` is `true`,
+  it also calls fsync to ensure data is physically written to storage.
+
+  Use this after bulk loading with `sync: false` to ensure all data is durable
+  before considering the load complete.
+
+  ## Arguments
+  - `db_ref` - The database reference
+  - `sync` - When `true`, calls fsync after flushing (fully durable). When `false`,
+    only flushes to OS buffer cache.
+
+  ## Returns
+  - `:ok` on success
+  - `{:error, :already_closed}` if database is closed
+  - `{:error, {:flush_failed, reason}}` on failure
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> NIF.write_batch(db, [{:spo, "key", "value"}], false)
+      :ok
+      iex> NIF.flush_wal(db, true)
+      :ok
+
+  """
+  @spec flush_wal(db_ref(), boolean()) :: :ok | {:error, term()}
+  def flush_wal(_db_ref, _sync), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Returns the path of the database.
 
   ## Arguments

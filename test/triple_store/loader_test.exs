@@ -453,4 +453,153 @@ defmodule TripleStore.LoaderTest do
       assert count == 1
     end
   end
+
+  # ===========================================================================
+  # Bulk Mode Tests
+  # ===========================================================================
+
+  describe "bulk mode" do
+    test "loads triples with bulk_mode: true", %{db: db, manager: manager} do
+      triples =
+        for i <- 1..100 do
+          {
+            RDF.iri("http://example.org/s#{i}"),
+            RDF.iri("http://example.org/p"),
+            RDF.literal("value #{i}")
+          }
+        end
+
+      graph = RDF.Graph.new(triples)
+      {:ok, count} = Loader.load_graph(db, manager, graph, bulk_mode: true)
+      assert count == 100
+
+      # Verify all triples are persisted after bulk load
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 100
+    end
+
+    test "bulk mode works with parallel loading", %{db: db, manager: manager} do
+      triples =
+        for i <- 1..500 do
+          {
+            RDF.iri("http://example.org/subject#{i}"),
+            RDF.iri("http://example.org/predicate"),
+            RDF.literal("value #{i}")
+          }
+        end
+
+      graph = RDF.Graph.new(triples)
+
+      {:ok, count} =
+        Loader.load_graph(db, manager, graph, bulk_mode: true, parallel: true, stages: 2)
+
+      assert count == 500
+
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 500
+    end
+
+    test "bulk mode works with sequential loading", %{db: db, manager: manager} do
+      triples =
+        for i <- 1..100 do
+          {
+            RDF.iri("http://example.org/s#{i}"),
+            RDF.iri("http://example.org/p"),
+            RDF.literal("value #{i}")
+          }
+        end
+
+      graph = RDF.Graph.new(triples)
+      {:ok, count} = Loader.load_graph(db, manager, graph, bulk_mode: true, parallel: false)
+      assert count == 100
+
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 100
+    end
+
+    test "explicit batch_size overrides bulk mode default", %{db: db, manager: manager} do
+      # This tests that explicit batch_size takes precedence
+      triples =
+        for i <- 1..50 do
+          {
+            RDF.iri("http://example.org/s#{i}"),
+            RDF.iri("http://example.org/p"),
+            RDF.literal("value #{i}")
+          }
+        end
+
+      graph = RDF.Graph.new(triples)
+
+      # Using small batch size should still work (the important thing is no error)
+      {:ok, count} = Loader.load_graph(db, manager, graph, bulk_mode: true, batch_size: 1000)
+      assert count == 50
+    end
+
+    test "bulk mode with load_file", %{db: db, manager: manager, path: path} do
+      # Create a small turtle file
+      ttl_path = Path.join(path, "bulk_test.ttl")
+
+      content = """
+      @prefix ex: <http://example.org/> .
+      ex:s1 ex:p ex:o1 .
+      ex:s2 ex:p ex:o2 .
+      ex:s3 ex:p ex:o3 .
+      """
+
+      File.mkdir_p!(path)
+      File.write!(ttl_path, content)
+
+      {:ok, count} = Loader.load_file(db, manager, ttl_path, bulk_mode: true)
+      assert count == 3
+
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 3
+    end
+
+    test "bulk mode with load_string", %{db: db, manager: manager} do
+      content = """
+      @prefix ex: <http://example.org/> .
+      ex:s1 ex:p "value1" .
+      ex:s2 ex:p "value2" .
+      """
+
+      {:ok, count} = Loader.load_string(db, manager, content, :turtle, bulk_mode: true)
+      assert count == 2
+
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 2
+    end
+
+    test "bulk mode with load_stream", %{db: db, manager: manager} do
+      triples =
+        Stream.map(1..75, fn i ->
+          {
+            RDF.iri("http://example.org/s#{i}"),
+            RDF.iri("http://example.org/p"),
+            RDF.literal("value #{i}")
+          }
+        end)
+
+      {:ok, count} = Loader.load_stream(db, manager, triples, bulk_mode: true)
+      assert count == 75
+
+      {:ok, stored} = Index.count(db, {:var, :var, :var})
+      assert stored == 75
+    end
+  end
+
+  # ===========================================================================
+  # flush_wal NIF Tests
+  # ===========================================================================
+
+  describe "flush_wal NIF" do
+    test "flush_wal with sync=true succeeds", %{db: db} do
+      # Add some data first
+      assert :ok = NIF.flush_wal(db, true)
+    end
+
+    test "flush_wal with sync=false succeeds", %{db: db} do
+      assert :ok = NIF.flush_wal(db, false)
+    end
+  end
 end

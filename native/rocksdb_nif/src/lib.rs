@@ -123,6 +123,8 @@ mod atoms {
         iterator_closed,
         // Snapshot atoms
         snapshot_released,
+        // Flush atoms
+        flush_failed,
     }
 }
 
@@ -1338,6 +1340,45 @@ fn release_snapshot<'a>(
     *snap_guard = None;
 
     Ok(atoms::ok().encode(env))
+}
+
+/// Flushes the Write-Ahead Log (WAL) to disk.
+///
+/// This ensures all buffered writes are persisted to the WAL. When `sync` is true,
+/// it also calls fsync to ensure data is physically written to storage.
+///
+/// Use this after bulk loading with sync=false to ensure all data is durable
+/// before considering the load complete.
+///
+/// # Arguments
+/// * `db_ref` - The database reference
+/// * `sync` - When true, calls fsync after flushing (fully durable). When false,
+///            only flushes to OS buffer cache.
+///
+/// # Returns
+/// * `:ok` on success
+/// * `{:error, :already_closed}` if database is closed
+/// * `{:error, {:flush_failed, reason}}` on failure
+#[rustler::nif(schedule = "DirtyCpu")]
+fn flush_wal<'a>(
+    env: Env<'a>,
+    db_ref: ResourceArc<DbRef>,
+    sync: bool,
+) -> NifResult<Term<'a>> {
+    let guard = db_ref
+        .inner
+        .read()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let shared_db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
+    };
+
+    match shared_db.db.flush_wal(sync) {
+        Ok(()) => Ok(atoms::ok().encode(env)),
+        Err(e) => Ok((atoms::error(), (atoms::flush_failed(), e.to_string())).encode(env)),
+    }
 }
 
 rustler::init!("Elixir.TripleStore.Backend.RocksDB.NIF");
