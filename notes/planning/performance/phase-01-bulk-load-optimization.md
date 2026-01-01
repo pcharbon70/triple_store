@@ -212,7 +212,7 @@ Implement progress callbacks for long-running bulk loads.
 
 ## 1.4 RocksDB Write Options
 
-- [x] **Section 1.4 Analysis Complete** (2025-12-31)
+- [x] **Section 1.4 Complete** (2026-01-01)
 
 The Rust NIF uses default RocksDB WriteOptions which fsync after every write. For bulk loading, this is unnecessarily conservative. Setting `sync=false` defers fsync to the OS, significantly improving throughput while maintaining durability via WAL.
 
@@ -243,12 +243,12 @@ Implement bulk load mode with optimized write settings.
 
 ### 1.4.3 Unit Tests
 
-- [ ] **Task 1.4.3 Complete**
+- [x] **Task 1.4.3 Complete** (2026-01-01)
 
-- [ ] 1.4.3.1 Test write_batch with sync=true (default behavior)
-- [ ] 1.4.3.2 Test write_batch with sync=false
-- [ ] 1.4.3.3 Test bulk mode uses correct options
-- [ ] 1.4.3.4 Test final sync is called after bulk load
+- [x] 1.4.3.1 Test write_batch with sync=true (default behavior)
+- [x] 1.4.3.2 Test write_batch with sync=false
+- [x] 1.4.3.3 Test bulk mode uses correct options
+- [x] 1.4.3.4 Test final sync is called after bulk load
 
 ---
 
