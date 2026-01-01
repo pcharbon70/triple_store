@@ -577,8 +577,23 @@ defmodule TripleStore.Dictionary.Manager do
           [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
         ) :: {:ok, [Dictionary.term_id()]} | {:error, term()}
   defp create_missing_ids(db, counter, cache, needs_ids, encoded_terms) do
-    with {:ok, type_ranges} <- allocate_ranges_for_terms(counter, needs_ids),
-         {:ok, id_map} <- assign_and_store_ids(db, cache, needs_ids, type_ranges, encoded_terms) do
+    # Deduplicate by key - group indices that share the same key
+    # This fixes the bug where the same term appearing multiple times in a batch
+    # would get different IDs instead of sharing the same ID
+    {unique_terms, key_to_indices} = deduplicate_needs_ids(needs_ids)
+
+    with {:ok, type_ranges} <- allocate_ranges_for_unique_terms(counter, unique_terms),
+         {:ok, key_to_id} <- assign_and_store_unique_ids(db, cache, unique_terms, type_ranges) do
+      # Build id_map from key_to_id and key_to_indices
+      id_map =
+        Enum.reduce(key_to_indices, %{}, fn {key, indices}, acc ->
+          id = Map.fetch!(key_to_id, key)
+
+          Enum.reduce(indices, acc, fn idx, inner_acc ->
+            Map.put(inner_acc, idx, id)
+          end)
+        end)
+
       ids =
         Enum.map(encoded_terms, fn {idx, _key, _term, existing_id} ->
           existing_id || Map.fetch!(id_map, idx)
@@ -586,6 +601,24 @@ defmodule TripleStore.Dictionary.Manager do
 
       {:ok, ids}
     end
+  end
+
+  # Deduplicate needs_ids by key, returning unique terms and a mapping of key to indices
+  @spec deduplicate_needs_ids([{non_neg_integer(), binary(), rdf_term()}]) ::
+          {[{binary(), rdf_term()}], %{binary() => [non_neg_integer()]}}
+  defp deduplicate_needs_ids(needs_ids) do
+    {unique_map, key_to_indices} =
+      Enum.reduce(needs_ids, {%{}, %{}}, fn {idx, key, term}, {unique, indices} ->
+        new_indices = Map.update(indices, key, [idx], fn existing -> [idx | existing] end)
+
+        case Map.has_key?(unique, key) do
+          true -> {unique, new_indices}
+          false -> {Map.put(unique, key, term), new_indices}
+        end
+      end)
+
+    unique_terms = Enum.map(unique_map, fn {key, term} -> {key, term} end)
+    {unique_terms, key_to_indices}
   end
 
   @spec encode_and_lookup_terms(reference(), :ets.tid(), [rdf_term()]) ::
@@ -637,12 +670,14 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  # Allocate ID ranges for each term type
-  defp allocate_ranges_for_terms(counter, needs_ids) do
+  # Allocate ID ranges for unique terms (works with [{key, term}])
+  @spec allocate_ranges_for_unique_terms(SequenceCounter.counter(), [{binary(), rdf_term()}]) ::
+          {:ok, %{atom() => {non_neg_integer(), non_neg_integer()}}} | {:error, term()}
+  defp allocate_ranges_for_unique_terms(counter, unique_terms) do
     # Count terms by type
     type_counts =
-      needs_ids
-      |> Enum.reduce(%{uri: 0, bnode: 0, literal: 0}, fn {_idx, _key, term}, acc ->
+      unique_terms
+      |> Enum.reduce(%{uri: 0, bnode: 0, literal: 0}, fn {_key, term}, acc ->
         type = get_term_type(term)
         Map.update!(acc, type, &(&1 + 1))
       end)
@@ -661,11 +696,18 @@ defmodule TripleStore.Dictionary.Manager do
     end)
   end
 
-  # Assign IDs from ranges and store in RocksDB
-  defp assign_and_store_ids(db, cache, needs_ids, type_ranges, _encoded_terms) do
+  # Assign IDs from ranges and store in RocksDB for unique terms only
+  # Returns a map of key -> id
+  @spec assign_and_store_unique_ids(
+          reference(),
+          :ets.tid(),
+          [{binary(), rdf_term()}],
+          %{atom() => {non_neg_integer(), non_neg_integer()}}
+        ) :: {:ok, %{binary() => Dictionary.term_id()}} | {:error, term()}
+  defp assign_and_store_unique_ids(db, cache, unique_terms, type_ranges) do
     # Track current offset for each type
     {results, _final_ranges} =
-      Enum.reduce(needs_ids, {%{}, type_ranges}, fn {idx, key, term}, {id_map, ranges} ->
+      Enum.reduce(unique_terms, {%{}, type_ranges}, fn {key, term}, {key_to_id, ranges} ->
         type = get_term_type(term)
         type_tag = type_to_tag(type)
         {start_seq, offset} = Map.fetch!(ranges, type)
@@ -682,7 +724,7 @@ defmodule TripleStore.Dictionary.Manager do
         :ets.insert(cache, {key, id})
 
         new_ranges = Map.put(ranges, type, {start_seq, offset + 1})
-        {Map.put(id_map, idx, id), new_ranges}
+        {Map.put(key_to_id, key, id), new_ranges}
       end)
 
     {:ok, results}
