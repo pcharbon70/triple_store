@@ -55,7 +55,7 @@ defmodule TripleStore.Loader do
   Use the `:progress_callback` option to monitor long-running bulk loads:
 
   - `:progress_callback` - Function called periodically with progress info
-  - `:progress_interval` - Call callback every N batches (default: 10)
+  - `:progress_interval` - Call callback every N batches (default: 10, min: 1)
 
   The callback receives a map with:
   - `triples_loaded` - Number of triples loaded so far
@@ -64,6 +64,11 @@ defmodule TripleStore.Loader do
   - `rate_per_second` - Current loading rate (triples/second)
 
   Return `:continue` to proceed or `:halt` to cancel loading.
+
+  **Note**: Progress callbacks are invoked synchronously within the loading pipeline.
+  Long-running callbacks will slow down the loading process. If you need to perform
+  expensive operations (e.g., database writes, network calls), consider using
+  `send/2` to dispatch work to a separate process.
 
   ### Example
 
@@ -74,6 +79,29 @@ defmodule TripleStore.Loader do
         end,
         progress_interval: 5
       )
+
+  ## High-Volume Bulk Loading
+
+  For bulk loads exceeding 100,000 triples, consider these optimizations:
+
+  1. **Use ShardedManager**: Configure `dictionary_shards` in `TripleStore.open/2`
+     to parallelize dictionary encoding across multiple processes:
+
+         {:ok, store} = TripleStore.open(path, dictionary_shards: 8)
+
+  2. **Increase batch size**: Use `:memory_budget` or explicit `:batch_size`:
+
+         Loader.load_file(db, manager, "large.ttl", memory_budget: :high)
+
+  3. **Tune stage count**: Match stages to CPU cores:
+
+         Loader.load_file(db, manager, "large.ttl", stages: 8)
+
+  ## Batch Size Limits
+
+  The minimum batch size is 100 triples. Values below this will be clamped and
+  a warning will be logged. This ensures efficient use of RocksDB WriteBatch
+  operations. The maximum batch size is 100,000 triples.
 
   ## Important Limitations
 
@@ -195,6 +223,11 @@ defmodule TripleStore.Loader do
   # Progress reporting defaults
   # Report progress every N batches (default: every 10 batches)
   @default_progress_interval 10
+  @min_progress_interval 1
+
+  # Max demand limits
+  @min_max_demand 1
+  @max_max_demand 100
 
   # Memory budget to batch size mapping
   @memory_budget_sizes %{
@@ -558,7 +591,7 @@ defmodule TripleStore.Loader do
   defp load_triples(db, manager, triples, batch_size, opts) do
     parallel? = Keyword.get(opts, :parallel, @default_parallel)
     progress_callback = Keyword.get(opts, :progress_callback)
-    progress_interval = Keyword.get(opts, :progress_interval, @default_progress_interval)
+    progress_interval = validate_progress_interval(Keyword.get(opts, :progress_interval))
     start_time = System.monotonic_time(:millisecond)
 
     progress_opts = %{
@@ -569,12 +602,52 @@ defmodule TripleStore.Loader do
 
     if parallel? do
       stages = resolve_stages(opts)
-      max_demand = Keyword.get(opts, :max_demand, @default_max_demand)
+      max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
       load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts)
     else
       load_triples_sequential(db, manager, triples, batch_size, progress_opts)
     end
   end
+
+  # Validate progress_interval option
+  @spec validate_progress_interval(term()) :: pos_integer()
+  defp validate_progress_interval(nil), do: @default_progress_interval
+
+  defp validate_progress_interval(interval)
+       when is_integer(interval) and interval >= @min_progress_interval do
+    interval
+  end
+
+  defp validate_progress_interval(interval) when is_integer(interval) do
+    Logger.warning(
+      "progress_interval #{interval} below minimum #{@min_progress_interval}, using minimum"
+    )
+
+    @min_progress_interval
+  end
+
+  defp validate_progress_interval(_), do: @default_progress_interval
+
+  # Validate max_demand option
+  @spec validate_max_demand(term()) :: pos_integer()
+  defp validate_max_demand(nil), do: @default_max_demand
+
+  defp validate_max_demand(demand)
+       when is_integer(demand) and demand >= @min_max_demand and demand <= @max_max_demand do
+    demand
+  end
+
+  defp validate_max_demand(demand) when is_integer(demand) and demand < @min_max_demand do
+    Logger.warning("max_demand #{demand} below minimum #{@min_max_demand}, using minimum")
+    @min_max_demand
+  end
+
+  defp validate_max_demand(demand) when is_integer(demand) and demand > @max_max_demand do
+    Logger.warning("max_demand #{demand} above maximum #{@max_max_demand}, using maximum")
+    @max_max_demand
+  end
+
+  defp validate_max_demand(_), do: @default_max_demand
 
   # Sequential loading - original implementation
   @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map()) ::
@@ -592,11 +665,7 @@ defmodule TripleStore.Loader do
           new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
 
-          :telemetry.execute(
-            [:triple_store, :loader, :batch],
-            %{count: batch_count, duration: batch_duration},
-            %{batch_number: batch_number}
-          )
+          emit_batch_telemetry(batch_count, batch_duration, batch_number)
 
           # Check if we should report progress and handle cancellation
           case maybe_report_progress(progress_opts, batch_number, new_total) do
@@ -627,9 +696,10 @@ defmodule TripleStore.Loader do
           map()
         ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts) do
-    # Use Agents to track errors and halted state since Flow runs in separate processes
+    # Use Agent for error tracking (needs to store full error term)
+    # Use :atomics for halt flag (lock-free, no message passing overhead)
     {:ok, error_agent} = Agent.start_link(fn -> nil end)
-    {:ok, halt_agent} = Agent.start_link(fn -> false end)
+    halt_ref = :atomics.new(1, signed: false)
 
     try do
       result =
@@ -638,8 +708,8 @@ defmodule TripleStore.Loader do
         |> Flow.from_enumerable(stages: stages, max_demand: max_demand)
         # Stage 2: Parallel dictionary encoding
         |> Flow.map(fn batch ->
-          # Check if halted before encoding
-          if Agent.get(halt_agent, & &1) do
+          # Check if halted before encoding (lock-free read)
+          if halted?(halt_ref) do
             {:halted, []}
           else
             encode_batch(manager, batch, error_agent)
@@ -653,7 +723,7 @@ defmodule TripleStore.Loader do
             encoded_batch,
             batch_num + 1,
             error_agent,
-            halt_agent,
+            halt_ref,
             total,
             progress_opts
           )
@@ -663,7 +733,7 @@ defmodule TripleStore.Loader do
 
       # Check for errors or halt that occurred during processing
       cond do
-        Agent.get(halt_agent, & &1) ->
+        halted?(halt_ref) ->
           # Halted by progress callback
           total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
           {:halted, total}
@@ -678,8 +748,17 @@ defmodule TripleStore.Loader do
       end
     after
       Agent.stop(error_agent)
-      Agent.stop(halt_agent)
     end
+  end
+
+  # Lock-free halt flag helpers using :atomics
+  @spec halted?(reference()) :: boolean()
+  defp halted?(halt_ref), do: :atomics.get(halt_ref, 1) == 1
+
+  @spec set_halted(reference()) :: :ok
+  defp set_halted(halt_ref) do
+    :atomics.put(halt_ref, 1, 1)
+    :ok
   end
 
   # Encode a batch of RDF triples to internal representation
@@ -702,23 +781,23 @@ defmodule TripleStore.Loader do
           {:ok, list()} | {:error, term()} | {:halted, list()},
           pos_integer(),
           pid(),
-          pid(),
+          reference(),
           non_neg_integer(),
           map()
         ) :: {non_neg_integer(), pos_integer()}
-  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_agent, total, _progress_opts) do
+  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_ref, total, _progress_opts) do
     # Skip writing on encoding error, error already recorded
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_agent, total, _progress_opts) do
+  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_ref, total, _progress_opts) do
     # Skip writing when halted
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_agent, total, progress_opts) do
-    # Check if already halted
-    if Agent.get(halt_agent, & &1) do
+  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_ref, total, progress_opts) do
+    # Check if already halted (lock-free read)
+    if halted?(halt_ref) do
       {total, batch_num}
     else
       batch_start = System.monotonic_time()
@@ -729,11 +808,7 @@ defmodule TripleStore.Loader do
           new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
 
-          :telemetry.execute(
-            [:triple_store, :loader, :batch],
-            %{count: batch_count, duration: batch_duration},
-            %{batch_number: batch_num}
-          )
+          emit_batch_telemetry(batch_count, batch_duration, batch_num)
 
           # Report progress and handle cancellation
           case maybe_report_progress(progress_opts, batch_num, new_total) do
@@ -741,7 +816,7 @@ defmodule TripleStore.Loader do
               {new_total, batch_num}
 
             :halt ->
-              Agent.update(halt_agent, fn _ -> true end)
+              set_halted(halt_ref)
               {new_total, batch_num}
           end
 
@@ -750,6 +825,16 @@ defmodule TripleStore.Loader do
           {total, batch_num}
       end
     end
+  end
+
+  # Telemetry helper for batch events
+  @spec emit_batch_telemetry(non_neg_integer(), integer(), pos_integer()) :: :ok
+  defp emit_batch_telemetry(count, duration, batch_number) do
+    :telemetry.execute(
+      [:triple_store, :loader, :batch],
+      %{count: count, duration: duration},
+      %{batch_number: batch_number}
+    )
   end
 
   # Report progress if callback is set and interval is reached
@@ -1030,10 +1115,20 @@ defmodule TripleStore.Loader do
   end
 
   defp validate_batch_size(size) when is_integer(size) and size < @min_batch_size do
+    Logger.warning(
+      "batch_size #{size} below minimum #{@min_batch_size}, using minimum. " <>
+        "Small batch sizes reduce performance due to NIF overhead."
+    )
+
     @min_batch_size
   end
 
   defp validate_batch_size(size) when is_integer(size) and size > @max_batch_size do
+    Logger.warning(
+      "batch_size #{size} above maximum #{@max_batch_size}, using maximum. " <>
+        "Large batch sizes may cause memory pressure."
+    )
+
     @max_batch_size
   end
 

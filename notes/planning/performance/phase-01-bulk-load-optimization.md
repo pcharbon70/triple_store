@@ -203,8 +203,8 @@ Implement progress callbacks for long-running bulk loads.
 
 - [x] 1.3.5.1 Test parallel loading produces correct results (26 tests)
 - [x] 1.3.5.2 Test stage count configuration
-- [ ] 1.3.5.3 Test error handling in encoding stage
-- [ ] 1.3.5.4 Test error handling in writing stage
+- [x] 1.3.5.3 Test error handling in encoding stage (16 tests in error_handling_test.exs)
+- [x] 1.3.5.4 Test error handling in writing stage (16 tests in error_handling_test.exs)
 - [x] 1.3.5.5 Test progress callbacks are invoked (18 tests)
 - [x] 1.3.5.6 Test cancellation via callback
 
