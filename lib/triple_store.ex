@@ -304,8 +304,29 @@ defmodule TripleStore do
   @spec close(store()) :: :ok | {:error, term()}
   def close(%{db: db, dict_manager: dict_manager} = _store) do
     # Stop the dictionary manager
+    # ShardedManager is a Supervisor, Manager is a GenServer - handle both
     if is_pid(dict_manager) and Process.alive?(dict_manager) do
-      GenServer.stop(dict_manager, :normal)
+      # Check if it's a Supervisor by looking at the initial_call in process info
+      case Process.info(dict_manager, :dictionary) do
+        {:dictionary, dict} ->
+          initial_call = Keyword.get(dict, :"$initial_call", nil)
+
+          if initial_call == {:supervisor, Supervisor.Default, 1} do
+            # It's a Supervisor (ShardedManager) - use its stop function
+            ShardedManager.stop(dict_manager)
+          else
+            # It's a GenServer (Manager) - use GenServer.stop
+            GenServer.stop(dict_manager, :normal)
+          end
+
+        nil ->
+          # Process may have exited, try GenServer.stop as fallback
+          try do
+            GenServer.stop(dict_manager, :normal)
+          catch
+            :exit, _ -> :ok
+          end
+      end
     end
 
     # Close the database

@@ -523,6 +523,12 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   end
 
   @impl true
+  def handle_info(_msg, state) do
+    # Catch-all for unexpected messages to prevent mailbox accumulation
+    {:noreply, state}
+  end
+
+  @impl true
   def terminate(_reason, state) do
     # Best-effort flush on shutdown
     case flush_all_counters(state) do

@@ -58,7 +58,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
         terms
         |> Enum.reduce(%{}, fn term, acc ->
           # Get the shard index for this term using the internal routing
-          {:ok, key} = StringToId.encode_term(term)
+          {:ok, _key} = StringToId.encode_term(term)
           hash_key = term_hash_key(term)
           shard_idx = :erlang.phash2(hash_key, shard_count)
 
@@ -181,9 +181,8 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
       {:ok, manager} = Manager.start_link(db: db)
 
       test_pid = self()
-      events = []
 
-      handler = fn event, _measurements, metadata, _config ->
+      handler = fn _event, _measurements, metadata, _config ->
         send(test_pid, {:cache_event, metadata.type})
       end
 
@@ -605,6 +604,6 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
   defp term_hash_key(%RDF.IRI{} = iri), do: {:iri, to_string(iri)}
   defp term_hash_key(%RDF.BlankNode{} = bnode), do: {:bnode, to_string(bnode)}
   defp term_hash_key(%RDF.Literal{} = literal) do
-    {:literal, RDF.Literal.lexical(literal), RDF.Literal.datatype(literal), RDF.Literal.language(literal)}
+    {:literal, RDF.Literal.lexical(literal), RDF.Literal.datatype_id(literal), RDF.Literal.language(literal)}
   end
 end

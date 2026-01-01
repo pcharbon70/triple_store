@@ -18,13 +18,26 @@ defmodule TripleStore.Dictionary.Manager do
   - Lookup complexity: O(1) average case
   - No eviction policy (memory bounded by unique terms)
 
+  ## Memory Considerations
+
+  The ETS cache grows with the number of unique terms. Each cache entry uses
+  approximately 100-200 bytes depending on term size. For example:
+  - 1 million terms: ~100-200 MB
+  - 10 million terms: ~1-2 GB
+  - 100 million terms: ~10-20 GB
+
+  The cache has no eviction policy as memory is bounded by the total number
+  of unique terms in the dataset. Consider available memory when loading
+  very large datasets.
+
   ## Usage
 
   ```elixir
   {:ok, manager} = Manager.start_link(db: db_ref)
 
-  # Read-only lookup (direct to RocksDB, no serialization)
-  {:ok, id} = StringToId.lookup_id(db, term)
+  # Read-only lookup (checks cache then RocksDB, no ID creation)
+  {:ok, id} = Manager.lookup_id(manager, term)
+  :not_found = Manager.lookup_id(manager, unknown_term)
 
   # Atomic get-or-create (checks cache first, serialized on miss)
   {:ok, id} = Manager.get_or_create_id(manager, term)
@@ -47,6 +60,9 @@ defmodule TripleStore.Dictionary.Manager do
 
   @typedoc "RDF term (URI, blank node, or literal)"
   @type rdf_term :: RDF.IRI.t() | RDF.BlankNode.t() | RDF.Literal.t()
+
+  # Sentinel value for persistent_term lookups
+  @not_found :__manager_not_found__
 
   # ===========================================================================
   # Client API
@@ -110,6 +126,39 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @doc """
+  Looks up an existing ID for a term without creating one.
+
+  This is useful for query-only workloads where you don't want to
+  create new entries for unknown terms. Checks the ETS cache first,
+  then falls back to RocksDB.
+
+  ## Arguments
+
+  - `manager` - Manager process reference
+  - `term` - RDF term to look up
+
+  ## Returns
+
+  - `{:ok, term_id}` - If term exists
+  - `:not_found` - If term doesn't exist
+  - `{:error, reason}` - On failure
+  """
+  @spec lookup_id(manager(), rdf_term()) :: {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  def lookup_id(manager, term) do
+    # Try cache lookup first
+    case cache_lookup(manager, term) do
+      {:ok, id} ->
+        emit_cache_telemetry(:hit)
+        {:ok, id}
+
+      :miss ->
+        emit_cache_telemetry(:miss)
+        # Fall through to RocksDB lookup via GenServer
+        GenServer.call(manager, {:lookup_id, term})
+    end
+  end
+
   # Look up term in the ETS cache without GenServer call
   defp cache_lookup(manager, term) do
     cache_key = {:dictionary_cache, manager}
@@ -126,10 +175,9 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   defp get_cache_table(cache_key) do
-    try do
-      {:ok, :persistent_term.get(cache_key)}
-    rescue
-      ArgumentError -> :error
+    case :persistent_term.get(cache_key, @not_found) do
+      @not_found -> :error
+      cache -> {:ok, cache}
     end
   end
 
@@ -269,7 +317,7 @@ defmodule TripleStore.Dictionary.Manager do
       {:error, reason} ->
         # Clean up cache if counter fails
         if owns_cache, do: :ets.delete(cache)
-        :persistent_term.erase(cache_key)
+        safe_persistent_term_erase(cache_key)
         {:stop, reason}
     end
   end
@@ -319,9 +367,15 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @impl true
+  def handle_call({:lookup_id, term}, _from, state) do
+    result = do_lookup_id(state.db, state.cache, term)
+    {:reply, result, state}
+  end
+
+  @impl true
   def handle_call({:get_or_create_ids, terms}, _from, state) do
     start_time = System.monotonic_time()
-    result = do_get_or_create_ids(state.db, state.counter, state.cache, terms)
+    result = do_get_or_create_ids_batch(state.db, state.counter, state.cache, terms)
     duration = System.monotonic_time() - start_time
 
     :telemetry.execute(
@@ -357,14 +411,16 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @impl true
+  def handle_info(_msg, state) do
+    # Catch-all for unexpected messages to prevent mailbox accumulation
+    {:noreply, state}
+  end
+
+  @impl true
   def terminate(_reason, state) do
     # Clean up persistent_term entry
     cache_key = {:dictionary_cache, self()}
-    try do
-      :persistent_term.erase(cache_key)
-    rescue
-      ArgumentError -> :ok
-    end
+    safe_persistent_term_erase(cache_key)
 
     # Only delete the cache if we own it
     if state.owns_cache do
@@ -408,6 +464,37 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
+  @spec do_lookup_id(reference(), :ets.tid(), rdf_term()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  defp do_lookup_id(db, cache, term) do
+    case StringToId.encode_term(term) do
+      {:ok, key} ->
+        # Check cache first
+        case :ets.lookup(cache, key) do
+          [{^key, id}] ->
+            {:ok, id}
+
+          [] ->
+            # Fall back to RocksDB
+            case NIF.get(db, :str2id, key) do
+              {:ok, <<id::64-big>>} ->
+                # Populate cache for future lookups
+                :ets.insert(cache, {key, id})
+                {:ok, id}
+
+              :not_found ->
+                :not_found
+
+              {:error, _} = error ->
+                error
+            end
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
   @spec create_and_store_id(reference(), SequenceCounter.counter(), :ets.tid(), binary(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
   defp create_and_store_id(db, counter, cache, key, term) do
@@ -427,12 +514,6 @@ defmodule TripleStore.Dictionary.Manager do
       {:error, _} = error ->
         error
     end
-  end
-
-  @spec do_get_or_create_ids(reference(), SequenceCounter.counter(), :ets.tid(), [rdf_term()]) ::
-          {:ok, [Dictionary.term_id()]} | {:error, term()}
-  defp do_get_or_create_ids(db, counter, cache, terms) do
-    do_get_or_create_ids_batch(db, counter, cache, terms)
   end
 
   # Optimized batch processing with range allocation
@@ -573,4 +654,15 @@ defmodule TripleStore.Dictionary.Manager do
   defp get_term_type(%RDF.IRI{}), do: :uri
   defp get_term_type(%RDF.BlankNode{}), do: :bnode
   defp get_term_type(%RDF.Literal{}), do: :literal
+
+  # Safe helper for erasing persistent_term entries
+  @spec safe_persistent_term_erase(term()) :: :ok
+  defp safe_persistent_term_erase(key) do
+    case :persistent_term.get(key, @not_found) do
+      @not_found -> :ok
+      _ -> :persistent_term.erase(key)
+    end
+
+    :ok
+  end
 end

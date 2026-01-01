@@ -54,6 +54,14 @@ defmodule TripleStore.Dictionary.ShardedManager do
   - 16 shards: ~100K ops/sec (10x)
 
   Note: Actual throughput depends on I/O characteristics and term distribution.
+
+  ## Memory Considerations
+
+  The shared ETS cache grows with the number of unique terms. Each cache entry
+  uses approximately 100-200 bytes depending on term size. For a dataset with
+  10 million unique terms, expect ~1-2 GB of cache memory. The cache has no
+  eviction policy as it's bounded by the number of unique terms in the dataset.
+  Consider available memory when loading very large datasets.
   """
 
   use Supervisor
@@ -79,6 +87,11 @@ defmodule TripleStore.Dictionary.ShardedManager do
   # ===========================================================================
 
   @default_shards System.schedulers_online()
+  @default_batch_timeout :timer.seconds(60)
+  @max_batch_size 100_000
+
+  # Sentinel value for persistent_term lookups
+  @not_found :__sharded_manager_not_found__
 
   # ===========================================================================
   # Client API
@@ -91,6 +104,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
 
   - `:db` - Required. Database reference from RocksDB NIF
   - `:shards` - Optional. Number of shards (default: CPU cores)
+  - `:batch_timeout` - Optional. Timeout for batch operations in ms (default: 60000)
   - `:name` - Optional. Supervisor name for registration
 
   ## Examples
@@ -144,11 +158,13 @@ defmodule TripleStore.Dictionary.ShardedManager do
   ## Arguments
 
   - `sharded` - ShardedManager supervisor reference
-  - `terms` - List of RDF terms
+  - `terms` - List of RDF terms (max #{@max_batch_size} terms)
+  - `opts` - Optional keyword list with `:timeout` (default: 60000ms)
 
   ## Returns
 
   - `{:ok, ids}` - List of term IDs in same order as input
+  - `{:error, :batch_too_large}` - If batch exceeds #{@max_batch_size} terms
   - `{:error, reason}` - On first failure encountered
 
   ## Performance
@@ -156,21 +172,33 @@ defmodule TripleStore.Dictionary.ShardedManager do
   For N terms distributed across S shards, this processes approximately
   N/S terms per shard in parallel, providing near-linear scaling.
   """
-  @spec get_or_create_ids(t(), [rdf_term()]) :: {:ok, [term_id()]} | {:error, term()}
-  def get_or_create_ids(sharded, terms) do
+  @spec get_or_create_ids(t(), [rdf_term()], keyword()) :: {:ok, [term_id()]} | {:error, term()}
+  def get_or_create_ids(sharded, terms, opts \\ [])
+
+  def get_or_create_ids(_sharded, terms, _opts) when length(terms) > @max_batch_size do
+    {:error, :batch_too_large}
+  end
+
+  def get_or_create_ids(_sharded, [], _opts), do: {:ok, []}
+
+  def get_or_create_ids(sharded, terms, opts) do
+    timeout = Keyword.get(opts, :timeout, get_batch_timeout(sharded))
     shard_count = get_shard_count(sharded)
     shards = get_shards(sharded)
 
     # Partition terms by shard, keeping track of original indices
     partitioned = partition_by_shard(terms, shard_count)
 
-    # Process each shard's terms in parallel
+    # Process each shard's terms in parallel using Task.Supervisor if available,
+    # otherwise fall back to regular Tasks with proper error handling
+    task_supervisor = get_task_supervisor(sharded)
+
     tasks =
       Enum.map(partitioned, fn {shard_idx, indexed_terms} ->
         shard = Enum.at(shards, shard_idx)
         terms_only = Enum.map(indexed_terms, fn {_idx, term} -> term end)
 
-        Task.async(fn ->
+        task_fn = fn ->
           case Manager.get_or_create_ids(shard, terms_only) do
             {:ok, ids} ->
               # Zip IDs back with original indices
@@ -184,11 +212,17 @@ defmodule TripleStore.Dictionary.ShardedManager do
             error ->
               error
           end
-        end)
+        end
+
+        if task_supervisor do
+          Task.Supervisor.async_nolink(task_supervisor, task_fn)
+        else
+          Task.async(task_fn)
+        end
       end)
 
-    # Collect results with timeout
-    results = Task.await_many(tasks, :timer.seconds(60))
+    # Collect results with timeout, handling potential task failures
+    results = safe_await_many(tasks, timeout, task_supervisor)
 
     # Check for errors and reassemble in original order
     case collect_results(results) do
@@ -204,6 +238,29 @@ defmodule TripleStore.Dictionary.ShardedManager do
       error ->
         error
     end
+  end
+
+  @doc """
+  Looks up an existing ID for a term without creating one.
+
+  This is useful for query-only workloads where you don't want to
+  create new entries for unknown terms.
+
+  ## Arguments
+
+  - `sharded` - ShardedManager supervisor reference
+  - `term` - RDF term to look up
+
+  ## Returns
+
+  - `{:ok, term_id}` - If term exists
+  - `:not_found` - If term doesn't exist
+  - `{:error, reason}` - On failure
+  """
+  @spec lookup_id(t(), rdf_term()) :: {:ok, term_id()} | :not_found | {:error, term()}
+  def lookup_id(sharded, term) do
+    shard = route_term(sharded, term)
+    Manager.lookup_id(shard, term)
   end
 
   @doc """
@@ -238,9 +295,16 @@ defmodule TripleStore.Dictionary.ShardedManager do
   """
   @spec get_shard_count(t()) :: pos_integer()
   def get_shard_count(sharded) do
-    sharded
-    |> Supervisor.which_children()
-    |> length()
+    # Use cached shard list for performance
+    case safe_persistent_term_get({:sharded_manager_shards, sharded}) do
+      nil ->
+        sharded
+        |> Supervisor.which_children()
+        |> length()
+
+      shards ->
+        length(shards)
+    end
   end
 
   @doc """
@@ -277,50 +341,50 @@ defmodule TripleStore.Dictionary.ShardedManager do
     # Get the shared counter and cache before stopping
     counter_key = {:sharded_manager_counter, sharded}
     cache_key = {:sharded_manager_cache, sharded}
+    shards_key = {:sharded_manager_shards, sharded}
+    timeout_key = {:sharded_manager_timeout, sharded}
+    task_sup_key = {:sharded_manager_task_sup, sharded}
 
-    shared_counter =
+    shared_counter = safe_persistent_term_get(counter_key)
+    shared_cache = safe_persistent_term_get(cache_key)
+    task_supervisor = safe_persistent_term_get(task_sup_key)
+
+    # Stop the supervisor (and all child managers), handling already-stopped case
+    if is_pid(sharded) and Process.alive?(sharded) do
       try do
-        :persistent_term.get(counter_key)
-      rescue
-        ArgumentError -> nil
+        Supervisor.stop(sharded, :normal)
+      catch
+        :exit, {:noproc, _} -> :ok
+        :exit, :noproc -> :ok
       end
+    end
 
-    shared_cache =
+    # Stop the task supervisor if we started one
+    if task_supervisor && is_pid(task_supervisor) && Process.alive?(task_supervisor) do
       try do
-        :persistent_term.get(cache_key)
-      rescue
-        ArgumentError -> nil
+        Supervisor.stop(task_supervisor, :normal)
+      catch
+        :exit, {:noproc, _} -> :ok
+        :exit, :noproc -> :ok
       end
-
-    # Stop the supervisor (and all child managers)
-    Supervisor.stop(sharded, :normal)
+    end
 
     # Clean up the shared counter
-    if shared_counter && Process.alive?(shared_counter) do
+    if shared_counter && is_pid(shared_counter) && Process.alive?(shared_counter) do
       SequenceCounter.stop(shared_counter)
     end
 
     # Clean up the shared cache
     if shared_cache do
-      try do
-        :ets.delete(shared_cache)
-      rescue
-        ArgumentError -> :ok
-      end
+      safe_ets_delete(shared_cache)
     end
 
-    # Remove from persistent_term
-    try do
-      :persistent_term.erase(counter_key)
-    rescue
-      ArgumentError -> :ok
-    end
-
-    try do
-      :persistent_term.erase(cache_key)
-    rescue
-      ArgumentError -> :ok
-    end
+    # Remove all persistent_term entries
+    safe_persistent_term_erase(counter_key)
+    safe_persistent_term_erase(cache_key)
+    safe_persistent_term_erase(shards_key)
+    safe_persistent_term_erase(timeout_key)
+    safe_persistent_term_erase(task_sup_key)
 
     :ok
   end
@@ -337,15 +401,13 @@ defmodule TripleStore.Dictionary.ShardedManager do
   ## Returns
 
   - `{:ok, counter}` - Sequence counter process reference
+  - `{:error, :not_found}` - If counter not found
   """
   @spec get_counter(t()) :: {:ok, SequenceCounter.counter()} | {:error, :not_found}
   def get_counter(sharded) do
-    counter_key = {:sharded_manager_counter, sharded}
-
-    try do
-      {:ok, :persistent_term.get(counter_key)}
-    rescue
-      ArgumentError -> {:error, :not_found}
+    case safe_persistent_term_get({:sharded_manager_counter, sharded}) do
+      nil -> {:error, :not_found}
+      counter -> {:ok, counter}
     end
   end
 
@@ -361,15 +423,13 @@ defmodule TripleStore.Dictionary.ShardedManager do
   ## Returns
 
   - `{:ok, cache}` - ETS table reference
+  - `{:error, :not_found}` - If cache not found
   """
   @spec get_cache(t()) :: {:ok, :ets.tid()} | {:error, :not_found}
   def get_cache(sharded) do
-    cache_key = {:sharded_manager_cache, sharded}
-
-    try do
-      {:ok, :persistent_term.get(cache_key)}
-    rescue
-      ArgumentError -> {:error, :not_found}
+    case safe_persistent_term_get({:sharded_manager_cache, sharded}) do
+      nil -> {:error, :not_found}
+      cache -> {:ok, cache}
     end
   end
 
@@ -385,6 +445,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
   ## Returns
 
   - `{:ok, stats}` - Map with cache statistics
+  - `{:error, :not_found}` - If cache not found
   """
   @spec cache_stats(t()) :: {:ok, map()} | {:error, :not_found}
   def cache_stats(sharded) do
@@ -407,48 +468,113 @@ defmodule TripleStore.Dictionary.ShardedManager do
   def init(opts) do
     db = Keyword.fetch!(opts, :db)
     shard_count = Keyword.get(opts, :shards, @default_shards)
+    batch_timeout = Keyword.get(opts, :batch_timeout, @default_batch_timeout)
 
-    # Start a shared sequence counter first
-    # All shards will share this counter to ensure unique IDs across shards
-    {:ok, shared_counter} = SequenceCounter.start_link(db: db)
+    # Create shared resources with cleanup on failure
+    case create_shared_resources(db) do
+      {:ok, shared_counter, shared_cache, task_supervisor} ->
+        # Create child specs with the shared counter and cache
+        children =
+          for i <- 0..(shard_count - 1) do
+            Supervisor.child_spec(
+              {Manager, db: db, counter: shared_counter, cache: shared_cache},
+              id: {Manager, i}
+            )
+          end
 
-    # Create a shared ETS cache for all shards
-    # Using read_concurrency for parallel lookups across shards
-    shared_cache = :ets.new(:sharded_dictionary_cache, [
-      :set,
-      :public,
-      {:read_concurrency, true},
-      {:write_concurrency, true}
-    ])
+        # Store references in persistent_term for access and cleanup
+        # Note: self() is the supervisor pid at this point
+        sup_pid = self()
+        :persistent_term.put({:sharded_manager_counter, sup_pid}, shared_counter)
+        :persistent_term.put({:sharded_manager_cache, sup_pid}, shared_cache)
+        :persistent_term.put({:sharded_manager_timeout, sup_pid}, batch_timeout)
+        :persistent_term.put({:sharded_manager_task_sup, sup_pid}, task_supervisor)
 
-    # Create child specs with the shared counter and cache
-    children =
-      for i <- 0..(shard_count - 1) do
-        Supervisor.child_spec(
-          {Manager, db: db, counter: shared_counter, cache: shared_cache},
-          id: {Manager, i}
-        )
-      end
+        # The shard list will be cached after children start
+        # We'll populate it on first access
+        Supervisor.init(children, strategy: :one_for_one)
 
-    # Store references in persistent_term for cleanup
-    counter_key = {:sharded_manager_counter, self()}
-    cache_key = {:sharded_manager_cache, self()}
-    :persistent_term.put(counter_key, shared_counter)
-    :persistent_term.put(cache_key, shared_cache)
-
-    Supervisor.init(children, strategy: :one_for_one)
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   # ===========================================================================
-  # Private Functions
+  # Private Functions - Resource Management
+  # ===========================================================================
+
+  @spec create_shared_resources(reference()) ::
+          {:ok, pid(), :ets.tid(), pid() | nil} | {:error, term()}
+  defp create_shared_resources(db) do
+    # Start resources in order, cleaning up on failure
+    with {:ok, counter} <- SequenceCounter.start_link(db: db),
+         {:ok, cache} <- create_shared_cache(),
+         {:ok, task_sup} <- start_task_supervisor() do
+      {:ok, counter, cache, task_sup}
+    else
+      {:error, _reason} = error ->
+        # Cleanup is handled by the caller since we return error
+        error
+    end
+  end
+
+  @spec create_shared_cache() :: {:ok, :ets.tid()}
+  defp create_shared_cache do
+    cache =
+      :ets.new(:sharded_dictionary_cache, [
+        :set,
+        :public,
+        {:read_concurrency, true},
+        {:write_concurrency, true}
+      ])
+
+    {:ok, cache}
+  end
+
+  @spec start_task_supervisor() :: {:ok, pid() | nil}
+  defp start_task_supervisor do
+    # Start a Task.Supervisor for batch processing
+    case Task.Supervisor.start_link() do
+      {:ok, pid} -> {:ok, pid}
+      # If we can't start a task supervisor, we'll fall back to regular Tasks
+      {:error, _} -> {:ok, nil}
+    end
+  end
+
+  # ===========================================================================
+  # Private Functions - Shard Routing
   # ===========================================================================
 
   @spec get_shards(t()) :: [pid()]
   defp get_shards(sharded) do
-    sharded
-    |> Supervisor.which_children()
-    |> Enum.map(fn {_id, pid, _type, _modules} -> pid end)
-    |> Enum.sort()
+    # Check cache first
+    case safe_persistent_term_get({:sharded_manager_shards, sharded}) do
+      nil ->
+        # Not cached, fetch and cache
+        refresh_shards_cache(sharded)
+
+      shards ->
+        # Verify cached shards are still alive (handles supervisor restarts)
+        if Enum.all?(shards, &Process.alive?/1) do
+          shards
+        else
+          # Some shard(s) died and were restarted, refresh cache
+          refresh_shards_cache(sharded)
+        end
+    end
+  end
+
+  @spec refresh_shards_cache(t()) :: [pid()]
+  defp refresh_shards_cache(sharded) do
+    shards =
+      sharded
+      |> Supervisor.which_children()
+      |> Enum.map(fn {_id, pid, _type, _modules} -> pid end)
+      |> Enum.sort()
+
+    # Cache for future calls
+    :persistent_term.put({:sharded_manager_shards, sharded}, shards)
+    shards
   end
 
   @spec route_term(t(), rdf_term()) :: pid()
@@ -475,7 +601,25 @@ defmodule TripleStore.Dictionary.ShardedManager do
      RDF.Literal.language(lit)}
   end
 
-  @spec partition_by_shard([rdf_term()], pos_integer()) :: [{non_neg_integer(), [{non_neg_integer(), rdf_term()}]}]
+  # ===========================================================================
+  # Private Functions - Batch Processing
+  # ===========================================================================
+
+  @spec get_batch_timeout(t()) :: pos_integer()
+  defp get_batch_timeout(sharded) do
+    case safe_persistent_term_get({:sharded_manager_timeout, sharded}) do
+      nil -> @default_batch_timeout
+      timeout -> timeout
+    end
+  end
+
+  @spec get_task_supervisor(t()) :: pid() | nil
+  defp get_task_supervisor(sharded) do
+    safe_persistent_term_get({:sharded_manager_task_sup, sharded})
+  end
+
+  @spec partition_by_shard([rdf_term()], pos_integer()) ::
+          [{non_neg_integer(), [{non_neg_integer(), rdf_term()}]}]
   defp partition_by_shard(terms, shard_count) do
     terms
     |> Enum.with_index()
@@ -484,6 +628,33 @@ defmodule TripleStore.Dictionary.ShardedManager do
       fn {term, idx} -> {idx, term} end
     )
     |> Enum.to_list()
+  end
+
+  @spec safe_await_many([Task.t()], pos_integer(), pid() | nil) :: [term()]
+  defp safe_await_many(tasks, timeout, task_supervisor) do
+    if task_supervisor do
+      # With Task.Supervisor, we can use yield_many for better error handling
+      results =
+        Task.yield_many(tasks, timeout)
+        |> Enum.map(fn
+          {_task, {:ok, result}} ->
+            result
+
+          {task, {:exit, reason}} ->
+            Task.Supervisor.terminate_child(task_supervisor, task.pid)
+            {:error, {:task_failed, reason}}
+
+          {task, nil} ->
+            # Timeout - shutdown the task
+            Task.Supervisor.terminate_child(task_supervisor, task.pid)
+            {:error, :timeout}
+        end)
+
+      results
+    else
+      # Without supervisor, use await_many which will raise on timeout
+      Task.await_many(tasks, timeout)
+    end
   end
 
   @spec collect_results([{:ok, term()} | {:error, term()}]) :: {:ok, [term()]} | {:error, term()}
@@ -495,5 +666,38 @@ defmodule TripleStore.Dictionary.ShardedManager do
       {:error, _} = error, _acc ->
         {:halt, error}
     end)
+  end
+
+  # ===========================================================================
+  # Private Functions - Safe Helpers
+  # ===========================================================================
+
+  @spec safe_persistent_term_get(term()) :: term() | nil
+  defp safe_persistent_term_get(key) do
+    case :persistent_term.get(key, @not_found) do
+      @not_found -> nil
+      value -> value
+    end
+  end
+
+  @spec safe_persistent_term_erase(term()) :: :ok
+  defp safe_persistent_term_erase(key) do
+    # Use get with default to check existence before erasing
+    case :persistent_term.get(key, @not_found) do
+      @not_found -> :ok
+      _ -> :persistent_term.erase(key)
+    end
+
+    :ok
+  end
+
+  @spec safe_ets_delete(:ets.tid()) :: :ok
+  defp safe_ets_delete(table) do
+    case :ets.info(table) do
+      :undefined -> :ok
+      _ -> :ets.delete(table)
+    end
+
+    :ok
   end
 end
