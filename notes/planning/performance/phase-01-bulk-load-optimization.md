@@ -75,18 +75,18 @@ Pre-allocate ID ranges per batch to reduce contention on the sequence counter. I
 
 ### 1.1.4 Unit Tests
 
-- [ ] **Task 1.1.4 Complete**
+- [x] **Task 1.1.4 Complete** (2026-01-01)
 
 Comprehensive test coverage for dictionary parallelization features.
 
-- [ ] 1.1.4.1 Test sharded manager distributes terms across shards evenly
-- [ ] 1.1.4.2 Test concurrent `get_or_create_id` from multiple processes
-- [ ] 1.1.4.3 Test ETS cache hit returns correct ID
-- [ ] 1.1.4.4 Test ETS cache miss falls through to GenServer
-- [ ] 1.1.4.5 Test cache population on term creation
-- [ ] 1.1.4.6 Test batch operations partition correctly by shard
-- [ ] 1.1.4.7 Test sequence block allocation under contention
-- [ ] 1.1.4.8 Test dictionary consistency after parallel operations
+- [x] 1.1.4.1 Test sharded manager distributes terms across shards evenly
+- [x] 1.1.4.2 Test concurrent `get_or_create_id` from multiple processes
+- [x] 1.1.4.3 Test ETS cache hit returns correct ID
+- [x] 1.1.4.4 Test ETS cache miss falls through to GenServer
+- [x] 1.1.4.5 Test cache population on term creation
+- [x] 1.1.4.6 Test batch operations partition correctly by shard
+- [x] 1.1.4.7 Test sequence block allocation under contention
+- [x] 1.1.4.8 Test dictionary consistency after parallel operations
 
 ---
 
