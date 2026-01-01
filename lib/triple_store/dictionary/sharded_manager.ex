@@ -274,12 +274,20 @@ defmodule TripleStore.Dictionary.ShardedManager do
   """
   @spec stop(t()) :: :ok
   def stop(sharded) do
-    # Get the shared counter before stopping
+    # Get the shared counter and cache before stopping
     counter_key = {:sharded_manager_counter, sharded}
+    cache_key = {:sharded_manager_cache, sharded}
 
     shared_counter =
       try do
         :persistent_term.get(counter_key)
+      rescue
+        ArgumentError -> nil
+      end
+
+    shared_cache =
+      try do
+        :persistent_term.get(cache_key)
       rescue
         ArgumentError -> nil
       end
@@ -292,9 +300,24 @@ defmodule TripleStore.Dictionary.ShardedManager do
       SequenceCounter.stop(shared_counter)
     end
 
+    # Clean up the shared cache
+    if shared_cache do
+      try do
+        :ets.delete(shared_cache)
+      rescue
+        ArgumentError -> :ok
+      end
+    end
+
     # Remove from persistent_term
     try do
       :persistent_term.erase(counter_key)
+    rescue
+      ArgumentError -> :ok
+    end
+
+    try do
+      :persistent_term.erase(cache_key)
     rescue
       ArgumentError -> :ok
     end
@@ -326,6 +349,56 @@ defmodule TripleStore.Dictionary.ShardedManager do
     end
   end
 
+  @doc """
+  Gets the shared ETS cache.
+
+  Useful for diagnostics and testing.
+
+  ## Arguments
+
+  - `sharded` - ShardedManager supervisor reference
+
+  ## Returns
+
+  - `{:ok, cache}` - ETS table reference
+  """
+  @spec get_cache(t()) :: {:ok, :ets.tid()} | {:error, :not_found}
+  def get_cache(sharded) do
+    cache_key = {:sharded_manager_cache, sharded}
+
+    try do
+      {:ok, :persistent_term.get(cache_key)}
+    rescue
+      ArgumentError -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Gets cache statistics.
+
+  Returns the current size and memory usage of the shared ETS cache.
+
+  ## Arguments
+
+  - `sharded` - ShardedManager supervisor reference
+
+  ## Returns
+
+  - `{:ok, stats}` - Map with cache statistics
+  """
+  @spec cache_stats(t()) :: {:ok, map()} | {:error, :not_found}
+  def cache_stats(sharded) do
+    case get_cache(sharded) do
+      {:ok, cache} ->
+        size = :ets.info(cache, :size)
+        memory = :ets.info(cache, :memory) * :erlang.system_info(:wordsize)
+        {:ok, %{size: size, memory_bytes: memory}}
+
+      error ->
+        error
+    end
+  end
+
   # ===========================================================================
   # Supervisor Callbacks
   # ===========================================================================
@@ -339,19 +412,29 @@ defmodule TripleStore.Dictionary.ShardedManager do
     # All shards will share this counter to ensure unique IDs across shards
     {:ok, shared_counter} = SequenceCounter.start_link(db: db)
 
-    # Create child specs with the shared counter
+    # Create a shared ETS cache for all shards
+    # Using read_concurrency for parallel lookups across shards
+    shared_cache = :ets.new(:sharded_dictionary_cache, [
+      :set,
+      :public,
+      {:read_concurrency, true},
+      {:write_concurrency, true}
+    ])
+
+    # Create child specs with the shared counter and cache
     children =
       for i <- 0..(shard_count - 1) do
         Supervisor.child_spec(
-          {Manager, db: db, counter: shared_counter},
+          {Manager, db: db, counter: shared_counter, cache: shared_cache},
           id: {Manager, i}
         )
       end
 
-    # Store the counter reference in the supervisor state via :persistent_term
-    # so we can clean it up when the supervisor terminates
+    # Store references in persistent_term for cleanup
     counter_key = {:sharded_manager_counter, self()}
+    cache_key = {:sharded_manager_cache, self()}
     :persistent_term.put(counter_key, shared_counter)
+    :persistent_term.put(cache_key, shared_cache)
 
     Supervisor.init(children, strategy: :one_for_one)
   end

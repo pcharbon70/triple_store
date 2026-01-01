@@ -6,6 +6,18 @@ defmodule TripleStore.Dictionary.Manager do
   create-if-not-exists semantics. Read-only operations (`lookup_id`) go
   directly to RocksDB without serialization for maximum performance.
 
+  ## ETS Read Cache
+
+  The Manager maintains an ETS-based read cache for frequently accessed terms.
+  This cache is checked before making a GenServer call, allowing concurrent
+  read access without serialization.
+
+  Cache characteristics:
+  - Created with `{:read_concurrency, true}` for parallel reads
+  - Write-through: populated after each new ID creation
+  - Lookup complexity: O(1) average case
+  - No eviction policy (memory bounded by unique terms)
+
   ## Usage
 
   ```elixir
@@ -14,7 +26,7 @@ defmodule TripleStore.Dictionary.Manager do
   # Read-only lookup (direct to RocksDB, no serialization)
   {:ok, id} = StringToId.lookup_id(db, term)
 
-  # Atomic get-or-create (serialized through Manager)
+  # Atomic get-or-create (checks cache first, serialized on miss)
   {:ok, id} = Manager.get_or_create_id(manager, term)
   ```
   """
@@ -50,6 +62,9 @@ defmodule TripleStore.Dictionary.Manager do
   - `:counter` - Optional. External sequence counter reference. If not provided,
     a new counter will be started. Use this when sharing a counter across
     multiple managers (e.g., in ShardedManager).
+  - `:cache` - Optional. External ETS cache table reference. If not provided,
+    a new ETS table will be created. Use this when sharing a cache across
+    multiple managers.
   - `:name` - Optional. GenServer name for registration
 
   ## Examples
@@ -67,9 +82,9 @@ defmodule TripleStore.Dictionary.Manager do
   @doc """
   Gets an existing ID or creates a new one for a term.
 
-  This operation is serialized through the GenServer to ensure atomic
-  create-if-not-exists semantics. Two concurrent calls for the same
-  term will return the same ID.
+  This operation first checks the ETS read cache for O(1) lookup.
+  On cache miss, it falls through to the GenServer for atomic
+  create-if-not-exists semantics.
 
   ## Arguments
 
@@ -84,7 +99,47 @@ defmodule TripleStore.Dictionary.Manager do
   @spec get_or_create_id(manager(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
   def get_or_create_id(manager, term) do
-    GenServer.call(manager, {:get_or_create_id, term})
+    # Try cache lookup first (lock-free, concurrent reads)
+    case cache_lookup(manager, term) do
+      {:ok, id} ->
+        emit_cache_telemetry(:hit)
+        {:ok, id}
+
+      :miss ->
+        emit_cache_telemetry(:miss)
+        GenServer.call(manager, {:get_or_create_id, term})
+    end
+  end
+
+  # Look up term in the ETS cache without GenServer call
+  defp cache_lookup(manager, term) do
+    cache_key = {:dictionary_cache, manager}
+
+    with {:ok, cache} <- get_cache_table(cache_key),
+         {:ok, key} <- StringToId.encode_term(term) do
+      case :ets.lookup(cache, key) do
+        [{^key, id}] -> {:ok, id}
+        [] -> :miss
+      end
+    else
+      _ -> :miss
+    end
+  end
+
+  defp get_cache_table(cache_key) do
+    try do
+      {:ok, :persistent_term.get(cache_key)}
+    rescue
+      ArgumentError -> :error
+    end
+  end
+
+  defp emit_cache_telemetry(type) do
+    :telemetry.execute(
+      [:triple_store, :dictionary, :cache],
+      %{count: 1},
+      %{type: type}
+    )
   end
 
   @doc """
@@ -154,6 +209,42 @@ defmodule TripleStore.Dictionary.Manager do
     GenServer.call(manager, :get_counter)
   end
 
+  @doc """
+  Gets the ETS cache table reference from the manager.
+
+  This is useful for diagnostics and testing.
+
+  ## Arguments
+
+  - `manager` - Manager process reference
+
+  ## Returns
+
+  - `{:ok, cache}` - ETS table reference
+  """
+  @spec get_cache(manager()) :: {:ok, :ets.tid()}
+  def get_cache(manager) do
+    GenServer.call(manager, :get_cache)
+  end
+
+  @doc """
+  Gets cache statistics.
+
+  Returns the current size of the ETS cache.
+
+  ## Arguments
+
+  - `manager` - Manager process reference
+
+  ## Returns
+
+  - `{:ok, stats}` - Map with cache statistics
+  """
+  @spec cache_stats(manager()) :: {:ok, map()}
+  def cache_stats(manager) do
+    GenServer.call(manager, :cache_stats)
+  end
+
   # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
@@ -162,15 +253,42 @@ defmodule TripleStore.Dictionary.Manager do
   def init(opts) do
     db = Keyword.fetch!(opts, :db)
     external_counter = Keyword.get(opts, :counter)
+    external_cache = Keyword.get(opts, :cache)
+
+    # Create or use external ETS cache for lock-free reads
+    {cache, owns_cache} = get_or_create_cache(external_cache)
+
+    # Store cache reference in persistent_term for client-side lookup
+    cache_key = {:dictionary_cache, self()}
+    :persistent_term.put(cache_key, cache)
 
     # Use external counter if provided, otherwise start a new one
     case get_or_start_counter(db, external_counter) do
       {:ok, counter, owns_counter} ->
-        {:ok, %{db: db, counter: counter, owns_counter: owns_counter}}
+        {:ok, %{db: db, counter: counter, owns_counter: owns_counter, cache: cache, owns_cache: owns_cache}}
 
       {:error, reason} ->
+        # Clean up cache if counter fails
+        if owns_cache, do: :ets.delete(cache)
+        :persistent_term.erase(cache_key)
         {:stop, reason}
     end
+  end
+
+  defp get_or_create_cache(nil) do
+    # Create new ETS table with read concurrency for parallel lookups
+    cache = :ets.new(:dictionary_cache, [
+      :set,
+      :public,
+      {:read_concurrency, true},
+      {:write_concurrency, false}
+    ])
+    {cache, true}
+  end
+
+  defp get_or_create_cache(cache) when is_reference(cache) do
+    # Use external cache (e.g., shared across shards)
+    {cache, false}
   end
 
   defp get_or_start_counter(_db, counter) when is_pid(counter) do
@@ -189,7 +307,7 @@ defmodule TripleStore.Dictionary.Manager do
   @impl true
   def handle_call({:get_or_create_id, term}, _from, state) do
     start_time = System.monotonic_time()
-    result = do_get_or_create_id(state.db, state.counter, term)
+    result = do_get_or_create_id(state.db, state.counter, state.cache, term)
     duration = System.monotonic_time() - start_time
 
     :telemetry.execute(
@@ -204,7 +322,7 @@ defmodule TripleStore.Dictionary.Manager do
   @impl true
   def handle_call({:get_or_create_ids, terms}, _from, state) do
     start_time = System.monotonic_time()
-    result = do_get_or_create_ids(state.db, state.counter, terms)
+    result = do_get_or_create_ids(state.db, state.counter, state.cache, terms)
     duration = System.monotonic_time() - start_time
 
     :telemetry.execute(
@@ -227,7 +345,33 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @impl true
+  def handle_call(:get_cache, _from, state) do
+    {:reply, {:ok, state.cache}, state}
+  end
+
+  @impl true
+  def handle_call(:cache_stats, _from, state) do
+    size = :ets.info(state.cache, :size)
+    memory = :ets.info(state.cache, :memory) * :erlang.system_info(:wordsize)
+    stats = %{size: size, memory_bytes: memory}
+    {:reply, {:ok, stats}, state}
+  end
+
+  @impl true
   def terminate(_reason, state) do
+    # Clean up persistent_term entry
+    cache_key = {:dictionary_cache, self()}
+    try do
+      :persistent_term.erase(cache_key)
+    rescue
+      ArgumentError -> :ok
+    end
+
+    # Only delete the cache if we own it
+    if state.owns_cache do
+      :ets.delete(state.cache)
+    end
+
     # Only stop the counter if we own it (i.e., we created it)
     if state.owns_counter do
       SequenceCounter.stop(state.counter)
@@ -240,19 +384,21 @@ defmodule TripleStore.Dictionary.Manager do
   # Private Functions
   # ===========================================================================
 
-  @spec do_get_or_create_id(reference(), SequenceCounter.counter(), rdf_term()) ::
+  @spec do_get_or_create_id(reference(), SequenceCounter.counter(), :ets.tid(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
-  defp do_get_or_create_id(db, counter, term) do
+  defp do_get_or_create_id(db, counter, cache, term) do
     case StringToId.encode_term(term) do
       {:ok, key} ->
-        # Check if already exists
+        # Check if already exists in RocksDB
         case NIF.get(db, :str2id, key) do
           {:ok, <<id::64-big>>} ->
+            # Populate cache for future lookups
+            :ets.insert(cache, {key, id})
             {:ok, id}
 
           :not_found ->
-            # Create new ID
-            create_and_store_id(db, counter, key, term)
+            # Create new ID and populate cache
+            create_and_store_id(db, counter, cache, key, term)
 
           {:error, _} = error ->
             error
@@ -263,9 +409,9 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec create_and_store_id(reference(), SequenceCounter.counter(), binary(), rdf_term()) ::
+  @spec create_and_store_id(reference(), SequenceCounter.counter(), :ets.tid(), binary(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
-  defp create_and_store_id(db, counter, key, term) do
+  defp create_and_store_id(db, counter, cache, key, term) do
     term_type = get_term_type(term)
 
     case SequenceCounter.next_id(counter, term_type) do
@@ -274,6 +420,8 @@ defmodule TripleStore.Dictionary.Manager do
 
         with :ok <- NIF.put(db, :str2id, key, id_binary),
              :ok <- NIF.put(db, :id2str, id_binary, key) do
+          # Populate cache after successful storage
+          :ets.insert(cache, {key, id})
           {:ok, id}
         end
 
@@ -282,10 +430,10 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec do_get_or_create_ids(reference(), SequenceCounter.counter(), [rdf_term()]) ::
+  @spec do_get_or_create_ids(reference(), SequenceCounter.counter(), :ets.tid(), [rdf_term()]) ::
           {:ok, [Dictionary.term_id()]} | {:error, term()}
-  defp do_get_or_create_ids(db, counter, terms) do
-    Batch.map_collect_success(terms, &do_get_or_create_id(db, counter, &1))
+  defp do_get_or_create_ids(db, counter, cache, terms) do
+    Batch.map_collect_success(terms, &do_get_or_create_id(db, counter, cache, &1))
   end
 
   @spec get_term_type(rdf_term()) :: :uri | :bnode | :literal

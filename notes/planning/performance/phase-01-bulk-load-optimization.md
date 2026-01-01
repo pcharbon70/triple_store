@@ -46,18 +46,19 @@ Design a sharded dictionary manager that distributes load across multiple GenSer
 
 ### 1.1.2 Lock-Free Read Cache
 
-- [x] **Task 1.1.2 Analysis Complete** (2025-12-31)
+- [x] **Task 1.1.2 Complete** (2026-01-01)
 
 Implement an ETS-based read cache that allows concurrent term lookups without GenServer involvement. This dramatically improves performance for repeated terms during bulk loading.
 
 - [x] 1.1.2.1 Design ETS table structure: `{term_binary, id}` with `:set` type
 - [x] 1.1.2.2 Plan read concurrency via `{:read_concurrency, true}` option
 - [x] 1.1.2.3 Design cache population strategy (write-through on create)
-- [ ] 1.1.2.4 Create `:dictionary_cache` ETS table in Manager init
-- [ ] 1.1.2.5 Modify `get_id/1` to check ETS before GenServer call
-- [ ] 1.1.2.6 Modify `get_or_create_id/1` to populate cache after creation
-- [ ] 1.1.2.7 Add cache size limit with LRU eviction (optional)
-- [ ] 1.1.2.8 Add telemetry for cache hit rate monitoring
+- [x] 1.1.2.4 Create `:dictionary_cache` ETS table in Manager init
+- [x] 1.1.2.5 Modify `get_or_create_id/2` to check ETS before GenServer call
+- [x] 1.1.2.6 Modify `get_or_create_id/2` to populate cache after creation
+- [x] 1.1.2.7 Add cache size limit with LRU eviction (deferred - memory bounded by unique terms)
+- [x] 1.1.2.8 Add telemetry for cache hit rate monitoring
+- [x] 1.1.2.9 Update ShardedManager to share cache across shards
 
 ### 1.1.3 Batch Sequence Allocation
 
