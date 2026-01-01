@@ -73,8 +73,10 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
 
       for shard_idx <- 0..(shard_count - 1) do
         count = Map.get(shard_counts, shard_idx, 0)
+
         assert count >= min_expected,
                "Shard #{shard_idx} has #{count} terms, expected at least #{min_expected}"
+
         assert count <= max_expected,
                "Shard #{shard_idx} has #{count} terms, expected at most #{max_expected}"
       end
@@ -161,6 +163,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
               uri = RDF.iri("http://example.org/stress/#{proc_id}/#{op_id}")
               {:ok, _id} = ShardedManager.get_or_create_id(sharded, uri)
             end
+
             :ok
           end)
         end
@@ -236,9 +239,11 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
       {:ok, manager2} = Manager.start_link(db: db)
 
       test_pid = self()
+
       handler = fn _event, _measurements, metadata, _config ->
         send(test_pid, {:cache_event, metadata.type})
       end
+
       :telemetry.attach("cache-restart-test", [:triple_store, :dictionary, :cache], handler, nil)
 
       # First access after restart - cache miss (cache is fresh)
@@ -358,7 +363,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
       terms = [
         RDF.iri("http://example.org/order/first"),
         RDF.bnode("middle_bnode"),
-        RDF.literal("last literal"),
+        RDF.literal("last literal")
       ]
 
       {:ok, ids1} = ShardedManager.get_or_create_ids(sharded, terms)
@@ -426,6 +431,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
           {r2, i2} <- Enum.with_index(ranges),
           i1 < i2 do
         intersection = MapSet.intersection(r1, r2)
+
         assert MapSet.size(intersection) == 0,
                "Ranges #{i1} and #{i2} overlap at #{inspect(MapSet.to_list(intersection))}"
       end
@@ -527,6 +533,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
       for {type, {:ok, ids}, _terms} <- results do
         for id <- ids do
           {decoded_type, _seq} = Dictionary.decode_id(id)
+
           assert decoded_type == type,
                  "Expected type #{type}, got #{decoded_type} for ID #{id}"
         end
@@ -603,7 +610,9 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
   # Replicate the hash key generation from ShardedManager
   defp term_hash_key(%RDF.IRI{} = iri), do: {:iri, to_string(iri)}
   defp term_hash_key(%RDF.BlankNode{} = bnode), do: {:bnode, to_string(bnode)}
+
   defp term_hash_key(%RDF.Literal{} = literal) do
-    {:literal, RDF.Literal.lexical(literal), RDF.Literal.datatype_id(literal), RDF.Literal.language(literal)}
+    {:literal, RDF.Literal.lexical(literal), RDF.Literal.datatype_id(literal),
+     RDF.Literal.language(literal)}
   end
 end

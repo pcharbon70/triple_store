@@ -89,7 +89,12 @@ defmodule TripleStore.Dictionary.BatchSequenceTest do
         send(test_pid, {:telemetry, event, measurements, metadata})
       end
 
-      :telemetry.attach("range-alloc-handler", [:triple_store, :dictionary, :range_allocated], handler, nil)
+      :telemetry.attach(
+        "range-alloc-handler",
+        [:triple_store, :dictionary, :range_allocated],
+        handler,
+        nil
+      )
 
       {:ok, start} = SequenceCounter.allocate_range(counter, :uri, 50)
 
@@ -180,10 +185,14 @@ defmodule TripleStore.Dictionary.BatchSequenceTest do
 
       # Now batch with mixed existing and new
       terms = [
-        uri1,  # existing
-        RDF.iri("http://example.org/new/1"),  # new
-        uri2,  # existing
-        RDF.iri("http://example.org/new/2"),  # new
+        # existing
+        uri1,
+        # new
+        RDF.iri("http://example.org/new/1"),
+        # existing
+        uri2,
+        # new
+        RDF.iri("http://example.org/new/2")
       ]
 
       {:ok, ids} = Manager.get_or_create_ids(manager, terms)
@@ -217,16 +226,17 @@ defmodule TripleStore.Dictionary.BatchSequenceTest do
       terms = [
         RDF.iri("http://example.org/order/a"),
         RDF.iri("http://example.org/order/b"),
-        RDF.iri("http://example.org/order/c"),
+        RDF.iri("http://example.org/order/c")
       ]
 
       {:ok, ids1} = Manager.get_or_create_ids(manager, terms)
 
       # Get same terms individually
-      individual_ids = for term <- terms do
-        {:ok, id} = Manager.get_or_create_id(manager, term)
-        id
-      end
+      individual_ids =
+        for term <- terms do
+          {:ok, id} = Manager.get_or_create_id(manager, term)
+          id
+        end
 
       assert ids1 == individual_ids
 
@@ -380,12 +390,18 @@ defmodule TripleStore.Dictionary.BatchSequenceTest do
         send(test_pid, {:telemetry, event, measurements, metadata})
       end
 
-      :telemetry.attach("range-telemetry", [:triple_store, :dictionary, :range_allocated], handler, nil)
+      :telemetry.attach(
+        "range-telemetry",
+        [:triple_store, :dictionary, :range_allocated],
+        handler,
+        nil
+      )
 
       {:ok, start} = SequenceCounter.allocate_range(counter, :literal, 25)
 
       assert_receive {:telemetry, [:triple_store, :dictionary, :range_allocated],
-                      %{start_sequence: ^start, count: 25, duration: _duration}, %{type: :literal}}
+                      %{start_sequence: ^start, count: 25, duration: _duration},
+                      %{type: :literal}}
 
       :telemetry.detach("range-telemetry")
       SequenceCounter.stop(counter)

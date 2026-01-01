@@ -270,7 +270,8 @@ defmodule TripleStore.Dictionary.ShardedManagerTest do
 
       assert length(ids) == 3
       assert Enum.all?(ids, &is_integer/1)
-      assert length(Enum.uniq(ids)) == 3  # All unique
+      # All unique
+      assert length(Enum.uniq(ids)) == 3
 
       ShardedManager.stop(sharded)
     end
@@ -326,7 +327,8 @@ defmodule TripleStore.Dictionary.ShardedManagerTest do
       {:ok, ids} = ShardedManager.get_or_create_ids(sharded, terms)
 
       assert length(ids) == 1000
-      assert length(Enum.uniq(ids)) == 1000  # All unique
+      # All unique
+      assert length(Enum.uniq(ids)) == 1000
 
       ShardedManager.stop(sharded)
     end
