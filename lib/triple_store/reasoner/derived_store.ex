@@ -111,7 +111,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations)
+    NIF.write_batch(db, operations, true)
   end
 
   @doc """
@@ -156,7 +156,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key}
       end
 
-    NIF.delete_batch(db, operations)
+    NIF.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -211,7 +211,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
         |> Stream.chunk_every(@clear_batch_size)
         |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
-          case NIF.delete_batch(db, chunk) do
+          case NIF.delete_batch(db, chunk, true) do
             :ok -> {:cont, {:ok, acc + length(chunk)}}
             error -> {:halt, error}
           end

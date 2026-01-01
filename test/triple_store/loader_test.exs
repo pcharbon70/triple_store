@@ -327,9 +327,10 @@ defmodule TripleStore.LoaderTest do
         nil
       )
 
-      # Create 25 triples, load with batch_size of 10 (should emit 3 batch events)
+      # Create 250 triples, load with batch_size of 100 (should emit 3 batch events)
+      # Note: minimum batch_size is 100 (clamped by loader)
       triples =
-        for i <- 1..25 do
+        for i <- 1..250 do
           {
             RDF.iri("http://example.org/s#{i}"),
             RDF.iri("http://example.org/p"),
@@ -338,12 +339,12 @@ defmodule TripleStore.LoaderTest do
         end
 
       graph = RDF.Graph.new(triples)
-      {:ok, _} = Loader.load_graph(db, manager, graph, batch_size: 10)
+      {:ok, _} = Loader.load_graph(db, manager, graph, batch_size: 100)
 
-      # Should receive 3 batch events: 10, 10, 5
-      assert_receive {:telemetry_batch, %{count: 10}, %{batch_number: 1}}
-      assert_receive {:telemetry_batch, %{count: 10}, %{batch_number: 2}}
-      assert_receive {:telemetry_batch, %{count: 5}, %{batch_number: 3}}
+      # Should receive 3 batch events: 100, 100, 50
+      assert_receive {:telemetry_batch, %{count: 100}, %{batch_number: 1}}
+      assert_receive {:telemetry_batch, %{count: 100}, %{batch_number: 2}}
+      assert_receive {:telemetry_batch, %{count: 50}, %{batch_number: 3}}
 
       :telemetry.detach("test-batch-#{inspect(ref)}")
     end

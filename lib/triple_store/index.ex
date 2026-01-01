@@ -518,7 +518,7 @@ defmodule TripleStore.Index do
         {cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations)
+    NIF.write_batch(db, operations, true)
   end
 
   @doc """
@@ -532,6 +532,10 @@ defmodule TripleStore.Index do
 
   - `db` - RocksDB database reference
   - `triples` - List of `{subject_id, predicate_id, object_id}` tuples
+  - `opts` - Keyword list of options:
+    - `:sync` - When `true` (default), forces an fsync after the write.
+      When `false`, the write is buffered in the OS. Use `false` for
+      bulk loading to improve performance. WAL still provides durability.
 
   ## Returns
 
@@ -545,18 +549,26 @@ defmodule TripleStore.Index do
       iex> Index.insert_triples(db, triples)
       :ok
 
-  """
-  @spec insert_triples(NIF.db_ref(), [triple()]) :: :ok | {:error, term()}
-  def insert_triples(_db, []), do: :ok
+      # For bulk loading, disable sync for better performance
+      iex> Index.insert_triples(db, triples, sync: false)
+      :ok
 
-  def insert_triples(db, triples) when is_list(triples) do
+  """
+  @spec insert_triples(NIF.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
+  def insert_triples(db, triples, opts \\ [])
+
+  def insert_triples(_db, [], _opts), do: :ok
+
+  def insert_triples(db, triples, opts) when is_list(triples) do
+    sync = Keyword.get(opts, :sync, true)
+
     operations =
       for {subject, predicate, object} <- triples,
           {cf, key} <- encode_triple_keys(subject, predicate, object) do
         {cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations)
+    NIF.write_batch(db, operations, sync)
   end
 
   @doc """
@@ -633,7 +645,7 @@ defmodule TripleStore.Index do
         {cf, key}
       end
 
-    NIF.delete_batch(db, operations)
+    NIF.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -647,6 +659,9 @@ defmodule TripleStore.Index do
 
   - `db` - RocksDB database reference
   - `triples` - List of `{subject_id, predicate_id, object_id}` tuples
+  - `opts` - Keyword list of options:
+    - `:sync` - When `true` (default), forces an fsync after the write.
+      When `false`, the write is buffered in the OS.
 
   ## Returns
 
@@ -663,17 +678,21 @@ defmodule TripleStore.Index do
       :ok
 
   """
-  @spec delete_triples(NIF.db_ref(), [triple()]) :: :ok | {:error, term()}
-  def delete_triples(_db, []), do: :ok
+  @spec delete_triples(NIF.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
+  def delete_triples(db, triples, opts \\ [])
 
-  def delete_triples(db, triples) when is_list(triples) do
+  def delete_triples(_db, [], _opts), do: :ok
+
+  def delete_triples(db, triples, opts) when is_list(triples) do
+    sync = Keyword.get(opts, :sync, true)
+
     operations =
       for {subject, predicate, object} <- triples,
           {cf, key} <- encode_triple_keys(subject, predicate, object) do
         {cf, key}
       end
 
-    NIF.delete_batch(db, operations)
+    NIF.delete_batch(db, operations, sync)
   end
 
   # ===========================================================================

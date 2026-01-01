@@ -753,8 +753,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       end)
 
     # Execute deletes first, then puts
-    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes)) do
-      if(puts == [], do: :ok, else: NIF.write_batch(db, puts))
+    # SPARQL updates use sync: true for data integrity
+    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes, true)) do
+      if(puts == [], do: :ok, else: NIF.write_batch(db, puts, true))
     end
   end
 

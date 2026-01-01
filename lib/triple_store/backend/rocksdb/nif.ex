@@ -273,6 +273,9 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   ## Arguments
   - `db_ref` - The database reference
   - `operations` - List of `{cf, key, value}` tuples
+  - `sync` - When `true`, forces an fsync after the write. When `false`,
+    the write is buffered in the OS (WAL still provides durability).
+    Use `false` for bulk loading to improve performance.
 
   ## Returns
   - `:ok` on success
@@ -288,12 +291,12 @@ defmodule TripleStore.Backend.RocksDB.NIF do
       ...>   {:id2str, "key2", "value2"},
       ...>   {:str2id, "value1", "key1"}
       ...> ]
-      iex> NIF.write_batch(db, operations)
+      iex> NIF.write_batch(db, operations, true)
       :ok
 
   """
-  @spec write_batch(db_ref(), [put_operation()]) :: :ok | {:error, term()}
-  def write_batch(_db_ref, _operations), do: :erlang.nif_error(:nif_not_loaded)
+  @spec write_batch(db_ref(), [put_operation()], boolean()) :: :ok | {:error, term()}
+  def write_batch(_db_ref, _operations, _sync), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Atomically deletes multiple keys from column families.
@@ -304,6 +307,9 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   ## Arguments
   - `db_ref` - The database reference
   - `operations` - List of `{cf, key}` tuples
+  - `sync` - When `true`, forces an fsync after the write. When `false`,
+    the write is buffered in the OS (WAL still provides durability).
+    Use `false` for bulk loading to improve performance.
 
   ## Returns
   - `:ok` on success
@@ -314,14 +320,14 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   ## Examples
 
       iex> {:ok, db} = NIF.open("/tmp/test_db")
-      iex> NIF.write_batch(db, [{:id2str, "key1", "value1"}, {:id2str, "key2", "value2"}])
+      iex> NIF.write_batch(db, [{:id2str, "key1", "value1"}, {:id2str, "key2", "value2"}], true)
       :ok
-      iex> NIF.delete_batch(db, [{:id2str, "key1"}, {:id2str, "key2"}])
+      iex> NIF.delete_batch(db, [{:id2str, "key1"}, {:id2str, "key2"}], true)
       :ok
 
   """
-  @spec delete_batch(db_ref(), [delete_operation()]) :: :ok | {:error, term()}
-  def delete_batch(_db_ref, _operations), do: :erlang.nif_error(:nif_not_loaded)
+  @spec delete_batch(db_ref(), [delete_operation()], boolean()) :: :ok | {:error, term()}
+  def delete_batch(_db_ref, _operations, _sync), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
   Atomically performs mixed put and delete operations.
@@ -337,6 +343,9 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `operations` - List of operations:
     - `{:put, cf, key, value}` for puts
     - `{:delete, cf, key}` for deletes
+  - `sync` - When `true`, forces an fsync after the write. When `false`,
+    the write is buffered in the OS (WAL still provides durability).
+    Use `false` for bulk loading to improve performance.
 
   ## Returns
   - `:ok` on success
@@ -354,12 +363,12 @@ defmodule TripleStore.Backend.RocksDB.NIF do
       ...>   {:delete, :spo, "old_key"},
       ...>   {:delete, :pos, "old_key2"}
       ...> ]
-      iex> NIF.mixed_batch(db, operations)
+      iex> NIF.mixed_batch(db, operations, true)
       :ok
 
   """
-  @spec mixed_batch(db_ref(), [mixed_put() | mixed_delete()]) :: :ok | {:error, term()}
-  def mixed_batch(_db_ref, _operations), do: :erlang.nif_error(:nif_not_loaded)
+  @spec mixed_batch(db_ref(), [mixed_put() | mixed_delete()], boolean()) :: :ok | {:error, term()}
+  def mixed_batch(_db_ref, _operations, _sync), do: :erlang.nif_error(:nif_not_loaded)
 
   # ============================================================================
   # Iterator Operations

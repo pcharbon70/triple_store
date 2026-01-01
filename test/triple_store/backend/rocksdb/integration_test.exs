@@ -17,7 +17,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       NIF.write_batch(db1, [
         {:id2str, "id1", "string1"},
         {:str2id, "string1", "id1"}
-      ])
+      ], true)
 
       NIF.close(db1)
 
@@ -51,7 +51,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       assert {:error, :already_closed} = NIF.put(db, :spo, "key", "new")
       assert {:error, :already_closed} = NIF.delete(db, :spo, "key")
       assert {:error, :already_closed} = NIF.exists(db, :spo, "key")
-      assert {:error, :already_closed} = NIF.write_batch(db, [{:spo, "k", "v"}])
+      assert {:error, :already_closed} = NIF.write_batch(db, [{:spo, "k", "v"}], true)
       assert {:error, :already_closed} = NIF.prefix_iterator(db, :spo, "")
       assert {:error, :already_closed} = NIF.snapshot(db)
 
@@ -98,7 +98,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
           {:spo, "key#{String.pad_leading("#{i}", 2, "0")}", "value#{i}"}
         end
 
-      NIF.write_batch(db, operations)
+      NIF.write_batch(db, operations, true)
 
       {:ok, iter} = NIF.prefix_iterator(db, :spo, "key")
       {:ok, results} = NIF.iterator_collect(iter)
@@ -117,13 +117,13 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         {:spo, "a", "1"},
         {:spo, "b", "2"},
         {:spo, "c", "3"}
-      ])
+      ], true)
 
       # Mixed batch: delete b, add d
       NIF.mixed_batch(db, [
         {:delete, :spo, "b"},
         {:put, :spo, "d", "4"}
-      ])
+      ], true)
 
       {:ok, iter} = NIF.prefix_iterator(db, :spo, "")
       {:ok, results} = NIF.iterator_collect(iter)
@@ -143,7 +143,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       NIF.write_batch(db, [
         {:spo, "key1", "v1"},
         {:spo, "key2", "v2"}
-      ])
+      ], true)
 
       {:ok, snap} = NIF.snapshot(db)
 
@@ -151,7 +151,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       NIF.write_batch(db, [
         {:spo, "key3", "v3"},
         {:spo, "key4", "v4"}
-      ])
+      ], true)
 
       # Snapshot iterator
       {:ok, snap_iter} = NIF.snapshot_prefix_iterator(snap, :spo, "key")
@@ -362,7 +362,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         {:nonexistent, "key2", "value2"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = NIF.write_batch(db, operations)
+      assert {:error, {:invalid_cf, :nonexistent}} = NIF.write_batch(db, operations, true)
 
       # key1 should NOT have been written
       assert :not_found = NIF.get(db, :spo, "key1")
@@ -425,7 +425,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         {:osp, osp_key, ""}
       ]
 
-      assert :ok = NIF.write_batch(db, operations)
+      assert :ok = NIF.write_batch(db, operations, true)
 
       # Verify all indices
       assert {:ok, ""} = NIF.get(db, :spo, spo_key)
@@ -443,7 +443,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         {:id2str, id, uri}
       ]
 
-      assert :ok = NIF.write_batch(db, operations)
+      assert :ok = NIF.write_batch(db, operations, true)
 
       # Forward lookup (string to ID)
       assert {:ok, ^id} = NIF.get(db, :str2id, uri)
@@ -462,7 +462,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       ]
 
       operations = Enum.map(triples, fn {k, v} -> {:spo, k, v} end)
-      NIF.write_batch(db, operations)
+      NIF.write_batch(db, operations, true)
 
       # Query: find all triples with subject "s1"
       {:ok, iter} = NIF.prefix_iterator(db, :spo, "s1|")

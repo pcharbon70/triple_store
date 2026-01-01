@@ -4,7 +4,7 @@
 //! Elixir application. All I/O operations use dirty CPU schedulers to prevent
 //! blocking the BEAM schedulers.
 
-use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, DB};
+use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, WriteOptions, DB};
 use rustler::{Binary, Encoder, Env, ListIterator, NewBinary, NifResult, Resource, ResourceArc, Term};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -471,6 +471,11 @@ fn exists<'a>(
 /// # Arguments
 /// * `db_ref` - The database reference
 /// * `operations` - List of `{cf, key, value}` tuples
+/// * `sync` - Whether to sync to disk (true = fsync after write, false = defer to OS)
+///
+/// For bulk loading, set `sync=false` to improve throughput. Data is still
+/// protected by the WAL, but fsync is deferred to the OS. This can provide
+/// 2-3x throughput improvement for large batch operations.
 ///
 /// # Returns
 /// * `:ok` on success
@@ -482,6 +487,7 @@ fn write_batch<'a>(
     env: Env<'a>,
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
+    sync: bool,
 ) -> NifResult<Term<'a>> {
     let guard = db_ref
         .inner
@@ -563,7 +569,11 @@ fn write_batch<'a>(
         }
     }
 
-    match shared_db.db.write(batch) {
+    // Create WriteOptions with sync setting
+    let mut write_opts = WriteOptions::default();
+    write_opts.set_sync(sync);
+
+    match shared_db.db.write_opt(batch, &write_opts) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
@@ -574,6 +584,7 @@ fn write_batch<'a>(
 /// # Arguments
 /// * `db_ref` - The database reference
 /// * `operations` - List of `{cf, key}` tuples
+/// * `sync` - Whether to sync to disk (true = fsync after write, false = defer to OS)
 ///
 /// # Returns
 /// * `:ok` on success
@@ -585,6 +596,7 @@ fn delete_batch<'a>(
     env: Env<'a>,
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
+    sync: bool,
 ) -> NifResult<Term<'a>> {
     let guard = db_ref
         .inner
@@ -632,7 +644,11 @@ fn delete_batch<'a>(
         batch.delete_cf(&cf_handle, key.as_slice());
     }
 
-    match shared_db.db.write(batch) {
+    // Create WriteOptions with sync setting
+    let mut write_opts = WriteOptions::default();
+    write_opts.set_sync(sync);
+
+    match shared_db.db.write_opt(batch, &write_opts) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }
@@ -645,6 +661,7 @@ fn delete_batch<'a>(
 /// * `operations` - List of operations:
 ///   - `{:put, cf, key, value}` for puts
 ///   - `{:delete, cf, key}` for deletes
+/// * `sync` - Whether to sync to disk (true = fsync after write, false = defer to OS)
 ///
 /// # Returns
 /// * `:ok` on success
@@ -657,6 +674,7 @@ fn mixed_batch<'a>(
     env: Env<'a>,
     db_ref: ResourceArc<DbRef>,
     operations: Term<'a>,
+    sync: bool,
 ) -> NifResult<Term<'a>> {
     let guard = db_ref
         .inner
@@ -743,7 +761,11 @@ fn mixed_batch<'a>(
         }
     }
 
-    match shared_db.db.write(batch) {
+    // Create WriteOptions with sync setting
+    let mut write_opts = WriteOptions::default();
+    write_opts.set_sync(sync);
+
+    match shared_db.db.write_opt(batch, &write_opts) {
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::batch_failed(), e.to_string())).encode(env)),
     }

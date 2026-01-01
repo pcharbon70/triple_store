@@ -218,16 +218,16 @@ The Rust NIF uses default RocksDB WriteOptions which fsync after every write. Fo
 
 ### 1.4.1 Write Options Parameter
 
-- [x] **Task 1.4.1 Analysis Complete** (2025-12-31)
+- [x] **Task 1.4.1 Complete** (2026-01-01)
 
 Add sync control parameter to NIF write functions.
 
 - [x] 1.4.1.1 Analyze current `write_batch` in `lib.rs:481-569`
 - [x] 1.4.1.2 Design sync parameter interface
-- [ ] 1.4.1.3 Modify `write_batch` NIF to accept sync option
-- [ ] 1.4.1.4 Create `WriteOptions::default()` with `set_sync(sync)`
-- [ ] 1.4.1.5 Update Elixir NIF wrapper in `nif.ex`
-- [ ] 1.4.1.6 Add `:sync` option to `Index.insert_triples/3`
+- [x] 1.4.1.3 Modify `write_batch` NIF to accept sync option
+- [x] 1.4.1.4 Create `WriteOptions::default()` with `set_sync(sync)`
+- [x] 1.4.1.5 Update Elixir NIF wrapper in `nif.ex`
+- [x] 1.4.1.6 Add `:sync` option to `Index.insert_triples/3`
 
 ### 1.4.2 Bulk Load Mode
 
