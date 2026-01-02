@@ -46,6 +46,8 @@ defmodule TripleStore.Benchmark.BSBMQueries do
   @rdf_ns "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
   @rdfs_ns "http://www.w3.org/2000/01/rdf-schema#"
   @dc_ns "http://purl.org/dc/elements/1.1/"
+  # Hash character for URI fragments (escaped to avoid Elixir interpolation issues)
+  @hash "#"
 
   @type query_id :: :q1 | :q2 | :q3 | :q4 | :q5 | :q6 | :q7 | :q8 | :q9 | :q10 | :q11 | :q12
   @type query_params :: keyword()
@@ -274,13 +276,15 @@ defmodule TripleStore.Benchmark.BSBMQueries do
       id: :q5,
       name: "Q5: Product by label",
       description: "Find a product by its label (simulates text search)",
+      # Note: Changed from "Product{product}"^^xsd:string to plain literal
+      # to match how RDF.literal/1 creates labels in bsbm.ex
       sparql: """
       PREFIX bsbm: <#{@bsbm_ns}>
       PREFIX rdf: <#{@rdf_ns}>
       PREFIX rdfs: <#{@rdfs_ns}>
       SELECT ?product
       WHERE {
-        ?product rdfs:label "Product{product}"^^xsd:string .
+        ?product rdfs:label "Product{product}" .
       }
       """,
       params: [:product],
@@ -421,6 +425,7 @@ defmodule TripleStore.Benchmark.BSBMQueries do
       id: :q11,
       name: "Q11: Offers with conditions",
       description: "Find offers within a price range from specific countries",
+      # Note: Fixed URI escaping - removed backslash before # in countries URI
       sparql: """
       PREFIX bsbm: <#{@bsbm_ns}>
       PREFIX rdf: <#{@rdf_ns}>
@@ -430,7 +435,7 @@ defmodule TripleStore.Benchmark.BSBMQueries do
         ?offer bsbm:product ?product .
         ?offer bsbm:vendor ?vendor .
         ?offer bsbm:price ?price .
-        ?vendor bsbm:country <http://downlode.org/rdf/iso-3166/countries\#{country}> .
+        ?vendor bsbm:country <http://downlode.org/rdf/iso-3166/countries#{@hash}{country}> .
         FILTER (?price >= {min_price} && ?price <= {max_price})
       }
       ORDER BY ?price
@@ -489,7 +494,8 @@ defmodule TripleStore.Benchmark.BSBMQueries do
       max_value: 1000,
       min_price: 50,
       max_price: 500,
-      country: "#US"
+      # Note: Fixed - country code without hash (hash is now in URI template)
+      country: "US"
     ]
 
     merged = Keyword.merge(defaults, params)

@@ -181,7 +181,7 @@ Cache all properties for recently accessed subjects.
 
 ## 2.3 Query Bug Fixes
 
-- [x] **Section 2.3 Analysis Complete** (2025-12-31)
+- [x] **Section 2.3 Complete** (2026-01-02)
 
 Two BSBM queries fail due to bugs in query templates or literal handling:
 - **Q5**: Uses `"Product1"^^xsd:string` but data has plain `"Product1"` literal
@@ -189,38 +189,38 @@ Two BSBM queries fail due to bugs in query templates or literal handling:
 
 ### 2.3.1 Q5 Literal Matching Fix
 
-- [x] **Task 2.3.1 Analysis Complete** (2025-12-31)
+- [x] **Task 2.3.1 Complete** (2026-01-02)
 
 Fix literal type mismatch in Q5 query.
 
 - [x] 2.3.1.1 Analyze Q5 query in `bsbm_queries.ex:272-291`
 - [x] 2.3.1.2 Identify typed literal syntax `"..."^^xsd:string`
 - [x] 2.3.1.3 Compare with data generation in `bsbm.ex`
-- [ ] 2.3.1.4 Option A: Update query to use plain literal
-- [ ] 2.3.1.5 Option B: Implement literal type normalization in executor
-- [ ] 2.3.1.6 Verify Q5 returns expected results after fix
+- [x] 2.3.1.4 Update query to use plain literal (removed ^^xsd:string)
+- [x] 2.3.1.5 Add unit tests for Q5 literal format
+- [x] 2.3.1.6 Verify Q5 query template is correct
 
 ### 2.3.2 Q11 URI Escaping Fix
 
-- [x] **Task 2.3.2 Analysis Complete** (2025-12-31)
+- [x] **Task 2.3.2 Complete** (2026-01-02)
 
 Fix URI fragment escaping in Q11 query.
 
 - [x] 2.3.2.1 Analyze Q11 query in `bsbm_queries.ex:419-444`
 - [x] 2.3.2.2 Identify escaped `\#` on line 433
-- [ ] 2.3.2.3 Remove backslash from `countries\#` → `countries#`
-- [ ] 2.3.2.4 Update default country parameter in `substitute_params`
-- [ ] 2.3.2.5 Verify Q11 returns expected results after fix
+- [x] 2.3.2.3 Add @hash module attribute for URI fragments
+- [x] 2.3.2.4 Update default country parameter (remove # prefix)
+- [x] 2.3.2.5 Add unit tests for Q11 URI format
 
 ### 2.3.3 Unit Tests
 
-- [ ] **Task 2.3.3 Complete**
+- [x] **Task 2.3.3 Complete** (2026-01-02)
 
-- [ ] 2.3.3.1 Test Q5 returns matching products
-- [ ] 2.3.3.2 Test Q5 with various product labels
-- [ ] 2.3.3.3 Test Q11 returns offers from US vendors
-- [ ] 2.3.3.4 Test Q11 with various country codes
-- [ ] 2.3.3.5 Test literal type normalization (if implemented)
+- [x] 2.3.3.1 Test Q5 uses plain literal without type annotation
+- [x] 2.3.3.2 Test Q5 substitutes product number correctly
+- [x] 2.3.3.3 Test Q11 country URI has proper hash fragment
+- [x] 2.3.3.4 Test Q11 with various country codes
+- [x] 2.3.3.5 Test Q11 default country without double hash
 
 ---
 

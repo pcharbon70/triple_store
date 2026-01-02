@@ -215,4 +215,62 @@ defmodule TripleStore.Benchmark.BSBMQueriesTest do
       assert length(analytics_queries) >= 2
     end
   end
+
+  # ===========================================================================
+  # Bug Fix Tests (Section 2.3)
+  # ===========================================================================
+
+  describe "Q5 literal fix" do
+    test "Q5 uses plain literal without type annotation" do
+      {:ok, query} = BSBMQueries.get(:q5, product: 1)
+      sparql = query.sparql
+
+      # Should contain plain literal, not typed literal
+      assert String.contains?(sparql, ~s("Product1"))
+      # Should NOT contain xsd:string type annotation
+      refute String.contains?(sparql, "^^xsd:string")
+    end
+
+    test "Q5 substitutes product number correctly" do
+      {:ok, query} = BSBMQueries.get(:q5, product: 42)
+      assert String.contains?(query.sparql, ~s("Product42"))
+    end
+
+    test "Q5 matches data generation format" do
+      # The literal format should match RDF.literal("Product1") used in bsbm.ex
+      {:ok, query} = BSBMQueries.get(:q5, product: 1)
+      # Plain literal format in SPARQL
+      assert String.contains?(query.sparql, ~s(?product rdfs:label "Product1"))
+    end
+  end
+
+  describe "Q11 URI fix" do
+    test "Q11 country URI has proper hash fragment" do
+      {:ok, query} = BSBMQueries.get(:q11, country: "US")
+      sparql = query.sparql
+
+      # Should contain proper URI with # fragment
+      assert String.contains?(sparql, "countries#US")
+      # Should NOT contain escaped backslash-hash
+      refute String.contains?(sparql, "countries\\#")
+    end
+
+    test "Q11 substitutes country code correctly" do
+      {:ok, query} = BSBMQueries.get(:q11, country: "DE")
+      assert String.contains?(query.sparql, "countries#DE")
+    end
+
+    test "Q11 default country is US without hash prefix" do
+      {:ok, query} = BSBMQueries.get(:q11, [])
+      # Default country should produce countries#US (not countries##US)
+      assert String.contains?(query.sparql, "countries#US")
+      refute String.contains?(query.sparql, "##")
+    end
+
+    test "Q11 URI is well-formed" do
+      {:ok, query} = BSBMQueries.get(:q11, country: "FR")
+      # Check complete URI format
+      assert String.contains?(query.sparql, "<http://downlode.org/rdf/iso-3166/countries#FR>")
+    end
+  end
 end
