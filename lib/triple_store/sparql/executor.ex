@@ -52,6 +52,7 @@ defmodule TripleStore.SPARQL.Executor do
 
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
+  alias TripleStore.Index.NumericRange
   alias TripleStore.SPARQL.Expression
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
@@ -75,8 +76,15 @@ defmodule TripleStore.SPARQL.Executor do
 
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
-          db: db(),
-          dict_manager: dict_manager()
+          :db => db(),
+          :dict_manager => dict_manager(),
+          optional(:range_context) => range_context()
+        }
+
+  @typedoc "Range filter context for numeric range queries"
+  @type range_context :: %{
+          optional(:filter_context) => map(),
+          optional(:range_indexed_predicates) => MapSet.t()
         }
 
   # ===========================================================================
@@ -214,6 +222,110 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Execute a single triple pattern with a specific binding
   defp execute_single_pattern(ctx, binding, s, p, o) do
+    # Check if we can use range index for this pattern
+    case check_range_query_opportunity(ctx, binding, s, p, o) do
+      {:use_range_index, predicate_id, var_name, min_val, max_val} ->
+        # Use range index for this pattern
+        execute_range_pattern(ctx, binding, s, p, o, predicate_id, var_name, min_val, max_val)
+
+      :use_regular_index ->
+        execute_regular_pattern(ctx, binding, s, p, o)
+    end
+  end
+
+  # Check if this pattern can use a range index
+  # Returns {:use_range_index, predicate_id, var_name, min, max} or :use_regular_index
+  defp check_range_query_opportunity(ctx, _binding, _s, p, {:variable, var_name}) do
+    range_context = Map.get(ctx, :range_context, %{})
+    filter_context = Map.get(range_context, :filter_context, %{})
+    range_indexed = Map.get(range_context, :range_indexed_predicates, MapSet.new())
+
+    # Check if the object variable has a range filter
+    range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
+
+    if MapSet.member?(range_vars, var_name) do
+      # Check if the predicate is a concrete IRI with a range index
+      case p do
+        {:named_node, predicate_uri} ->
+          if MapSet.member?(range_indexed, predicate_uri) do
+            # Get the predicate ID
+            %{dict_manager: dict_manager} = ctx
+
+            case Term.encode({:named_node, predicate_uri}, dict_manager) do
+              {:ok, predicate_id} ->
+                # Get the range bounds for this variable
+                variable_ranges = Map.get(filter_context, :variable_ranges, %{})
+                {min_val, max_val} = Map.get(variable_ranges, var_name, {nil, nil})
+
+                # Convert nil to :unbounded for the range query
+                min_bound = if min_val == nil, do: :unbounded, else: min_val
+                max_bound = if max_val == nil, do: :unbounded, else: max_val
+
+                {:use_range_index, predicate_id, var_name, min_bound, max_bound}
+
+              _ ->
+                :use_regular_index
+            end
+          else
+            :use_regular_index
+          end
+
+        _ ->
+          :use_regular_index
+      end
+    else
+      :use_regular_index
+    end
+  end
+
+  defp check_range_query_opportunity(_ctx, _binding, _s, _p, _o), do: :use_regular_index
+
+  # Execute pattern using range index
+  defp execute_range_pattern(ctx, binding, s, _p, _o, predicate_id, var_name, min_val, max_val) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    # Emit telemetry for range index usage
+    :telemetry.execute(
+      [:triple_store, :sparql, :executor, :range_index_used],
+      %{count: 1},
+      %{predicate_id: predicate_id, var_name: var_name, min: min_val, max: max_val}
+    )
+
+    # Query the range index
+    case NumericRange.range_query(db, predicate_id, min_val, max_val) do
+      {:ok, range_results} ->
+        # range_results is [{subject_id, float_value}, ...]
+        # We need to convert this to a stream of bindings
+
+        binding_stream =
+          Stream.flat_map(range_results, fn {subject_id, float_value} ->
+            # Create a typed literal for the float value
+            value_term =
+              {:literal, :typed, Float.to_string(float_value),
+               "http://www.w3.org/2001/XMLSchema#decimal"}
+
+            # Build binding with subject
+            # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+            case maybe_bind(binding, s, subject_id, dict_manager) do
+              {:ok, binding_with_subject} ->
+                # Bind the object variable directly with the term value
+                final_binding = Map.put(binding_with_subject, var_name, value_term)
+                [final_binding]
+
+              {:error, _} ->
+                []
+            end
+          end)
+
+        {:ok, binding_stream}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Execute pattern using regular index lookup
+  defp execute_regular_pattern(ctx, binding, s, p, o) do
     %{db: db, dict_manager: dict_manager} = ctx
 
     # Substitute bound variables and encode terms

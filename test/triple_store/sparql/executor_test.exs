@@ -3007,4 +3007,169 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       end
     end
   end
+
+  # ===========================================================================
+  # Range Index Integration Tests (Task 2.1.3)
+  # ===========================================================================
+
+  alias TripleStore.Index.NumericRange
+
+  describe "range index integration" do
+    test "BGP without range context uses regular index", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add test data with price
+      add_triple(db, manager, {
+        iri("http://example.org/Offer1"),
+        iri("http://example.org/price"),
+        typed_literal("100", @xsd_decimal)
+      })
+
+      patterns = [triple(var("offer"), iri("http://example.org/price"), var("price"))]
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      results = Enum.to_list(stream)
+
+      assert length(results) == 1
+      assert results |> hd() |> Map.get("offer") == {:named_node, "http://example.org/Offer1"}
+
+      cleanup({db, manager})
+    end
+
+    test "BGP with range context but no matching predicate uses regular index", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+
+      # Set up range context for a different predicate
+      range_context = %{
+        filter_context: %{
+          range_filtered_vars: MapSet.new(["price"]),
+          variable_ranges: %{"price" => {50.0, 500.0}}
+        },
+        range_indexed_predicates: MapSet.new(["http://example.org/other_predicate"])
+      }
+
+      ctx = %{db: db, dict_manager: manager, range_context: range_context}
+
+      # Add test data
+      add_triple(db, manager, {
+        iri("http://example.org/Offer1"),
+        iri("http://example.org/price"),
+        typed_literal("100", @xsd_decimal)
+      })
+
+      patterns = [triple(var("offer"), iri("http://example.org/price"), var("price"))]
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      results = Enum.to_list(stream)
+
+      # Should still find the result using regular index
+      assert length(results) == 1
+
+      cleanup({db, manager})
+    end
+
+    test "range index telemetry is emitted when range index is used", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+
+      # Initialize range index system
+      NumericRange.init()
+
+      # Get price predicate ID
+      price_uri = "http://example.org/price"
+      {:ok, price_id} = Manager.get_or_create_id(manager, RDF.iri(price_uri))
+
+      # Register price predicate for range indexing
+      {:ok, _} = NumericRange.create_range_index(db, price_id)
+
+      # Add data to range index
+      {:ok, offer1_id} = Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer1"))
+      :ok = NumericRange.index_value(db, price_id, offer1_id, 100.0)
+
+      {:ok, offer2_id} = Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer2"))
+      :ok = NumericRange.index_value(db, price_id, offer2_id, 200.0)
+
+      {:ok, offer3_id} = Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer3"))
+      :ok = NumericRange.index_value(db, price_id, offer3_id, 600.0)
+
+      # Set up range context for the price predicate
+      range_context = %{
+        filter_context: %{
+          range_filtered_vars: MapSet.new(["price"]),
+          variable_ranges: %{"price" => {50.0, 500.0}}
+        },
+        range_indexed_predicates: MapSet.new([price_uri])
+      }
+
+      ctx = %{db: db, dict_manager: manager, range_context: range_context}
+
+      # Set up telemetry handler
+      test_pid = self()
+      handler_id = "test-range-index-handler-#{System.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :sparql, :executor, :range_index_used],
+        fn event, measurements, metadata, _ ->
+          send(test_pid, {:telemetry, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      try do
+        patterns = [triple(var("offer"), iri(price_uri), var("price"))]
+        {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+        results = Enum.to_list(stream)
+
+        # Should have found offers within range (100 and 200, not 600)
+        assert length(results) == 2
+
+        # Should have received telemetry event for range index usage
+        assert_receive {:telemetry, [:triple_store, :sparql, :executor, :range_index_used],
+                        %{count: 1}, %{predicate_id: ^price_id, var_name: "price", min: 50.0, max: 500.0}}
+      after
+        :telemetry.detach(handler_id)
+      end
+
+      cleanup({db, manager})
+    end
+
+    test "range query returns correct results within bounds", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+
+      # Initialize range index system
+      NumericRange.init()
+
+      price_uri = "http://example.org/price"
+      {:ok, price_id} = Manager.get_or_create_id(manager, RDF.iri(price_uri))
+      {:ok, _} = NumericRange.create_range_index(db, price_id)
+
+      # Add offers with various prices
+      for {price, i} <- [{10.0, 1}, {50.0, 2}, {100.0, 3}, {500.0, 4}, {600.0, 5}] do
+        {:ok, offer_id} = Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer#{i}"))
+        :ok = NumericRange.index_value(db, price_id, offer_id, price)
+      end
+
+      range_context = %{
+        filter_context: %{
+          range_filtered_vars: MapSet.new(["price"]),
+          variable_ranges: %{"price" => {50.0, 500.0}}
+        },
+        range_indexed_predicates: MapSet.new([price_uri])
+      }
+
+      ctx = %{db: db, dict_manager: manager, range_context: range_context}
+
+      patterns = [triple(var("offer"), iri(price_uri), var("price"))]
+      {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+      results = Enum.to_list(stream)
+
+      # Should have 3 results: 50, 100, 500 (excluding 10 and 600)
+      assert length(results) == 3
+
+      # Check all results have price bindings
+      prices = Enum.map(results, fn r -> r["price"] end)
+      assert Enum.all?(prices, fn p -> match?({:literal, :typed, _, _}, p) end)
+
+      cleanup({db, manager})
+    end
+  end
 end

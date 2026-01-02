@@ -20,7 +20,7 @@ By the end of this phase, the BSBM mix should achieve <50ms p95 through:
 
 ## 2.1 Q7 Product-Offer Join Optimization
 
-- [x] **Section 2.1 Analysis Complete** (2025-12-31)
+- [x] **Section 2.1 Complete** (2026-01-02)
 
 Q7 is the slowest BSBM query at 1393ms. It joins all products with their offers, filtering by price range:
 
@@ -71,15 +71,15 @@ Modify the optimizer to recognize price filter patterns and reorder joins accord
 
 ### 2.1.3 Executor Range Query Integration
 
-- [x] **Task 2.1.3 Analysis Complete** (2025-12-31)
+- [x] **Task 2.1.3 Complete** (2026-01-02)
 
 Integrate the numeric range index into the query executor.
 
 - [x] 2.1.3.1 Design executor interface for range index access
-- [ ] 2.1.3.2 Modify `execute_single_pattern/6` to detect range predicates
-- [ ] 2.1.3.3 Implement range index lookup in executor
-- [ ] 2.1.3.4 Handle combined range + join patterns
-- [ ] 2.1.3.5 Add telemetry for range index usage
+- [x] 2.1.3.2 Modify `execute_single_pattern/6` to detect range predicates
+- [x] 2.1.3.3 Implement range index lookup in executor
+- [x] 2.1.3.4 Handle combined range + join patterns
+- [x] 2.1.3.5 Add telemetry for range index usage
 
 ### 2.1.4 Materialized View (Optional)
 
@@ -95,15 +95,15 @@ For maximum performance, implement a pre-computed product-offer view.
 
 ### 2.1.5 Unit Tests
 
-- [ ] **Task 2.1.5 Complete**
+- [x] **Task 2.1.5 Complete** (2026-01-02)
 
-- [ ] 2.1.5.1 Test float_to_sortable_bytes ordering correctness
-- [ ] 2.1.5.2 Test range index stores values correctly
-- [ ] 2.1.5.3 Test range_query returns correct results for various ranges
-- [ ] 2.1.5.4 Test range index maintenance on insert
-- [ ] 2.1.5.5 Test range index maintenance on delete
-- [ ] 2.1.5.6 Test optimizer selects range pattern first
-- [ ] 2.1.5.7 Test executor uses range index
+- [x] 2.1.5.1 Test float_to_sortable_bytes ordering correctness
+- [x] 2.1.5.2 Test range index stores values correctly
+- [x] 2.1.5.3 Test range_query returns correct results for various ranges
+- [x] 2.1.5.4 Test range index maintenance on insert
+- [x] 2.1.5.5 Test range index maintenance on delete
+- [x] 2.1.5.6 Test optimizer selects range pattern first
+- [x] 2.1.5.7 Test executor uses range index
 
 ---
 
