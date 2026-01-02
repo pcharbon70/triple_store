@@ -2,6 +2,11 @@ defmodule TripleStore.Statistics.Cache do
   @moduledoc """
   GenServer for caching triple store statistics.
 
+  > **DEPRECATED:** This module is deprecated in favor of `TripleStore.Statistics.Server`.
+  > The Server module provides additional features including write-threshold-based
+  > refresh, configurable timeouts, and telemetry events. New code should use
+  > `Statistics.Server` instead.
+
   Provides cached access to statistics with automatic periodic refresh
   and manual invalidation for bulk updates. This avoids repeated full
   scans of indices for frequently accessed statistics.

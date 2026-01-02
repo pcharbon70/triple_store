@@ -45,12 +45,14 @@ defmodule TripleStore.Statistics do
       }
   """
 
-  import Bitwise
-
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary
   alias TripleStore.Index
 
   require Logger
+
+  # Inline hot path functions for performance
+  @compile {:inline, extract_first_id: 1, extract_second_id: 1, is_numeric_id?: 1}
 
   # ===========================================================================
   # Types
@@ -67,6 +69,7 @@ defmodule TripleStore.Statistics do
           min: float(),
           max: float(),
           bucket_count: pos_integer(),
+          bucket_width: float(),
           buckets: [non_neg_integer()],
           total_count: non_neg_integer()
         }
@@ -97,10 +100,17 @@ defmodule TripleStore.Statistics do
   # Uses a reserved prefix that can't conflict with term IDs (type tag 0)
   @stats_key_prefix <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>
 
-  # Type tags for identifying inline-encoded numeric values
-  @type_integer 0b0100
-  @type_decimal 0b0101
-  @type_datetime 0b0110
+  # Required statistics keys for validation
+  @required_stats_keys [
+    :triple_count,
+    :distinct_subjects,
+    :distinct_predicates,
+    :distinct_objects,
+    :predicate_histogram,
+    :numeric_histograms,
+    :collected_at,
+    :version
+  ]
 
   # ===========================================================================
   # Public API - Collection
@@ -217,8 +227,12 @@ defmodule TripleStore.Statistics do
   def load(db) do
     case NIF.get(db, :id2str, @stats_key_prefix) do
       {:ok, encoded} when is_binary(encoded) ->
-        stats = :erlang.binary_to_term(encoded)
-        {:ok, stats}
+        stats = :erlang.binary_to_term(encoded, [:safe])
+
+        case validate_stats_structure(stats) do
+          :ok -> {:ok, stats}
+          {:error, _} = error -> error
+        end
 
       :not_found ->
         {:ok, nil}
@@ -480,24 +494,36 @@ defmodule TripleStore.Statistics do
   def build_numeric_histogram(db, predicate_id, bucket_count \\ @default_bucket_count) do
     prefix = <<predicate_id::64-big>>
 
-    case NIF.prefix_stream(db, :pos, prefix) do
-      {:ok, stream} ->
-        # First pass: collect all numeric values to find min/max
-        numeric_values =
-          stream
-          |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
-          |> Stream.filter(&is_numeric_id?/1)
-          |> Stream.map(&decode_numeric_value/1)
-          |> Enum.to_list()
+    # Two-pass streaming to avoid loading all values into memory (B2 fix)
+    # Pass 1: Find min, max, and count by streaming
+    with {:ok, stream1} <- NIF.prefix_stream(db, :pos, prefix) do
+      {min_val, max_val, count} =
+        stream1
+        |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
+        |> Stream.filter(&is_numeric_id?/1)
+        |> Stream.map(&decode_numeric_value/1)
+        |> Enum.reduce({nil, nil, 0}, fn value, {min_acc, max_acc, count_acc} ->
+          min_val = if min_acc == nil, do: value, else: min(min_acc, value)
+          max_val = if max_acc == nil, do: value, else: max(max_acc, value)
+          {min_val, max_val, count_acc + 1}
+        end)
 
-        if numeric_values == [] do
-          {:ok, nil}
-        else
-          build_histogram_from_values(numeric_values, bucket_count)
+      if count == 0 do
+        {:ok, nil}
+      else
+        # Pass 2: Stream again to populate buckets
+        with {:ok, stream2} <- NIF.prefix_stream(db, :pos, prefix),
+             {:ok, histogram} <- build_histogram_from_values(min_val, max_val, count, bucket_count) do
+          value_stream =
+            stream2
+            |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
+            |> Stream.filter(&is_numeric_id?/1)
+            |> Stream.map(&decode_numeric_value/1)
+
+          final_histogram = populate_histogram_buckets(histogram, value_stream)
+          {:ok, final_histogram}
         end
-
-      {:error, _} = error ->
-        error
+      end
     end
   end
 
@@ -638,73 +664,32 @@ defmodule TripleStore.Statistics do
 
   @spec is_numeric_id?(non_neg_integer()) :: boolean()
   defp is_numeric_id?(id) do
-    type_tag = id >>> 60
-
-    type_tag == @type_integer or type_tag == @type_decimal or type_tag == @type_datetime
+    Dictionary.inline_encoded?(id)
   end
 
   @spec decode_numeric_value(non_neg_integer()) :: float()
   defp decode_numeric_value(id) do
-    type_tag = id >>> 60
+    case Dictionary.decode_inline(id) do
+      {:ok, %DateTime{} = dt} ->
+        # Convert DateTime to float seconds since epoch
+        DateTime.to_unix(dt, :millisecond) / 1000.0
 
-    case type_tag do
-      @type_integer ->
-        decode_inline_integer(id)
+      {:ok, %Decimal{} = d} ->
+        Decimal.to_float(d)
 
-      @type_decimal ->
-        decode_inline_decimal(id)
+      {:ok, int} when is_integer(int) ->
+        int * 1.0
 
-      @type_datetime ->
-        # DateTime encoded as milliseconds since epoch
-        millis = id &&& ((1 <<< 60) - 1)
-        millis / 1000.0
-
-      _ ->
+      {:error, :not_inline_encoded} ->
         0.0
     end
   end
 
-  # Decode inline integer (two's complement in 60 bits)
-  @spec decode_inline_integer(non_neg_integer()) :: float()
-  defp decode_inline_integer(id) do
-    # Extract 60-bit value
-    value = id &&& ((1 <<< 60) - 1)
-
-    # Check sign bit (bit 59)
-    if (value &&& (1 <<< 59)) != 0 do
-      # Negative: extend sign
-      -(((~~~value) &&& ((1 <<< 59) - 1)) + 1) * 1.0
-    else
-      value * 1.0
-    end
-  end
-
-  # Decode inline decimal
-  @spec decode_inline_decimal(non_neg_integer()) :: float()
-  defp decode_inline_decimal(id) do
-    # Bit layout: [type:4][sign:1][exponent:11][mantissa:48]
-    payload = id &&& ((1 <<< 60) - 1)
-
-    sign = (payload >>> 59) &&& 1
-    exponent = (payload >>> 48) &&& 0x7FF
-    mantissa = payload &&& ((1 <<< 48) - 1)
-
-    # Unbias exponent
-    exp = exponent - 1023
-
-    # Reconstruct value
-    value = mantissa * :math.pow(10, exp - 48)
-
-    if sign == 1, do: -value, else: value
-  end
-
-  @spec build_histogram_from_values([float()], pos_integer()) :: {:ok, numeric_histogram()}
-  defp build_histogram_from_values(values, bucket_count) do
-    min_val = Enum.min(values)
-    max_val = Enum.max(values)
-
+  @spec build_histogram_from_values(float(), float(), non_neg_integer(), pos_integer()) ::
+          {:ok, numeric_histogram()}
+  defp build_histogram_from_values(min_val, max_val, total_count, bucket_count) do
     # Handle case where all values are the same
-    {min_val, max_val, range} =
+    {adjusted_min, adjusted_max, range} =
       if min_val == max_val do
         {min_val - 0.5, max_val + 0.5, 1.0}
       else
@@ -713,40 +698,65 @@ defmodule TripleStore.Statistics do
 
     bucket_width = range / bucket_count
 
-    # Initialize buckets
-    buckets = List.duplicate(0, bucket_count)
-
-    # Count values into buckets
-    buckets =
-      Enum.reduce(values, buckets, fn value, acc ->
-        bucket_idx = trunc((value - min_val) / bucket_width)
-        # Clamp to valid range (handle edge case of max value)
-        bucket_idx = min(max(bucket_idx, 0), bucket_count - 1)
-
-        List.update_at(acc, bucket_idx, &(&1 + 1))
-      end)
-
     histogram = %{
-      min: min_val,
-      max: max_val,
+      min: adjusted_min,
+      max: adjusted_max,
       bucket_count: bucket_count,
-      buckets: buckets,
-      total_count: length(values)
+      bucket_width: bucket_width,
+      buckets: List.duplicate(0, bucket_count),
+      total_count: total_count
     }
 
     {:ok, histogram}
   end
 
+  # Update buckets with values from a stream (second pass)
+  @spec populate_histogram_buckets(numeric_histogram(), Enumerable.t()) :: numeric_histogram()
+  defp populate_histogram_buckets(histogram, value_stream) do
+    %{min: min_val, bucket_width: bucket_width, bucket_count: bucket_count} = histogram
+
+    # Use an ETS table for efficient bucket updates
+    table = :ets.new(:histogram_buckets, [:set, :private])
+
+    # Initialize buckets
+    for i <- 0..(bucket_count - 1), do: :ets.insert(table, {i, 0})
+
+    # Stream values and update bucket counts
+    value_stream
+    |> Stream.each(fn value ->
+      bucket_idx = trunc((value - min_val) / bucket_width)
+      bucket_idx = min(max(bucket_idx, 0), bucket_count - 1)
+      :ets.update_counter(table, bucket_idx, 1)
+    end)
+    |> Stream.run()
+
+    # Extract bucket counts
+    buckets =
+      0..(bucket_count - 1)
+      |> Enum.map(fn i ->
+        [{^i, count}] = :ets.lookup(table, i)
+        count
+      end)
+
+    :ets.delete(table)
+
+    %{histogram | buckets: buckets}
+  end
+
   @spec estimate_range_from_histogram(numeric_histogram(), number(), number()) :: float()
   defp estimate_range_from_histogram(histogram, min_value, max_value) do
-    %{min: hist_min, max: hist_max, bucket_count: bucket_count, buckets: buckets, total_count: total} = histogram
+    %{
+      min: hist_min,
+      max: hist_max,
+      bucket_count: bucket_count,
+      bucket_width: bucket_width,
+      buckets: buckets,
+      total_count: total
+    } = histogram
 
     if total == 0 do
       1.0
     else
-      range = hist_max - hist_min
-      bucket_width = range / bucket_count
-
       # Clamp query range to histogram range
       query_min = max(min_value, hist_min)
       query_max = min(max_value, hist_max)
@@ -783,4 +793,65 @@ defmodule TripleStore.Statistics do
       end
     end
   end
+
+  # ===========================================================================
+  # Private Helpers - Validation
+  # ===========================================================================
+
+  @spec validate_stats_structure(term()) :: :ok | {:error, :invalid_stats_structure}
+  defp validate_stats_structure(stats) when is_map(stats) do
+    if Enum.all?(@required_stats_keys, &Map.has_key?(stats, &1)) do
+      :ok
+    else
+      {:error, :invalid_stats_structure}
+    end
+  end
+
+  defp validate_stats_structure(_), do: {:error, :invalid_stats_structure}
+
+  # ===========================================================================
+  # Private Helpers - Version Migration (S13)
+  # ===========================================================================
+
+  @doc false
+  @spec migrate_stats_if_needed(stats()) :: stats()
+  def migrate_stats_if_needed(%{version: @stats_version} = stats), do: stats
+
+  def migrate_stats_if_needed(%{version: old_version} = stats) when old_version < @stats_version do
+    Logger.info("Migrating statistics from version #{old_version} to #{@stats_version}")
+
+    stats
+    |> migrate_to_v1()
+    |> Map.put(:version, @stats_version)
+  end
+
+  # Fallback for stats without version field (pre-v1)
+  def migrate_stats_if_needed(stats) when is_map(stats) do
+    stats
+    |> Map.put_new(:version, 0)
+    |> migrate_stats_if_needed()
+  end
+
+  defp migrate_to_v1(stats) do
+    # Add bucket_width to numeric histograms if missing
+    numeric_histograms =
+      Map.get(stats, :numeric_histograms, %{})
+      |> Enum.map(fn {pred_id, histogram} ->
+        histogram = maybe_add_bucket_width(histogram)
+        {pred_id, histogram}
+      end)
+      |> Map.new()
+
+    %{stats | numeric_histograms: numeric_histograms}
+  end
+
+  defp maybe_add_bucket_width(%{bucket_width: _} = histogram), do: histogram
+
+  defp maybe_add_bucket_width(%{min: min_val, max: max_val, bucket_count: count} = histogram) do
+    range = max_val - min_val
+    bucket_width = if range > 0, do: range / count, else: 1.0
+    Map.put(histogram, :bucket_width, bucket_width)
+  end
+
+  defp maybe_add_bucket_width(histogram), do: histogram
 end

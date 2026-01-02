@@ -461,11 +461,12 @@ defmodule TripleStore.StatisticsTest do
     end
 
     test "estimates selectivity from histogram" do
-      # Create a histogram with uniform distribution
+      # Create a histogram with uniform distribution (includes bucket_width)
       histogram = %{
         min: 0.0,
         max: 100.0,
         bucket_count: 10,
+        bucket_width: 10.0,
         buckets: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
         total_count: 100
       }
@@ -490,6 +491,7 @@ defmodule TripleStore.StatisticsTest do
         min: 10.0,
         max: 90.0,
         bucket_count: 10,
+        bucket_width: 8.0,
         buckets: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
         total_count: 100
       }
@@ -639,6 +641,270 @@ defmodule TripleStore.StatisticsTest do
       # Should be persisted
       {:ok, loaded} = Statistics.load(db)
       assert loaded.triple_count == 2
+    end
+  end
+
+  # ===========================================================================
+  # Custom bucket_count Option Tests (S11)
+  # ===========================================================================
+
+  describe "bucket_count option" do
+    test "builds histogram with custom bucket count", %{db: db} do
+      # Create inline integer IDs (type 4)
+      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+
+      triples =
+        for i <- 1..100 do
+          {1000 + i, 100, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      # Test with custom bucket count of 5
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 100, 5)
+
+      assert histogram != nil
+      assert histogram.bucket_count == 5
+      assert length(histogram.buckets) == 5
+      assert Enum.sum(histogram.buckets) == 100
+    end
+
+    test "collect respects bucket_count option", %{db: db} do
+      # Create inline integer IDs
+      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+
+      triples =
+        for i <- 1..50 do
+          {1000 + i, 100, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, stats} = Statistics.collect(db, bucket_count: 20)
+
+      # Check that numeric histogram was built with 20 buckets
+      histogram = Map.get(stats.numeric_histograms, 100)
+      assert histogram != nil
+      assert histogram.bucket_count == 20
+      assert length(histogram.buckets) == 20
+    end
+  end
+
+  # ===========================================================================
+  # Decimal and DateTime Histogram Tests (C9)
+  # ===========================================================================
+
+  describe "decimal histogram" do
+    test "builds histogram for decimal values", %{db: db} do
+      # Create inline decimal IDs (type 5)
+      # Simplified: using type tag 5 with a simple encoding
+      # Decimal encoding: [type:4][sign:1][exponent:11][mantissa:48]
+      # For testing, we'll use values that can be encoded
+      make_decimal_id = fn value ->
+        # Use Dictionary's encoding
+        {:ok, id} = TripleStore.Dictionary.encode_decimal(Decimal.new(value))
+        id
+      end
+
+      triples =
+        for i <- 1..10 do
+          value = "#{i * 10}.5"
+          {1000 + i, 200, make_decimal_id.(value)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 200, 5)
+
+      assert histogram != nil
+      assert histogram.total_count == 10
+      assert Enum.sum(histogram.buckets) == 10
+    end
+  end
+
+  describe "datetime histogram" do
+    test "builds histogram for datetime values", %{db: db} do
+      # Create inline datetime IDs (type 6)
+      make_datetime_id = fn days_offset ->
+        dt = DateTime.add(~U[2024-01-01 00:00:00Z], days_offset * 86400, :second)
+        {:ok, id} = TripleStore.Dictionary.encode_datetime(dt)
+        id
+      end
+
+      triples =
+        for i <- 1..10 do
+          {1000 + i, 300, make_datetime_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 300, 5)
+
+      assert histogram != nil
+      assert histogram.total_count == 10
+      assert Enum.sum(histogram.buckets) == 10
+    end
+  end
+
+  describe "negative integer histogram" do
+    test "builds histogram for negative integers", %{db: db} do
+      make_int_id = fn n ->
+        {:ok, id} = TripleStore.Dictionary.encode_integer(n)
+        id
+      end
+
+      triples =
+        for i <- -10..-1 do
+          {1000 + abs(i), 400, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 400, 5)
+
+      assert histogram != nil
+      assert histogram.min < 0.0
+      assert histogram.total_count == 10
+      assert Enum.sum(histogram.buckets) == 10
+    end
+  end
+
+  # ===========================================================================
+  # Error Handling Tests (C8)
+  # ===========================================================================
+
+  describe "error handling" do
+    test "load returns error for invalid stats structure", %{db: db} do
+      # Save invalid structure directly
+      invalid_data = :erlang.term_to_binary(%{foo: :bar}, [:compressed])
+      :ok = NIF.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, invalid_data)
+
+      # Load should detect invalid structure
+      assert {:error, :invalid_stats_structure} = Statistics.load(db)
+    end
+
+    test "load handles missing required keys", %{db: db} do
+      # Save partial structure
+      partial = %{triple_count: 100}
+      partial_data = :erlang.term_to_binary(partial, [:compressed])
+      :ok = NIF.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, partial_data)
+
+      assert {:error, :invalid_stats_structure} = Statistics.load(db)
+    end
+  end
+
+  # ===========================================================================
+  # Statistics Structure Validation Tests (C7)
+  # ===========================================================================
+
+  describe "stats structure validation" do
+    test "load validates all required keys present", %{db: db} do
+      # Create valid stats
+      valid_stats = %{
+        triple_count: 10,
+        distinct_subjects: 5,
+        distinct_predicates: 2,
+        distinct_objects: 8,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      :ok = Statistics.save(db, valid_stats)
+      assert {:ok, loaded} = Statistics.load(db)
+      assert loaded.triple_count == 10
+    end
+  end
+
+  # ===========================================================================
+  # Version Migration Tests (S13)
+  # ===========================================================================
+
+  describe "version migration" do
+    test "migrate_stats_if_needed passes through current version stats" do
+      stats = %{
+        triple_count: 100,
+        distinct_subjects: 10,
+        distinct_predicates: 5,
+        distinct_objects: 20,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      migrated = Statistics.migrate_stats_if_needed(stats)
+      assert migrated == stats
+    end
+
+    test "migrate_stats_if_needed adds bucket_width to old histograms" do
+      # Stats without bucket_width in histogram
+      old_histogram = %{
+        min: 0.0,
+        max: 100.0,
+        bucket_count: 10,
+        buckets: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+        total_count: 100
+      }
+
+      stats = %{
+        triple_count: 100,
+        distinct_subjects: 10,
+        distinct_predicates: 5,
+        distinct_objects: 20,
+        predicate_histogram: %{},
+        numeric_histograms: %{42 => old_histogram},
+        collected_at: DateTime.utc_now(),
+        version: 0
+      }
+
+      migrated = Statistics.migrate_stats_if_needed(stats)
+
+      assert migrated.version == 1
+      assert Map.has_key?(migrated.numeric_histograms[42], :bucket_width)
+      assert migrated.numeric_histograms[42].bucket_width == 10.0
+    end
+  end
+
+  # ===========================================================================
+  # Histogram bucket_width Tests (S4)
+  # ===========================================================================
+
+  describe "histogram bucket_width" do
+    test "histogram includes bucket_width field", %{db: db} do
+      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+
+      triples =
+        for i <- 1..100 do
+          {1000 + i, 100, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 100, 10)
+
+      assert Map.has_key?(histogram, :bucket_width)
+      assert histogram.bucket_width > 0
+      # With values 1-100 in 10 buckets, bucket width should be ~10
+      assert_in_delta histogram.bucket_width, 9.9, 0.5
+    end
+
+    test "estimate_range_selectivity uses bucket_width from histogram", %{db: db} do
+      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+
+      triples =
+        for i <- 1..100 do
+          {1000 + i, 100, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, stats} = Statistics.collect(db, bucket_count: 10)
+
+      # Should work without recalculating bucket_width
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 1.0, 50.0)
+      assert selectivity > 0.0 and selectivity < 1.0
     end
   end
 end
