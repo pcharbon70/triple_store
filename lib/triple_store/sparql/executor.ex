@@ -53,6 +53,7 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.Index.NumericRange
+  alias TripleStore.Index.SubjectCache
   alias TripleStore.SPARQL.Expression
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
@@ -300,9 +301,10 @@ defmodule TripleStore.SPARQL.Executor do
         binding_stream =
           Stream.flat_map(range_results, fn {subject_id, float_value} ->
             # Create a typed literal for the float value
+            # Use xsd:double for consistency with other float handling in the codebase
             value_term =
               {:literal, :typed, Float.to_string(float_value),
-               "http://www.w3.org/2001/XMLSchema#decimal"}
+               "http://www.w3.org/2001/XMLSchema#double"}
 
             # Build binding with subject
             # credo:disable-for-next-line Credo.Check.Refactor.Nesting
@@ -337,28 +339,69 @@ defmodule TripleStore.SPARQL.Executor do
       if has_not_found?([s_pattern, p_pattern, o_pattern]) do
         {:ok, empty_stream()}
       else
-        # Build index pattern
-        index_pattern = {s_pattern, p_pattern, o_pattern}
+        # Check if we can use the subject cache for multi-property lookup
+        # This is beneficial when subject is bound but predicate/object are variables
+        case {s_pattern, p_pattern, o_pattern} do
+          {{:bound, subject_id}, :var, :var} when is_integer(subject_id) ->
+            execute_subject_cache_pattern(ctx, binding, s, p, o, subject_id)
 
-        # Query the index
-        case Index.lookup(db, index_pattern) do
-          {:ok, triple_stream} ->
-            # Convert matching triples to bindings
-            binding_stream =
-              Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
-                # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-                case extend_binding_from_match(binding, s, p, o, s_id, p_id, o_id, dict_manager) do
-                  {:ok, new_binding} -> [new_binding]
-                  {:error, _} -> []
-                end
-              end)
+          _ ->
+            # Build index pattern
+            index_pattern = {s_pattern, p_pattern, o_pattern}
 
-            {:ok, binding_stream}
+            # Query the index
+            case Index.lookup(db, index_pattern) do
+              {:ok, triple_stream} ->
+                # Convert matching triples to bindings
+                binding_stream =
+                  Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
+                    # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+                    case extend_binding_from_match(binding, s, p, o, s_id, p_id, o_id, dict_manager) do
+                      {:ok, new_binding} -> [new_binding]
+                      {:error, _} -> []
+                    end
+                  end)
 
-          {:error, _} = error ->
-            error
+                {:ok, binding_stream}
+
+              {:error, _} = error ->
+                error
+            end
         end
       end
+    end
+  end
+
+  # Execute pattern using subject cache for multi-property lookup
+  # Used when subject is bound but predicate and object are variables
+  defp execute_subject_cache_pattern(ctx, binding, s, p, o, subject_id) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    case SubjectCache.get_or_fetch(db, subject_id) do
+      {:ok, property_map} ->
+        # property_map is %{predicate_id => [object_id, ...]}
+        # Convert to stream of bindings
+        binding_stream =
+          Stream.flat_map(property_map, fn {pred_id, object_ids} ->
+            Enum.flat_map(object_ids, fn obj_id ->
+              # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+              case extend_binding_from_match(binding, s, p, o, subject_id, pred_id, obj_id, dict_manager) do
+                {:ok, new_binding} -> [new_binding]
+                {:error, _} -> []
+              end
+            end)
+          end)
+
+        :telemetry.execute(
+          [:triple_store, :executor, :subject_cache, :used],
+          %{count: 1},
+          %{subject_id: subject_id, property_count: map_size(property_map)}
+        )
+
+        {:ok, binding_stream}
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -702,6 +745,92 @@ defmodule TripleStore.SPARQL.Executor do
       else
         matches
       end
+    end)
+  end
+
+  @doc """
+  Performs an anti-join (MINUS) between two binding streams.
+
+  Anti-join returns all left bindings that have NO compatible match on the right.
+  This implements the SPARQL MINUS operation and is used for FILTER NOT EXISTS.
+
+  Two bindings are compatible if for every shared variable, both bindings have
+  the same value.
+
+  ## Arguments
+
+  - `left` - Left binding stream/list
+  - `right` - Right binding stream/list
+
+  ## Returns
+
+  Stream of left bindings that have no compatible match on the right.
+
+  ## Examples
+
+      # MINUS removes matching bindings
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"x" => 1, "y" => 10}]
+      result = Executor.anti_join(left, right) |> Enum.to_list()
+      # => [%{"x" => 2}]  # x=1 removed because it has a compatible match
+
+      # When there's no shared variable, all left bindings are removed
+      left = [%{"x" => 1}]
+      right = [%{"y" => 2}]
+      result = Executor.anti_join(left, right) |> Enum.to_list()
+      # => []  # Empty - all bindings in right are compatible with left
+
+  """
+  @spec anti_join(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def anti_join(left, right) do
+    # Materialize right side for multiple iterations
+    right_list = Enum.to_list(right)
+
+    Stream.filter(left, fn left_binding ->
+      # Keep only left bindings that have NO compatible match on right
+      not Enum.any?(right_list, fn right_binding ->
+        bindings_compatible?(left_binding, right_binding)
+      end)
+    end)
+  end
+
+  @doc """
+  Performs a semi-join between two binding streams.
+
+  Semi-join returns all left bindings that have AT LEAST ONE compatible match
+  on the right. This implements FILTER EXISTS in SPARQL.
+
+  Unlike a regular join, semi-join does not extend the left bindings with
+  right binding values - it only filters the left side.
+
+  ## Arguments
+
+  - `left` - Left binding stream/list
+  - `right` - Right binding stream/list
+
+  ## Returns
+
+  Stream of left bindings that have at least one compatible match on the right.
+
+  ## Examples
+
+      # Semi-join keeps bindings with matches
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"x" => 1, "y" => 10}]
+      result = Executor.semi_join(left, right) |> Enum.to_list()
+      # => [%{"x" => 1}]  # x=2 removed because no compatible match
+
+  """
+  @spec semi_join(Enumerable.t(), Enumerable.t()) :: binding_stream()
+  def semi_join(left, right) do
+    # Materialize right side for multiple iterations
+    right_list = Enum.to_list(right)
+
+    Stream.filter(left, fn left_binding ->
+      # Keep only left bindings that have at least one compatible match on right
+      Enum.any?(right_list, fn right_binding ->
+        bindings_compatible?(left_binding, right_binding)
+      end)
     end)
   end
 

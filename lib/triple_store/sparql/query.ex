@@ -994,6 +994,26 @@ defmodule TripleStore.SPARQL.Query do
           {:ok, Executor.union(left_stream, right_stream)}
         end
 
+      {:minus, left, right} ->
+        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
+             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
+          {:ok, Executor.anti_join(left_stream, right_stream)}
+        end
+
+      # FILTER NOT EXISTS { pattern } -> anti-join
+      {:filter, {:not, {:exists, exists_pattern}}, inner} ->
+        with {:ok, inner_stream} <- execute_pattern(ctx, inner, depth + 1),
+             {:ok, exists_stream} <- execute_pattern(ctx, exists_pattern, depth + 1) do
+          {:ok, Executor.anti_join(inner_stream, exists_stream)}
+        end
+
+      # FILTER EXISTS { pattern } -> semi-join (keep only bindings with matches)
+      {:filter, {:exists, exists_pattern}, inner} ->
+        with {:ok, inner_stream} <- execute_pattern(ctx, inner, depth + 1),
+             {:ok, exists_stream} <- execute_pattern(ctx, exists_pattern, depth + 1) do
+          {:ok, Executor.semi_join(inner_stream, exists_stream)}
+        end
+
       {:filter, expr, inner} ->
         with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
           {:ok, Executor.filter(stream, expr)}

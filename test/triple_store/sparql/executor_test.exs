@@ -708,6 +708,132 @@ defmodule TripleStore.SPARQL.ExecutorTest do
     end
   end
 
+  describe "anti_join/2" do
+    test "filters out left bindings with compatible matches on right" do
+      left = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+      right = [%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}]
+
+      results = Executor.anti_join(left, right) |> Enum.to_list()
+
+      # x=1 and x=2 should be removed (have compatible matches)
+      # x=3 should remain (no compatible match)
+      assert results == [%{"x" => 3}]
+    end
+
+    test "keeps all left bindings when right is empty" do
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = []
+
+      results = Executor.anti_join(left, right) |> Enum.to_list()
+
+      assert results == left
+    end
+
+    test "removes all left bindings when all have matches" do
+      left = [%{"x" => 1}]
+      right = [%{"x" => 1, "y" => "a"}]
+
+      results = Executor.anti_join(left, right) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "handles disjoint variables (all compatible)" do
+      # When there are no shared variables, all bindings are compatible
+      left = [%{"x" => 1}]
+      right = [%{"y" => 2}]
+
+      results = Executor.anti_join(left, right) |> Enum.to_list()
+
+      # All removed because {} is compatible with any binding
+      assert results == []
+    end
+
+    test "implements MINUS semantics correctly" do
+      # Simulate: ?s :type :Person MINUS { ?s :deleted true }
+      left = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}},
+        %{"s" => {:named_node, "http://ex.org/Bob"}},
+        %{"s" => {:named_node, "http://ex.org/Charlie"}}
+      ]
+
+      # Bob is deleted
+      right = [
+        %{"s" => {:named_node, "http://ex.org/Bob"}, "deleted" => {:literal, :simple, "true"}}
+      ]
+
+      results = Executor.anti_join(left, right) |> Enum.to_list()
+
+      # Alice and Charlie should remain, Bob should be removed
+      assert length(results) == 2
+      refute %{"s" => {:named_node, "http://ex.org/Bob"}} in results
+    end
+  end
+
+  describe "semi_join/2" do
+    test "keeps only left bindings with compatible matches on right" do
+      left = [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+      right = [%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}]
+
+      results = Executor.semi_join(left, right) |> Enum.to_list()
+
+      # x=1 and x=2 should be kept (have compatible matches)
+      # x=3 should be removed (no compatible match)
+      assert length(results) == 2
+      assert %{"x" => 1} in results
+      assert %{"x" => 2} in results
+    end
+
+    test "returns empty when right is empty" do
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = []
+
+      results = Executor.semi_join(left, right) |> Enum.to_list()
+
+      assert results == []
+    end
+
+    test "keeps all left bindings when all have matches" do
+      left = [%{"x" => 1}]
+      right = [%{"x" => 1, "y" => "a"}]
+
+      results = Executor.semi_join(left, right) |> Enum.to_list()
+
+      assert results == [%{"x" => 1}]
+    end
+
+    test "handles disjoint variables (all compatible)" do
+      left = [%{"x" => 1}, %{"x" => 2}]
+      right = [%{"y" => 10}]
+
+      results = Executor.semi_join(left, right) |> Enum.to_list()
+
+      # All kept because {} is compatible with any binding
+      assert results == left
+    end
+
+    test "implements EXISTS semantics correctly" do
+      # Simulate: ?s :type :Person FILTER EXISTS { ?s :email ?email }
+      left = [
+        %{"s" => {:named_node, "http://ex.org/Alice"}},
+        %{"s" => {:named_node, "http://ex.org/Bob"}}
+      ]
+
+      # Only Alice has email
+      right = [
+        %{
+          "s" => {:named_node, "http://ex.org/Alice"},
+          "email" => {:literal, :simple, "alice@ex.org"}
+        }
+      ]
+
+      results = Executor.semi_join(left, right) |> Enum.to_list()
+
+      # Only Alice should remain
+      assert results == [%{"s" => {:named_node, "http://ex.org/Alice"}}]
+    end
+  end
+
   describe "join integration with BGP execution" do
     test "join produces same results as BGP multi-pattern", %{tmp_dir: tmp_dir} do
       {db, manager} = setup_db(tmp_dir)

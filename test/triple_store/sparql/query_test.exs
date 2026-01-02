@@ -2922,4 +2922,139 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # FILTER NOT EXISTS and MINUS Tests
+  # ===========================================================================
+
+  describe "MINUS operation" do
+    test "MINUS excludes matching patterns", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add people
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      add_triple(db, manager, {
+        iri("http://ex.org/Bob"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      add_triple(db, manager, {
+        iri("http://ex.org/Charlie"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      # Mark Bob as deleted
+      add_triple(db, manager, {
+        iri("http://ex.org/Bob"),
+        iri("http://ex.org/deleted"),
+        literal("true")
+      })
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?person WHERE {
+            ?person <http://ex.org/type> <http://ex.org/Person> .
+            MINUS { ?person <http://ex.org/deleted> ?d }
+          }
+        """)
+
+      # Alice and Charlie should remain, Bob should be excluded
+      assert length(results) == 2
+
+      persons = Enum.map(results, fn r -> r["person"] end)
+      assert {:named_node, "http://ex.org/Alice"} in persons
+      assert {:named_node, "http://ex.org/Charlie"} in persons
+      refute {:named_node, "http://ex.org/Bob"} in persons
+
+      cleanup({db, manager})
+    end
+  end
+
+  describe "FILTER NOT EXISTS" do
+    test "filters out solutions with matching patterns", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add people
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      add_triple(db, manager, {
+        iri("http://ex.org/Bob"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      # Only Alice has an email
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/email"),
+        literal("alice@example.org")
+      })
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?person WHERE {
+            ?person <http://ex.org/type> <http://ex.org/Person> .
+            FILTER NOT EXISTS { ?person <http://ex.org/email> ?email }
+          }
+        """)
+
+      # Only Bob should remain (no email)
+      assert length(results) == 1
+      assert hd(results)["person"] == {:named_node, "http://ex.org/Bob"}
+
+      cleanup({db, manager})
+    end
+
+    test "FILTER EXISTS keeps only solutions with matching patterns", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add people
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      add_triple(db, manager, {
+        iri("http://ex.org/Bob"),
+        iri("http://ex.org/type"),
+        iri("http://ex.org/Person")
+      })
+
+      # Only Alice has an email
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/email"),
+        literal("alice@example.org")
+      })
+
+      {:ok, results} =
+        Query.query(ctx, """
+          SELECT ?person WHERE {
+            ?person <http://ex.org/type> <http://ex.org/Person> .
+            FILTER EXISTS { ?person <http://ex.org/email> ?email }
+          }
+        """)
+
+      # Only Alice should remain (has email)
+      assert length(results) == 1
+      assert hd(results)["person"] == {:named_node, "http://ex.org/Alice"}
+
+      cleanup({db, manager})
+    end
+  end
 end
