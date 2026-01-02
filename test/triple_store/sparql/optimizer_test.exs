@@ -1623,4 +1623,241 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       assert error.message =~ "malformed query or an attack"
     end
   end
+
+  # ===========================================================================
+  # Range Filter Extraction Tests
+  # ===========================================================================
+
+  describe "extract_range_filters/1" do
+    test "extracts simple greater-or-equal filter" do
+      # FILTER (?price >= 50)
+      filter_expr = {:greater_or_equal, var("price"), int(50)}
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert result.variable_ranges["price"] == {50.0, nil}
+    end
+
+    test "extracts simple less-or-equal filter" do
+      # FILTER (?price <= 500)
+      filter_expr = {:less_or_equal, var("price"), int(500)}
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert result.variable_ranges["price"] == {nil, 500.0}
+    end
+
+    test "extracts conjunctive range filter (min AND max)" do
+      # FILTER (?price >= 50 && ?price <= 500)
+      filter_expr =
+        and_expr(
+          {:greater_or_equal, var("price"), int(50)},
+          {:less_or_equal, var("price"), int(500)}
+        )
+
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert result.variable_ranges["price"] == {50.0, 500.0}
+    end
+
+    test "extracts strict greater filter" do
+      # FILTER (?price > 50)
+      filter_expr = greater(var("price"), int(50))
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      # > 50 becomes min = 50 (we treat it as inclusive for simplicity)
+      assert result.variable_ranges["price"] == {50.0, nil}
+    end
+
+    test "extracts strict less filter" do
+      # FILTER (?price < 500)
+      filter_expr = less(var("price"), int(500))
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      # < 500 becomes max = 500 (we treat it as inclusive for simplicity)
+      assert result.variable_ranges["price"] == {nil, 500.0}
+    end
+
+    test "extracts reversed comparison (value <= var)" do
+      # FILTER (50 <= ?price) is same as ?price >= 50
+      filter_expr = {:less_or_equal, int(50), var("price")}
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert result.variable_ranges["price"] == {50.0, nil}
+    end
+
+    test "extracts decimal value filter" do
+      # FILTER (?price >= 99.99)
+      decimal_val = {:literal, :typed, "99.99", @xsd_decimal}
+      filter_expr = {:greater_or_equal, var("price"), decimal_val}
+      pattern = bgp([triple(var("x"), iri("http://ex.org/price"), var("price"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert result.variable_ranges["price"] == {99.99, nil}
+    end
+
+    test "handles multiple range-filtered variables" do
+      # FILTER (?price >= 50 && ?price <= 500 && ?rating >= 4)
+      filter_expr =
+        and_expr(
+          and_expr(
+            {:greater_or_equal, var("price"), int(50)},
+            {:less_or_equal, var("price"), int(500)}
+          ),
+          {:greater_or_equal, var("rating"), int(4)}
+        )
+
+      pattern =
+        bgp([
+          triple(var("x"), iri("http://ex.org/price"), var("price")),
+          triple(var("x"), iri("http://ex.org/rating"), var("rating"))
+        ])
+
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.member?(result.range_filtered_vars, "price")
+      assert MapSet.member?(result.range_filtered_vars, "rating")
+      assert result.variable_ranges["price"] == {50.0, 500.0}
+      assert result.variable_ranges["rating"] == {4.0, nil}
+    end
+
+    test "returns empty for non-range filter" do
+      # FILTER (?x = ?y)
+      filter_expr = equal(var("x"), var("y"))
+      pattern = bgp([triple(var("x"), var("p"), var("o"))])
+      algebra = filter(filter_expr, pattern)
+
+      result = Optimizer.extract_range_filters(algebra)
+
+      assert MapSet.size(result.range_filtered_vars) == 0
+      assert result.variable_ranges == %{}
+    end
+  end
+
+  describe "selectivity boost for range-filtered patterns" do
+    test "pattern with range filter has lower selectivity score" do
+      # Two patterns: one with range filter on its object, one without
+      price_pattern = triple(var("offer"), iri("http://ex.org/price"), var("price"))
+      type_pattern = triple(var("offer"), iri("http://ex.org/type"), var("type"))
+
+      # Create filter context with ?price having range filter
+      filter_context = %{
+        range_filtered_vars: MapSet.new(["price"]),
+        variable_ranges: %{"price" => {50.0, 500.0}}
+      }
+
+      stats = %{
+        filter_context: filter_context,
+        range_indexed: MapSet.new(["http://ex.org/price"])
+      }
+
+      # Get selectivity scores
+      price_score = Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats)
+      type_score = Optimizer.estimate_selectivity(type_pattern, MapSet.new(), stats)
+
+      # Price pattern should have much lower score due to range filter boost
+      assert price_score < type_score
+    end
+
+    test "range filter boost is stronger with range index" do
+      price_pattern = triple(var("offer"), iri("http://ex.org/price"), var("price"))
+
+      filter_context = %{
+        range_filtered_vars: MapSet.new(["price"]),
+        variable_ranges: %{"price" => {50.0, 500.0}}
+      }
+
+      # With range index
+      stats_with_index = %{
+        filter_context: filter_context,
+        range_indexed: MapSet.new(["http://ex.org/price"])
+      }
+
+      # Without range index
+      stats_without_index = %{
+        filter_context: filter_context,
+        range_indexed: MapSet.new()
+      }
+
+      score_with_index = Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats_with_index)
+
+      score_without_index =
+        Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats_without_index)
+
+      # Score with index should be lower (more selective)
+      assert score_with_index < score_without_index
+    end
+  end
+
+  describe "BGP reordering with range filters" do
+    test "places range-filtered pattern first in BGP" do
+      # BGP with three patterns:
+      # ?x a Product          (type pattern - not selective)
+      # ?x price ?price       (will have range filter - should be first)
+      # ?x name ?name         (regular pattern)
+
+      patterns = [
+        triple(var("x"), iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), iri("http://ex.org/Product")),
+        triple(var("x"), iri("http://ex.org/price"), var("price")),
+        triple(var("x"), iri("http://ex.org/name"), var("name"))
+      ]
+
+      # Create algebra with FILTER on price
+      filter_expr =
+        and_expr(
+          {:greater_or_equal, var("price"), int(50)},
+          {:less_or_equal, var("price"), int(500)}
+        )
+
+      algebra = filter(filter_expr, bgp(patterns))
+
+      # Optimize with range index for price
+      opts = [
+        range_indexed_predicates: MapSet.new(["http://ex.org/price"])
+      ]
+
+      result = Optimizer.optimize(algebra, opts)
+
+      # Extract the BGP patterns from the result
+      # The filter push-down may split the AND, so we need to dig through nested filters
+      reordered_patterns = extract_bgp_patterns(result)
+
+      # The price pattern should be first (it has the best selectivity)
+      first_pattern = hd(reordered_patterns)
+      assert {:triple, _, {:named_node, "http://ex.org/price"}, _} = first_pattern
+    end
+  end
+
+  # Helper to extract BGP patterns from potentially nested filters
+  defp extract_bgp_patterns({:filter, _, inner}), do: extract_bgp_patterns(inner)
+  defp extract_bgp_patterns({:bgp, patterns}), do: patterns
+  defp extract_bgp_patterns({:join, left, _}), do: extract_bgp_patterns(left)
+  defp extract_bgp_patterns(_), do: []
 end

@@ -58,16 +58,16 @@ Implement a secondary index for numeric predicates enabling efficient range quer
 
 ### 2.1.2 Join Reordering for Price Filter
 
-- [x] **Task 2.1.2 Analysis Complete** (2025-12-31)
+- [x] **Task 2.1.2 Complete** (2026-01-02)
 
 Modify the optimizer to recognize price filter patterns and reorder joins accordingly.
 
 - [x] 2.1.2.1 Analyze current join ordering in `optimizer.ex`
 - [x] 2.1.2.2 Design filter-aware selectivity estimation
-- [ ] 2.1.2.3 Detect FILTER expressions on indexed predicates
-- [ ] 2.1.2.4 Boost selectivity score for filtered numeric patterns
-- [ ] 2.1.2.5 Implement join reordering to start from filtered pattern
-- [ ] 2.1.2.6 Update `selectivity_for_pattern/2` in optimizer
+- [x] 2.1.2.3 Detect FILTER expressions on indexed predicates
+- [x] 2.1.2.4 Boost selectivity score for filtered numeric patterns
+- [x] 2.1.2.5 Implement join reordering to start from filtered pattern
+- [x] 2.1.2.6 Update `selectivity_for_pattern/2` in optimizer
 
 ### 2.1.3 Executor Range Query Integration
 

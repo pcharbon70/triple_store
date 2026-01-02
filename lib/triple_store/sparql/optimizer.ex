@@ -63,6 +63,7 @@ defmodule TripleStore.SPARQL.Optimizer do
           | {:stats, map()}
           | {:log, boolean()}
           | {:explain, boolean()}
+          | {:range_indexed_predicates, MapSet.t()}
 
   # ===========================================================================
   # Main Entry Point
@@ -118,12 +119,17 @@ defmodule TripleStore.SPARQL.Optimizer do
     reorder_bgp? = Keyword.get(opts, :reorder_bgp, true)
     stats = Keyword.get(opts, :stats, %{})
     log? = Keyword.get(opts, :log, false)
+    range_indexed = Keyword.get(opts, :range_indexed_predicates, MapSet.new())
 
     if log?, do: log_start(algebra)
 
+    # Build optimization context with filter information
+    filter_context = extract_range_filters(algebra)
+    enriched_stats = Map.merge(stats, %{filter_context: filter_context, range_indexed: range_indexed})
+
     algebra
     |> run_pass(:constant_folding, fold_constants?, fn a -> fold_constants(a) end, log?)
-    |> run_pass(:bgp_reordering, reorder_bgp?, fn a -> reorder_bgp_patterns(a, stats) end, log?)
+    |> run_pass(:bgp_reordering, reorder_bgp?, fn a -> reorder_bgp_patterns(a, enriched_stats) end, log?)
     |> run_pass(:filter_push_down, push_filters?, fn a -> push_filters_down(a) end, log?)
     |> tap(fn result -> if log?, do: log_complete(result) end)
   end
@@ -1567,19 +1573,66 @@ defmodule TripleStore.SPARQL.Optimizer do
   @spec estimate_selectivity(tuple(), MapSet.t(), map()) :: float()
   def estimate_selectivity(pattern, bound_vars \\ MapSet.new(), stats \\ %{})
 
-  def estimate_selectivity({:triple, subject, predicate, object}, bound_vars, stats) do
+  def estimate_selectivity({:triple, subject, predicate, object} = triple, bound_vars, stats) do
     # Score each position
     s_score = position_score(subject, bound_vars, :subject, stats)
     p_score = position_score(predicate, bound_vars, :predicate, stats)
     o_score = position_score(object, bound_vars, :object, stats)
 
-    # Combine scores - multiplicative model
-    # Lower score = more selective
-    s_score * p_score * o_score
+    # Base score - multiplicative model
+    base_score = s_score * p_score * o_score
+
+    # Check if this pattern can benefit from a range filter
+    filter_context = Map.get(stats, :filter_context, %{})
+    range_indexed = Map.get(stats, :range_indexed, MapSet.new())
+
+    # Apply range filter boost if applicable
+    apply_range_filter_boost(triple, base_score, filter_context, range_indexed, predicate)
   end
 
   # Fallback for non-triple patterns
   def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
+
+  # Apply selectivity boost for patterns that bind range-filtered variables
+  # with predicates that have range indices
+  defp apply_range_filter_boost(
+         {:triple, _subj, predicate, {:variable, var}},
+         base_score,
+         filter_context,
+         range_indexed,
+         _pred_term
+       ) do
+    range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
+
+    # Check if the object variable has a range filter
+    if MapSet.member?(range_vars, var) do
+      # Check if the predicate has a range index
+      predicate_uri = extract_predicate_uri(predicate)
+
+      if predicate_uri && predicate_has_range_index?(predicate_uri, range_indexed) do
+        # Strong boost - range index can be used
+        # Divide by 100 to make this pattern very selective
+        base_score / 100.0
+      else
+        # Variable has range filter but predicate doesn't have range index
+        # Still give moderate boost - the filter will eliminate results
+        base_score / 10.0
+      end
+    else
+      base_score
+    end
+  end
+
+  defp apply_range_filter_boost(_, base_score, _, _, _), do: base_score
+
+  # Extract the URI from a predicate term
+  defp extract_predicate_uri({:named_node, uri}), do: uri
+  defp extract_predicate_uri(_), do: nil
+
+  # Check if a predicate has a range index
+  defp predicate_has_range_index?(predicate_uri, range_indexed) do
+    MapSet.member?(range_indexed, predicate_uri)
+  end
 
   # Score a single position in a triple pattern
   @spec position_score(term(), MapSet.t(), atom(), map()) :: float()
@@ -1670,4 +1723,275 @@ defmodule TripleStore.SPARQL.Optimizer do
   @spec term_variables(term()) :: [String.t()]
   defp term_variables({:variable, name}), do: [name]
   defp term_variables(_), do: []
+
+  # ===========================================================================
+  # Range Filter Extraction
+  # ===========================================================================
+
+  @doc """
+  Extracts range filter information from an algebra tree.
+
+  Scans the tree for FILTER expressions containing range comparisons
+  (>=, <=, >, <) and returns a map of variable names to their filter info.
+
+  This is used by BGP reordering to boost selectivity of patterns that
+  bind filtered variables, especially when the pattern's predicate has
+  a numeric range index.
+
+  ## Returns
+
+  A map with:
+  - `:range_filtered_vars` - MapSet of variable names that have range filters
+  - `:variable_ranges` - Map of variable name to `{min, max}` bounds
+
+  ## Example
+
+      # For FILTER (?price >= 50 && ?price <= 500)
+      %{
+        range_filtered_vars: MapSet<["price"]>,
+        variable_ranges: %{"price" => {50.0, 500.0}}
+      }
+
+  """
+  @spec extract_range_filters(algebra()) :: map()
+  def extract_range_filters(algebra) do
+    filters = collect_filter_expressions(algebra, [])
+
+    # Extract range comparisons from all filters
+    range_info =
+      Enum.flat_map(filters, fn filter_expr ->
+        extract_range_comparisons(filter_expr)
+      end)
+
+    # Build the result map
+    range_vars = Enum.map(range_info, fn {var, _, _} -> var end) |> MapSet.new()
+
+    # Merge ranges for the same variable
+    variable_ranges =
+      Enum.reduce(range_info, %{}, fn {var, bound_type, value}, acc ->
+        current = Map.get(acc, var, {nil, nil})
+        updated = merge_bound(current, bound_type, value)
+        Map.put(acc, var, updated)
+      end)
+
+    %{
+      range_filtered_vars: range_vars,
+      variable_ranges: variable_ranges
+    }
+  end
+
+  # Collect all filter expressions from the algebra tree
+  defp collect_filter_expressions({:filter, expr, pattern}, acc) do
+    collect_filter_expressions(pattern, [expr | acc])
+  end
+
+  defp collect_filter_expressions({:join, left, right}, acc) do
+    acc
+    |> then(&collect_filter_expressions(left, &1))
+    |> then(&collect_filter_expressions(right, &1))
+  end
+
+  defp collect_filter_expressions({:left_join, left, right, filter}, acc) do
+    acc = if filter, do: [filter | acc], else: acc
+
+    acc
+    |> then(&collect_filter_expressions(left, &1))
+    |> then(&collect_filter_expressions(right, &1))
+  end
+
+  defp collect_filter_expressions({:union, left, right}, acc) do
+    acc
+    |> then(&collect_filter_expressions(left, &1))
+    |> then(&collect_filter_expressions(right, &1))
+  end
+
+  defp collect_filter_expressions({tag, pattern}, acc) when tag in [:distinct, :reduced] do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions({tag, pattern, _}, acc)
+       when tag in [:project, :graph] do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions({:extend, pattern, _, _}, acc) do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions({:group, pattern, _, _}, acc) do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions({:order_by, pattern, _}, acc) do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions({:slice, pattern, _, _}, acc) do
+    collect_filter_expressions(pattern, acc)
+  end
+
+  defp collect_filter_expressions(_, acc), do: acc
+
+  # Extract range comparisons from a filter expression
+  # Returns list of {variable_name, bound_type, numeric_value}
+  # where bound_type is :min or :max
+  defp extract_range_comparisons({:and, left, right}) do
+    extract_range_comparisons(left) ++ extract_range_comparisons(right)
+  end
+
+  defp extract_range_comparisons({:or, left, right}) do
+    # Don't extract from OR - the range is not guaranteed
+    # Only return if both sides filter the same variable with compatible ranges
+    left_ranges = extract_range_comparisons(left)
+    right_ranges = extract_range_comparisons(right)
+
+    # For simplicity, only use ranges that appear in both branches
+    left_vars = Enum.map(left_ranges, fn {v, _, _} -> v end) |> MapSet.new()
+    right_vars = Enum.map(right_ranges, fn {v, _, _} -> v end) |> MapSet.new()
+    common = MapSet.intersection(left_vars, right_vars)
+
+    if MapSet.size(common) > 0 do
+      # Return the most permissive range (union of ranges)
+      # This is conservative - we widen the range
+      Enum.filter(left_ranges ++ right_ranges, fn {v, _, _} -> v in common end)
+    else
+      []
+    end
+  end
+
+  # ?var >= value (var has minimum bound)
+  defp extract_range_comparisons({:greater_or_equal, {:variable, var}, value}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :min, num}]
+      :error -> []
+    end
+  end
+
+  # value <= ?var (var has minimum bound)
+  defp extract_range_comparisons({:less_or_equal, value, {:variable, var}}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :min, num}]
+      :error -> []
+    end
+  end
+
+  # ?var <= value (var has maximum bound)
+  defp extract_range_comparisons({:less_or_equal, {:variable, var}, value}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :max, num}]
+      :error -> []
+    end
+  end
+
+  # value >= ?var (var has maximum bound)
+  defp extract_range_comparisons({:greater_or_equal, value, {:variable, var}}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :max, num}]
+      :error -> []
+    end
+  end
+
+  # ?var > value (var has minimum bound, exclusive)
+  defp extract_range_comparisons({:greater, {:variable, var}, value}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :min, num}]
+      :error -> []
+    end
+  end
+
+  # value < ?var (var has minimum bound, exclusive)
+  defp extract_range_comparisons({:less, value, {:variable, var}}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :min, num}]
+      :error -> []
+    end
+  end
+
+  # ?var < value (var has maximum bound, exclusive)
+  defp extract_range_comparisons({:less, {:variable, var}, value}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :max, num}]
+      :error -> []
+    end
+  end
+
+  # value > ?var (var has maximum bound, exclusive)
+  defp extract_range_comparisons({:greater, value, {:variable, var}}) do
+    case extract_numeric_value(value) do
+      {:ok, num} -> [{var, :max, num}]
+      :error -> []
+    end
+  end
+
+  defp extract_range_comparisons(_), do: []
+
+  # Extract numeric value from a literal
+  defp extract_numeric_value({:literal, :typed, value, datatype})
+       when datatype in [
+              "http://www.w3.org/2001/XMLSchema#integer",
+              "http://www.w3.org/2001/XMLSchema#decimal",
+              "http://www.w3.org/2001/XMLSchema#float",
+              "http://www.w3.org/2001/XMLSchema#double"
+            ] do
+    case Float.parse(value) do
+      {num, _} -> {:ok, num}
+      :error -> :error
+    end
+  end
+
+  defp extract_numeric_value({:literal, :typed, value, _}) do
+    # Try parsing as number anyway
+    case Float.parse(value) do
+      {num, _} -> {:ok, num}
+      :error -> :error
+    end
+  end
+
+  defp extract_numeric_value(_), do: :error
+
+  # Merge a new bound with existing bounds
+  defp merge_bound({current_min, current_max}, :min, value) do
+    new_min =
+      case current_min do
+        nil -> value
+        existing -> max(existing, value)
+      end
+
+    {new_min, current_max}
+  end
+
+  defp merge_bound({current_min, current_max}, :max, value) do
+    new_max =
+      case current_max do
+        nil -> value
+        existing -> min(existing, value)
+      end
+
+    {current_min, new_max}
+  end
+
+  @doc """
+  Checks if a pattern binds a variable that has a range filter.
+
+  Used by selectivity estimation to boost patterns that can benefit
+  from range index lookups.
+  """
+  @spec binds_range_filtered_variable?(tuple(), map()) :: boolean()
+  def binds_range_filtered_variable?({:triple, _subj, _pred, {:variable, var}}, filter_context) do
+    range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
+    MapSet.member?(range_vars, var)
+  end
+
+  def binds_range_filtered_variable?(_, _), do: false
+
+  @doc """
+  Gets the range bounds for a variable if it has range filters.
+
+  Returns `{min, max}` where min and max can be nil (unbounded).
+  """
+  @spec get_variable_range(String.t(), map()) :: {float() | nil, float() | nil}
+  def get_variable_range(var_name, filter_context) do
+    variable_ranges = Map.get(filter_context, :variable_ranges, %{})
+    Map.get(variable_ranges, var_name, {nil, nil})
+  end
 end
