@@ -526,6 +526,155 @@ defmodule TripleStore.Query.Cache do
     :crypto.hash(:sha256, :erlang.term_to_binary(query))
   end
 
+  @doc """
+  Computes a normalized cache key from a query.
+
+  This normalizes variable names before hashing, ensuring that queries
+  with the same structure but different variable names share cache entries.
+
+  ## Example
+
+      # These two queries would produce the same normalized key:
+      compute_normalized_key({:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]})
+      compute_normalized_key({:bgp, [{:triple, {:variable, "x"}, {:variable, "y"}, {:variable, "z"}}]})
+
+  """
+  @spec compute_normalized_key(term()) :: cache_key()
+  def compute_normalized_key(query) when is_binary(query) do
+    # String queries are used as-is (normalization applies to algebra)
+    :crypto.hash(:sha256, query)
+  end
+
+  def compute_normalized_key(query) do
+    normalized = normalize_query(query)
+    :crypto.hash(:sha256, :erlang.term_to_binary(normalized))
+  end
+
+  @doc """
+  Normalizes a query by replacing variable names with positional indices.
+
+  This ensures that queries with the same structure but different variable
+  names are treated as equivalent for caching purposes.
+
+  ## Example
+
+      iex> normalize_query({:bgp, [{:triple, {:variable, "foo"}, {:variable, "bar"}, {:variable, "foo"}}]})
+      {:bgp, [{:triple, {:variable, 0}, {:variable, 1}, {:variable, 0}}]}
+
+  """
+  @spec normalize_query(term()) :: term()
+  def normalize_query(query) do
+    {normalized, _var_map, _counter} = normalize_term(query, %{}, 0)
+    normalized
+  end
+
+  # Normalize query by replacing variable names with positional indices
+  defp normalize_term({:variable, name}, var_map, counter) when is_binary(name) do
+    case Map.get(var_map, name) do
+      nil ->
+        new_map = Map.put(var_map, name, counter)
+        {{:variable, counter}, new_map, counter + 1}
+
+      idx ->
+        {{:variable, idx}, var_map, counter}
+    end
+  end
+
+  defp normalize_term({:variable, name}, var_map, counter) when is_atom(name) do
+    normalize_term({:variable, Atom.to_string(name)}, var_map, counter)
+  end
+
+  defp normalize_term(tuple, var_map, counter) when is_tuple(tuple) do
+    list = Tuple.to_list(tuple)
+    {normalized_list, final_map, final_counter} = normalize_list(list, var_map, counter)
+    {List.to_tuple(normalized_list), final_map, final_counter}
+  end
+
+  defp normalize_term(list, var_map, counter) when is_list(list) do
+    normalize_list(list, var_map, counter)
+  end
+
+  defp normalize_term(map, var_map, counter) when is_map(map) do
+    {pairs, final_map, final_counter} =
+      Enum.reduce(Map.to_list(map), {[], var_map, counter}, fn {k, v}, {acc, vm, c} ->
+        {norm_k, vm2, c2} = normalize_term(k, vm, c)
+        {norm_v, vm3, c3} = normalize_term(v, vm2, c2)
+        {[{norm_k, norm_v} | acc], vm3, c3}
+      end)
+
+    {Map.new(pairs), final_map, final_counter}
+  end
+
+  defp normalize_term(other, var_map, counter) do
+    {other, var_map, counter}
+  end
+
+  defp normalize_list(list, var_map, counter) do
+    {reversed, final_map, final_counter} =
+      Enum.reduce(list, {[], var_map, counter}, fn elem, {acc, vm, c} ->
+        {norm, new_vm, new_c} = normalize_term(elem, vm, c)
+        {[norm | acc], new_vm, new_c}
+      end)
+
+    {Enum.reverse(reversed), final_map, final_counter}
+  end
+
+  # ===========================================================================
+  # Non-Deterministic Function Detection
+  # ===========================================================================
+
+  @doc """
+  Checks if a query contains non-deterministic functions.
+
+  Queries containing RAND(), NOW(), UUID(), or STRUUID() should not be cached
+  as they return different values on each execution.
+
+  ## Returns
+
+  `true` if the query contains non-deterministic functions, `false` otherwise.
+  """
+  @spec has_non_deterministic_functions?(term()) :: boolean()
+  def has_non_deterministic_functions?(query) when is_binary(query) do
+    # For string queries, check for function names
+    query_upper = String.upcase(query)
+
+    String.contains?(query_upper, "RAND(") or
+      String.contains?(query_upper, "NOW(") or
+      String.contains?(query_upper, "UUID(") or
+      String.contains?(query_upper, "STRUUID(")
+  end
+
+  def has_non_deterministic_functions?(query) do
+    check_non_deterministic(query)
+  end
+
+  defp check_non_deterministic({:rand, _}), do: true
+  defp check_non_deterministic({:now, _}), do: true
+  defp check_non_deterministic({:uuid, _}), do: true
+  defp check_non_deterministic({:struuid, _}), do: true
+  defp check_non_deterministic(:rand), do: true
+  defp check_non_deterministic(:now), do: true
+  defp check_non_deterministic(:uuid), do: true
+  defp check_non_deterministic(:struuid), do: true
+
+  defp check_non_deterministic(tuple) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.any?(&check_non_deterministic/1)
+  end
+
+  defp check_non_deterministic(list) when is_list(list) do
+    Enum.any?(list, &check_non_deterministic/1)
+  end
+
+  defp check_non_deterministic(map) when is_map(map) do
+    map
+    |> Map.values()
+    |> Enum.any?(&check_non_deterministic/1)
+  end
+
+  defp check_non_deterministic(_), do: false
+
   # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================

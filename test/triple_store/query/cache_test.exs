@@ -1115,4 +1115,144 @@ defmodule TripleStore.Query.CacheTest do
       File.rm(cache_file)
     end
   end
+
+  describe "normalize_query/1" do
+    test "normalizes variable names to positional indices" do
+      query = {:bgp, [{:triple, {:variable, "foo"}, {:variable, "bar"}, {:variable, "foo"}}]}
+      normalized = Cache.normalize_query(query)
+
+      assert normalized ==
+               {:bgp, [{:triple, {:variable, 0}, {:variable, 1}, {:variable, 0}}]}
+    end
+
+    test "same structure with different variable names produces same normalized form" do
+      query1 = {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]}
+      query2 = {:bgp, [{:triple, {:variable, "x"}, {:variable, "y"}, {:variable, "z"}}]}
+
+      normalized1 = Cache.normalize_query(query1)
+      normalized2 = Cache.normalize_query(query2)
+
+      assert normalized1 == normalized2
+    end
+
+    test "normalizes nested patterns" do
+      query =
+        {:join,
+         {:bgp, [{:triple, {:variable, "a"}, {:named_node, "pred1"}, {:variable, "b"}}]},
+         {:bgp, [{:triple, {:variable, "b"}, {:named_node, "pred2"}, {:variable, "c"}}]}}
+
+      normalized = Cache.normalize_query(query)
+
+      assert normalized ==
+               {:join,
+                {:bgp, [{:triple, {:variable, 0}, {:named_node, "pred1"}, {:variable, 1}}]},
+                {:bgp, [{:triple, {:variable, 1}, {:named_node, "pred2"}, {:variable, 2}}]}}
+    end
+
+    test "handles atom variable names" do
+      query = {:bgp, [{:triple, {:variable, :foo}, {:variable, :bar}, {:variable, :foo}}]}
+      normalized = Cache.normalize_query(query)
+
+      assert normalized ==
+               {:bgp, [{:triple, {:variable, 0}, {:variable, 1}, {:variable, 0}}]}
+    end
+
+    test "preserves non-variable terms" do
+      query =
+        {:bgp,
+         [{:triple, {:named_node, "http://ex.org/s"}, {:named_node, "http://ex.org/p"},
+           {:literal, :simple, "value"}}]}
+
+      normalized = Cache.normalize_query(query)
+      assert normalized == query
+    end
+  end
+
+  describe "compute_normalized_key/1" do
+    test "same structure with different variable names produces same key" do
+      query1 = {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]}
+      query2 = {:bgp, [{:triple, {:variable, "x"}, {:variable, "y"}, {:variable, "z"}}]}
+
+      key1 = Cache.compute_normalized_key(query1)
+      key2 = Cache.compute_normalized_key(query2)
+
+      assert key1 == key2
+    end
+
+    test "different structures produce different keys" do
+      query1 = {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]}
+      query2 = {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "s"}}]}
+
+      key1 = Cache.compute_normalized_key(query1)
+      key2 = Cache.compute_normalized_key(query2)
+
+      assert key1 != key2
+    end
+
+    test "string queries are hashed directly" do
+      query = "SELECT ?s WHERE { ?s ?p ?o }"
+      key = Cache.compute_normalized_key(query)
+
+      # String queries should produce same key as compute_key
+      assert key == Cache.compute_key(query)
+    end
+  end
+
+  describe "has_non_deterministic_functions?/1" do
+    test "detects RAND in string queries" do
+      assert Cache.has_non_deterministic_functions?("SELECT (RAND() AS ?r) WHERE { ?s ?p ?o }")
+    end
+
+    test "detects NOW in string queries" do
+      assert Cache.has_non_deterministic_functions?("SELECT (NOW() AS ?t) WHERE { ?s ?p ?o }")
+    end
+
+    test "detects UUID in string queries" do
+      assert Cache.has_non_deterministic_functions?("SELECT (UUID() AS ?id) WHERE { ?s ?p ?o }")
+    end
+
+    test "detects STRUUID in string queries" do
+      assert Cache.has_non_deterministic_functions?(
+               "SELECT (STRUUID() AS ?id) WHERE { ?s ?p ?o }"
+             )
+    end
+
+    test "is case insensitive for string queries" do
+      assert Cache.has_non_deterministic_functions?("SELECT (rand() AS ?r) WHERE { ?s ?p ?o }")
+      assert Cache.has_non_deterministic_functions?("SELECT (Rand() AS ?r) WHERE { ?s ?p ?o }")
+    end
+
+    test "returns false for cacheable string queries" do
+      refute Cache.has_non_deterministic_functions?("SELECT ?s WHERE { ?s ?p ?o }")
+      refute Cache.has_non_deterministic_functions?("SELECT (COUNT(?s) AS ?c) WHERE { ?s ?p ?o }")
+    end
+
+    test "detects :rand atom in algebra" do
+      query = {:extend, {:bgp, []}, {:variable, "r"}, :rand}
+      assert Cache.has_non_deterministic_functions?(query)
+    end
+
+    test "detects {:rand, []} tuple in algebra" do
+      query = {:extend, {:bgp, []}, {:variable, "r"}, {:rand, []}}
+      assert Cache.has_non_deterministic_functions?(query)
+    end
+
+    test "detects :now in nested algebra" do
+      query = {:filter, {:greater_than, :now, {:variable, "t"}}, {:bgp, []}}
+      assert Cache.has_non_deterministic_functions?(query)
+    end
+
+    test "returns false for cacheable algebra" do
+      query = {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]}
+      refute Cache.has_non_deterministic_functions?(query)
+    end
+
+    test "returns false for aggregation expressions" do
+      query =
+        {:group, {:bgp, [{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}]}, ["s"],
+         [{:count, "c", {:variable, "o"}}]}
+
+      refute Cache.has_non_deterministic_functions?(query)
+    end
+  end
 end

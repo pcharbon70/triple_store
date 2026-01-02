@@ -67,6 +67,7 @@ defmodule TripleStore.SPARQL.Query do
 
   """
 
+  alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.{Executor, Expression, Optimizer, Parser, PropertyPath}
   require Logger
 
@@ -117,11 +118,13 @@ defmodule TripleStore.SPARQL.Query do
           timeout: pos_integer(),
           explain: boolean(),
           optimize: boolean(),
-          stats: map()
+          stats: map(),
+          use_cache: boolean(),
+          cache_name: atom()
         ]
 
-  # Valid query options for validation (S6: added :log option)
-  @valid_query_opts [:timeout, :explain, :optimize, :stats, :log]
+  # Valid query options for validation (S6: added :log option, 3.2.5: added cache options)
+  @valid_query_opts [:timeout, :explain, :optimize, :stats, :log, :use_cache, :cache_name]
   @valid_prepare_opts [:optimize, :stats, :log]
   @valid_stream_opts [:optimize, :stats, :variables, :log]
   @valid_execute_opts [:timeout, :log]
@@ -248,6 +251,19 @@ defmodule TripleStore.SPARQL.Query do
   - `:explain` - If true, returns query plan without executing (default: false)
   - `:optimize` - If false, skips optimization (default: true)
   - `:stats` - Statistics map for optimizer (predicate cardinalities)
+  - `:use_cache` - If true, uses the query result cache (default: false)
+  - `:cache_name` - Name of the cache process (default: TripleStore.Query.Cache)
+
+  ## Result Caching
+
+  When `:use_cache` is true, the query result cache is consulted before
+  execution. If a cached result exists and is not expired, it is returned
+  immediately. Otherwise, the query is executed and the result is cached.
+
+  Caching is automatically skipped for:
+  - UPDATE queries (INSERT, DELETE, etc.)
+  - Queries containing non-deterministic functions (RAND, NOW, UUID, STRUUID)
+  - Queries with the `:explain` option
 
   ## Examples
 
@@ -259,6 +275,9 @@ defmodule TripleStore.SPARQL.Query do
 
       # Disable optimization
       {:ok, results} = Query.query(ctx, sparql, optimize: false)
+
+      # Use result cache
+      {:ok, results} = Query.query(ctx, sparql, use_cache: true)
 
   """
   @spec query(context(), String.t(), query_opts()) ::
@@ -842,17 +861,125 @@ defmodule TripleStore.SPARQL.Query do
   defp execute_query(ctx, sparql, opts) do
     explain? = Keyword.get(opts, :explain, false)
     optimize? = Keyword.get(opts, :optimize, true)
+    use_cache? = Keyword.get(opts, :use_cache, false)
+    cache_name = Keyword.get(opts, :cache_name, QueryCache)
     stats = Keyword.get(opts, :stats, %{})
 
     with {:ok, ast} <- parse_query(sparql),
          {:ok, query_type, pattern, metadata} <- extract_query_info(ast),
          {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
-      if explain? do
-        build_explanation(query_type, pattern, optimized, metadata)
-      else
-        execute_and_serialize(ctx, query_type, optimized, metadata)
+      cond do
+        explain? ->
+          build_explanation(query_type, pattern, optimized, metadata)
+
+        use_cache? and cacheable_query?(sparql, query_type) ->
+          execute_with_cache(ctx, sparql, query_type, optimized, metadata, cache_name)
+
+        true ->
+          execute_and_serialize(ctx, query_type, optimized, metadata)
       end
     end
+  end
+
+  # Check if a query is cacheable
+  # UPDATE queries and queries with non-deterministic functions should not be cached
+  defp cacheable_query?(sparql, query_type) do
+    query_type in [:select, :ask, :construct, :describe] and
+      not QueryCache.has_non_deterministic_functions?(sparql)
+  end
+
+  # Execute a query using the cache
+  defp execute_with_cache(ctx, sparql, query_type, optimized, metadata, cache_name) do
+    # Extract predicates from the pattern for cache invalidation
+    predicates = extract_predicates(optimized)
+
+    cache_opts = [
+      name: cache_name,
+      predicates: predicates
+    ]
+
+    QueryCache.get_or_execute(sparql, fn ->
+      execute_and_serialize(ctx, query_type, optimized, metadata)
+    end, cache_opts)
+  end
+
+  # Extract predicates from an optimized pattern for cache invalidation tracking
+  defp extract_predicates(pattern) do
+    pattern
+    |> do_extract_predicates()
+    |> MapSet.new()
+  end
+
+  defp do_extract_predicates({:bgp, triples}) do
+    Enum.flat_map(triples, fn
+      {:triple, _s, {:named_node, pred}, _o} -> [pred]
+      {_s, {:named_node, pred}, _o} -> [pred]
+      _ -> []
+    end)
+  end
+
+  defp do_extract_predicates({:join, left, right}) do
+    do_extract_predicates(left) ++ do_extract_predicates(right)
+  end
+
+  defp do_extract_predicates({:left_join, left, right, _}) do
+    do_extract_predicates(left) ++ do_extract_predicates(right)
+  end
+
+  defp do_extract_predicates({:union, left, right}) do
+    do_extract_predicates(left) ++ do_extract_predicates(right)
+  end
+
+  defp do_extract_predicates({:minus, left, right}) do
+    do_extract_predicates(left) ++ do_extract_predicates(right)
+  end
+
+  defp do_extract_predicates({:filter, _, inner}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:project, inner, _}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:distinct, inner}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:reduced, inner}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:slice, inner, _, _}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:order_by, inner, _}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:extend, inner, _, _}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:group, inner, _, _}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:graph, _, inner}) do
+    do_extract_predicates(inner)
+  end
+
+  defp do_extract_predicates({:path, _, {:named_node, pred}, _}) do
+    [pred]
+  end
+
+  defp do_extract_predicates({:path, _, _, _}) do
+    []
+  end
+
+  defp do_extract_predicates(_) do
+    []
   end
 
   # Parse the SPARQL query string

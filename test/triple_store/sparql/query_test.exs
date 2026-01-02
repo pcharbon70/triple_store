@@ -3057,4 +3057,144 @@ defmodule TripleStore.SPARQL.QueryTest do
       cleanup({db, manager})
     end
   end
+
+  # ===========================================================================
+  # Cache Integration Tests (Section 3.2.5)
+  # ===========================================================================
+
+  describe "query/3 with :use_cache option" do
+    setup %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+
+      # Start a test cache
+      cache_name = :"test_query_cache_#{:erlang.unique_integer([:positive])}"
+      {:ok, cache_pid} = TripleStore.Query.Cache.start_link(name: cache_name, max_entries: 100)
+
+      # Add some test data
+      add_triple(db, manager, {
+        iri("http://ex.org/Alice"),
+        iri("http://ex.org/name"),
+        literal("Alice")
+      })
+
+      add_triple(db, manager, {
+        iri("http://ex.org/Bob"),
+        iri("http://ex.org/name"),
+        literal("Bob")
+      })
+
+      ctx = %{db: db, dict_manager: manager}
+
+      on_exit(fn ->
+        try do
+          if Process.alive?(cache_pid), do: GenServer.stop(cache_pid)
+        catch
+          :exit, _ -> :ok
+        end
+
+        try do
+          cleanup({db, manager})
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{ctx: ctx, cache_name: cache_name}
+    end
+
+    test "caches query results when use_cache is true", %{ctx: ctx, cache_name: cache_name} do
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }"
+
+      # First query - should execute and cache
+      {:ok, results1} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
+      assert length(results1) == 2
+
+      # Cache should have an entry now
+      stats = TripleStore.Query.Cache.stats(name: cache_name)
+      assert stats.size == 1
+
+      # Second query - should hit cache
+      {:ok, results2} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
+      assert results2 == results1
+
+      # Check cache stats
+      stats_after = TripleStore.Query.Cache.stats(name: cache_name)
+      assert stats_after.hits >= 1
+    end
+
+    test "skips cache when use_cache is false (default)", %{ctx: ctx, cache_name: cache_name} do
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }"
+
+      # Execute without caching
+      {:ok, results} = Query.query(ctx, query, cache_name: cache_name)
+      assert length(results) == 2
+
+      # Cache should be empty
+      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+    end
+
+    test "skips caching for queries with RAND", %{ctx: _ctx, cache_name: _cache_name} do
+      # Non-deterministic function detection - RAND should not be cached
+      refute TripleStore.Query.Cache.has_non_deterministic_functions?(
+               "SELECT ?name WHERE { ?s ?p ?o }"
+             )
+
+      assert TripleStore.Query.Cache.has_non_deterministic_functions?(
+               "SELECT (RAND() AS ?r) WHERE { ?s ?p ?o }"
+             )
+    end
+
+    test "skips caching for queries with NOW", %{ctx: _ctx, cache_name: _cache_name} do
+      assert TripleStore.Query.Cache.has_non_deterministic_functions?(
+               "SELECT (NOW() AS ?t) WHERE { ?s ?p ?o }"
+             )
+    end
+
+    test "cache tracks predicates for invalidation", %{ctx: ctx, cache_name: cache_name} do
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }"
+
+      # Execute with caching
+      {:ok, _} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
+      assert TripleStore.Query.Cache.size(name: cache_name) == 1
+
+      # Invalidate based on predicate
+      TripleStore.Query.Cache.invalidate_predicates(
+        ["http://ex.org/name"],
+        name: cache_name
+      )
+
+      # Cache should be empty
+      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+    end
+
+    test "cache hit returns same results as fresh execution", %{ctx: ctx, cache_name: cache_name} do
+      query = "SELECT ?s ?name WHERE { ?s <http://ex.org/name> ?name } ORDER BY ?name"
+
+      # Execute without cache first
+      {:ok, uncached} = Query.query(ctx, query)
+
+      # Execute with cache (cache miss)
+      {:ok, cached1} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
+
+      # Execute with cache (cache hit)
+      {:ok, cached2} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
+
+      # All should return the same results
+      assert cached1 == uncached
+      assert cached2 == uncached
+    end
+
+    test "explain option bypasses cache", %{ctx: ctx, cache_name: cache_name} do
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }"
+
+      # Explain should not use cache even when use_cache is true
+      {:ok, {:explain, explanation}} =
+        Query.query(ctx, query, explain: true, use_cache: true, cache_name: cache_name)
+
+      assert explanation.query_type == :select
+
+      # Cache should still be empty
+      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+    end
+  end
 end
