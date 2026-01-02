@@ -274,24 +274,24 @@ Add a RocksDB configuration preset optimized for bulk loading.
 
 ### 1.5.2 Dynamic Configuration
 
-- [x] **Task 1.5.2 Analysis Complete** (2025-12-31)
+- [x] **Task 1.5.2 Complete** (2026-01-02)
 
 Allow configuration changes during bulk load operations.
 
 - [x] 1.5.2.1 Research RocksDB SetOptions for runtime config
-- [ ] 1.5.2.2 Implement `set_options/2` NIF if supported
-- [ ] 1.5.2.3 Add `prepare_for_bulk_load/1` function
-- [ ] 1.5.2.4 Add `restore_normal_config/1` function
-- [ ] 1.5.2.5 Handle configuration restoration on error
+- [x] 1.5.2.2 Implement `set_options/2` NIF if supported
+- [x] 1.5.2.3 Add `prepare_for_bulk_load/1` function
+- [x] 1.5.2.4 Add `restore_normal_config/1` function
+- [x] 1.5.2.5 Handle configuration restoration on error
 
 ### 1.5.3 Unit Tests
 
-- [ ] **Task 1.5.3 Complete**
+- [ ] **Task 1.5.3 In Progress** (2026-01-02)
 
-- [ ] 1.5.3.1 Test bulk_load preset applies correct settings
+- [x] 1.5.3.1 Test bulk_load preset applies correct settings
 - [ ] 1.5.3.2 Test memory usage with bulk_load preset
-- [ ] 1.5.3.3 Test configuration switch during operation
-- [ ] 1.5.3.4 Test restoration on error
+- [x] 1.5.3.3 Test configuration switch during operation
+- [x] 1.5.3.4 Test restoration on error
 
 ---
 

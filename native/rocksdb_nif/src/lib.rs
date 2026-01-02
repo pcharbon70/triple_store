@@ -125,6 +125,8 @@ mod atoms {
         snapshot_released,
         // Flush atoms
         flush_failed,
+        // SetOptions atoms
+        set_options_failed,
     }
 }
 
@@ -1379,6 +1381,83 @@ fn flush_wal<'a>(
         Ok(()) => Ok(atoms::ok().encode(env)),
         Err(e) => Ok((atoms::error(), (atoms::flush_failed(), e.to_string())).encode(env)),
     }
+}
+
+/// Sets options on all column families at runtime.
+///
+/// This allows dynamic reconfiguration of RocksDB settings without restarting.
+/// Options are passed as a list of {key, value} tuples where both key and value
+/// are strings.
+///
+/// # Mutable Options (subset)
+/// - "level0_file_num_compaction_trigger" - Files in L0 to trigger compaction
+/// - "level0_slowdown_writes_trigger" - Files in L0 to slow down writes
+/// - "level0_stop_writes_trigger" - Files in L0 to stop writes
+/// - "target_file_size_base" - Target file size in bytes
+/// - "max_bytes_for_level_base" - Maximum bytes in base level
+/// - "write_buffer_size" - Size of write buffer (for new memtables)
+/// - "max_write_buffer_number" - Maximum number of write buffers
+/// - "disable_auto_compactions" - Disable automatic compactions ("true"/"false")
+///
+/// # Arguments
+/// * `db_ref` - The database reference
+/// * `options` - List of {key, value} tuples as strings
+///
+/// # Returns
+/// * `:ok` on success
+/// * `{:error, :already_closed}` if database is closed
+/// * `{:error, {:set_options_failed, reason}}` on failure
+#[rustler::nif(schedule = "DirtyCpu")]
+fn set_options<'a>(
+    env: Env<'a>,
+    db_ref: ResourceArc<DbRef>,
+    options: Vec<(String, String)>,
+) -> NifResult<Term<'a>> {
+    let guard = db_ref
+        .inner
+        .read()
+        .map_err(|_| rustler::Error::Term(Box::new("lock poisoned")))?;
+
+    let shared_db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok((atoms::error(), atoms::already_closed()).encode(env)),
+    };
+
+    // Convert options to the format expected by RocksDB: &[(&str, &str)]
+    let opts: Vec<(&str, &str)> = options
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+
+    // Apply options to all column families
+    for cf_name in CF_NAMES.iter() {
+        let cf = match shared_db.db.cf_handle(cf_name) {
+            Some(cf) => cf,
+            None => {
+                return Ok((
+                    atoms::error(),
+                    (
+                        atoms::set_options_failed(),
+                        format!("column family '{}' not found", cf_name),
+                    ),
+                )
+                .encode(env))
+            }
+        };
+
+        if let Err(e) = shared_db.db.set_options_cf(&cf, &opts) {
+            return Ok((
+                atoms::error(),
+                (
+                    atoms::set_options_failed(),
+                    format!("failed to set options on '{}': {}", cf_name, e),
+                ),
+            )
+            .encode(env));
+        }
+    }
+
+    Ok(atoms::ok().encode(env))
 }
 
 rustler::init!("Elixir.TripleStore.Backend.RocksDB.NIF");

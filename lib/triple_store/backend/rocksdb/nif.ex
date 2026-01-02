@@ -128,6 +128,42 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   def flush_wal(_db_ref, _sync), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc """
+  Sets RocksDB options on all column families at runtime.
+
+  This allows dynamic reconfiguration of RocksDB settings without restarting.
+  Options are passed as a list of {key, value} tuples where both key and value
+  are strings.
+
+  ## Mutable Options (subset)
+  - `"level0_file_num_compaction_trigger"` - Files in L0 to trigger compaction
+  - `"level0_slowdown_writes_trigger"` - Files in L0 to slow down writes
+  - `"level0_stop_writes_trigger"` - Files in L0 to stop writes
+  - `"target_file_size_base"` - Target file size in bytes
+  - `"max_bytes_for_level_base"` - Maximum bytes in base level
+  - `"write_buffer_size"` - Size of write buffer (for new memtables)
+  - `"max_write_buffer_number"` - Maximum number of write buffers
+  - `"disable_auto_compactions"` - Disable automatic compactions ("true"/"false")
+
+  ## Arguments
+  - `db_ref` - The database reference
+  - `options` - List of {key, value} tuples as strings
+
+  ## Returns
+  - `:ok` on success
+  - `{:error, :already_closed}` if database is closed
+  - `{:error, {:set_options_failed, reason}}` on failure
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> NIF.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
+      :ok
+
+  """
+  @spec set_options(db_ref(), [{String.t(), String.t()}]) :: :ok | {:error, term()}
+  def set_options(_db_ref, _options), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
   Returns the path of the database.
 
   ## Arguments
