@@ -99,7 +99,7 @@ defmodule TripleStore.Config.Compaction do
         }
 
   @typedoc "Preset name"
-  @type preset_name :: :default | :write_heavy | :read_heavy | :balanced | :low_latency
+  @type preset_name :: :default | :write_heavy | :read_heavy | :balanced | :low_latency | :bulk_load
 
   # ===========================================================================
   # Constants
@@ -225,6 +225,29 @@ defmodule TripleStore.Config.Compaction do
       # Small files for predictable latency
       target_file_size_base: 16 * 1024 * 1024,
       target_file_size_multiplier: 1
+    },
+    # Optimized for bulk loading large datasets (>1M triples)
+    # Minimizes compaction during import, defers to background after load
+    bulk_load: %{
+      style: :level,
+      level_compaction_dynamic_level_bytes: true,
+      max_bytes_for_level_base: 1024 * 1024 * 1024,
+      max_bytes_for_level_multiplier: @default_level_multiplier,
+      num_levels: @default_num_levels,
+      # Very high L0 triggers to minimize compaction during bulk load
+      level0_file_num_compaction_trigger: 16,
+      level0_slowdown_writes_trigger: 64,
+      level0_stop_writes_trigger: 128,
+      # No rate limiting during bulk load - maximize throughput
+      rate_limit_bytes_per_sec: 0,
+      rate_limit_refill_period_us: @default_refill_period_us,
+      rate_limit_fairness: @default_fairness,
+      # Maximum background jobs for post-load compaction
+      max_background_compactions: 16,
+      max_background_flushes: 8,
+      # Large files to reduce file count
+      target_file_size_base: 256 * 1024 * 1024,
+      target_file_size_multiplier: 1
     }
   }
 
@@ -258,10 +281,26 @@ defmodule TripleStore.Config.Compaction do
   - `:read_heavy` - Aggressive compaction for best read performance
   - `:balanced` - Middle ground with moderate rate limiting
   - `:low_latency` - Minimizes latency spikes from compaction
+  - `:bulk_load` - Maximum write throughput, minimal compaction during import
+
+  ## Bulk Load Preset
+
+  The `:bulk_load` preset is designed for one-time large dataset imports:
+
+  - L0 triggers set very high (16/64/128) to minimize compaction during writes
+  - No rate limiting to maximize throughput
+  - Maximum background jobs (16 compactions, 8 flushes) for post-load cleanup
+  - Larger target file size (256 MB) to reduce file count
+
+  After bulk loading completes, consider switching to a normal preset to
+  compact the accumulated L0 files and restore read performance.
 
   ## Examples
 
       config = TripleStore.Config.Compaction.preset(:write_heavy)
+
+      # For bulk loading
+      config = TripleStore.Config.Compaction.preset(:bulk_load)
 
   """
   @spec preset(preset_name()) :: t()

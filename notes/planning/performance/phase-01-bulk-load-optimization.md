@@ -260,17 +260,17 @@ Current write buffer sizing is optimized for general use, not bulk loading. Larg
 
 ### 1.5.1 Bulk Load Preset
 
-- [x] **Task 1.5.1 Analysis Complete** (2025-12-31)
+- [x] **Task 1.5.1 Complete** (2026-01-02)
 
 Add a RocksDB configuration preset optimized for bulk loading.
 
 - [x] 1.5.1.1 Analyze current presets in `config/rocksdb.ex:91-123`
 - [x] 1.5.1.2 Design bulk_load preset parameters
-- [ ] 1.5.1.3 Add `bulk_load` preset to `@presets` map
-- [ ] 1.5.1.4 Configure larger write_buffer_size (512 MB)
-- [ ] 1.5.1.5 Configure max_write_buffer_number (6)
-- [ ] 1.5.1.6 Raise level0 compaction triggers
-- [ ] 1.5.1.7 Document memory requirements for bulk_load preset
+- [x] 1.5.1.3 Add `bulk_load` preset to `@presets` map
+- [x] 1.5.1.4 Configure larger write_buffer_size (512 MB)
+- [x] 1.5.1.5 Configure max_write_buffer_number (6)
+- [x] 1.5.1.6 Raise level0 compaction triggers
+- [x] 1.5.1.7 Document memory requirements for bulk_load preset
 
 ### 1.5.2 Dynamic Configuration
 

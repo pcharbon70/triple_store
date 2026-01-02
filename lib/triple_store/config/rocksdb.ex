@@ -62,7 +62,7 @@ defmodule TripleStore.Config.RocksDB do
 
   @typedoc "Configuration preset name"
   @type preset_name ::
-          :development | :production_low_memory | :production_high_memory | :write_heavy
+          :development | :production_low_memory | :production_high_memory | :write_heavy | :bulk_load
 
   # ===========================================================================
   # Constants
@@ -119,6 +119,17 @@ defmodule TripleStore.Config.RocksDB do
       max_open_files: 2048,
       target_file_size_base: 256 * 1024 * 1024,
       max_bytes_for_level_base: 2 * 1024 * 1024 * 1024
+    },
+    # Optimized for bulk loading large datasets (>1M triples)
+    # Memory usage: ~18 GB (6 CFs × 6 buffers × 512 MB)
+    # Use with Loader bulk_mode: true for maximum throughput
+    bulk_load: %{
+      block_cache_size: 512 * 1024 * 1024,
+      write_buffer_size: 512 * 1024 * 1024,
+      max_write_buffer_number: 6,
+      max_open_files: 8192,
+      target_file_size_base: 512 * 1024 * 1024,
+      max_bytes_for_level_base: 4 * 1024 * 1024 * 1024
     }
   }
 
@@ -210,10 +221,25 @@ defmodule TripleStore.Config.RocksDB do
   - `:production_low_memory` - Conservative settings for <4 GB systems
   - `:production_high_memory` - Aggressive caching for 16+ GB systems
   - `:write_heavy` - Optimized for bulk loading and frequent updates
+  - `:bulk_load` - Maximum write throughput for large imports (~18 GB RAM)
+
+  ## Memory Requirements
+
+  The `:bulk_load` preset requires significant memory:
+
+  - Write buffers: 6 CFs × 6 buffers × 512 MB = ~18 GB
+  - Block cache: 512 MB
+  - Total: ~19 GB RAM minimum
+
+  Use this preset only for one-time bulk imports on systems with 32+ GB RAM.
+  For regular write-heavy workloads, use `:write_heavy` instead.
 
   ## Examples
 
       config = TripleStore.Config.RocksDB.preset(:production_high_memory)
+
+      # For bulk loading on high-memory systems
+      config = TripleStore.Config.RocksDB.preset(:bulk_load)
 
   """
   @spec preset(preset_name()) :: t()

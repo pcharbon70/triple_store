@@ -74,6 +74,31 @@ defmodule TripleStore.Config.CompactionTest do
       assert config.target_file_size_base == 16 * 1024 * 1024
     end
 
+    test "returns bulk_load preset with very high L0 triggers" do
+      config = Compaction.preset(:bulk_load)
+
+      # Very high L0 triggers to minimize compaction during bulk load
+      assert config.level0_file_num_compaction_trigger == 16
+      assert config.level0_slowdown_writes_trigger == 64
+      assert config.level0_stop_writes_trigger == 128
+      # No rate limiting
+      assert config.rate_limit_bytes_per_sec == 0
+      # Maximum background jobs
+      assert config.max_background_compactions == 16
+      assert config.max_background_flushes == 8
+      # Large target file size
+      assert config.target_file_size_base == 256 * 1024 * 1024
+    end
+
+    test "bulk_load preset has higher L0 triggers than write_heavy" do
+      bulk_load = Compaction.preset(:bulk_load)
+      write_heavy = Compaction.preset(:write_heavy)
+
+      assert bulk_load.level0_file_num_compaction_trigger > write_heavy.level0_file_num_compaction_trigger
+      assert bulk_load.level0_slowdown_writes_trigger > write_heavy.level0_slowdown_writes_trigger
+      assert bulk_load.level0_stop_writes_trigger > write_heavy.level0_stop_writes_trigger
+    end
+
     test "raises for unknown preset" do
       assert_raise FunctionClauseError, fn ->
         Compaction.preset(:unknown)
@@ -90,6 +115,7 @@ defmodule TripleStore.Config.CompactionTest do
       assert :read_heavy in names
       assert :balanced in names
       assert :low_latency in names
+      assert :bulk_load in names
     end
   end
 

@@ -122,6 +122,31 @@ defmodule TripleStore.Config.RocksDBTest do
       assert config.max_write_buffer_number == 4
     end
 
+    test "returns bulk_load preset" do
+      config = RocksDB.preset(:bulk_load)
+
+      # 512 MB write buffer
+      assert config.write_buffer_size == 512 * 1024 * 1024
+      # 6 write buffers per CF
+      assert config.max_write_buffer_number == 6
+      # 512 MB block cache
+      assert config.block_cache_size == 512 * 1024 * 1024
+      # 8192 max open files
+      assert config.max_open_files == 8192
+      # 512 MB target file size
+      assert config.target_file_size_base == 512 * 1024 * 1024
+      # 4 GB level base
+      assert config.max_bytes_for_level_base == 4 * 1024 * 1024 * 1024
+    end
+
+    test "bulk_load preset has higher write buffers than write_heavy" do
+      bulk_load = RocksDB.preset(:bulk_load)
+      write_heavy = RocksDB.preset(:write_heavy)
+
+      assert bulk_load.write_buffer_size > write_heavy.write_buffer_size
+      assert bulk_load.max_write_buffer_number > write_heavy.max_write_buffer_number
+    end
+
     test "raises for unknown preset" do
       assert_raise FunctionClauseError, fn ->
         RocksDB.preset(:nonexistent)
@@ -137,6 +162,7 @@ defmodule TripleStore.Config.RocksDBTest do
       assert :production_low_memory in names
       assert :production_high_memory in names
       assert :write_heavy in names
+      assert :bulk_load in names
     end
   end
 
