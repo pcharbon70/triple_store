@@ -9,7 +9,7 @@ use rustler::{Binary, Encoder, Env, ListIterator, NewBinary, NifResult, Resource
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Column family names used by TripleStore
-const CF_NAMES: [&str; 6] = ["id2str", "str2id", "spo", "pos", "osp", "derived"];
+const CF_NAMES: [&str; 7] = ["id2str", "str2id", "spo", "pos", "osp", "derived", "numeric_range"];
 
 /// Shared database handle that stays alive as long as any iterator/snapshot references it.
 /// This is the core fix for the use-after-free issue: iterators hold an Arc<SharedDb>,
@@ -105,6 +105,7 @@ mod atoms {
         pos,
         osp,
         derived,
+        numeric_range,
         // Error types
         open_failed,
         close_failed,
@@ -145,6 +146,8 @@ fn cf_atom_to_name(cf_atom: rustler::Atom) -> Option<&'static str> {
         Some("osp")
     } else if cf_atom == atoms::derived() {
         Some("derived")
+    } else if cf_atom == atoms::numeric_range() {
+        Some("numeric_range")
     } else {
         None
     }
@@ -259,6 +262,7 @@ fn list_column_families(env: Env) -> NifResult<Term> {
         atoms::pos().encode(env),
         atoms::osp().encode(env),
         atoms::derived().encode(env),
+        atoms::numeric_range().encode(env),
     ];
     Ok(cf_atoms.encode(env))
 }

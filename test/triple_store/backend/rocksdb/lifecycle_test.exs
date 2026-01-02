@@ -89,13 +89,14 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
   describe "list_column_families/0" do
     test "returns all configured column families" do
       cfs = NIF.list_column_families()
-      assert length(cfs) == 6
+      assert length(cfs) == 7
       assert :id2str in cfs
       assert :str2id in cfs
       assert :spo in cfs
       assert :pos in cfs
       assert :osp in cfs
       assert :derived in cfs
+      assert :numeric_range in cfs
     end
   end
 

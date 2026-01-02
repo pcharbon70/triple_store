@@ -41,20 +41,20 @@ The current execution plan scans all ~1000 products and ~13K offers before apply
 
 ### 2.1.1 Price Range Index
 
-- [x] **Task 2.1.1 Analysis Complete** (2025-12-31)
+- [x] **Task 2.1.1 Complete** (2026-01-02)
 
 Implement a secondary index for numeric predicates enabling efficient range queries.
 
 - [x] 2.1.1.1 Analyze current index structure (SPO, POS, OSP only)
 - [x] 2.1.1.2 Design numeric range index key format: `<<predicate_id::64, value::64-float, subject_id::64>>`
 - [x] 2.1.1.3 Research RocksDB custom comparator for float ordering
-- [ ] 2.1.1.4 Create `price_range` column family in RocksDB
-- [ ] 2.1.1.5 Implement `float_to_sortable_bytes/1` for IEEE 754 ordering
-- [ ] 2.1.1.6 Create `TripleStore.Index.NumericRange` module
-- [ ] 2.1.1.7 Implement `create_range_index/2` for predicate registration
-- [ ] 2.1.1.8 Implement `range_query/4` for min/max range scans
-- [ ] 2.1.1.9 Implement index population during bulk load
-- [ ] 2.1.1.10 Implement index maintenance on insert/delete
+- [x] 2.1.1.4 Create `numeric_range` column family in RocksDB
+- [x] 2.1.1.5 Implement `float_to_sortable_bytes/1` for IEEE 754 ordering
+- [x] 2.1.1.6 Create `TripleStore.Index.NumericRange` module
+- [x] 2.1.1.7 Implement `create_range_index/2` for predicate registration
+- [x] 2.1.1.8 Implement `range_query/4` for min/max range scans
+- [x] 2.1.1.9 Implement index population during bulk load
+- [x] 2.1.1.10 Implement index maintenance on insert/delete
 
 ### 2.1.2 Join Reordering for Price Filter
 

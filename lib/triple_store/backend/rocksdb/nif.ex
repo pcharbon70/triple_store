@@ -24,6 +24,7 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `:pos` - Predicate-Object-Subject index
   - `:osp` - Object-Subject-Predicate index
   - `:derived` - Stores inferred triples from reasoning
+  - `:numeric_range` - Stores numeric range indices for efficient range queries
   """
 
   @skip_compilation System.get_env("RUSTLER_SKIP_COMPILATION") == "1"
@@ -34,7 +35,7 @@ defmodule TripleStore.Backend.RocksDB.NIF do
     skip_compilation?: @skip_compilation
 
   @type db_ref :: reference()
-  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived
+  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range
 
   @doc """
   Verifies that the NIF is loaded correctly.
@@ -179,7 +180,7 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   Lists all column families in the database.
 
   ## Returns
-  - List of column family atoms: `[:id2str, :str2id, :spo, :pos, :osp, :derived]`
+  - List of column family atoms: `[:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range]`
   """
   @spec list_column_families :: [column_family()]
   def list_column_families, do: :erlang.nif_error(:nif_not_loaded)
