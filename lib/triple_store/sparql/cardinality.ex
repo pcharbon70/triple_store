@@ -60,6 +60,7 @@ defmodule TripleStore.SPARQL.Cardinality do
   """
 
   alias TripleStore.SPARQL.Leapfrog.PatternUtils
+  alias TripleStore.Statistics
 
   # ===========================================================================
   # Types
@@ -366,6 +367,120 @@ defmodule TripleStore.SPARQL.Cardinality do
       min(card / total, 1.0)
     else
       1.0
+    end
+  end
+
+  # ===========================================================================
+  # Public API - Range Selectivity (3.3.2)
+  # ===========================================================================
+
+  @doc """
+  Estimates the selectivity of a range filter using histograms.
+
+  Uses numeric histograms from statistics to estimate what fraction of
+  values fall within a given range.
+
+  ## Arguments
+
+  - `predicate` - The predicate term (integer ID or {:named_node, uri})
+  - `min_value` - Minimum value of the range (or :unbounded)
+  - `max_value` - Maximum value of the range (or :unbounded)
+  - `stats` - Statistics map with numeric_histograms
+
+  ## Returns
+
+  Selectivity factor (0.0 to 1.0).
+
+  ## Examples
+
+      # Range filter on price between 10 and 100
+      selectivity = Cardinality.estimate_range_selectivity(price_id, 10, 100, stats)
+      # => 0.35
+
+  """
+  @spec estimate_range_selectivity(term(), number() | :unbounded, number() | :unbounded, stats()) ::
+          float()
+  def estimate_range_selectivity(predicate, min_value, max_value, stats) do
+    predicate_id = get_constant_id(predicate)
+
+    cond do
+      is_nil(predicate_id) ->
+        # Can't estimate without predicate ID
+        1.0
+
+      min_value == :unbounded and max_value == :unbounded ->
+        1.0
+
+      true ->
+        # Use histogram if available
+        min_val = if min_value == :unbounded, do: :math.pow(-2, 63), else: min_value
+        max_val = if max_value == :unbounded, do: :math.pow(2, 63), else: max_value
+        Statistics.estimate_range_selectivity(stats, predicate_id, min_val, max_val)
+    end
+  end
+
+  @doc """
+  Estimates cardinality of a pattern with a range filter applied.
+
+  Combines pattern cardinality with range selectivity for accurate estimates.
+
+  ## Arguments
+
+  - `pattern` - Triple pattern
+  - `filter_predicate` - The predicate being filtered
+  - `min_value` - Minimum filter value
+  - `max_value` - Maximum filter value
+  - `stats` - Statistics map
+
+  ## Returns
+
+  Estimated cardinality after filter.
+
+  ## Examples
+
+      # Pattern with range filter
+      pattern = {:triple, {:variable, "s"}, price_id, {:variable, "price"}}
+      card = Cardinality.estimate_pattern_with_range(pattern, price_id, 10, 100, stats)
+
+  """
+  @spec estimate_pattern_with_range(
+          triple_pattern(),
+          term(),
+          number() | :unbounded,
+          number() | :unbounded,
+          stats()
+        ) :: cardinality()
+  def estimate_pattern_with_range(pattern, filter_predicate, min_value, max_value, stats) do
+    base_card = estimate_pattern(pattern, stats)
+    range_selectivity = estimate_range_selectivity(filter_predicate, min_value, max_value, stats)
+    max(base_card * range_selectivity, @min_cardinality)
+  end
+
+  @doc """
+  Estimates selectivity using predicate histogram data.
+
+  Returns a more accurate selectivity when predicate histogram is available.
+
+  ## Arguments
+
+  - `predicate` - Predicate term or ID
+  - `stats` - Statistics map with predicate_histogram
+
+  ## Returns
+
+  Selectivity factor based on actual predicate frequency.
+  """
+  @spec estimate_predicate_selectivity(term(), stats()) :: float()
+  def estimate_predicate_selectivity(predicate, stats) do
+    case get_predicate_count(predicate, stats) do
+      {:ok, count} ->
+        total = get_stat(stats, :triple_count, @default_triple_count)
+        if total > 0, do: count / total, else: 1.0
+
+      :not_found ->
+        # Fall back to uniform distribution
+        distinct = get_stat(stats, :distinct_predicates, @default_distinct_predicates)
+        if distinct > 0, do: 1.0 / distinct, else: 1.0
     end
   end
 

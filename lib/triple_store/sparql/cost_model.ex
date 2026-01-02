@@ -88,27 +88,171 @@ defmodule TripleStore.SPARQL.CostModel do
   @type scan_type :: :point_lookup | :prefix_scan | :full_scan
 
   # ===========================================================================
-  # Constants - Cost Weights
+  # Constants - Cost Weights (3.3.1)
   # ===========================================================================
 
-  # CPU cost weights
-  @comparison_cost 1.0
-  @hash_cost 2.0
-  @hash_probe_cost 1.5
+  # Default cost weights - can be overridden via config/2
+  @default_weights %{
+    # CPU cost weights
+    comparison_cost: 1.0,
+    hash_cost: 2.0,
+    hash_probe_cost: 1.5,
 
-  # I/O cost weights (relative to CPU)
-  @index_seek_cost 10.0
-  @sequential_read_cost 0.1
+    # I/O cost weights (relative to CPU)
+    index_seek_cost: 10.0,
+    sequential_read_cost: 0.1,
 
-  # Memory cost weight (penalty for memory usage)
-  @memory_weight 1.0
+    # Memory cost weight (penalty for memory usage)
+    memory_weight: 1.0,
 
-  # Leapfrog-specific costs
-  @leapfrog_seek_cost 5.0
-  @leapfrog_comparison_cost 1.5
+    # Leapfrog-specific costs
+    leapfrog_seek_cost: 5.0,
+    leapfrog_comparison_cost: 1.5,
 
-  # Threshold for preferring hash join over nested loop
-  @hash_join_threshold 100
+    # Join thresholds
+    hash_join_threshold: 100,
+
+    # Weight factors for total cost calculation
+    cpu_weight: 1.0,
+    io_weight: 1.0,
+    memory_weight_factor: 0.1
+  }
+
+  # Module attribute for default values (used when not using config)
+  @comparison_cost @default_weights.comparison_cost
+  @hash_cost @default_weights.hash_cost
+  @hash_probe_cost @default_weights.hash_probe_cost
+  @index_seek_cost @default_weights.index_seek_cost
+  @sequential_read_cost @default_weights.sequential_read_cost
+  @memory_weight @default_weights.memory_weight
+  @leapfrog_seek_cost @default_weights.leapfrog_seek_cost
+  @leapfrog_comparison_cost @default_weights.leapfrog_comparison_cost
+  @hash_join_threshold @default_weights.hash_join_threshold
+
+  # ===========================================================================
+  # Public API - Configuration (3.3.1)
+  # ===========================================================================
+
+  @doc """
+  Returns the default cost weights.
+
+  These weights can be customized using `with_weights/2` for cost calculations.
+
+  ## Returns
+
+  Map of weight names to their default values.
+  """
+  @spec default_weights() :: map()
+  def default_weights, do: @default_weights
+
+  @doc """
+  Estimates cost with custom weight configuration.
+
+  ## Arguments
+
+  - `cost_fn` - Function to compute cost (takes weights as argument)
+  - `custom_weights` - Map of weight overrides
+
+  ## Returns
+
+  Cost calculated with merged weights.
+
+  ## Examples
+
+      custom = %{hash_cost: 3.0, io_weight: 2.0}
+      cost = CostModel.with_weights(custom, fn weights ->
+        hash_join_cost_with_weights(1000, 500, weights)
+      end)
+
+  """
+  @spec with_weights(map(), (map() -> cost())) :: cost()
+  def with_weights(custom_weights, cost_fn) do
+    weights = Map.merge(@default_weights, custom_weights)
+    cost_fn.(weights)
+  end
+
+  @doc """
+  Returns a cost breakdown with explanations for debugging/explain output.
+
+  ## Arguments
+
+  - `cost` - Cost estimate
+  - `operation` - Description of the operation
+
+  ## Returns
+
+  Map with cost components and explanation.
+
+  ## Examples
+
+      cost = CostModel.hash_join_cost(1000, 500)
+      explained = CostModel.explain_cost(cost, "Hash join P1 ⋈ P2")
+      # => %{
+      #      operation: "Hash join P1 ⋈ P2",
+      #      cpu: 2750.0,
+      #      io: 0.0,
+      #      memory: 1000.0,
+      #      total: 3750.0,
+      #      breakdown: "CPU: 2750, I/O: 0, Memory: 1000"
+      #    }
+
+  """
+  @spec explain_cost(cost(), String.t()) :: map()
+  def explain_cost(cost, operation) do
+    Map.merge(cost, %{
+      operation: operation,
+      breakdown:
+        "CPU: #{Float.round(cost.cpu, 1)}, I/O: #{Float.round(cost.io, 1)}, Memory: #{Float.round(cost.memory, 1)}"
+    })
+  end
+
+  @doc """
+  Estimates the cost of a filter operation.
+
+  ## Arguments
+
+  - `input_card` - Cardinality of input
+  - `selectivity` - Filter selectivity (0.0 to 1.0)
+
+  ## Returns
+
+  Cost estimate for the filter.
+  """
+  @spec filter_cost(number(), float()) :: cost()
+  def filter_cost(input_card, selectivity) do
+    # CPU: evaluate filter for each input tuple
+    cpu = input_card * @comparison_cost
+
+    # No I/O or memory for simple filters
+    io = 0.0
+    memory = 0.0
+
+    cost = build_cost(cpu, io, memory)
+
+    # Adjust for output cardinality
+    %{cost | memory: input_card * selectivity * @memory_weight}
+  end
+
+  @doc """
+  Estimates the cost of a filter with range predicate using histogram data.
+
+  ## Arguments
+
+  - `input_card` - Input cardinality
+  - `predicate_id` - The predicate being filtered
+  - `min_value` - Minimum value
+  - `max_value` - Maximum value
+  - `stats` - Statistics with histograms
+
+  ## Returns
+
+  Cost with accurate selectivity from histogram.
+  """
+  @spec range_filter_cost(number(), term(), number(), number(), stats()) :: cost()
+  def range_filter_cost(input_card, predicate_id, min_value, max_value, stats) do
+    selectivity = Cardinality.estimate_range_selectivity(predicate_id, min_value, max_value, stats)
+    filter_cost(input_card, selectivity)
+  end
 
   # ===========================================================================
   # Public API - Join Costs

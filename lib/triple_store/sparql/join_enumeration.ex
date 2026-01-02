@@ -121,6 +121,70 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   # ===========================================================================
 
   @doc """
+  Returns an explanation of the join plan with cost breakdown.
+
+  Useful for EXPLAIN output in query execution.
+
+  ## Arguments
+
+  - `plan` - The execution plan from enumerate/2
+
+  ## Returns
+
+  Map with plan description, cost breakdown, and estimated cardinality.
+
+  ## Examples
+
+      {:ok, plan} = JoinEnumeration.enumerate(patterns, stats)
+      explanation = JoinEnumeration.explain_plan(plan)
+      # => %{
+      #      plan_type: :left_deep,
+      #      estimated_cost: 12500.0,
+      #      estimated_cardinality: 500.0,
+      #      cost_breakdown: [...],
+      #      tree_description: "..."
+      #    }
+
+  """
+  @spec explain_plan(plan()) :: map()
+  def explain_plan(plan) do
+    %{
+      plan_type: infer_plan_type(plan.tree),
+      estimated_cost: plan.cost.total,
+      estimated_cardinality: plan.cardinality,
+      cost_breakdown: CostModel.explain_cost(plan.cost, "Total"),
+      tree_description: describe_tree(plan.tree)
+    }
+  end
+
+  defp infer_plan_type({:leapfrog, _, _}), do: :leapfrog
+  defp infer_plan_type({:scan, _}), do: :scan
+  defp infer_plan_type({:join, _, _, _, _}), do: :left_deep
+
+  defp describe_tree({:scan, pattern}) do
+    "Scan(#{describe_pattern(pattern)})"
+  end
+
+  defp describe_tree({:join, strategy, left, right, vars}) do
+    strategy_name = strategy |> Atom.to_string() |> String.replace("_", " ")
+    "#{strategy_name}[#{Enum.join(vars, ", ")}](#{describe_tree(left)}, #{describe_tree(right)})"
+  end
+
+  defp describe_tree({:leapfrog, patterns, vars}) do
+    pattern_count = length(patterns)
+    "Leapfrog[#{Enum.join(vars, ", ")}](#{pattern_count} patterns)"
+  end
+
+  defp describe_pattern({:triple, s, p, o}) do
+    "#{describe_term(s)} #{describe_term(p)} #{describe_term(o)}"
+  end
+
+  defp describe_term({:variable, name}), do: "?#{name}"
+  defp describe_term({:named_node, uri}), do: "<#{uri}>"
+  defp describe_term(id) when is_integer(id), do: "id:#{id}"
+  defp describe_term(other), do: inspect(other)
+
+  @doc """
   Enumerates join orderings and returns the optimal execution plan.
 
   ## Arguments

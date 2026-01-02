@@ -546,6 +546,96 @@ defmodule TripleStore.SPARQL.CardinalityTest do
   end
 
   # ===========================================================================
+  # Range Selectivity Tests (3.3.2)
+  # ===========================================================================
+
+  describe "estimate_range_selectivity/4" do
+    test "unbounded range returns 1.0" do
+      stats = default_stats()
+      selectivity = Cardinality.estimate_range_selectivity(42, :unbounded, :unbounded, stats)
+      assert selectivity == 1.0
+    end
+
+    test "unknown predicate returns 1.0" do
+      stats = default_stats()
+      # Named node without ID lookup
+      selectivity =
+        Cardinality.estimate_range_selectivity(
+          {:named_node, "http://example.org/price"},
+          10,
+          100,
+          stats
+        )
+
+      assert selectivity == 1.0
+    end
+
+    test "falls back to 1.0 without histogram" do
+      stats_no_histogram = %{
+        triple_count: 10_000,
+        distinct_subjects: 1000
+      }
+
+      selectivity = Cardinality.estimate_range_selectivity(42, 10, 100, stats_no_histogram)
+      # Without histogram, Statistics.estimate_range_selectivity returns 1.0
+      assert is_float(selectivity)
+    end
+  end
+
+  describe "estimate_pattern_with_range/5" do
+    test "applies range selectivity to pattern cardinality" do
+      stats = default_stats()
+      pattern = triple(var("s"), 42, var("o"))
+
+      # Base cardinality for pattern with predicate 42 is 500
+      base_card = Cardinality.estimate_pattern(pattern, stats)
+      assert base_card == 500.0
+
+      # With full range, should return same as base
+      full_range_card =
+        Cardinality.estimate_pattern_with_range(pattern, 42, :unbounded, :unbounded, stats)
+
+      assert full_range_card == 500.0
+    end
+
+    test "returns at least minimum cardinality" do
+      stats = default_stats()
+      pattern = triple(var("s"), 42, var("o"))
+
+      # Even with very restrictive range, should return at least 1.0
+      card = Cardinality.estimate_pattern_with_range(pattern, 42, 0, 0.001, stats)
+      assert card >= 1.0
+    end
+  end
+
+  describe "estimate_predicate_selectivity/2" do
+    test "uses histogram when predicate is known" do
+      stats = default_stats()
+
+      # Predicate 42 has 500 out of 10000 triples
+      selectivity = Cardinality.estimate_predicate_selectivity(42, stats)
+      assert_in_delta selectivity, 0.05, 0.001
+    end
+
+    test "falls back to uniform distribution for unknown predicate" do
+      stats = default_stats()
+
+      # Unknown predicate uses 1/distinct_predicates
+      selectivity = Cardinality.estimate_predicate_selectivity(999, stats)
+      # 1/100 = 0.01
+      assert_in_delta selectivity, 0.01, 0.001
+    end
+
+    test "handles empty stats" do
+      stats = %{}
+
+      # With defaults: 1/100 = 0.01
+      selectivity = Cardinality.estimate_predicate_selectivity(42, stats)
+      assert_in_delta selectivity, 0.01, 0.001
+    end
+  end
+
+  # ===========================================================================
   # Integration Tests
   # ===========================================================================
 

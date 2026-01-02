@@ -533,6 +533,132 @@ defmodule TripleStore.SPARQL.CostModelTest do
   end
 
   # ===========================================================================
+  # Configuration and Explain Tests (3.3.1)
+  # ===========================================================================
+
+  describe "default_weights/0" do
+    test "returns map with all weight keys" do
+      weights = CostModel.default_weights()
+
+      assert is_map(weights)
+      assert Map.has_key?(weights, :comparison_cost)
+      assert Map.has_key?(weights, :hash_cost)
+      assert Map.has_key?(weights, :index_seek_cost)
+      assert Map.has_key?(weights, :memory_weight)
+      assert Map.has_key?(weights, :hash_join_threshold)
+    end
+  end
+
+  describe "with_weights/2" do
+    test "applies custom weights to cost calculation" do
+      custom_weights = %{hash_cost: 10.0}
+
+      result =
+        CostModel.with_weights(custom_weights, fn weights ->
+          # Hash cost should be 10.0, not default 2.0
+          assert weights.hash_cost == 10.0
+          CostModel.hash_join_cost(100, 50)
+        end)
+
+      assert is_map(result)
+    end
+
+    test "merges custom weights with defaults" do
+      custom_weights = %{hash_cost: 5.0}
+
+      CostModel.with_weights(custom_weights, fn weights ->
+        # Custom weight applied
+        assert weights.hash_cost == 5.0
+        # Default weights still present
+        assert weights.comparison_cost == 1.0
+        assert weights.index_seek_cost == 10.0
+        %{cpu: 0.0, io: 0.0, memory: 0.0, total: 0.0}
+      end)
+    end
+  end
+
+  describe "explain_cost/2" do
+    test "returns cost with operation and breakdown" do
+      cost = CostModel.hash_join_cost(1000, 500)
+      explained = CostModel.explain_cost(cost, "Hash join P1 ⋈ P2")
+
+      assert explained.operation == "Hash join P1 ⋈ P2"
+      assert is_binary(explained.breakdown)
+      assert String.contains?(explained.breakdown, "CPU:")
+      assert String.contains?(explained.breakdown, "I/O:")
+      assert String.contains?(explained.breakdown, "Memory:")
+    end
+
+    test "preserves original cost components" do
+      cost = CostModel.nested_loop_cost(100, 50)
+      explained = CostModel.explain_cost(cost, "Test operation")
+
+      assert explained.cpu == cost.cpu
+      assert explained.io == cost.io
+      assert explained.memory == cost.memory
+      assert explained.total == cost.total
+    end
+  end
+
+  describe "filter_cost/2" do
+    test "returns cost based on input cardinality" do
+      cost = CostModel.filter_cost(1000, 0.5)
+
+      assert cost.cpu > 0
+      assert cost.io == 0.0
+      assert cost.total > 0
+    end
+
+    test "selectivity affects memory (output size)" do
+      high_selectivity = CostModel.filter_cost(1000, 0.1)
+      low_selectivity = CostModel.filter_cost(1000, 0.9)
+
+      # Lower selectivity (more output) = more memory
+      assert low_selectivity.memory > high_selectivity.memory
+    end
+  end
+
+  describe "range_filter_cost/5" do
+    test "uses histogram data for selectivity" do
+      # Create stats with numeric histogram in the correct format
+      stats_with_histogram = %{
+        triple_count: 10_000,
+        distinct_subjects: 1000,
+        distinct_predicates: 100,
+        distinct_objects: 2000,
+        numeric_histograms: %{
+          42 => %{
+            min: 0,
+            max: 100,
+            bucket_count: 10,
+            bucket_width: 10,
+            buckets: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+            total_count: 1000
+          }
+        }
+      }
+
+      # Range filter from 20 to 40 (should be about 20% selectivity)
+      cost = CostModel.range_filter_cost(1000, 42, 20, 40, stats_with_histogram)
+
+      assert cost.cpu > 0
+      assert cost.total > 0
+    end
+
+    test "falls back to full selectivity without histogram" do
+      stats_no_histogram = %{
+        triple_count: 10_000,
+        distinct_subjects: 1000
+      }
+
+      # Without histogram, selectivity is 1.0
+      cost = CostModel.range_filter_cost(1000, 99, 10, 50, stats_no_histogram)
+
+      assert cost.cpu > 0
+    end
+  end
+
+  # ===========================================================================
   # Integration Scenario Tests
   # ===========================================================================
 

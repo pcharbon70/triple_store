@@ -619,6 +619,87 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
   end
 
   # ===========================================================================
+  # Explain Plan Tests (3.3.3)
+  # ===========================================================================
+
+  describe "explain_plan/1" do
+    test "returns explanation for single pattern scan" do
+      pattern = {:triple, var("s"), 1, var("o")}
+      {:ok, plan} = JoinEnumeration.enumerate([pattern], @small_stats)
+
+      explanation = JoinEnumeration.explain_plan(plan)
+
+      assert explanation.plan_type == :scan
+      assert is_number(explanation.estimated_cost)
+      assert is_number(explanation.estimated_cardinality)
+      assert is_map(explanation.cost_breakdown)
+      assert is_binary(explanation.tree_description)
+      assert String.contains?(explanation.tree_description, "Scan")
+    end
+
+    test "returns explanation for join plan" do
+      patterns = [
+        {:triple, var("x"), 1, var("y")},
+        {:triple, var("y"), 2, var("z")}
+      ]
+      {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
+
+      explanation = JoinEnumeration.explain_plan(plan)
+
+      assert explanation.plan_type == :left_deep
+      assert explanation.estimated_cost > 0
+      assert explanation.estimated_cardinality > 0
+      # Tree description should contain join strategy
+      assert String.contains?(explanation.tree_description, "Scan") or
+               String.contains?(explanation.tree_description, "join")
+    end
+
+    test "includes cost breakdown with operation" do
+      patterns = [
+        {:triple, var("x"), 1, var("y")},
+        {:triple, var("y"), 2, var("z")}
+      ]
+      {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
+
+      explanation = JoinEnumeration.explain_plan(plan)
+
+      assert Map.has_key?(explanation.cost_breakdown, :operation)
+      assert Map.has_key?(explanation.cost_breakdown, :breakdown)
+      assert String.contains?(explanation.cost_breakdown.breakdown, "CPU:")
+    end
+
+    test "handles leapfrog plan" do
+      # Create patterns that might use leapfrog
+      patterns =
+        for i <- 1..5 do
+          {:triple, var("center"), i, var("leaf#{i}")}
+        end
+
+      {:ok, plan} = JoinEnumeration.enumerate(patterns, @medium_stats)
+      explanation = JoinEnumeration.explain_plan(plan)
+
+      case plan.tree do
+        {:leapfrog, _, _} ->
+          assert explanation.plan_type == :leapfrog
+          assert String.contains?(explanation.tree_description, "Leapfrog")
+
+        {:join, _, _, _, _} ->
+          assert explanation.plan_type == :left_deep
+      end
+    end
+
+    test "tree description includes pattern info for scan" do
+      pattern = {:triple, var("x"), 42, var("y")}
+      {:ok, plan} = JoinEnumeration.enumerate([pattern], @small_stats)
+
+      explanation = JoinEnumeration.explain_plan(plan)
+
+      assert String.contains?(explanation.tree_description, "?x")
+      assert String.contains?(explanation.tree_description, "?y")
+    end
+  end
+
+  # ===========================================================================
   # Shared Variables Between Sets Tests
   # ===========================================================================
 
