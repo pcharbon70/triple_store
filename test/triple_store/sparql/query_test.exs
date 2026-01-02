@@ -1413,6 +1413,101 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) >= 0
       cleanup({db, manager})
     end
+
+    test "BIND with constant IRI is pushed down", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      # Add data for Alice
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/name"), literal("Alice")}
+      )
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
+
+      # Add data for Bob (should not appear in results)
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Bob"), iri("http://ex.org/name"), literal("Bob")}
+      )
+
+      # Attach telemetry handler to verify push-down
+      test_pid = self()
+      handler_id = "test-bind-pushdown-#{:erlang.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :sparql, :query, :bind_pushdown],
+        fn _event, measurements, metadata, _ ->
+          send(test_pid, {:bind_pushdown, measurements, metadata})
+        end,
+        nil
+      )
+
+      # BIND with constant IRI should be pushed down
+      {:ok, results} =
+        Query.query(
+          ctx,
+          """
+          SELECT ?product ?name ?age WHERE {
+            BIND(<http://ex.org/Alice> AS ?product)
+            ?product <http://ex.org/name> ?name .
+            ?product <http://ex.org/age> ?age .
+          }
+          """
+        )
+
+      :telemetry.detach(handler_id)
+
+      # Should get Alice's data
+      assert length(results) == 1
+      [result] = results
+      assert result["name"] == {:literal, :simple, "Alice"}
+      assert result["age"] == {:literal, :simple, "30"}
+      assert result["product"] == {:named_node, "http://ex.org/Alice"}
+
+      # Verify telemetry was emitted for BIND push-down
+      assert_receive {:bind_pushdown, %{count: 1}, %{variable: "product"}}, 1000
+
+      cleanup({db, manager})
+    end
+
+    test "BIND with variable expression is not pushed down", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      add_triple(
+        db,
+        manager,
+        {iri("http://ex.org/Alice"), iri("http://ex.org/age"), literal("30")}
+      )
+
+      # BIND with variable expression should not be pushed down
+      {:ok, results} =
+        Query.query(
+          ctx,
+          """
+          SELECT ?s ?age ?copy WHERE {
+            ?s <http://ex.org/age> ?age .
+            BIND(?age AS ?copy)
+          }
+          """
+        )
+
+      assert length(results) == 1
+      [result] = results
+      assert result["age"] == {:literal, :simple, "30"}
+      assert result["copy"] == {:literal, :simple, "30"}
+
+      cleanup({db, manager})
+    end
   end
 
   # ===========================================================================

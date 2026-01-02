@@ -1027,16 +1027,25 @@ defmodule TripleStore.SPARQL.Query do
         end
 
       {:extend, inner, {:variable, var_name}, expr} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          extended =
-            Stream.map(stream, fn binding ->
-              case Expression.evaluate(expr, binding) do
-                {:ok, value} -> Map.put(binding, var_name, value)
-                :error -> binding
-              end
-            end)
+        # BIND push-down optimization: if the expression is a constant,
+        # pre-bind it before executing inner patterns for efficient lookups
+        case try_constant_bind_pushdown(ctx, inner, var_name, expr, depth) do
+          {:ok, _} = result ->
+            result
 
-          {:ok, extended}
+          :not_constant ->
+            # Non-constant expression: execute inner first, then extend bindings
+            with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
+              extended =
+                Stream.map(stream, fn binding ->
+                  case Expression.evaluate(expr, binding) do
+                    {:ok, value} -> Map.put(binding, var_name, value)
+                    :error -> binding
+                  end
+                end)
+
+              {:ok, extended}
+            end
         end
 
       {:group, inner, group_vars, aggregates} ->
@@ -1300,4 +1309,87 @@ defmodule TripleStore.SPARQL.Query do
   defp result_status({:ok, _}), do: :ok
   defp result_status({:error, :timeout}), do: :timeout
   defp result_status({:error, _}), do: :error
+
+  # ===========================================================================
+  # BIND Push-Down Optimization
+  # ===========================================================================
+
+  # Attempts to push down a constant BIND expression.
+  # When BIND has a constant value (like an IRI), we pre-bind it before
+  # executing inner patterns, enabling efficient point lookups.
+  #
+  # Returns {:ok, stream} if push-down succeeded, :not_constant if expression
+  # is not a constant and needs standard execution.
+  defp try_constant_bind_pushdown(ctx, inner, var_name, expr, depth) do
+    case extract_constant_value(expr) do
+      {:ok, constant_value} ->
+        # Emit telemetry for BIND push-down
+        :telemetry.execute(
+          [:triple_store, :sparql, :query, :bind_pushdown],
+          %{count: 1},
+          %{variable: var_name}
+        )
+
+        # Execute inner pattern with pre-bound variable
+        execute_with_initial_binding(ctx, inner, var_name, constant_value, depth)
+
+      :not_constant ->
+        :not_constant
+    end
+  end
+
+  # Extract a constant value from an expression if it's a constant term.
+  # Constants include: named nodes (IRIs), blank nodes, and literals.
+  defp extract_constant_value({:named_node, _} = term), do: {:ok, term}
+  defp extract_constant_value({:blank_node, _} = term), do: {:ok, term}
+  defp extract_constant_value({:literal, _, _} = term), do: {:ok, term}
+  defp extract_constant_value({:literal, _, _, _} = term), do: {:ok, term}
+  defp extract_constant_value(_), do: :not_constant
+
+  # Execute a pattern with an initial binding already set.
+  # This passes the pre-bound variable into BGP execution.
+  defp execute_with_initial_binding(ctx, {:bgp, patterns}, var_name, value, _depth) do
+    # For BGP, pass the initial binding directly
+    initial_binding = %{var_name => value}
+    Executor.execute_bgp(ctx, patterns, initial_binding)
+  end
+
+  defp execute_with_initial_binding(ctx, {:join, left, right}, var_name, value, depth) do
+    # For joins, pass the initial binding to both sides
+    initial_binding = %{var_name => value}
+
+    # Execute left with initial binding if it's a BGP, otherwise recurse
+    with {:ok, left_stream} <- execute_with_initial_binding_or_default(ctx, left, initial_binding, depth),
+         {:ok, right_stream} <- execute_with_initial_binding_or_default(ctx, right, initial_binding, depth) do
+      {:ok, Executor.hash_join(left_stream, right_stream)}
+    end
+  end
+
+  defp execute_with_initial_binding(ctx, {:filter, expr, inner_pattern}, var_name, value, depth) do
+    # For filters, push the binding through and apply filter
+    with {:ok, stream} <- execute_with_initial_binding(ctx, inner_pattern, var_name, value, depth) do
+      {:ok, Executor.filter(stream, expr)}
+    end
+  end
+
+  defp execute_with_initial_binding(ctx, inner, var_name, value, depth) do
+    # Default case: execute normally and map the binding
+    with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
+      extended = Stream.map(stream, fn binding -> Map.put(binding, var_name, value) end)
+      {:ok, extended}
+    end
+  end
+
+  # Helper to execute with initial binding or use default execution
+  defp execute_with_initial_binding_or_default(ctx, {:bgp, patterns}, initial_binding, _depth) do
+    Executor.execute_bgp(ctx, patterns, initial_binding)
+  end
+
+  defp execute_with_initial_binding_or_default(ctx, pattern, initial_binding, depth) do
+    # For non-BGP patterns, execute normally and merge the initial binding
+    with {:ok, stream} <- execute_pattern(ctx, pattern, depth + 1) do
+      merged = Stream.map(stream, fn binding -> Map.merge(initial_binding, binding) end)
+      {:ok, merged}
+    end
+  end
 end

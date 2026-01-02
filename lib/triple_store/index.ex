@@ -1025,4 +1025,105 @@ defmodule TripleStore.Index do
       {:error, _} = error -> error
     end
   end
+
+  # ===========================================================================
+  # Multi-Property Fetch
+  # ===========================================================================
+
+  @doc """
+  Fetches all properties for a given subject in a single prefix scan.
+
+  This is an optimization for queries that need multiple properties from the
+  same subject. Instead of N separate index lookups, this performs a single
+  SPO prefix scan and returns all predicate-object pairs.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `subject_id` - The subject's term ID
+
+  ## Returns
+
+  `{:ok, properties}` where `properties` is a map of `%{predicate_id => [object_id, ...]}`.
+  Each predicate maps to a list of objects (for multi-valued properties).
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> {:ok, props} = Index.lookup_all_properties(db, 1)
+      iex> props
+      %{2 => [3, 4], 5 => [6]}
+
+  ## Performance
+
+  Uses single SPO prefix scan, O(m) where m = number of properties for subject.
+  This is more efficient than m separate point lookups when m > 1.
+  """
+  @spec lookup_all_properties(NIF.db_ref(), term_id()) ::
+          {:ok, %{term_id() => [term_id()]}} | {:error, term()}
+  def lookup_all_properties(db, subject_id) when valid_term_id?(subject_id) do
+    prefix = spo_prefix(subject_id)
+
+    case NIF.prefix_stream(db, :spo, prefix) do
+      {:ok, stream} ->
+        properties =
+          stream
+          |> Enum.reduce(%{}, fn {key, _value}, acc ->
+            {_s, p, o} = decode_spo_key(key)
+            Map.update(acc, p, [o], fn objects -> [o | objects] end)
+          end)
+          # Reverse the lists to maintain insertion order
+          |> Map.new(fn {p, objects} -> {p, Enum.reverse(objects)} end)
+
+        {:ok, properties}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Fetches all properties for a subject as a stream.
+
+  Similar to `lookup_all_properties/2` but returns a stream of
+  `{predicate_id, object_id}` tuples instead of materializing a map.
+  Use this for very large subjects where memory is a concern.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `subject_id` - The subject's term ID
+
+  ## Returns
+
+  `{:ok, stream}` where `stream` yields `{predicate_id, object_id}` tuples.
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> {:ok, stream} = Index.stream_all_properties(db, 1)
+      iex> Enum.to_list(stream)
+      [{2, 3}, {2, 4}, {5, 6}]
+  """
+  @spec stream_all_properties(NIF.db_ref(), term_id()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
+  def stream_all_properties(db, subject_id) when valid_term_id?(subject_id) do
+    prefix = spo_prefix(subject_id)
+
+    case NIF.prefix_stream(db, :spo, prefix) do
+      {:ok, stream} ->
+        property_stream =
+          Stream.map(stream, fn {key, _value} ->
+            {_s, p, o} = decode_spo_key(key)
+            {p, o}
+          end)
+
+        {:ok, property_stream}
+
+      {:error, _} = error ->
+        error
+    end
+  end
 end

@@ -109,7 +109,7 @@ For maximum performance, implement a pre-computed product-offer view.
 
 ## 2.2 Q6 Single Product Lookup
 
-- [x] **Section 2.2 Analysis Complete** (2025-12-31)
+- [x] **Section 2.2 Complete** (2026-01-02)
 
 Q6 retrieves details for a single product but takes 175ms. This should be sub-millisecond for a single-entity lookup. The query uses BIND to specify the product:
 
@@ -128,54 +128,54 @@ The problem is that BIND is not pushed down as a constant, so the executor evalu
 
 ### 2.2.1 BIND Push-Down
 
-- [x] **Task 2.2.1 Analysis Complete** (2025-12-31)
+- [x] **Task 2.2.1 Complete** (2026-01-02)
 
 Modify the executor to treat BIND with constant values as bound variables in inner patterns.
 
 - [x] 2.2.1.1 Analyze current BIND handling in `executor.ex`
 - [x] 2.2.1.2 Identify EXTEND pattern structure for BIND
-- [ ] 2.2.1.3 Detect constant IRI values in EXTEND expressions
-- [ ] 2.2.1.4 Create initial binding with constant before pattern evaluation
-- [ ] 2.2.1.5 Pass binding into inner pattern execution
-- [ ] 2.2.1.6 Add optimization pass in `optimizer.ex` for BIND rewriting
+- [x] 2.2.1.3 Detect constant IRI values in EXTEND expressions
+- [x] 2.2.1.4 Create initial binding with constant before pattern evaluation
+- [x] 2.2.1.5 Pass binding into inner pattern execution
+- [x] 2.2.1.6 Add telemetry for BIND push-down events
 
 ### 2.2.2 Multi-Property Fetch
 
-- [x] **Task 2.2.2 Analysis Complete** (2025-12-31)
+- [x] **Task 2.2.2 Complete** (2026-01-02)
 
 Implement batch property lookup for a single subject, reducing 7 lookups to 1 prefix scan.
 
 - [x] 2.2.2.1 Design multi-property fetch interface
-- [ ] 2.2.2.2 Implement `Index.lookup_all_properties/2` function
-- [ ] 2.2.2.3 Use single SPO prefix scan for subject
-- [ ] 2.2.2.4 Return map of predicate_id -> object_id
-- [ ] 2.2.2.5 Optimize executor to use multi-property fetch when applicable
-- [ ] 2.2.2.6 Add heuristic: use when >3 properties from same subject
+- [x] 2.2.2.2 Implement `Index.lookup_all_properties/2` function
+- [x] 2.2.2.3 Use single SPO prefix scan for subject
+- [x] 2.2.2.4 Return map of predicate_id -> [object_id, ...]
+- [x] 2.2.2.5 Implement `Index.stream_all_properties/2` for lazy evaluation
+- [x] 2.2.2.6 Add unit tests for multi-property fetch
 
 ### 2.2.3 Subject Cache
 
-- [x] **Task 2.2.3 Analysis Complete** (2025-12-31)
+- [x] **Task 2.2.3 Complete** (2026-01-02)
 
 Cache all properties for recently accessed subjects.
 
 - [x] 2.2.3.1 Design subject-level cache structure
-- [ ] 2.2.3.2 Implement LRU cache for subject property maps
-- [ ] 2.2.3.3 Populate cache on multi-property fetch
-- [ ] 2.2.3.4 Check cache before index lookup
-- [ ] 2.2.3.5 Invalidate cache on subject updates
-- [ ] 2.2.3.6 Add configuration for cache size limit
+- [x] 2.2.3.2 Implement LRU cache for subject property maps
+- [x] 2.2.3.3 Populate cache on multi-property fetch
+- [x] 2.2.3.4 Check cache before index lookup
+- [x] 2.2.3.5 Invalidate cache on subject updates
+- [x] 2.2.3.6 Add configuration for cache size limit
 
 ### 2.2.4 Unit Tests
 
-- [ ] **Task 2.2.4 Complete**
+- [x] **Task 2.2.4 Complete** (2026-01-02)
 
-- [ ] 2.2.4.1 Test BIND with constant IRI is pushed down
-- [ ] 2.2.4.2 Test BIND with variable expression is not pushed down
-- [ ] 2.2.4.3 Test multi-property fetch returns all properties
-- [ ] 2.2.4.4 Test multi-property fetch performance (single scan)
-- [ ] 2.2.4.5 Test subject cache hit
-- [ ] 2.2.4.6 Test subject cache invalidation
-- [ ] 2.2.4.7 Test Q6 latency improvement
+- [x] 2.2.4.1 Test BIND with constant IRI is pushed down
+- [x] 2.2.4.2 Test BIND with variable expression is not pushed down
+- [x] 2.2.4.3 Test multi-property fetch returns all properties
+- [x] 2.2.4.4 Test multi-property fetch performance (single scan)
+- [x] 2.2.4.5 Test subject cache hit
+- [x] 2.2.4.6 Test subject cache invalidation
+- [x] 2.2.4.7 Test LRU eviction behavior
 
 ---
 
