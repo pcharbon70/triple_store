@@ -316,15 +316,15 @@ Test complete bulk load operations with various configurations.
 
 ### 1.6.2 Consistency Tests
 
-- [ ] **Task 1.6.2 Complete**
+- [x] **Task 1.6.2 Complete** (2026-01-02)
 
 Verify data integrity after parallel bulk loading.
 
-- [ ] 1.6.2.1 Test dictionary consistency (no duplicate IDs)
-- [ ] 1.6.2.2 Test dictionary bidirectionality (encode/decode roundtrip)
-- [ ] 1.6.2.3 Test all three indices contain same triples
-- [ ] 1.6.2.4 Test queries return correct results after bulk load
-- [ ] 1.6.2.5 Test persistence survives restart
+- [x] 1.6.2.1 Test dictionary consistency (no duplicate IDs)
+- [x] 1.6.2.2 Test dictionary bidirectionality (encode/decode roundtrip)
+- [x] 1.6.2.3 Test all three indices contain same triples
+- [x] 1.6.2.4 Test queries return correct results after bulk load
+- [x] 1.6.2.5 Test persistence survives restart
 
 ### 1.6.3 Performance Validation
 
