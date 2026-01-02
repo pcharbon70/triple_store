@@ -303,16 +303,16 @@ End-to-end integration tests verifying bulk load pipeline functionality.
 
 ### 1.6.1 Load Pipeline Tests
 
-- [ ] **Task 1.6.1 Complete**
+- [x] **Task 1.6.1 Complete** (2026-01-02)
 
 Test complete bulk load operations with various configurations.
 
-- [ ] 1.6.1.1 Test parallel loading with 100K synthetic triples
-- [ ] 1.6.1.2 Test parallel loading with LUBM dataset
-- [ ] 1.6.1.3 Test parallel loading with BSBM dataset
-- [ ] 1.6.1.4 Test error handling and recovery
-- [ ] 1.6.1.5 Test memory usage stays bounded
-- [ ] 1.6.1.6 Test CPU utilization across cores
+- [x] 1.6.1.1 Test parallel loading with 100K synthetic triples
+- [x] 1.6.1.2 Test parallel loading with LUBM dataset
+- [x] 1.6.1.3 Test parallel loading with BSBM dataset
+- [x] 1.6.1.4 Test error handling and recovery
+- [x] 1.6.1.5 Test memory usage stays bounded
+- [x] 1.6.1.6 Test CPU utilization across cores
 
 ### 1.6.2 Consistency Tests
 
