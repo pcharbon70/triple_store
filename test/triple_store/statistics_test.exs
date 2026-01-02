@@ -1,6 +1,6 @@
 defmodule TripleStore.StatisticsTest do
   @moduledoc """
-  Tests for Task 1.6.1: Triple Counts.
+  Tests for Statistics Collection (Phase 3.1).
 
   Verifies:
   - triple_count/1 returns accurate count
@@ -9,9 +9,17 @@ defmodule TripleStore.StatisticsTest do
   - distinct_predicates/1 returns accurate distinct count
   - distinct_objects/1 returns accurate distinct count
   - all/1 returns all statistics
+  - collect/1 returns comprehensive statistics with histograms
+  - build_predicate_histogram/1 builds accurate predicate histogram
+  - build_numeric_histogram/3 builds accurate numeric histograms
+  - estimate_range_selectivity/4 estimates range selectivity
+  - save/2 and load/1 persist and reload statistics
+  - get/1 returns cached or fresh statistics
   """
 
   use ExUnit.Case, async: false
+
+  import Bitwise
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.Manager
@@ -288,6 +296,349 @@ defmodule TripleStore.StatisticsTest do
       assert stats.distinct_predicates == 5
       # All unique
       assert stats.distinct_objects == 100
+    end
+  end
+
+  # ===========================================================================
+  # collect/1 Tests (Phase 3.1)
+  # ===========================================================================
+
+  describe "collect/1" do
+    test "returns complete statistics for empty store", %{db: db} do
+      {:ok, stats} = Statistics.collect(db)
+
+      assert stats.triple_count == 0
+      assert stats.distinct_subjects == 0
+      assert stats.distinct_predicates == 0
+      assert stats.distinct_objects == 0
+      assert stats.predicate_histogram == %{}
+      assert stats.numeric_histograms == %{}
+      assert stats.version == 1
+      assert %DateTime{} = stats.collected_at
+    end
+
+    test "returns complete statistics with data", %{db: db} do
+      triples = [
+        {1000, 100, 2000},
+        {1000, 101, 2001},
+        {1001, 100, 2000},
+        {1001, 102, 2002},
+        {1002, 100, 2001}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, stats} = Statistics.collect(db)
+
+      assert stats.triple_count == 5
+      assert stats.distinct_subjects == 3
+      assert stats.distinct_predicates == 3
+      assert stats.distinct_objects == 3
+
+      # Predicate histogram should have accurate counts
+      assert stats.predicate_histogram[100] == 3
+      assert stats.predicate_histogram[101] == 1
+      assert stats.predicate_histogram[102] == 1
+    end
+
+    test "respects build_histograms option", %{db: db} do
+      # Create an inline integer ID (type 4, value 42)
+      int_id = (0b0100 <<< 60) ||| 42
+
+      triples = [
+        {1000, 100, int_id},
+        {1001, 100, int_id}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      # With histograms disabled
+      {:ok, stats} = Statistics.collect(db, build_histograms: false)
+      assert stats.numeric_histograms == %{}
+
+      # With histograms enabled (default)
+      {:ok, stats} = Statistics.collect(db)
+      # Should have a histogram for predicate 100 with numeric objects
+      assert is_map(stats.numeric_histograms)
+    end
+  end
+
+  # ===========================================================================
+  # build_predicate_histogram/1 Tests
+  # ===========================================================================
+
+  describe "build_predicate_histogram/1" do
+    test "returns empty map for empty store", %{db: db} do
+      {:ok, histogram} = Statistics.build_predicate_histogram(db)
+      assert histogram == %{}
+    end
+
+    test "returns accurate counts per predicate", %{db: db} do
+      triples = [
+        {1000, 100, 2000},
+        {1001, 100, 2001},
+        {1002, 100, 2002},
+        {1003, 200, 2003},
+        {1004, 200, 2004},
+        {1005, 300, 2005}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_predicate_histogram(db)
+
+      assert histogram[100] == 3
+      assert histogram[200] == 2
+      assert histogram[300] == 1
+      assert map_size(histogram) == 3
+    end
+  end
+
+  # ===========================================================================
+  # build_numeric_histogram/3 Tests
+  # ===========================================================================
+
+  describe "build_numeric_histogram/3" do
+    test "returns nil for predicate with no numeric values", %{db: db} do
+      # Non-numeric object (URI type)
+      uri_id = (0b0001 <<< 60) ||| 42
+
+      triples = [
+        {1000, 100, uri_id},
+        {1001, 100, uri_id}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, result} = Statistics.build_numeric_histogram(db, 100)
+      assert result == nil
+    end
+
+    test "builds histogram for integer values", %{db: db} do
+      # Create inline integer IDs (type 4)
+      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+
+      triples =
+        for i <- 1..100 do
+          {1000 + i, 100, make_int_id.(i)}
+        end
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 100, 10)
+
+      assert histogram != nil
+      assert histogram.min == 1.0
+      assert histogram.max == 100.0
+      assert histogram.bucket_count == 10
+      assert histogram.total_count == 100
+      assert length(histogram.buckets) == 10
+      assert Enum.sum(histogram.buckets) == 100
+    end
+
+    test "handles single value", %{db: db} do
+      int_id = (0b0100 <<< 60) ||| 42
+
+      :ok = Index.insert_triple(db, {1000, 100, int_id})
+
+      {:ok, histogram} = Statistics.build_numeric_histogram(db, 100, 10)
+
+      assert histogram != nil
+      assert histogram.total_count == 1
+    end
+  end
+
+  # ===========================================================================
+  # estimate_range_selectivity/4 Tests
+  # ===========================================================================
+
+  describe "estimate_range_selectivity/4" do
+    test "returns 1.0 when no histogram available" do
+      stats = %{numeric_histograms: %{}}
+
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 100.0)
+      assert selectivity == 1.0
+    end
+
+    test "estimates selectivity from histogram" do
+      # Create a histogram with uniform distribution
+      histogram = %{
+        min: 0.0,
+        max: 100.0,
+        bucket_count: 10,
+        buckets: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+        total_count: 100
+      }
+
+      stats = %{numeric_histograms: %{100 => histogram}}
+
+      # Full range should have selectivity ~1.0
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 100.0)
+      assert_in_delta selectivity, 1.0, 0.01
+
+      # Half range should have selectivity ~0.5
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 50.0)
+      assert_in_delta selectivity, 0.5, 0.1
+
+      # Small range should have low selectivity
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 10.0)
+      assert selectivity < 0.2
+    end
+
+    test "handles range outside histogram bounds" do
+      histogram = %{
+        min: 10.0,
+        max: 90.0,
+        bucket_count: 10,
+        buckets: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+        total_count: 100
+      }
+
+      stats = %{numeric_histograms: %{100 => histogram}}
+
+      # Range completely outside histogram
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 5.0)
+      assert selectivity == 0.0
+
+      # Range partially overlapping
+      selectivity = Statistics.estimate_range_selectivity(stats, 100, 0.0, 50.0)
+      assert selectivity > 0.0 and selectivity < 1.0
+    end
+  end
+
+  # ===========================================================================
+  # save/2 and load/1 Tests
+  # ===========================================================================
+
+  describe "save/2 and load/1" do
+    test "persists and reloads statistics", %{db: db} do
+      triples = [
+        {1000, 100, 2000},
+        {1001, 101, 2001}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, stats} = Statistics.collect(db)
+      :ok = Statistics.save(db, stats)
+
+      {:ok, loaded} = Statistics.load(db)
+
+      assert loaded.triple_count == stats.triple_count
+      assert loaded.distinct_subjects == stats.distinct_subjects
+      assert loaded.predicate_histogram == stats.predicate_histogram
+    end
+
+    test "load returns nil when nothing saved", %{db: db} do
+      {:ok, nil} = Statistics.load(db)
+    end
+
+    @tag :skip_db_close
+    test "statistics persist across simulated restart" do
+      # Use a separate path to avoid conflict with setup's db
+      test_path = "/tmp/triple_store_stats_persist_test_#{:erlang.unique_integer([:positive])}"
+      {:ok, db} = NIF.open(test_path)
+
+      triples = [
+        {1000, 100, 2000},
+        {1001, 100, 2001}
+      ]
+
+      :ok = Index.insert_triples(db, triples)
+
+      {:ok, stats} = Statistics.collect(db)
+      :ok = Statistics.save(db, stats)
+
+      # Close the db - need to wait for RocksDB to fully release lock
+      :ok = NIF.close(db)
+
+      # Force garbage collection to ensure resource is released
+      :erlang.garbage_collect()
+      Process.sleep(100)
+
+      {:ok, db2} = NIF.open(test_path)
+
+      {:ok, loaded} = Statistics.load(db2)
+      assert loaded.triple_count == 2
+      assert loaded.predicate_histogram[100] == 2
+
+      NIF.close(db2)
+      :erlang.garbage_collect()
+      Process.sleep(50)
+      File.rm_rf(test_path)
+    end
+  end
+
+  # ===========================================================================
+  # get/1 Tests
+  # ===========================================================================
+
+  describe "get/1" do
+    test "collects and saves when no persisted stats", %{db: db} do
+      triples = [{1000, 100, 2000}]
+      :ok = Index.insert_triples(db, triples)
+
+      # First call should collect and save
+      {:ok, stats} = Statistics.get(db)
+      assert stats.triple_count == 1
+
+      # Should now be persisted
+      {:ok, loaded} = Statistics.load(db)
+      assert loaded.triple_count == 1
+    end
+
+    test "returns persisted stats when available", %{db: db} do
+      # Manually save stats
+      stats = %{
+        triple_count: 999,
+        distinct_subjects: 100,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      :ok = Statistics.save(db, stats)
+
+      # Should return saved stats (not actual)
+      {:ok, loaded} = Statistics.get(db)
+      assert loaded.triple_count == 999
+    end
+  end
+
+  # ===========================================================================
+  # refresh/1 Tests
+  # ===========================================================================
+
+  describe "refresh/1" do
+    test "collects fresh statistics and saves", %{db: db} do
+      # Save old stats
+      old_stats = %{
+        triple_count: 0,
+        distinct_subjects: 0,
+        distinct_predicates: 0,
+        distinct_objects: 0,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      :ok = Statistics.save(db, old_stats)
+
+      # Add data
+      triples = [{1000, 100, 2000}, {1001, 100, 2001}]
+      :ok = Index.insert_triples(db, triples)
+
+      # Refresh should update
+      {:ok, stats} = Statistics.refresh(db)
+      assert stats.triple_count == 2
+
+      # Should be persisted
+      {:ok, loaded} = Statistics.load(db)
+      assert loaded.triple_count == 2
     end
   end
 end
