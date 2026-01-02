@@ -300,8 +300,12 @@ defmodule TripleStore.SPARQL.Executor do
 
         binding_stream =
           Stream.flat_map(range_results, fn {subject_id, float_value} ->
-            # Create a typed literal for the float value
-            # Use xsd:double for consistency with other float handling in the codebase
+            # Create a typed literal for the float value.
+            # Note: We use xsd:double as the canonical type for range index results.
+            # The original datatype (integer, decimal, float) is not preserved in the
+            # range index for performance reasons. SPARQL numeric comparisons handle
+            # type promotion correctly, so this works for filter evaluation. If exact
+            # type preservation is needed, disable range index for that predicate.
             value_term =
               {:literal, :typed, Float.to_string(float_value),
                "http://www.w3.org/2001/XMLSchema#double"}

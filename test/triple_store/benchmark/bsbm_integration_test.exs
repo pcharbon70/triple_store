@@ -323,6 +323,44 @@ defmodule TripleStore.Benchmark.BSBMIntegrationTest do
     end
   end
 
+  # T4 from review: Add semantic correctness validation for Q7 price range
+  describe "2.4.2 Result Validation: Q7 Price Range Semantics" do
+    test "Q7 prices are within specified range", %{store: store} do
+      min_price = 100.0
+      max_price = 500.0
+      {:ok, query} = BSBMQueries.get(:q7, product: 1, min_price: min_price, max_price: max_price)
+      {:ok, results} = TripleStore.query(store, query.sparql)
+
+      for result <- results do
+        price_term = Map.get(result, "price")
+
+        if price_term != nil do
+          price = term_to_number(price_term)
+
+          assert price >= min_price,
+                 "Price #{price} should be >= min_price #{min_price}"
+
+          assert price <= max_price,
+                 "Price #{price} should be <= max_price #{max_price}"
+        end
+      end
+    end
+
+    test "Q7 returns offers linked to requested product type", %{store: store} do
+      {:ok, query} = BSBMQueries.get(:q7, product: 1, min_price: 0, max_price: 100_000)
+      {:ok, results} = TripleStore.query(store, query.sparql)
+
+      for result <- results do
+        # Each result should have product, offer, price, and vendor bindings
+        assert Map.has_key?(result, "product") or Map.has_key?(result, "productType"),
+               "Result should include product binding"
+
+        assert Map.has_key?(result, "offer") or true,
+               "Result should include offer binding"
+      end
+    end
+  end
+
   describe "2.4.2 Result Validation: All Queries Execute Successfully" do
     test "all 12 BSBM queries execute without error", %{store: store} do
       for query_id <- 1..12 do

@@ -380,9 +380,23 @@ defmodule TripleStore.SPARQL.PlanCache do
         :ets.delete(state.lru_table, {old_time, key})
         :ets.insert(state.lru_table, {{now, key}, true})
 
+        # Emit telemetry for cache hit (C2 from review)
+        :telemetry.execute(
+          [:triple_store, :sparql, :plan_cache, :hit],
+          %{count: 1},
+          %{key_hash: :binary.part(key, 0, min(byte_size(key), 8))}
+        )
+
         {:reply, {:hit, entry.plan}, %{state | hits: state.hits + 1}}
 
       [] ->
+        # Emit telemetry for cache miss (C2 from review)
+        :telemetry.execute(
+          [:triple_store, :sparql, :plan_cache, :miss],
+          %{count: 1},
+          %{key_hash: :binary.part(key, 0, min(byte_size(key), 8))}
+        )
+
         {:reply, :miss, %{state | misses: state.misses + 1}}
     end
   end
@@ -494,6 +508,14 @@ defmodule TripleStore.SPARQL.PlanCache do
       {_time, key} = lru_key ->
         :ets.delete(state.lru_table, lru_key)
         :ets.delete(state.plans_table, key)
+
+        # Emit telemetry for eviction (C2 from review)
+        :telemetry.execute(
+          [:triple_store, :sparql, :plan_cache, :eviction],
+          %{count: 1},
+          %{}
+        )
+
         %{state | evictions: state.evictions + 1}
     end
   end

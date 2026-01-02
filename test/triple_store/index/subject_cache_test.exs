@@ -357,4 +357,174 @@ defmodule TripleStore.Index.SubjectCacheTest do
       assert stats.max_entries == 100
     end
   end
+
+  # ===========================================================================
+  # Memory Usage Tests (T1 from review)
+  # ===========================================================================
+
+  describe "memory_usage/0" do
+    test "returns estimated memory in bytes", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      initial_memory = SubjectCache.memory_usage()
+      assert is_integer(initial_memory)
+      assert initial_memory >= 0
+
+      # Add some data
+      for subject <- 1..10 do
+        :ok = Index.insert_triple(db, {subject, 10, 100})
+        {:ok, _} = SubjectCache.get_or_fetch(db, subject)
+      end
+
+      final_memory = SubjectCache.memory_usage()
+      assert final_memory > initial_memory
+    end
+  end
+
+  # ===========================================================================
+  # Concurrent Access Tests (T1 from review)
+  # ===========================================================================
+
+  describe "concurrent access" do
+    test "handles concurrent reads safely", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      # Insert test data
+      :ok = Index.insert_triple(db, {1, 10, 100})
+      :ok = Index.insert_triple(db, {1, 20, 200})
+
+      # Prime the cache
+      {:ok, _} = SubjectCache.get_or_fetch(db, 1)
+
+      # Spawn multiple processes to read concurrently
+      tasks =
+        for _i <- 1..50 do
+          Task.async(fn ->
+            {:ok, properties} = SubjectCache.get_or_fetch(db, 1)
+            assert properties[10] == [100]
+            assert properties[20] == [200]
+            :ok
+          end)
+        end
+
+      # All tasks should complete successfully
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+    end
+
+    test "handles concurrent writes safely", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      # Insert data for multiple subjects
+      for subject <- 1..20 do
+        :ok = Index.insert_triple(db, {subject, 10, subject * 100})
+      end
+
+      # Spawn multiple processes to fetch different subjects concurrently
+      tasks =
+        for subject <- 1..20 do
+          Task.async(fn ->
+            {:ok, properties} = SubjectCache.get_or_fetch(db, subject)
+            assert properties[10] == [subject * 100]
+            :ok
+          end)
+        end
+
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+
+      # All subjects should be cached
+      assert SubjectCache.stats().size == 20
+    end
+
+    test "handles concurrent invalidations safely", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      # Insert and cache data
+      for subject <- 1..20 do
+        :ok = Index.insert_triple(db, {subject, 10, subject * 100})
+        {:ok, _} = SubjectCache.get_or_fetch(db, subject)
+      end
+
+      assert SubjectCache.stats().size == 20
+
+      # Spawn processes to invalidate concurrently
+      tasks =
+        for subject <- 1..20 do
+          Task.async(fn ->
+            SubjectCache.invalidate(subject)
+          end)
+        end
+
+      Task.await_many(tasks, 5000)
+
+      # All entries should be invalidated
+      assert SubjectCache.stats().size == 0
+    end
+
+    test "handles mixed concurrent operations safely", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      # Insert data
+      for subject <- 1..50 do
+        :ok = Index.insert_triple(db, {subject, 10, subject * 100})
+      end
+
+      # Spawn processes doing various operations concurrently
+      tasks =
+        for i <- 1..100 do
+          Task.async(fn ->
+            subject = rem(i, 50) + 1
+
+            case rem(i, 4) do
+              0 ->
+                # Read
+                SubjectCache.get(subject)
+
+              1 ->
+                # Fetch
+                SubjectCache.get_or_fetch(db, subject)
+
+              2 ->
+                # Invalidate
+                SubjectCache.invalidate(subject)
+
+              3 ->
+                # Put
+                SubjectCache.put(subject, %{10 => [subject * 100]})
+            end
+
+            :ok
+          end)
+        end
+
+      results = Task.await_many(tasks, 10000)
+      assert Enum.all?(results, &(&1 == :ok))
+    end
+  end
+
+  # ===========================================================================
+  # Memory Bounds Tests (B2 verification)
+  # ===========================================================================
+
+  describe "memory bounds" do
+    test "respects max_memory_bytes configuration", %{tmp_dir: tmp_dir} do
+      db = setup_db(tmp_dir)
+
+      # Configure a very small memory limit (1KB)
+      SubjectCache.configure(max_entries: 1000, max_memory_bytes: 1024)
+
+      # Try to cache many entries with properties
+      for subject <- 1..100 do
+        properties = Map.new(1..10, fn i -> {i, [subject * 100 + i]} end)
+        SubjectCache.put(subject, properties)
+      end
+
+      # Memory should be bounded
+      memory = SubjectCache.memory_usage()
+      # Allow some overhead but should not be unbounded
+      # Note: ETS memory reporting is approximate
+      assert SubjectCache.stats().size < 100
+    end
+  end
 end

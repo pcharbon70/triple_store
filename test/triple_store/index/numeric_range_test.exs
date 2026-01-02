@@ -12,6 +12,12 @@ defmodule TripleStore.Index.NumericRangeTest do
     {:ok, db} = NIF.open(path)
     NumericRange.init()
 
+    # Clear ETS table between tests to prevent test pollution (T2 from review)
+    case :ets.whereis(:numeric_range_predicates) do
+      :undefined -> :ok
+      _table -> :ets.delete_all_objects(:numeric_range_predicates)
+    end
+
     on_exit(fn ->
       NIF.close(db)
       File.rm_rf!(path)
@@ -66,6 +72,93 @@ defmodule TripleStore.Index.NumericRangeTest do
       bytes_float = NumericRange.float_to_sortable_bytes(42.0)
 
       assert bytes_int == bytes_float
+    end
+
+    test "handles negative zero correctly" do
+      # -0.0 and +0.0 should have consistent ordering
+      bytes_neg_zero = NumericRange.float_to_sortable_bytes(-0.0)
+      bytes_pos_zero = NumericRange.float_to_sortable_bytes(0.0)
+      bytes_small_pos = NumericRange.float_to_sortable_bytes(0.001)
+      bytes_small_neg = NumericRange.float_to_sortable_bytes(-0.001)
+
+      # -0.0 should sort the same as or very close to +0.0
+      # Both zeros should be between negative and positive numbers
+      assert bytes_small_neg < bytes_neg_zero
+      assert bytes_small_neg < bytes_pos_zero
+      assert bytes_neg_zero <= bytes_pos_zero
+      assert bytes_pos_zero < bytes_small_pos
+    end
+
+    @tag :skip
+    @tag skip_reason: "Erlang BEAM does not support IEEE 754 special float values"
+    test "handles positive infinity" do
+      # NOTE: Erlang/BEAM does not support IEEE 754 infinity/NaN as native float types.
+      # Binary pattern matching with `<<value::float>>` fails for these special values.
+      # This is a documented BEAM limitation, not a bug in our code.
+      #
+      # For practical use, numeric range index only stores finite values from RDF literals.
+      # Infinity/NaN values would be rejected during XSD numeric parsing before reaching
+      # the range index. The input validation layer handles this, not the index layer.
+      #
+      # Expected behavior if Erlang supported infinity:
+      # - +Infinity should sort after all finite positive values
+      # - The sortable bytes conversion should handle it without crashing
+      assert true
+    end
+
+    @tag :skip
+    @tag skip_reason: "Erlang BEAM does not support IEEE 754 special float values"
+    test "handles negative infinity" do
+      # See "handles positive infinity" test for explanation.
+      # Expected: -Infinity should sort before all finite negative values
+      assert true
+    end
+
+    @tag :skip
+    @tag skip_reason: "Erlang BEAM does not support IEEE 754 special float values"
+    test "NaN handling" do
+      # See "handles positive infinity" test for explanation.
+      # Expected: NaN has undefined comparison (NaN != NaN per IEEE 754)
+      # The sortable bytes should be consistent but sort order is undefined.
+      assert true
+    end
+
+    test "negative zero (-0.0) sorts correctly via arithmetic" do
+      # Erlang normalizes -0.0 to 0.0 in many contexts, but we can test
+      # the general zero handling behavior
+      neg_zero = -1.0 * 0.0  # This may or may not produce IEEE -0.0 in Erlang
+      pos_zero = 0.0
+
+      bytes_neg_zero = NumericRange.float_to_sortable_bytes(neg_zero)
+      bytes_pos_zero = NumericRange.float_to_sortable_bytes(pos_zero)
+
+      # Both zeros should produce valid 8-byte binaries
+      assert is_binary(bytes_neg_zero)
+      assert byte_size(bytes_neg_zero) == 8
+      assert is_binary(bytes_pos_zero)
+      assert byte_size(bytes_pos_zero) == 8
+
+      # Both zeros should sort after negative numbers and before positive numbers
+      bytes_small_neg = NumericRange.float_to_sortable_bytes(-0.001)
+      bytes_small_pos = NumericRange.float_to_sortable_bytes(0.001)
+
+      assert bytes_small_neg < bytes_neg_zero
+      assert bytes_neg_zero <= bytes_pos_zero
+      assert bytes_pos_zero < bytes_small_pos
+    end
+
+    test "extreme finite values sort correctly" do
+      # Test the largest finite values instead of infinity
+      bytes_max = NumericRange.float_to_sortable_bytes(1.7976931348623157e308)
+      bytes_large = NumericRange.float_to_sortable_bytes(1.0e308)
+      bytes_min = NumericRange.float_to_sortable_bytes(-1.7976931348623157e308)
+      bytes_large_neg = NumericRange.float_to_sortable_bytes(-1.0e308)
+
+      # Max finite value should sort after other large positive values
+      assert bytes_large < bytes_max
+
+      # Min finite value should sort before other large negative values
+      assert bytes_min < bytes_large_neg
     end
 
     test "preserves precision for decimal values" do

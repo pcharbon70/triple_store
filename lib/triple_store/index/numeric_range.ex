@@ -122,15 +122,13 @@ defmodule TripleStore.Index.NumericRange do
   Initializes the numeric range index system.
 
   Creates the ETS table for tracking registered predicates. Should be called
-  during application startup.
+  during application startup. Safe to call concurrently - uses atomic table
+  creation to avoid race conditions.
   """
   @spec init() :: :ok
   def init do
-    if :ets.whereis(@range_predicates_table) == :undefined do
-      :ets.new(@range_predicates_table, [:set, :public, :named_table])
-    end
-
-    :ok
+    alias TripleStore.ETSHelper
+    ETSHelper.ensure_table!(@range_predicates_table, [:set, :public, :named_table, read_concurrency: true])
   end
 
   @doc """

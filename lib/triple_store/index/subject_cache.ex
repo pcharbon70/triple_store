@@ -44,6 +44,10 @@ defmodule TripleStore.Index.SubjectCache do
   @lru_table :triple_store_subject_cache_lru
   @config_table :triple_store_subject_cache_config
   @default_max_entries 1000
+  # Default max memory: 100MB
+  @default_max_memory_bytes 100 * 1024 * 1024
+  # Max properties per subject to prevent memory exhaustion
+  @max_properties_per_subject 10_000
 
   # ===========================================================================
   # Types
@@ -60,7 +64,8 @@ defmodule TripleStore.Index.SubjectCache do
   Initializes the subject cache ETS tables.
 
   Creates the cache table for storing property maps and the LRU table
-  for tracking access order. Safe to call multiple times.
+  for tracking access order. Safe to call concurrently - uses atomic table
+  creation to avoid race conditions.
 
   ## Returns
 
@@ -68,18 +73,19 @@ defmodule TripleStore.Index.SubjectCache do
   """
   @spec init() :: :ok
   def init do
-    # Create tables if they don't exist
-    if :ets.whereis(@cache_table) == :undefined do
-      :ets.new(@cache_table, [:set, :public, :named_table, read_concurrency: true])
-    end
+    alias TripleStore.ETSHelper
 
-    if :ets.whereis(@lru_table) == :undefined do
-      :ets.new(@lru_table, [:ordered_set, :public, :named_table])
-    end
+    ETSHelper.ensure_table!(@cache_table, [:set, :public, :named_table, read_concurrency: true])
+    ETSHelper.ensure_table!(@lru_table, [:ordered_set, :public, :named_table])
 
-    if :ets.whereis(@config_table) == :undefined do
-      :ets.new(@config_table, [:set, :public, :named_table])
-      :ets.insert(@config_table, {:max_entries, @default_max_entries})
+    # Config table needs special handling to insert defaults on creation
+    case ETSHelper.ensure_table(@config_table, [:set, :public, :named_table]) do
+      :created ->
+        :ets.insert(@config_table, {:max_entries, @default_max_entries})
+        :ets.insert(@config_table, {:max_memory_bytes, @default_max_memory_bytes})
+
+      :exists ->
+        :ok
     end
 
     :ok
@@ -91,6 +97,7 @@ defmodule TripleStore.Index.SubjectCache do
   ## Options
 
   - `:max_entries` - Maximum number of cached subjects (default: #{@default_max_entries})
+  - `:max_memory_bytes` - Maximum memory in bytes (default: 100MB)
 
   ## Returns
 
@@ -102,6 +109,10 @@ defmodule TripleStore.Index.SubjectCache do
 
     if max_entries = Keyword.get(opts, :max_entries) do
       :ets.insert(@config_table, {:max_entries, max_entries})
+    end
+
+    if max_memory = Keyword.get(opts, :max_memory_bytes) do
+      :ets.insert(@config_table, {:max_memory_bytes, max_memory})
     end
 
     :ok
@@ -134,8 +145,20 @@ defmodule TripleStore.Index.SubjectCache do
     init()
 
     case :ets.lookup(@cache_table, subject_id) do
-      [{^subject_id, properties}] ->
-        # Cache hit - update LRU
+      [{^subject_id, {_timestamp, properties}}] ->
+        # Cache hit (new format with timestamp) - update LRU
+        update_lru_on_hit(subject_id)
+
+        :telemetry.execute(
+          [:triple_store, :index, :subject_cache, :hit],
+          %{count: 1},
+          %{subject_id: subject_id}
+        )
+
+        {:ok, properties}
+
+      [{^subject_id, properties}] when is_map(properties) ->
+        # Cache hit (legacy format without timestamp) - update LRU
         update_lru(subject_id)
 
         :telemetry.execute(
@@ -185,7 +208,11 @@ defmodule TripleStore.Index.SubjectCache do
     init()
 
     case :ets.lookup(@cache_table, subject_id) do
-      [{^subject_id, properties}] ->
+      [{^subject_id, {_timestamp, properties}}] ->
+        update_lru_on_hit(subject_id)
+        {:ok, properties}
+
+      [{^subject_id, properties}] when is_map(properties) ->
         update_lru(subject_id)
         {:ok, properties}
 
@@ -232,9 +259,14 @@ defmodule TripleStore.Index.SubjectCache do
 
     # Remove from cache
     case :ets.lookup(@cache_table, subject_id) do
-      [{^subject_id, _properties}] ->
+      [{^subject_id, {timestamp, _properties}}] when is_integer(timestamp) ->
+        # New format with timestamp - use O(1) delete
         :ets.delete(@cache_table, subject_id)
-        # Remove LRU entry (find by subject_id in value)
+        :ets.delete(@lru_table, timestamp)
+
+      [{^subject_id, _properties}] ->
+        # Legacy format - use O(n) match_delete
+        :ets.delete(@cache_table, subject_id)
         :ets.match_delete(@lru_table, {:_, subject_id})
 
       [] ->
@@ -286,23 +318,74 @@ defmodule TripleStore.Index.SubjectCache do
   # ===========================================================================
 
   defp cache_properties(subject_id, properties) do
-    # Evict if at capacity
-    maybe_evict()
+    # Validate property count to prevent memory exhaustion from large subjects
+    property_count = map_size(properties)
 
-    # Insert into cache
-    :ets.insert(@cache_table, {subject_id, properties})
+    if property_count > @max_properties_per_subject do
+      # Don't cache excessively large subjects - log and skip
+      Logger.warning(
+        "SubjectCache: Skipping cache for subject #{subject_id} with #{property_count} properties " <>
+          "(exceeds max #{@max_properties_per_subject})"
+      )
 
-    # Update LRU (use monotonic time as key for ordering)
-    update_lru(subject_id)
+      :ok
+    else
+      # Evict if at capacity (entry count or memory)
+      maybe_evict()
+
+      # Update LRU and get timestamp for cache entry
+      timestamp = update_lru(subject_id)
+
+      # Insert into cache with timestamp for O(1) LRU cleanup
+      :ets.insert(@cache_table, {subject_id, {timestamp, properties}})
+    end
+  end
+
+  # Update LRU on cache hit - more efficient than full update
+  # Only updates the timestamp without re-inserting the entire cache entry
+  defp update_lru_on_hit(subject_id) do
+    case :ets.lookup(@cache_table, subject_id) do
+      [{^subject_id, {old_timestamp, properties}}] ->
+        # Remove old LRU entry
+        :ets.delete(@lru_table, old_timestamp)
+
+        # Insert new LRU entry with updated timestamp
+        new_timestamp = System.monotonic_time()
+        :ets.insert(@lru_table, {new_timestamp, subject_id})
+
+        # Update cache entry with new timestamp
+        :ets.insert(@cache_table, {subject_id, {new_timestamp, properties}})
+
+      _ ->
+        # Fallback to full update for legacy format
+        :ok
+    end
   end
 
   defp update_lru(subject_id) do
-    # Remove old LRU entry for this subject
-    :ets.match_delete(@lru_table, {:_, subject_id})
-
-    # Insert new entry with current timestamp
+    # Get the old timestamp for this subject from the cache entry metadata
+    # The cache stores {subject_id, {timestamp, properties}} to enable O(1) LRU cleanup
     timestamp = System.monotonic_time()
+
+    # First, look up the old entry to get its timestamp
+    case :ets.lookup(@cache_table, subject_id) do
+      [{^subject_id, {old_timestamp, _properties}}] when is_integer(old_timestamp) ->
+        # Remove old LRU entry using the known timestamp (O(1) vs O(n) match_delete)
+        :ets.delete(@lru_table, old_timestamp)
+
+      [{^subject_id, _properties}] ->
+        # Old format entry without timestamp - use match_delete as fallback
+        :ets.match_delete(@lru_table, {:_, subject_id})
+
+      [] ->
+        :ok
+    end
+
+    # Insert new LRU entry
     :ets.insert(@lru_table, {timestamp, subject_id})
+
+    # Return timestamp for caller to use when storing cache entry
+    timestamp
   end
 
   defp maybe_evict do
@@ -312,30 +395,51 @@ defmodule TripleStore.Index.SubjectCache do
         [] -> @default_max_entries
       end
 
-    current_size = :ets.info(@cache_table, :size) || 0
-
-    if current_size >= max_entries do
-      # Evict oldest entry (smallest timestamp)
-      case :ets.first(@lru_table) do
-        :"$end_of_table" ->
-          :ok
-
-        oldest_timestamp ->
-          case :ets.lookup(@lru_table, oldest_timestamp) do
-            [{^oldest_timestamp, subject_id}] ->
-              :ets.delete(@cache_table, subject_id)
-              :ets.delete(@lru_table, oldest_timestamp)
-
-              :telemetry.execute(
-                [:triple_store, :index, :subject_cache, :eviction],
-                %{count: 1},
-                %{subject_id: subject_id}
-              )
-
-            [] ->
-              :ok
-          end
+    max_memory =
+      case :ets.lookup(@config_table, :max_memory_bytes) do
+        [{:max_memory_bytes, max}] -> max
+        [] -> @default_max_memory_bytes
       end
+
+    current_size = :ets.info(@cache_table, :size) || 0
+    current_memory = :ets.info(@cache_table, :memory) * :erlang.system_info(:wordsize)
+
+    # Evict if over entry count OR memory limit
+    if current_size >= max_entries or current_memory >= max_memory do
+      evict_oldest()
     end
+  end
+
+  defp evict_oldest do
+    # Evict oldest entry (smallest timestamp)
+    case :ets.first(@lru_table) do
+      :"$end_of_table" ->
+        :ok
+
+      oldest_timestamp ->
+        case :ets.lookup(@lru_table, oldest_timestamp) do
+          [{^oldest_timestamp, subject_id}] ->
+            :ets.delete(@cache_table, subject_id)
+            :ets.delete(@lru_table, oldest_timestamp)
+
+            :telemetry.execute(
+              [:triple_store, :index, :subject_cache, :eviction],
+              %{count: 1},
+              %{subject_id: subject_id}
+            )
+
+          [] ->
+            :ok
+        end
+    end
+  end
+
+  @doc """
+  Returns estimated memory usage in bytes.
+  """
+  @spec memory_usage() :: non_neg_integer()
+  def memory_usage do
+    init()
+    (:ets.info(@cache_table, :memory) || 0) * :erlang.system_info(:wordsize)
   end
 end
