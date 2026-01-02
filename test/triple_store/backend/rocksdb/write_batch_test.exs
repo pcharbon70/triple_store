@@ -346,7 +346,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
   end
 
   describe "sync option" do
-    test "sync: false does not block on fsync", %{db: db} do
+    test "write_batch with sync: false does not block on fsync", %{db: db} do
       # This test verifies that sync: false completes quickly
       # (actual fsync behavior is hard to test without crashing the process)
       operations =
@@ -362,7 +362,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:ok, "value100"} = NIF.get(db, :id2str, "key100")
     end
 
-    test "sync: true writes are durable", %{db_path: path} do
+    test "write_batch with sync: true writes are durable", %{db_path: path} do
       {:ok, db1} = NIF.open("#{path}_sync_test")
 
       operations = [
@@ -378,6 +378,49 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       assert {:ok, "sync_value"} = NIF.get(db2, :id2str, "sync_key")
       NIF.close(db2)
       File.rm_rf("#{path}_sync_test")
+    end
+
+    test "delete_batch with sync: false completes without fsync", %{db: db} do
+      # First insert data to delete
+      operations =
+        for i <- 1..50 do
+          {:id2str, "del_key#{i}", "value#{i}"}
+        end
+
+      assert :ok = NIF.write_batch(db, operations, true)
+
+      # Delete with sync: false
+      delete_ops =
+        for i <- 1..50 do
+          {:id2str, "del_key#{i}"}
+        end
+
+      assert :ok = NIF.delete_batch(db, delete_ops, false)
+
+      # Verify data is deleted
+      assert :not_found = NIF.get(db, :id2str, "del_key1")
+      assert :not_found = NIF.get(db, :id2str, "del_key50")
+    end
+
+    test "mixed_batch with sync: false completes without fsync", %{db: db} do
+      # First insert some data
+      NIF.write_batch(db, [{:id2str, "mix_old", "old_value"}], true)
+
+      # Mixed operations with sync: false
+      operations = [
+        {:put, :id2str, "mix_new1", "new_value1"},
+        {:put, :id2str, "mix_new2", "new_value2"},
+        {:delete, :id2str, "mix_old"}
+      ]
+
+      assert :ok = NIF.mixed_batch(db, operations, false)
+
+      # Verify puts succeeded
+      assert {:ok, "new_value1"} = NIF.get(db, :id2str, "mix_new1")
+      assert {:ok, "new_value2"} = NIF.get(db, :id2str, "mix_new2")
+
+      # Verify delete succeeded
+      assert :not_found = NIF.get(db, :id2str, "mix_old")
     end
   end
 end

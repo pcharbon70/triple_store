@@ -601,5 +601,19 @@ defmodule TripleStore.LoaderTest do
     test "flush_wal with sync=false succeeds", %{db: db} do
       assert :ok = NIF.flush_wal(db, false)
     end
+
+    test "flush_wal returns error for closed database", %{path: path} do
+      db_path = Path.join(path, "flush_wal_closed_test")
+      {:ok, db} = NIF.open(db_path)
+      NIF.close(db)
+      assert {:error, :already_closed} = NIF.flush_wal(db, true)
+    end
+
+    # Note: Testing flush_wal failure during bulk_mode is difficult because
+    # it requires simulating a storage failure (e.g., disk full, permissions).
+    # The error path is documented and returns {:error, {:flush_failed, count, reason}}
+    # where count indicates how many triples were written before the flush failed.
+    # Data in this case is still in the WAL and will survive process restart,
+    # but may be lost on OS crash or power failure.
   end
 end

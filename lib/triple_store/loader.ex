@@ -104,6 +104,21 @@ defmodule TripleStore.Loader do
   2. The final sync ensures durability once loading completes
   3. Performance gain is typically 10-50x faster for large imports
 
+  ### Error Handling
+
+  If the final `flush_wal` fails after a successful bulk load:
+  - Returns `{:error, {:flush_failed, count, reason}}`
+  - `count` indicates the number of triples that were written
+  - Data is still in the WAL and will survive process restart
+  - Only OS crash or power failure before OS buffer flush can lose data
+
+  ### Dictionary Sync Behavior
+
+  Dictionary encoding operations (term -> ID mappings) are performed before
+  index writes. In bulk mode, both dictionary and index writes use the same
+  deferred sync settings. The final `flush_wal(true)` call flushes all column
+  families, ensuring both dictionary entries and index entries are durable.
+
   ## High-Volume Bulk Loading
 
   For bulk loads exceeding 100,000 triples, consider these optimizations:
@@ -151,7 +166,7 @@ defmodule TripleStore.Loader do
 
   - `[:triple_store, :loader, :batch]` - After each batch is written
     - Measurements: `%{count: integer, duration: integer}`
-    - Metadata: `%{batch_number: integer}`
+    - Metadata: `%{batch_number: integer, sync: boolean}`
 
   - `[:triple_store, :loader, :stop]` - When loading completes
     - Measurements: `%{total_count: integer, duration: integer}`
@@ -234,6 +249,15 @@ defmodule TripleStore.Loader do
           max_file_size: pos_integer() | nil
         ]
 
+  @typedoc """
+  Write options passed to NIF batch operations.
+
+  Controls the sync behavior for RocksDB writes:
+  - `sync: true` - Force fsync after each batch (default for single operations)
+  - `sync: false` - Defer sync to OS, data still written to WAL
+  """
+  @type write_opts :: %{sync: boolean()}
+
   # ===========================================================================
   # Constants
   # ===========================================================================
@@ -312,7 +336,9 @@ defmodule TripleStore.Loader do
   ## Returns
 
   - `{:ok, count}` - Number of triples loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
   - `{:error, reason}` - On failure
+  - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
 
   ## Examples
 
@@ -325,7 +351,7 @@ defmodule TripleStore.Loader do
   and `[:triple_store, :loader, :stop]` events.
   """
   @spec load_graph(db_ref(), manager(), RDF.Graph.t(), load_opts()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_graph(db, manager, %RDF.Graph{} = graph, opts \\ []) do
     batch_size = resolve_batch_size(opts)
 
@@ -375,10 +401,12 @@ defmodule TripleStore.Loader do
   ## Returns
 
   - `{:ok, count}` - Number of triples loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
   - `{:error, :file_not_found}` - File does not exist
   - `{:error, :invalid_path}` - Path contains traversal sequences (`..`)
   - `{:error, {:file_too_large, size, max}}` - File exceeds size limit
   - `{:error, {:unsupported_format, ext, [supported: list]}}` - Unknown file format
+  - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
   - `{:error, reason}` - On parse or load failure
 
   ## Examples
@@ -393,7 +421,7 @@ defmodule TripleStore.Loader do
   and `[:triple_store, :loader, :stop]` events.
   """
   @spec load_file(db_ref(), manager(), Path.t(), load_opts()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_file(db, manager, path, opts \\ []) do
     batch_size = resolve_batch_size(opts)
     max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
@@ -431,6 +459,8 @@ defmodule TripleStore.Loader do
   ## Returns
 
   - `{:ok, count}` - Number of triples loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
+  - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
   - `{:error, reason}` - On parse or load failure
 
   ## Examples
@@ -442,7 +472,7 @@ defmodule TripleStore.Loader do
       iex> {:ok, 1} = Loader.load_string(db, manager, ttl, :turtle)
   """
   @spec load_string(db_ref(), manager(), String.t(), atom(), load_opts()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_string(db, manager, content, format, opts \\ []) do
     batch_size = resolve_batch_size(opts)
     base_iri = Keyword.get(opts, :base_iri)
@@ -482,6 +512,8 @@ defmodule TripleStore.Loader do
   ## Returns
 
   - `{:ok, count}` - Number of triples loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
+  - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
   - `{:error, reason}` - On failure
 
   ## Examples
@@ -493,7 +525,7 @@ defmodule TripleStore.Loader do
       iex> {:ok, 2} = Loader.load_stream(db, manager, triples)
   """
   @spec load_stream(db_ref(), manager(), Enumerable.t(), load_opts()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_stream(db, manager, triple_stream, opts \\ []) do
     batch_size = resolve_batch_size(opts)
     load_triples(db, manager, triple_stream, batch_size, opts)
@@ -650,12 +682,21 @@ defmodule TripleStore.Loader do
         load_triples_sequential(db, manager, triples, batch_size, progress_opts, write_opts)
       end
 
-    # In bulk mode, flush WAL after successful load for durability
+    # In bulk mode, flush WAL after successful load for durability.
+    # Note: If flush fails, the data is still in the WAL (written but not fsync'd).
+    # On process restart, RocksDB will replay the WAL and recover the data.
+    # Only OS crash or power failure before the OS flushes its buffers can lose data.
     case result do
       {:ok, count} when bulk_mode? ->
         case NIF.flush_wal(db, true) do
-          :ok -> {:ok, count}
-          {:error, reason} -> {:error, {:flush_failed, reason}}
+          :ok ->
+            {:ok, count}
+
+          {:error, reason} ->
+            # Data was written successfully but final sync failed.
+            # Data is in the WAL and will survive process restart,
+            # but may be lost on OS crash or power failure.
+            {:error, {:flush_failed, count, reason}}
         end
 
       other ->
@@ -719,7 +760,7 @@ defmodule TripleStore.Loader do
           new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
 
-          emit_batch_telemetry(batch_count, batch_duration, batch_number)
+          emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
 
           # Check if we should report progress and handle cancellation
           case maybe_report_progress(progress_opts, batch_number, new_total) do
@@ -865,7 +906,7 @@ defmodule TripleStore.Loader do
           new_total = total + batch_count
           batch_duration = System.monotonic_time() - batch_start
 
-          emit_batch_telemetry(batch_count, batch_duration, batch_num)
+          emit_batch_telemetry(batch_count, batch_duration, batch_num, write_opts.sync)
 
           # Report progress and handle cancellation
           case maybe_report_progress(progress_opts, batch_num, new_total) do
@@ -885,12 +926,12 @@ defmodule TripleStore.Loader do
   end
 
   # Telemetry helper for batch events
-  @spec emit_batch_telemetry(non_neg_integer(), integer(), pos_integer()) :: :ok
-  defp emit_batch_telemetry(count, duration, batch_number) do
+  @spec emit_batch_telemetry(non_neg_integer(), integer(), pos_integer(), boolean()) :: :ok
+  defp emit_batch_telemetry(count, duration, batch_number, sync) do
     :telemetry.execute(
       [:triple_store, :loader, :batch],
       %{count: count, duration: duration},
-      %{batch_number: batch_number}
+      %{batch_number: batch_number, sync: sync}
     )
   end
 

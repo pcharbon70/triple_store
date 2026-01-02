@@ -74,6 +74,24 @@ defmodule TripleStore.Index do
             when valid_term_id?(s) and valid_term_id?(p) and valid_term_id?(o)
 
   # ===========================================================================
+  # Option Validation Helpers
+  # ===========================================================================
+
+  # Validates and extracts the sync option, coercing to boolean if needed.
+  # Defaults to true (synchronous writes) if not specified.
+  @spec validate_sync_option(keyword()) :: boolean()
+  defp validate_sync_option(opts) do
+    case Keyword.get(opts, :sync, true) do
+      true -> true
+      false -> false
+      other ->
+        require Logger
+        Logger.warning("Invalid :sync option value #{inspect(other)}, using default true")
+        true
+    end
+  end
+
+  # ===========================================================================
   # Types
   # ===========================================================================
 
@@ -493,6 +511,10 @@ defmodule TripleStore.Index do
   WriteBatch operation. If the triple already exists, this is a no-op
   (idempotent operation).
 
+  **Note**: This function always uses `sync: true` for immediate durability.
+  For bulk loading operations where performance is more important than
+  per-operation durability, use `insert_triples/3` with `sync: false` instead.
+
   ## Arguments
 
   - `db` - RocksDB database reference
@@ -560,7 +582,7 @@ defmodule TripleStore.Index do
   def insert_triples(_db, [], _opts), do: :ok
 
   def insert_triples(db, triples, opts) when is_list(triples) do
-    sync = Keyword.get(opts, :sync, true)
+    sync = validate_sync_option(opts)
 
     operations =
       for {subject, predicate, object} <- triples,
@@ -615,6 +637,10 @@ defmodule TripleStore.Index do
   The triple is removed from SPO, POS, and OSP indices using a single atomic
   DeleteBatch operation. If the triple does not exist, this is a no-op
   (idempotent operation).
+
+  **Note**: This function always uses `sync: true` for immediate durability.
+  For bulk delete operations where performance is more important than
+  per-operation durability, use `delete_triples/3` with `sync: false` instead.
 
   ## Arguments
 
@@ -684,7 +710,7 @@ defmodule TripleStore.Index do
   def delete_triples(_db, [], _opts), do: :ok
 
   def delete_triples(db, triples, opts) when is_list(triples) do
-    sync = Keyword.get(opts, :sync, true)
+    sync = validate_sync_option(opts)
 
     operations =
       for {subject, predicate, object} <- triples,
