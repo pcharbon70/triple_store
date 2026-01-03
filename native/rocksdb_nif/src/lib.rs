@@ -4,12 +4,19 @@
 //! Elixir application. All I/O operations use dirty CPU schedulers to prevent
 //! blocking the BEAM schedulers.
 
-use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SnapshotWithThreadMode, WriteBatch, WriteOptions, DB};
+use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SliceTransform, SnapshotWithThreadMode, WriteBatch, WriteOptions, DB};
 use rustler::{Binary, Encoder, Env, ListIterator, NewBinary, NifResult, Resource, ResourceArc, Term};
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Column family names used by TripleStore
 const CF_NAMES: [&str; 7] = ["id2str", "str2id", "spo", "pos", "osp", "derived", "numeric_range"];
+
+/// Column families that use prefix extraction (8-byte prefix = first component ID)
+/// These CFs benefit from prefix bloom filters and native prefix iteration.
+const PREFIX_CFS: [&str; 4] = ["spo", "pos", "osp", "numeric_range"];
+
+/// Prefix length in bytes (64-bit ID = 8 bytes)
+const PREFIX_LENGTH: usize = 8;
 
 /// Shared database handle that stays alive as long as any iterator/snapshot references it.
 /// This is the core fix for the use-after-free issue: iterators hold an Arc<SharedDb>,
@@ -177,11 +184,20 @@ fn open(env: Env, path: String) -> NifResult<Term> {
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);
 
-    // Create column family descriptors
+    // Create column family descriptors with appropriate prefix extractors
     let cf_descriptors: Vec<ColumnFamilyDescriptor> = CF_NAMES
         .iter()
         .map(|name| {
-            let cf_opts = Options::default();
+            let mut cf_opts = Options::default();
+
+            // Configure prefix extractor for index column families
+            // This enables bloom filter benefits for prefix iteration
+            if PREFIX_CFS.contains(name) {
+                cf_opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(PREFIX_LENGTH));
+                // Enable prefix bloom filter in memtable for faster lookups
+                cf_opts.set_memtable_prefix_bloom_ratio(0.1);
+            }
+
             ColumnFamilyDescriptor::new(*name, cf_opts)
         })
         .collect();
@@ -826,8 +842,28 @@ fn prefix_iterator<'a>(
 
     let prefix_bytes = prefix.as_slice().to_vec();
 
-    // Create the iterator
-    let iterator = shared_db.db.iterator_cf(&cf_handle, IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward));
+    // Configure read options for prefix iteration
+    // For CFs with prefix extractors, we need to handle different prefix lengths:
+    // - If prefix >= PREFIX_LENGTH bytes: use prefix-based iteration for bloom filter benefits
+    // - If prefix < PREFIX_LENGTH bytes: use total_order_seek to avoid bloom filter issues
+    let mut read_opts = ReadOptions::default();
+    if PREFIX_CFS.contains(&cf_name) {
+        if prefix_bytes.len() >= PREFIX_LENGTH {
+            // Use prefix-based seek for bloom filter benefits
+            read_opts.set_prefix_same_as_start(true);
+            read_opts.set_total_order_seek(false);
+        } else {
+            // Short prefix: use total_order_seek to avoid incorrect bloom filter behavior
+            read_opts.set_total_order_seek(true);
+        }
+    }
+
+    // Create the iterator with configured read options
+    let iterator = shared_db.db.iterator_cf_opt(
+        &cf_handle,
+        read_opts,
+        IteratorMode::From(&prefix_bytes, rocksdb::Direction::Forward),
+    );
 
     // SAFETY: We keep the SharedDb alive via Arc, so the iterator remains valid.
     // The Arc<SharedDb> is stored in IteratorRef and will keep the DB alive
@@ -1164,9 +1200,21 @@ fn snapshot_prefix_iterator<'a>(
 
     let prefix_bytes = prefix.as_slice().to_vec();
 
-    // Create read options with snapshot
+    // Create read options with snapshot and prefix bounds
     let mut read_opts = ReadOptions::default();
     read_opts.set_snapshot(snapshot);
+
+    // Configure prefix iteration based on CF type and prefix length
+    if PREFIX_CFS.contains(&cf_name) {
+        if prefix_bytes.len() >= PREFIX_LENGTH {
+            // Use prefix-based seek for bloom filter benefits
+            read_opts.set_prefix_same_as_start(true);
+            read_opts.set_total_order_seek(false);
+        } else {
+            // Short prefix: use total_order_seek to avoid incorrect bloom filter behavior
+            read_opts.set_total_order_seek(true);
+        }
+    }
 
     // Create the iterator with snapshot
     let iterator = snapshot_ref.db.db.iterator_cf_opt(
