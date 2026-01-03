@@ -4,7 +4,7 @@
 //! Elixir application. All I/O operations use dirty CPU schedulers to prevent
 //! blocking the BEAM schedulers.
 
-use rocksdb::{ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SliceTransform, SnapshotWithThreadMode, WriteBatch, WriteOptions, DB};
+use rocksdb::{BlockBasedOptions, ColumnFamilyDescriptor, DBIteratorWithThreadMode, IteratorMode, Options, ReadOptions, SliceTransform, SnapshotWithThreadMode, WriteBatch, WriteOptions, DB};
 use rustler::{Binary, Encoder, Env, ListIterator, NewBinary, NifResult, Resource, ResourceArc, Term};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -17,6 +17,35 @@ const PREFIX_CFS: [&str; 4] = ["spo", "pos", "osp", "numeric_range"];
 
 /// Prefix length in bytes (64-bit ID = 8 bytes)
 const PREFIX_LENGTH: usize = 8;
+
+/// Dictionary column families - point lookups, high read frequency
+/// Optimized with: 14 bits/key bloom (0.01% FPR), 2KB blocks
+const DICTIONARY_CFS: [&str; 2] = ["id2str", "str2id"];
+
+/// Index column families - prefix scans, range queries
+/// Optimized with: 12 bits/key bloom (0.09% FPR), 8KB blocks
+const INDEX_CFS: [&str; 4] = ["spo", "pos", "osp", "numeric_range"];
+
+/// Derived column family - bulk writes, sequential reads
+/// Optimized with: no bloom filter, 32KB blocks
+const DERIVED_CF: &str = "derived";
+
+/// Bloom filter bits per key for dictionary CFs (point lookups)
+/// 14 bits/key gives approximately 0.01% false positive rate
+const DICTIONARY_BLOOM_BITS: i32 = 14;
+
+/// Bloom filter bits per key for index CFs (prefix scans)
+/// 12 bits/key gives approximately 0.09% false positive rate
+const INDEX_BLOOM_BITS: i32 = 12;
+
+/// Block size for dictionary CFs (optimized for point lookups)
+const DICTIONARY_BLOCK_SIZE: usize = 2 * 1024; // 2KB
+
+/// Block size for index CFs (balanced for prefix scans)
+const INDEX_BLOCK_SIZE: usize = 8 * 1024; // 8KB
+
+/// Block size for derived CF (optimized for sequential reads)
+const DERIVED_BLOCK_SIZE: usize = 32 * 1024; // 32KB
 
 /// Shared database handle that stays alive as long as any iterator/snapshot references it.
 /// This is the core fix for the use-after-free issue: iterators hold an Arc<SharedDb>,
@@ -184,19 +213,64 @@ fn open(env: Env, path: String) -> NifResult<Term> {
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);
 
-    // Create column family descriptors with appropriate prefix extractors
+    // Create column family descriptors with tuned settings per access pattern
     let cf_descriptors: Vec<ColumnFamilyDescriptor> = CF_NAMES
         .iter()
         .map(|name| {
             let mut cf_opts = Options::default();
+            let mut block_opts = BlockBasedOptions::default();
 
-            // Configure prefix extractor for index column families
-            // This enables bloom filter benefits for prefix iteration
-            if PREFIX_CFS.contains(name) {
+            // Configure based on column family type
+            if DICTIONARY_CFS.contains(name) {
+                // Dictionary CFs: Point lookups, high read frequency
+                // - 14 bits/key bloom filter (~0.01% FPR)
+                // - 2KB blocks (small for point lookups)
+                // - Full-key bloom filter (not prefix-based)
+                block_opts.set_bloom_filter(DICTIONARY_BLOOM_BITS as f64, false);
+                block_opts.set_block_size(DICTIONARY_BLOCK_SIZE);
+                // Cache index and filter blocks for fast point lookups
+                block_opts.set_cache_index_and_filter_blocks(true);
+                block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
+                // Optimize filters for hits (dictionary lookups usually succeed)
+                block_opts.set_optimize_filters_for_memory(true);
+            } else if INDEX_CFS.contains(name) {
+                // Index CFs: Prefix scans, range queries
+                // - 12 bits/key bloom filter (~0.09% FPR)
+                // - 8KB blocks (balanced for prefix scans)
+                // - Prefix bloom via SliceTransform
+                block_opts.set_bloom_filter(INDEX_BLOOM_BITS as f64, false);
+                block_opts.set_block_size(INDEX_BLOCK_SIZE);
+                // Cache index and filter blocks
+                block_opts.set_cache_index_and_filter_blocks(true);
+                block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
+                // Configure prefix extractor for index column families
                 cf_opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(PREFIX_LENGTH));
                 // Enable prefix bloom filter in memtable for faster lookups
                 cf_opts.set_memtable_prefix_bloom_ratio(0.1);
+            } else if *name == DERIVED_CF {
+                // Derived CF: Bulk writes, sequential reads
+                // - No bloom filter (sequential access doesn't benefit)
+                // - 32KB blocks (large for sequential reads)
+                block_opts.set_block_size(DERIVED_BLOCK_SIZE);
+                // Don't cache filter/index blocks (not used much)
+                block_opts.set_cache_index_and_filter_blocks(false);
             }
+
+            // Apply block-based options to column family
+            cf_opts.set_block_based_table_factory(&block_opts);
+
+            // Configure compression: LZ4 for all CFs (fast, reasonable ratio)
+            // L0 has no compression for write speed, other levels use LZ4
+            cf_opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+            cf_opts.set_compression_per_level(&[
+                rocksdb::DBCompressionType::None,  // L0: no compression (short-lived)
+                rocksdb::DBCompressionType::Lz4,   // L1
+                rocksdb::DBCompressionType::Lz4,   // L2
+                rocksdb::DBCompressionType::Lz4,   // L3
+                rocksdb::DBCompressionType::Lz4,   // L4
+                rocksdb::DBCompressionType::Lz4,   // L5
+                rocksdb::DBCompressionType::Lz4,   // L6
+            ]);
 
             ColumnFamilyDescriptor::new(*name, cf_opts)
         })

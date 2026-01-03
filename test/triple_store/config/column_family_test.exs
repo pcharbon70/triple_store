@@ -173,7 +173,8 @@ defmodule TripleStore.Config.ColumnFamilyTest do
         config = ColumnFamily.bloom_filter_config(name)
 
         assert config.enabled == true
-        assert config.bits_per_key == 12
+        # 14 bits/key gives ~0.01% FPR for point lookups
+        assert config.bits_per_key == 14
         assert config.block_based == false
       end
     end
@@ -183,7 +184,8 @@ defmodule TripleStore.Config.ColumnFamilyTest do
         config = ColumnFamily.bloom_filter_config(name)
 
         assert config.enabled == true
-        assert config.bits_per_key == 10
+        # 12 bits/key gives ~0.09% FPR for prefix scans
+        assert config.bits_per_key == 12
         assert config.block_based == true
       end
     end
@@ -225,20 +227,23 @@ defmodule TripleStore.Config.ColumnFamilyTest do
   end
 
   describe "block_size/1" do
-    test "returns 4KB for dictionary CFs" do
+    test "returns 2KB for dictionary CFs" do
       for name <- [:id2str, :str2id] do
-        assert ColumnFamily.block_size(name) == 4 * 1024
+        # 2KB blocks optimized for point lookups
+        assert ColumnFamily.block_size(name) == 2 * 1024
       end
     end
 
-    test "returns 4KB for index CFs" do
+    test "returns 8KB for index CFs" do
       for name <- [:spo, :pos, :osp] do
-        assert ColumnFamily.block_size(name) == 4 * 1024
+        # 8KB blocks balanced for prefix scans
+        assert ColumnFamily.block_size(name) == 8 * 1024
       end
     end
 
-    test "returns 16KB for derived CF" do
-      assert ColumnFamily.block_size(:derived) == 16 * 1024
+    test "returns 32KB for derived CF" do
+      # 32KB blocks optimized for sequential reads
+      assert ColumnFamily.block_size(:derived) == 32 * 1024
     end
   end
 
@@ -249,14 +254,20 @@ defmodule TripleStore.Config.ColumnFamilyTest do
   end
 
   describe "default_bloom_bits_per_key/0" do
-    test "returns 10" do
-      assert ColumnFamily.default_bloom_bits_per_key() == 10
+    test "returns 12 (same as index)" do
+      assert ColumnFamily.default_bloom_bits_per_key() == 12
     end
   end
 
   describe "dictionary_bloom_bits_per_key/0" do
+    test "returns 14" do
+      assert ColumnFamily.dictionary_bloom_bits_per_key() == 14
+    end
+  end
+
+  describe "index_bloom_bits_per_key/0" do
     test "returns 12" do
-      assert ColumnFamily.dictionary_bloom_bits_per_key() == 12
+      assert ColumnFamily.index_bloom_bits_per_key() == 12
     end
   end
 
@@ -292,17 +303,17 @@ defmodule TripleStore.Config.ColumnFamilyTest do
 
   describe "estimate_bloom_memory/2" do
     test "estimates memory for dictionary CFs" do
-      # 12 bits = 1.5 bytes per key
+      # 14 bits = 1.75 bytes per key
       bytes = ColumnFamily.estimate_bloom_memory(:id2str, 1_000_000)
 
-      assert bytes == 1_500_000
+      assert bytes == 1_750_000
     end
 
     test "estimates memory for index CFs" do
-      # 10 bits = 1.25 bytes per key
+      # 12 bits = 1.5 bytes per key
       bytes = ColumnFamily.estimate_bloom_memory(:spo, 1_000_000)
 
-      assert bytes == 1_250_000
+      assert bytes == 1_500_000
     end
 
     test "returns 0 for derived CF (no bloom filter)" do
@@ -325,9 +336,9 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.cf_name == :id2str
       assert rationale.cf_type == :dictionary
       assert rationale.access_pattern == :point_lookup
-      assert String.contains?(rationale.bloom_filter_rationale, "12 bits/key")
+      assert String.contains?(rationale.bloom_filter_rationale, "14 bits/key")
       assert String.contains?(rationale.prefix_extractor_rationale, "Disabled")
-      assert String.contains?(rationale.block_size_rationale, "4 KB")
+      assert String.contains?(rationale.block_size_rationale, "2 KB")
     end
 
     test "returns rationale for index CFs" do
@@ -336,9 +347,9 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.cf_name == :spo
       assert rationale.cf_type == :index
       assert rationale.access_pattern == :prefix_scan
-      assert String.contains?(rationale.bloom_filter_rationale, "10 bits/key")
+      assert String.contains?(rationale.bloom_filter_rationale, "12 bits/key")
       assert String.contains?(rationale.prefix_extractor_rationale, "8-byte prefix")
-      assert String.contains?(rationale.block_size_rationale, "4 KB")
+      assert String.contains?(rationale.block_size_rationale, "8 KB")
     end
 
     test "returns rationale for derived CF" do
@@ -349,7 +360,7 @@ defmodule TripleStore.Config.ColumnFamilyTest do
       assert rationale.access_pattern == :bulk
       assert String.contains?(rationale.bloom_filter_rationale, "Disabled")
       assert String.contains?(rationale.prefix_extractor_rationale, "Disabled")
-      assert String.contains?(rationale.block_size_rationale, "16 KB")
+      assert String.contains?(rationale.block_size_rationale, "32 KB")
     end
 
     test "index rationale includes index name" do

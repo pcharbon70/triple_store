@@ -160,10 +160,10 @@ defmodule TripleStore.Config.RocksDBTuningTest do
       for cf <- ColumnFamily.dictionary_cfs() do
         memory = ColumnFamily.estimate_bloom_memory(cf, num_keys)
 
-        # 12 bits/key = 1.5 bytes/key = 15MB for 10M keys
-        assert memory == 15_000_000
-        # Should be less than 20MB for 10M keys
-        assert memory < 20_000_000
+        # 14 bits/key = 1.75 bytes/key = 17.5MB for 10M keys
+        assert memory == 17_500_000
+        # Should be less than 25MB for 10M keys
+        assert memory < 25_000_000
       end
     end
 

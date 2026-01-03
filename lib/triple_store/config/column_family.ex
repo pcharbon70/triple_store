@@ -55,23 +55,28 @@ defmodule TripleStore.Config.ColumnFamily do
 
   alias TripleStore.Config.Helpers
 
-  # Default bloom filter bits per key (10 bits = ~1% false positive rate)
-  @default_bloom_bits_per_key 10
+  # Bloom filter bits per key for index CFs (prefix scans)
+  # 12 bits/key gives approximately 0.09% false positive rate
+  @index_bloom_bits_per_key 12
 
-  # Higher bits for dictionary lookups (more aggressive filtering)
-  @dictionary_bloom_bits_per_key 12
+  # Bloom filter bits per key for dictionary CFs (point lookups)
+  # 14 bits/key gives approximately 0.01% false positive rate
+  @dictionary_bloom_bits_per_key 14
+
+  # Legacy alias for backward compatibility
+  @default_bloom_bits_per_key @index_bloom_bits_per_key
 
   # Triple component ID size in bytes (64-bit integer)
   @triple_component_size 8
 
-  # Default block size (4KB - good for mixed workloads)
-  @default_block_size 4 * 1024
+  # Block size for index CFs (balanced for prefix scans)
+  @index_block_size 8 * 1024
 
-  # Larger block size for bulk operations
-  @bulk_block_size 16 * 1024
+  # Block size for derived CF (optimized for sequential reads)
+  @bulk_block_size 32 * 1024
 
-  # Smaller block size for point lookups
-  @point_lookup_block_size 4 * 1024
+  # Block size for dictionary CFs (optimized for point lookups)
+  @point_lookup_block_size 2 * 1024
 
   # Column family types
   @dictionary_cfs [:id2str, :str2id]
@@ -248,7 +253,7 @@ defmodule TripleStore.Config.ColumnFamily do
   def bloom_filter_config(name) when name in @index_cfs do
     %{
       enabled: true,
-      bits_per_key: @default_bloom_bits_per_key,
+      bits_per_key: @index_bloom_bits_per_key,
       block_based: true
     }
   end
@@ -309,22 +314,22 @@ defmodule TripleStore.Config.ColumnFamily do
   @doc """
   Returns the recommended block size for a column family.
 
-  - Dictionary CFs: 4KB (optimized for point lookups)
-  - Index CFs: 4KB (balanced for prefix scans)
-  - Derived CF: 16KB (optimized for bulk operations)
+  - Dictionary CFs: 2KB (optimized for point lookups)
+  - Index CFs: 8KB (balanced for prefix scans)
+  - Derived CF: 32KB (optimized for bulk operations)
 
   ## Examples
 
       iex> ColumnFamily.block_size(:id2str)
-      4096
+      2048
 
       iex> ColumnFamily.block_size(:derived)
-      16384
+      32768
 
   """
   @spec block_size(cf_name()) :: pos_integer()
   def block_size(name) when name in @dictionary_cfs, do: @point_lookup_block_size
-  def block_size(name) when name in @index_cfs, do: @default_block_size
+  def block_size(name) when name in @index_cfs, do: @index_block_size
   def block_size(name) when name in @derived_cfs, do: @bulk_block_size
 
   @doc """
@@ -347,6 +352,12 @@ defmodule TripleStore.Config.ColumnFamily do
   """
   @spec dictionary_bloom_bits_per_key() :: pos_integer()
   def dictionary_bloom_bits_per_key, do: @dictionary_bloom_bits_per_key
+
+  @doc """
+  Returns the index bloom filter bits per key.
+  """
+  @spec index_bloom_bits_per_key() :: pos_integer()
+  def index_bloom_bits_per_key, do: @index_bloom_bits_per_key
 
   @doc """
   Calculates the estimated false positive rate for a bloom filter.
@@ -467,14 +478,14 @@ defmodule TripleStore.Config.ColumnFamily do
       cf_type: :index,
       access_pattern: :prefix_scan,
       bloom_filter_rationale:
-        "Block-based bloom filter with #{@default_bloom_bits_per_key} bits/key " <>
-          "(#{format_fpr(@default_bloom_bits_per_key)} FPR) " <>
+        "Block-based bloom filter with #{@index_bloom_bits_per_key} bits/key " <>
+          "(#{format_fpr(@index_bloom_bits_per_key)} FPR) " <>
           "enables prefix bloom filtering for range queries",
       prefix_extractor_rationale:
         "Fixed #{@triple_component_size}-byte prefix extractor matches triple component ID size, " <>
           "enabling efficient prefix seeks for #{index_name} queries",
       block_size_rationale:
-        "#{format_bytes(@default_block_size)} blocks balance between read amplification " <>
+        "#{format_bytes(@index_block_size)} blocks balance between read amplification " <>
           "and cache efficiency for prefix scans",
       cache_rationale:
         "Index blocks cached, filter blocks pinned in L0 for hot path query performance"
