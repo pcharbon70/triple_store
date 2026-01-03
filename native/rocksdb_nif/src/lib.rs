@@ -1034,9 +1034,24 @@ fn iterator_seek<'a>(
         None => return Ok((atoms::error(), atoms::iterator_closed()).encode(env)),
     };
 
-    // Create new iterator at the seek position
+    // Create new iterator at the seek position with proper read options
+    // Must match the logic in prefix_iterator for prefix extractor compatibility
     let target_bytes = target.as_slice();
-    let new_iterator = iter_ref.db.db.iterator_cf(&cf_handle, IteratorMode::From(target_bytes, rocksdb::Direction::Forward));
+    let cf_name = iter_ref.cf_name.as_str();
+
+    let mut read_opts = ReadOptions::default();
+    if PREFIX_CFS.contains(&cf_name) {
+        if iter_ref.prefix.len() >= PREFIX_LENGTH {
+            // Use prefix-based seek for bloom filter benefits
+            read_opts.set_prefix_same_as_start(true);
+            read_opts.set_total_order_seek(false);
+        } else {
+            // Short prefix: use total_order_seek to avoid incorrect bloom filter behavior
+            read_opts.set_total_order_seek(true);
+        }
+    }
+
+    let new_iterator = iter_ref.db.db.iterator_cf_opt(&cf_handle, read_opts, IteratorMode::From(target_bytes, rocksdb::Direction::Forward));
 
     // SAFETY: We keep the SharedDb alive via Arc, so the iterator remains valid.
     // The Arc<SharedDb> is stored in IteratorRef and keeps the DB alive.
