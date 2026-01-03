@@ -146,51 +146,51 @@ Long-lived snapshots prevent compaction and retain old data, causing storage blo
 
 ### 4.3.1 TTL Implementation
 
-- [x] **Task 4.3.1 Analysis Complete** (2025-12-31)
+- [x] **Task 4.3.1 Complete** (2026-01-03)
 
 Add time-to-live for snapshots.
 
 - [x] 4.3.1.1 Analyze current snapshot handling in `lib.rs:1006-1032`
-- [ ] 4.3.1.2 Add timestamp to SnapshotRef struct
-- [ ] 4.3.1.3 Implement `snapshot_with_ttl/2` NIF
-- [ ] 4.3.1.4 Add TTL check to snapshot operations
-- [ ] 4.3.1.5 Default TTL: 5 minutes
-- [ ] 4.3.1.6 Add configuration for custom TTL
+- [x] 4.3.1.2 Add timestamp to SnapshotRef struct (in Elixir registry)
+- [x] 4.3.1.3 Implement `snapshot_with_ttl/2` NIF (via Elixir wrapper)
+- [x] 4.3.1.4 Add TTL check to snapshot operations (periodic cleanup)
+- [x] 4.3.1.5 Default TTL: 5 minutes
+- [x] 4.3.1.6 Add configuration for custom TTL (via opts)
 
 ### 4.3.2 Auto-Release Mechanism
 
-- [x] **Task 4.3.2 Analysis Complete** (2025-12-31)
+- [x] **Task 4.3.2 Complete** (2026-01-03)
 
 Implement automatic snapshot cleanup.
 
 - [x] 4.3.2.1 Design auto-release strategy (process monitoring vs timer)
-- [ ] 4.3.2.2 Implement snapshot registry GenServer
-- [ ] 4.3.2.3 Track snapshot owner processes
-- [ ] 4.3.2.4 Release snapshots when owner terminates
-- [ ] 4.3.2.5 Implement periodic TTL check (every minute)
-- [ ] 4.3.2.6 Add telemetry for snapshot lifecycle
+- [x] 4.3.2.2 Implement snapshot registry GenServer
+- [x] 4.3.2.3 Track snapshot owner processes
+- [x] 4.3.2.4 Release snapshots when owner terminates
+- [x] 4.3.2.5 Implement periodic TTL check (every minute)
+- [x] 4.3.2.6 Add telemetry for snapshot lifecycle
 
 ### 4.3.3 Safe Snapshot Wrapper
 
-- [x] **Task 4.3.3 Analysis Complete** (2025-12-31)
+- [x] **Task 4.3.3 Complete** (2026-01-03)
 
 Provide safe API for snapshot usage.
 
 - [x] 4.3.3.1 Design `with_snapshot` API pattern
-- [ ] 4.3.3.2 Create `TripleStore.Snapshot` module
-- [ ] 4.3.3.3 Implement `with_snapshot/2` ensuring cleanup
-- [ ] 4.3.3.4 Handle exceptions within snapshot scope
-- [ ] 4.3.3.5 Add warning when snapshot exceeds soft TTL
+- [x] 4.3.3.2 Create `TripleStore.Snapshot` module
+- [x] 4.3.3.3 Implement `with_snapshot/2` ensuring cleanup
+- [x] 4.3.3.4 Handle exceptions within snapshot scope
+- [x] 4.3.3.5 Add warning when snapshot exceeds soft TTL (80% threshold)
 
 ### 4.3.4 Unit Tests
 
-- [ ] **Task 4.3.4 Complete**
+- [x] **Task 4.3.4 Complete** (2026-01-03)
 
-- [ ] 4.3.4.1 Test snapshot TTL expires correctly
-- [ ] 4.3.4.2 Test auto-release on process termination
-- [ ] 4.3.4.3 Test with_snapshot releases on success
-- [ ] 4.3.4.4 Test with_snapshot releases on exception
-- [ ] 4.3.4.5 Test snapshot registry cleanup
+- [x] 4.3.4.1 Test snapshot TTL expires correctly
+- [x] 4.3.4.2 Test auto-release on process termination
+- [x] 4.3.4.3 Test with_snapshot releases on success
+- [x] 4.3.4.4 Test with_snapshot releases on exception
+- [x] 4.3.4.5 Test snapshot registry cleanup (16 tests total)
 
 ---
 

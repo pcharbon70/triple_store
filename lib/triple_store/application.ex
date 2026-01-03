@@ -17,6 +17,7 @@ defmodule TripleStore.Application do
   The following services are started automatically:
 
   - `TripleStore.SPARQL.PlanCache` - LRU cache for query execution plans
+  - `TripleStore.Snapshot` - Snapshot lifecycle management with TTL
 
   Database-dependent services (Statistics.Cache) are started dynamically
   when a database is opened via `TripleStore.open/2`.
@@ -38,7 +39,9 @@ defmodule TripleStore.Application do
   def start(_type, _args) do
     children = [
       # Plan cache for SPARQL query optimization (no db dependency)
-      {TripleStore.SPARQL.PlanCache, name: TripleStore.SPARQL.PlanCache}
+      {TripleStore.SPARQL.PlanCache, name: TripleStore.SPARQL.PlanCache},
+      # Snapshot lifecycle management with TTL
+      {TripleStore.Snapshot, name: TripleStore.Snapshot}
     ]
 
     opts = [strategy: :one_for_one, name: TripleStore.Supervisor]
