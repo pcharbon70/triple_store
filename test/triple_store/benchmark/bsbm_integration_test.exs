@@ -45,7 +45,9 @@ defmodule TripleStore.Benchmark.BSBMIntegrationTest do
   # Extract numeric value from internal term format
   defp term_to_number({:literal, :typed, value, _type}) when is_binary(value) do
     case Float.parse(value) do
-      {num, _} -> num
+      {num, _} ->
+        num
+
       :error ->
         case Integer.parse(value) do
           {num, _} -> num

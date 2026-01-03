@@ -93,11 +93,14 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       IO.puts("  Baseline:          #{format_number(@baseline_throughput_tps)} triples/second")
       IO.puts("  Target:            #{format_number(@target_throughput_tps)} triples/second")
       IO.puts("  Progress:          #{Float.round(pct_of_target, 1)}% of target")
-      status_str = cond do
-        meets_target -> "✓ TARGET MET"
-        meets_baseline -> "○ BASELINE OK"
-        true -> "✗ BELOW BASELINE"
-      end
+
+      status_str =
+        cond do
+          meets_target -> "✓ TARGET MET"
+          meets_baseline -> "○ BASELINE OK"
+          true -> "✗ BELOW BASELINE"
+        end
+
       IO.puts("  Status:            #{status_str}")
       IO.puts("  ═══════════════════════════════════════════════════════════")
 
@@ -224,7 +227,11 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       IO.puts("  ═══════════════════════════════════════════════════════════")
       IO.puts("  CPU cores:         #{cores}")
       IO.puts("  Sequential:        #{format_number(round(seq_throughput))} tps (1 stage)")
-      IO.puts("  Parallel:          #{format_number(round(par_throughput))} tps (#{cores} stages)")
+
+      IO.puts(
+        "  Parallel:          #{format_number(round(par_throughput))} tps (#{cores} stages)"
+      )
+
       IO.puts("  Speedup:           #{Float.round(speedup, 2)}x")
       IO.puts("  Efficiency:        #{Float.round(efficiency * 100, 1)}%")
       IO.puts("  ═══════════════════════════════════════════════════════════")
@@ -279,7 +286,10 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
       for {stages, throughput} <- results do
         speedup = throughput / base_throughput
-        IO.puts("  #{stages} stage(s):        #{format_number(round(throughput))} tps (#{Float.round(speedup, 2)}x)")
+
+        IO.puts(
+          "  #{stages} stage(s):        #{format_number(round(throughput))} tps (#{Float.round(speedup, 2)}x)"
+        )
       end
 
       IO.puts("  ═══════════════════════════════════════════════════════════")
@@ -328,6 +338,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
             :atomics.put(last_time, 1, now)
 
             idx = :atomics.add_get(batch_index, 1, 1)
+
             if idx <= expected_batches + 10 do
               :atomics.put(batch_times, idx, elapsed)
             end
@@ -339,7 +350,12 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       # Collect batch times (skip first which includes setup)
       actual_batches = :atomics.get(batch_index, 1)
       max_batch_idx = min(actual_batches, expected_batches + 10)
-      times = if max_batch_idx >= 2, do: for(i <- 2..max_batch_idx, do: :atomics.get(batch_times, i)), else: []
+
+      times =
+        if max_batch_idx >= 2,
+          do: for(i <- 2..max_batch_idx, do: :atomics.get(batch_times, i)),
+          else: []
+
       times = Enum.filter(times, &(&1 > 0))
 
       if length(times) >= 3 do
@@ -374,7 +390,8 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
     test "no batch takes excessively long", %{db: db, manager: manager} do
       triple_count = 30_000
       batch_size = 3000
-      max_batch_time_ms = 5000  # 5 seconds max per batch
+      # 5 seconds max per batch
+      max_batch_time_ms = 5000
 
       triples = generate_synthetic_triples(triple_count)
       graph = RDF.Graph.new(triples)
@@ -397,6 +414,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
             :atomics.put(last_time, 1, now)
 
             current_max = :atomics.get(max_observed, 1)
+
             if elapsed > current_max do
               :atomics.put(max_observed, 1, elapsed)
             end
@@ -595,16 +613,36 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       IO.puts("  ║  Results                                                  ║")
       IO.puts("  ║  ─────────────────────────────────────────────────────── ║")
       IO.puts("  ║  Triples:          #{String.pad_leading(format_number(count), 37)}  ║")
-      IO.puts("  ║  Time:             #{String.pad_leading("#{Float.round(elapsed_seconds, 3)} seconds", 37)}  ║")
-      IO.puts("  ║  Throughput:       #{String.pad_leading("#{format_number(round(throughput))} tps", 37)}  ║")
-      IO.puts("  ║  Memory:           #{String.pad_leading("#{Float.round(memory_mb, 1)} MB", 37)}  ║")
+
+      IO.puts(
+        "  ║  Time:             #{String.pad_leading("#{Float.round(elapsed_seconds, 3)} seconds", 37)}  ║"
+      )
+
+      IO.puts(
+        "  ║  Throughput:       #{String.pad_leading("#{format_number(round(throughput))} tps", 37)}  ║"
+      )
+
+      IO.puts(
+        "  ║  Memory:           #{String.pad_leading("#{Float.round(memory_mb, 1)} MB", 37)}  ║"
+      )
+
       pct_of_target = throughput / @target_throughput_tps * 100
       meets_baseline = throughput >= @baseline_throughput_tps
 
       IO.puts("  ╠═══════════════════════════════════════════════════════════╣")
-      IO.puts("  ║  Baseline: #{format_number(@baseline_throughput_tps)} tps                                     ║")
-      IO.puts("  ║  Target: #{format_number(@target_throughput_tps)} tps                                      ║")
-      IO.puts("  ║  Progress: #{String.pad_trailing("#{Float.round(pct_of_target, 1)}% of target", 46)} ║")
+
+      IO.puts(
+        "  ║  Baseline: #{format_number(@baseline_throughput_tps)} tps                                     ║"
+      )
+
+      IO.puts(
+        "  ║  Target: #{format_number(@target_throughput_tps)} tps                                      ║"
+      )
+
+      IO.puts(
+        "  ║  Progress: #{String.pad_trailing("#{Float.round(pct_of_target, 1)}% of target", 46)} ║"
+      )
+
       status = if meets_baseline, do: "○ BASELINE OK", else: "✗ BELOW BASELINE"
       IO.puts("  ║  Status: #{String.pad_trailing(status, 50)} ║")
       IO.puts("  ╚═══════════════════════════════════════════════════════════╝")

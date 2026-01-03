@@ -332,7 +332,8 @@ defmodule TripleStore.Statistics.Server do
     new_state = %{state | modification_count: new_count}
 
     # Trigger background refresh if threshold exceeded
-    if new_count >= state.refresh_threshold and state.auto_refresh and not state.refresh_in_progress do
+    if new_count >= state.refresh_threshold and state.auto_refresh and
+         not state.refresh_in_progress do
       send(self(), :background_refresh)
     end
 

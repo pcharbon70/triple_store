@@ -495,11 +495,15 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       {:ok, snap} = NIF.snapshot(db)
 
       # Batch update
-      NIF.write_batch(db, [
-        {:spo, "key1", "batch1"},
-        {:spo, "key2", "batch2"},
-        {:spo, "key3", "batch3"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:spo, "key1", "batch1"},
+          {:spo, "key2", "batch2"},
+          {:spo, "key3", "batch3"}
+        ],
+        true
+      )
 
       assert {:ok, "original1"} = NIF.snapshot_get(snap, :spo, "key1")
       assert {:ok, "original2"} = NIF.snapshot_get(snap, :spo, "key2")

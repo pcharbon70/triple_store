@@ -343,7 +343,7 @@ defmodule TripleStore.StatisticsTest do
 
     test "respects build_histograms option", %{db: db} do
       # Create an inline integer ID (type 4, value 42)
-      int_id = (0b0100 <<< 60) ||| 42
+      int_id = 0b0100 <<< 60 ||| 42
 
       triples = [
         {1000, 100, int_id},
@@ -401,7 +401,7 @@ defmodule TripleStore.StatisticsTest do
   describe "build_numeric_histogram/3" do
     test "returns nil for predicate with no numeric values", %{db: db} do
       # Non-numeric object (URI type)
-      uri_id = (0b0001 <<< 60) ||| 42
+      uri_id = 0b0001 <<< 60 ||| 42
 
       triples = [
         {1000, 100, uri_id},
@@ -416,7 +416,7 @@ defmodule TripleStore.StatisticsTest do
 
     test "builds histogram for integer values", %{db: db} do
       # Create inline integer IDs (type 4)
-      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+      make_int_id = fn n -> 0b0100 <<< 60 ||| n end
 
       triples =
         for i <- 1..100 do
@@ -437,7 +437,7 @@ defmodule TripleStore.StatisticsTest do
     end
 
     test "handles single value", %{db: db} do
-      int_id = (0b0100 <<< 60) ||| 42
+      int_id = 0b0100 <<< 60 ||| 42
 
       :ok = Index.insert_triple(db, {1000, 100, int_id})
 
@@ -651,7 +651,7 @@ defmodule TripleStore.StatisticsTest do
   describe "bucket_count option" do
     test "builds histogram with custom bucket count", %{db: db} do
       # Create inline integer IDs (type 4)
-      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+      make_int_id = fn n -> 0b0100 <<< 60 ||| n end
 
       triples =
         for i <- 1..100 do
@@ -671,7 +671,7 @@ defmodule TripleStore.StatisticsTest do
 
     test "collect respects bucket_count option", %{db: db} do
       # Create inline integer IDs
-      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+      make_int_id = fn n -> 0b0100 <<< 60 ||| n end
 
       triples =
         for i <- 1..50 do
@@ -873,7 +873,7 @@ defmodule TripleStore.StatisticsTest do
 
   describe "histogram bucket_width" do
     test "histogram includes bucket_width field", %{db: db} do
-      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+      make_int_id = fn n -> 0b0100 <<< 60 ||| n end
 
       triples =
         for i <- 1..100 do
@@ -891,7 +891,7 @@ defmodule TripleStore.StatisticsTest do
     end
 
     test "estimate_range_selectivity uses bucket_width from histogram", %{db: db} do
-      make_int_id = fn n -> (0b0100 <<< 60) ||| n end
+      make_int_id = fn n -> 0b0100 <<< 60 ||| n end
 
       triples =
         for i <- 1..100 do

@@ -25,14 +25,17 @@ defmodule TripleStore.Statistics.ServerTest do
 
   # Helper to wait for server to be ready with proper synchronization (C12 fix)
   defp wait_for_server_ready(server_name, timeout \\ 1000) do
-    wait_until(fn ->
-      try do
-        info = Server.server_stats(server: server_name)
-        info.cached or not info.refresh_in_progress
-      rescue
-        _ -> false
-      end
-    end, timeout)
+    wait_until(
+      fn ->
+        try do
+          info = Server.server_stats(server: server_name)
+          info.cached or not info.refresh_in_progress
+        rescue
+          _ -> false
+        end
+      end,
+      timeout
+    )
   end
 
   # Helper to wait for a condition with timeout
@@ -229,9 +232,13 @@ defmodule TripleStore.Statistics.ServerTest do
       Server.notify_modification(server: :test_notify_1, count: 5)
 
       # Give cast time to process
-      :ok = wait_until(fn ->
-        Server.server_stats(server: :test_notify_1).modification_count == 6
-      end, 500)
+      :ok =
+        wait_until(
+          fn ->
+            Server.server_stats(server: :test_notify_1).modification_count == 6
+          end,
+          500
+        )
 
       info2 = Server.server_stats(server: :test_notify_1)
       assert info2.modification_count == 6
@@ -263,9 +270,13 @@ defmodule TripleStore.Statistics.ServerTest do
       Server.notify_modification(server: :test_notify_2, count: 6)
 
       # Wait for background refresh using proper synchronization
-      :ok = wait_until(fn ->
-        Server.server_stats(server: :test_notify_2).modification_count == 0
-      end, 1000)
+      :ok =
+        wait_until(
+          fn ->
+            Server.server_stats(server: :test_notify_2).modification_count == 0
+          end,
+          1000
+        )
 
       info = Server.server_stats(server: :test_notify_2)
       # Should have been reset by refresh
@@ -368,10 +379,14 @@ defmodule TripleStore.Statistics.ServerTest do
       Server.notify_modification(server: :test_periodic_1)
 
       # Wait for periodic refresh
-      :ok = wait_until(fn ->
-        info = Server.server_stats(server: :test_periodic_1)
-        info.modification_count == 0
-      end, 500)
+      :ok =
+        wait_until(
+          fn ->
+            info = Server.server_stats(server: :test_periodic_1)
+            info.modification_count == 0
+          end,
+          500
+        )
 
       # Verify modification count was reset
       info = Server.server_stats(server: :test_periodic_1)
@@ -493,7 +508,10 @@ defmodule TripleStore.Statistics.ServerTest do
       # Force a refresh
       {:ok, _} = Server.refresh(server: :test_telemetry_refresh)
 
-      assert_receive {:telemetry, [:triple_store, :cache, :stats, :refresh], measurements, metadata}, 1000
+      assert_receive {:telemetry, [:triple_store, :cache, :stats, :refresh], measurements,
+                      metadata},
+                     1000
+
       assert Map.has_key?(measurements, :duration)
       assert Map.has_key?(metadata, :modification_count)
 

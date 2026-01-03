@@ -898,9 +898,13 @@ defmodule TripleStore.SPARQL.Query do
       predicates: predicates
     ]
 
-    QueryCache.get_or_execute(sparql, fn ->
-      execute_and_serialize(ctx, query_type, optimized, metadata)
-    end, cache_opts)
+    QueryCache.get_or_execute(
+      sparql,
+      fn ->
+        execute_and_serialize(ctx, query_type, optimized, metadata)
+      end,
+      cache_opts
+    )
   end
 
   # Extract predicates from an optimized pattern for cache invalidation tracking
@@ -1506,8 +1510,10 @@ defmodule TripleStore.SPARQL.Query do
     initial_binding = %{var_name => value}
 
     # Execute left with initial binding if it's a BGP, otherwise recurse
-    with {:ok, left_stream} <- execute_with_initial_binding_or_default(ctx, left, initial_binding, depth),
-         {:ok, right_stream} <- execute_with_initial_binding_or_default(ctx, right, initial_binding, depth) do
+    with {:ok, left_stream} <-
+           execute_with_initial_binding_or_default(ctx, left, initial_binding, depth),
+         {:ok, right_stream} <-
+           execute_with_initial_binding_or_default(ctx, right, initial_binding, depth) do
       {:ok, Executor.hash_join(left_stream, right_stream)}
     end
   end

@@ -1806,7 +1806,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         range_indexed: MapSet.new()
       }
 
-      score_with_index = Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats_with_index)
+      score_with_index =
+        Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats_with_index)
 
       score_without_index =
         Optimizer.estimate_selectivity(price_pattern, MapSet.new(), stats_without_index)
@@ -1824,7 +1825,11 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       # ?x name ?name         (regular pattern)
 
       patterns = [
-        triple(var("x"), iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), iri("http://ex.org/Product")),
+        triple(
+          var("x"),
+          iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+          iri("http://ex.org/Product")
+        ),
         triple(var("x"), iri("http://ex.org/price"), var("price")),
         triple(var("x"), iri("http://ex.org/name"), var("name"))
       ]

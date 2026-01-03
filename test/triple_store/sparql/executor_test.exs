@@ -3162,7 +3162,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
       cleanup({db, manager})
     end
 
-    test "BGP with range context but no matching predicate uses regular index", %{tmp_dir: tmp_dir} do
+    test "BGP with range context but no matching predicate uses regular index", %{
+      tmp_dir: tmp_dir
+    } do
       {db, manager} = setup_db(tmp_dir)
 
       # Set up range context for a different predicate
@@ -3250,7 +3252,8 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
         # Should have received telemetry event for range index usage
         assert_receive {:telemetry, [:triple_store, :sparql, :executor, :range_index_used],
-                        %{count: 1}, %{predicate_id: ^price_id, var_name: "price", min: 50.0, max: 500.0}}
+                        %{count: 1},
+                        %{predicate_id: ^price_id, var_name: "price", min: 50.0, max: 500.0}}
       after
         :telemetry.detach(handler_id)
       end
@@ -3270,7 +3273,9 @@ defmodule TripleStore.SPARQL.ExecutorTest do
 
       # Add offers with various prices
       for {price, i} <- [{10.0, 1}, {50.0, 2}, {100.0, 3}, {500.0, 4}, {600.0, 5}] do
-        {:ok, offer_id} = Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer#{i}"))
+        {:ok, offer_id} =
+          Manager.get_or_create_id(manager, RDF.iri("http://example.org/Offer#{i}"))
+
         :ok = NumericRange.index_value(db, price_id, offer_id, price)
       end
 

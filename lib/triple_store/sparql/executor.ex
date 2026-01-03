@@ -360,7 +360,16 @@ defmodule TripleStore.SPARQL.Executor do
                 binding_stream =
                   Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
                     # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-                    case extend_binding_from_match(binding, s, p, o, s_id, p_id, o_id, dict_manager) do
+                    case extend_binding_from_match(
+                           binding,
+                           s,
+                           p,
+                           o,
+                           s_id,
+                           p_id,
+                           o_id,
+                           dict_manager
+                         ) do
                       {:ok, new_binding} -> [new_binding]
                       {:error, _} -> []
                     end
@@ -389,7 +398,16 @@ defmodule TripleStore.SPARQL.Executor do
           Stream.flat_map(property_map, fn {pred_id, object_ids} ->
             Enum.flat_map(object_ids, fn obj_id ->
               # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-              case extend_binding_from_match(binding, s, p, o, subject_id, pred_id, obj_id, dict_manager) do
+              case extend_binding_from_match(
+                     binding,
+                     s,
+                     p,
+                     o,
+                     subject_id,
+                     pred_id,
+                     obj_id,
+                     dict_manager
+                   ) do
                 {:ok, new_binding} -> [new_binding]
                 {:error, _} -> []
               end

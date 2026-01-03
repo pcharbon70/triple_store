@@ -125,14 +125,21 @@ defmodule TripleStore.SPARQL.Optimizer do
 
     # Build optimization context with filter information
     filter_context = extract_range_filters(algebra)
-    enriched_stats = Map.merge(stats, %{filter_context: filter_context, range_indexed: range_indexed})
+
+    enriched_stats =
+      Map.merge(stats, %{filter_context: filter_context, range_indexed: range_indexed})
 
     start_time = System.monotonic_time()
 
     result =
       algebra
       |> run_pass(:constant_folding, fold_constants?, fn a -> fold_constants(a) end, log?)
-      |> run_pass(:bgp_reordering, reorder_bgp?, fn a -> reorder_bgp_patterns(a, enriched_stats) end, log?)
+      |> run_pass(
+        :bgp_reordering,
+        reorder_bgp?,
+        fn a -> reorder_bgp_patterns(a, enriched_stats) end,
+        log?
+      )
       |> run_pass(:filter_push_down, push_filters?, fn a -> push_filters_down(a) end, log?)
       |> tap(fn r -> if log?, do: log_complete(r) end)
 
@@ -141,7 +148,10 @@ defmodule TripleStore.SPARQL.Optimizer do
 
     :telemetry.execute(
       [:triple_store, :sparql, :optimizer, :complete],
-      %{duration: duration, passes: count_enabled_passes(fold_constants?, reorder_bgp?, push_filters?)},
+      %{
+        duration: duration,
+        passes: count_enabled_passes(fold_constants?, reorder_bgp?, push_filters?)
+      },
       %{
         changed: algebra != result,
         filter_push_down: push_filters?,

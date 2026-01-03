@@ -250,7 +250,9 @@ defmodule TripleStore.SPARQL.CostModel do
   """
   @spec range_filter_cost(number(), term(), number(), number(), stats()) :: cost()
   def range_filter_cost(input_card, predicate_id, min_value, max_value, stats) do
-    selectivity = Cardinality.estimate_range_selectivity(predicate_id, min_value, max_value, stats)
+    selectivity =
+      Cardinality.estimate_range_selectivity(predicate_id, min_value, max_value, stats)
+
     filter_cost(input_card, selectivity)
   end
 

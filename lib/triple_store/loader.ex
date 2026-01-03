@@ -677,7 +677,17 @@ defmodule TripleStore.Loader do
       if parallel? do
         stages = resolve_stages(opts)
         max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
-        load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts, write_opts)
+
+        load_triples_parallel(
+          db,
+          manager,
+          triples,
+          batch_size,
+          stages,
+          max_demand,
+          progress_opts,
+          write_opts
+        )
       else
         load_triples_sequential(db, manager, triples, batch_size, progress_opts, write_opts)
       end
@@ -791,7 +801,16 @@ defmodule TripleStore.Loader do
           map(),
           map()
         ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
-  defp load_triples_parallel(db, manager, triples, batch_size, stages, max_demand, progress_opts, write_opts) do
+  defp load_triples_parallel(
+         db,
+         manager,
+         triples,
+         batch_size,
+         stages,
+         max_demand,
+         progress_opts,
+         write_opts
+       ) do
     # Use Agent for error tracking (needs to store full error term)
     # Use :atomics for halt flag (lock-free, no message passing overhead)
     {:ok, error_agent} = Agent.start_link(fn -> nil end)
@@ -883,17 +902,44 @@ defmodule TripleStore.Loader do
           map(),
           map()
         ) :: {non_neg_integer(), pos_integer()}
-  defp write_encoded_batch_with_progress(_db, {:error, _reason}, batch_num, _error_agent, _halt_ref, total, _progress_opts, _write_opts) do
+  defp write_encoded_batch_with_progress(
+         _db,
+         {:error, _reason},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
     # Skip writing on encoding error, error already recorded
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(_db, {:halted, _}, batch_num, _error_agent, _halt_ref, total, _progress_opts, _write_opts) do
+  defp write_encoded_batch_with_progress(
+         _db,
+         {:halted, _},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
     # Skip writing when halted
     {total, batch_num}
   end
 
-  defp write_encoded_batch_with_progress(db, {:ok, internal_triples}, batch_num, error_agent, halt_ref, total, progress_opts, write_opts) do
+  defp write_encoded_batch_with_progress(
+         db,
+         {:ok, internal_triples},
+         batch_num,
+         error_agent,
+         halt_ref,
+         total,
+         progress_opts,
+         write_opts
+       ) do
     # Check if already halted (lock-free read)
     if halted?(halt_ref) do
       {total, batch_num}
@@ -939,7 +985,11 @@ defmodule TripleStore.Loader do
   @spec maybe_report_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
   defp maybe_report_progress(%{callback: nil}, _batch_number, _total), do: :continue
 
-  defp maybe_report_progress(%{callback: callback, interval: interval, start_time: start_time}, batch_number, total) do
+  defp maybe_report_progress(
+         %{callback: callback, interval: interval, start_time: start_time},
+         batch_number,
+         total
+       ) do
     # Only report on interval boundaries
     if rem(batch_number, interval) == 0 do
       elapsed_ms = System.monotonic_time(:millisecond) - start_time
@@ -985,7 +1035,9 @@ defmodule TripleStore.Loader do
   # Private - Telemetry Helper
   # ===========================================================================
 
-  @spec with_telemetry(map(), (-> {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()})) ::
+  @spec with_telemetry(map(), (-> {:ok, non_neg_integer()}
+                                  | {:error, term()}
+                                  | {:halted, non_neg_integer()})) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp with_telemetry(start_metadata, func) do
     start_time = System.monotonic_time()

@@ -99,7 +99,8 @@ defmodule TripleStore.Config.Compaction do
         }
 
   @typedoc "Preset name"
-  @type preset_name :: :default | :write_heavy | :read_heavy | :balanced | :low_latency | :bulk_load
+  @type preset_name ::
+          :default | :write_heavy | :read_heavy | :balanced | :low_latency | :bulk_load
 
   # ===========================================================================
   # Constants

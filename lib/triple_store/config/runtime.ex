@@ -91,12 +91,9 @@ defmodule TripleStore.Config.Runtime do
          Integer.to_string(bulk_config.level0_file_num_compaction_trigger)},
         {"level0_slowdown_writes_trigger",
          Integer.to_string(bulk_config.level0_slowdown_writes_trigger)},
-        {"level0_stop_writes_trigger",
-         Integer.to_string(bulk_config.level0_stop_writes_trigger)},
-        {"max_bytes_for_level_base",
-         Integer.to_string(bulk_config.max_bytes_for_level_base)},
-        {"target_file_size_base",
-         Integer.to_string(bulk_config.target_file_size_base)}
+        {"level0_stop_writes_trigger", Integer.to_string(bulk_config.level0_stop_writes_trigger)},
+        {"max_bytes_for_level_base", Integer.to_string(bulk_config.max_bytes_for_level_base)},
+        {"target_file_size_base", Integer.to_string(bulk_config.target_file_size_base)}
       ]
 
     bulk_options =
@@ -118,10 +115,8 @@ defmodule TripleStore.Config.Runtime do
          Integer.to_string(default_config.level0_slowdown_writes_trigger)},
         {"level0_stop_writes_trigger",
          Integer.to_string(default_config.level0_stop_writes_trigger)},
-        {"max_bytes_for_level_base",
-         Integer.to_string(default_config.max_bytes_for_level_base)},
-        {"target_file_size_base",
-         Integer.to_string(default_config.target_file_size_base)}
+        {"max_bytes_for_level_base", Integer.to_string(default_config.max_bytes_for_level_base)},
+        {"target_file_size_base", Integer.to_string(default_config.target_file_size_base)}
       ]
 
     original_options =
@@ -192,10 +187,8 @@ defmodule TripleStore.Config.Runtime do
        Integer.to_string(default_config.level0_slowdown_writes_trigger)},
       {"level0_stop_writes_trigger",
        Integer.to_string(default_config.level0_stop_writes_trigger)},
-      {"max_bytes_for_level_base",
-       Integer.to_string(default_config.max_bytes_for_level_base)},
-      {"target_file_size_base",
-       Integer.to_string(default_config.target_file_size_base)},
+      {"max_bytes_for_level_base", Integer.to_string(default_config.max_bytes_for_level_base)},
+      {"target_file_size_base", Integer.to_string(default_config.target_file_size_base)},
       {"disable_auto_compactions", "false"}
     ]
 
@@ -231,12 +224,9 @@ defmodule TripleStore.Config.Runtime do
        Integer.to_string(config.level0_file_num_compaction_trigger)},
       {"level0_slowdown_writes_trigger",
        Integer.to_string(config.level0_slowdown_writes_trigger)},
-      {"level0_stop_writes_trigger",
-       Integer.to_string(config.level0_stop_writes_trigger)},
-      {"max_bytes_for_level_base",
-       Integer.to_string(config.max_bytes_for_level_base)},
-      {"target_file_size_base",
-       Integer.to_string(config.target_file_size_base)}
+      {"level0_stop_writes_trigger", Integer.to_string(config.level0_stop_writes_trigger)},
+      {"max_bytes_for_level_base", Integer.to_string(config.max_bytes_for_level_base)},
+      {"target_file_size_base", Integer.to_string(config.target_file_size_base)}
     ]
 
     NIF.set_options(db_ref, options)

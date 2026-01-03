@@ -642,6 +642,7 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
         {:triple, var("x"), 1, var("y")},
         {:triple, var("y"), 2, var("z")}
       ]
+
       {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
 
       explanation = JoinEnumeration.explain_plan(plan)
@@ -659,6 +660,7 @@ defmodule TripleStore.SPARQL.JoinEnumerationTest do
         {:triple, var("x"), 1, var("y")},
         {:triple, var("y"), 2, var("z")}
       ]
+
       {:ok, plan} = JoinEnumeration.enumerate(patterns, @small_stats)
 
       explanation = JoinEnumeration.explain_plan(plan)

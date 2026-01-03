@@ -23,7 +23,8 @@ defmodule TripleStore.Integration.StorageLayerTest do
 
   setup do
     # Create a temporary database for testing
-    path = Path.join(System.tmp_dir!(), "storage_layer_test_#{System.unique_integer([:positive])}")
+    path =
+      Path.join(System.tmp_dir!(), "storage_layer_test_#{System.unique_integer([:positive])}")
 
     {:ok, db} = NIF.open(path)
 
@@ -60,6 +61,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
     test "prefix iterator with extractor returns correct results", %{db: db} do
       # Insert test data with known prefix
       subject_id = 42
+
       for p <- 1..5, o <- 1..3 do
         key = <<subject_id::64, p::64, o::64>>
         :ok = NIF.put(db, :spo, key, "value")
@@ -160,7 +162,9 @@ defmodule TripleStore.Integration.StorageLayerTest do
       # Compression should reduce size significantly (at least 2x)
       if total_sst_size > 0 do
         compression_ratio = uncompressed_size / total_sst_size
-        assert compression_ratio > 2.0, "Expected compression ratio > 2x, got #{compression_ratio}"
+
+        assert compression_ratio > 2.0,
+               "Expected compression ratio > 2x, got #{compression_ratio}"
       end
     end
   end
@@ -198,6 +202,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
       # Wait for processes to die
       for pid <- pids do
         ref = Process.monitor(pid)
+
         receive do
           {:DOWN, ^ref, :process, ^pid, _} -> :ok
         after
@@ -416,5 +421,4 @@ defmodule TripleStore.Integration.StorageLayerTest do
         count
     end
   end
-
 end

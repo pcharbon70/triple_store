@@ -62,7 +62,11 @@ defmodule TripleStore.Config.RocksDB do
 
   @typedoc "Configuration preset name"
   @type preset_name ::
-          :development | :production_low_memory | :production_high_memory | :write_heavy | :bulk_load
+          :development
+          | :production_low_memory
+          | :production_high_memory
+          | :write_heavy
+          | :bulk_load
 
   # ===========================================================================
   # Constants

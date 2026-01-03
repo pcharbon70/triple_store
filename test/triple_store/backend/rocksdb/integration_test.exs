@@ -14,10 +14,14 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
 
       NIF.put(db1, :spo, "key1", "value1")
 
-      NIF.write_batch(db1, [
-        {:id2str, "id1", "string1"},
-        {:str2id, "string1", "id1"}
-      ], true)
+      NIF.write_batch(
+        db1,
+        [
+          {:id2str, "id1", "string1"},
+          {:str2id, "string1", "id1"}
+        ],
+        true
+      )
 
       NIF.close(db1)
 
@@ -113,17 +117,25 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
 
     test "mixed_batch updates are visible to iterator", %{db: db} do
       # Initial data
-      NIF.write_batch(db, [
-        {:spo, "a", "1"},
-        {:spo, "b", "2"},
-        {:spo, "c", "3"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:spo, "a", "1"},
+          {:spo, "b", "2"},
+          {:spo, "c", "3"}
+        ],
+        true
+      )
 
       # Mixed batch: delete b, add d
-      NIF.mixed_batch(db, [
-        {:delete, :spo, "b"},
-        {:put, :spo, "d", "4"}
-      ], true)
+      NIF.mixed_batch(
+        db,
+        [
+          {:delete, :spo, "b"},
+          {:put, :spo, "d", "4"}
+        ],
+        true
+      )
 
       {:ok, iter} = NIF.prefix_iterator(db, :spo, "")
       {:ok, results} = NIF.iterator_collect(iter)
@@ -140,18 +152,26 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
   describe "snapshot with iterators" do
     test "snapshot iterator sees data at snapshot time only", %{db: db} do
       # Initial data
-      NIF.write_batch(db, [
-        {:spo, "key1", "v1"},
-        {:spo, "key2", "v2"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:spo, "key1", "v1"},
+          {:spo, "key2", "v2"}
+        ],
+        true
+      )
 
       {:ok, snap} = NIF.snapshot(db)
 
       # Add more data after snapshot
-      NIF.write_batch(db, [
-        {:spo, "key3", "v3"},
-        {:spo, "key4", "v4"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:spo, "key3", "v3"},
+          {:spo, "key4", "v4"}
+        ],
+        true
+      )
 
       # Snapshot iterator
       {:ok, snap_iter} = NIF.snapshot_prefix_iterator(snap, :spo, "key")

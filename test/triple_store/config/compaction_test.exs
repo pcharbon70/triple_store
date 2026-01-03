@@ -94,7 +94,9 @@ defmodule TripleStore.Config.CompactionTest do
       bulk_load = Compaction.preset(:bulk_load)
       write_heavy = Compaction.preset(:write_heavy)
 
-      assert bulk_load.level0_file_num_compaction_trigger > write_heavy.level0_file_num_compaction_trigger
+      assert bulk_load.level0_file_num_compaction_trigger >
+               write_heavy.level0_file_num_compaction_trigger
+
       assert bulk_load.level0_slowdown_writes_trigger > write_heavy.level0_slowdown_writes_trigger
       assert bulk_load.level0_stop_writes_trigger > write_heavy.level0_stop_writes_trigger
     end

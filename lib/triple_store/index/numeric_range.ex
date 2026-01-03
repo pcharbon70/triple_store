@@ -76,7 +76,7 @@ defmodule TripleStore.Index.NumericRange do
     <<bits::64-unsigned-big>> = <<value::64-float-big>>
 
     sorted_bits =
-      if (bits >>> 63) == 1 do
+      if bits >>> 63 == 1 do
         # Negative float: flip all bits
         bxor(bits, 0xFFFFFFFFFFFFFFFF)
       else
@@ -106,7 +106,7 @@ defmodule TripleStore.Index.NumericRange do
   @spec sortable_bytes_to_float(<<_::64>>) :: float()
   def sortable_bytes_to_float(<<sorted_bits::64-unsigned-big>>) do
     original_bits =
-      if (sorted_bits >>> 63) == 1 do
+      if sorted_bits >>> 63 == 1 do
         # Was positive: flip sign bit back
         bxor(sorted_bits, 0x8000000000000000)
       else
@@ -128,7 +128,13 @@ defmodule TripleStore.Index.NumericRange do
   @spec init() :: :ok
   def init do
     alias TripleStore.ETSHelper
-    ETSHelper.ensure_table!(@range_predicates_table, [:set, :public, :named_table, read_concurrency: true])
+
+    ETSHelper.ensure_table!(@range_predicates_table, [
+      :set,
+      :public,
+      :named_table,
+      read_concurrency: true
+    ])
   end
 
   @doc """
@@ -322,7 +328,8 @@ defmodule TripleStore.Index.NumericRange do
   - `{:error, reason}` on failure
   """
   @spec index_value(db_ref(), predicate_id(), subject_id(), float()) :: :ok | {:error, term()}
-  def index_value(db, predicate_id, subject_id, value) when is_float(value) or is_integer(value) do
+  def index_value(db, predicate_id, subject_id, value)
+      when is_float(value) or is_integer(value) do
     key = build_index_key(predicate_id, value * 1.0, subject_id)
     # Value is empty - all data is in the key
     NIF.put(db, @cf, key, <<>>)

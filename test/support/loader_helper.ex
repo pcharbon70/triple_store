@@ -71,8 +71,7 @@ defmodule TripleStore.Test.LoaderHelper do
   def create_test_graph(count) do
     1..count
     |> Enum.map(fn i ->
-      {RDF.iri("http://example.org/subject/#{i}"),
-       RDF.iri("http://example.org/predicate"),
+      {RDF.iri("http://example.org/subject/#{i}"), RDF.iri("http://example.org/predicate"),
        RDF.literal("value_#{i}")}
     end)
     |> RDF.Graph.new()
@@ -91,8 +90,7 @@ defmodule TripleStore.Test.LoaderHelper do
   def create_test_triples(count) do
     1..count
     |> Enum.map(fn i ->
-      {RDF.iri("http://example.org/s/#{i}"),
-       RDF.iri("http://example.org/p"),
+      {RDF.iri("http://example.org/s/#{i}"), RDF.iri("http://example.org/p"),
        RDF.literal("v#{i}")}
     end)
   end

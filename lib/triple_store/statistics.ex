@@ -157,7 +157,12 @@ defmodule TripleStore.Statistics do
          {:ok, distinct_objects} <- distinct_objects(db),
          {:ok, predicate_histogram} <- build_predicate_histogram(db),
          {:ok, numeric_histograms} <-
-           maybe_build_numeric_histograms(db, predicate_histogram, bucket_count, build_histograms?) do
+           maybe_build_numeric_histograms(
+             db,
+             predicate_histogram,
+             bucket_count,
+             build_histograms?
+           ) do
       stats = %{
         triple_count: triple_count,
         distinct_subjects: distinct_subjects,
@@ -173,7 +178,11 @@ defmodule TripleStore.Statistics do
 
       :telemetry.execute(
         [:triple_store, :statistics, :collect],
-        %{duration: duration, triple_count: triple_count, predicate_count: map_size(predicate_histogram)},
+        %{
+          duration: duration,
+          triple_count: triple_count,
+          predicate_count: map_size(predicate_histogram)
+        },
         %{}
       )
 
@@ -438,7 +447,8 @@ defmodule TripleStore.Statistics do
       iex> histogram
       %{42 => 500, 43 => 1500, 44 => 300}
   """
-  @spec build_predicate_histogram(db_ref()) :: {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
+  @spec build_predicate_histogram(db_ref()) ::
+          {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
   def build_predicate_histogram(db) do
     case NIF.prefix_stream(db, :pos, <<>>) do
       {:ok, stream} ->
@@ -513,7 +523,8 @@ defmodule TripleStore.Statistics do
       else
         # Pass 2: Stream again to populate buckets
         with {:ok, stream2} <- NIF.prefix_stream(db, :pos, prefix),
-             {:ok, histogram} <- build_histogram_from_values(min_val, max_val, count, bucket_count) do
+             {:ok, histogram} <-
+               build_histogram_from_values(min_val, max_val, count, bucket_count) do
           value_stream =
             stream2
             |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
@@ -817,7 +828,8 @@ defmodule TripleStore.Statistics do
   @spec migrate_stats_if_needed(stats()) :: stats()
   def migrate_stats_if_needed(%{version: @stats_version} = stats), do: stats
 
-  def migrate_stats_if_needed(%{version: old_version} = stats) when old_version < @stats_version do
+  def migrate_stats_if_needed(%{version: old_version} = stats)
+      when old_version < @stats_version do
     Logger.info("Migrating statistics from version #{old_version} to #{@stats_version}")
 
     stats

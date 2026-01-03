@@ -82,8 +82,12 @@ defmodule TripleStore.Index do
   @spec validate_sync_option(keyword()) :: boolean()
   defp validate_sync_option(opts) do
     case Keyword.get(opts, :sync, true) do
-      true -> true
-      false -> false
+      true ->
+        true
+
+      false ->
+        false
+
       other ->
         require Logger
         Logger.warning("Invalid :sync option value #{inspect(other)}, using default true")

@@ -126,7 +126,8 @@ defmodule TripleStore.Index.NumericRangeTest do
     test "negative zero (-0.0) sorts correctly via arithmetic" do
       # Erlang normalizes -0.0 to 0.0 in many contexts, but we can test
       # the general zero handling behavior
-      neg_zero = -1.0 * 0.0  # This may or may not produce IEEE -0.0 in Erlang
+      # This may or may not produce IEEE -0.0 in Erlang
+      neg_zero = -1.0 * 0.0
       pos_zero = 0.0
 
       bytes_neg_zero = NumericRange.float_to_sortable_bytes(neg_zero)

@@ -298,7 +298,10 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
       assert count == 1000
     end
 
-    test "runtime config is restored after exception in with_bulk_config", %{db: db, manager: manager} do
+    test "runtime config is restored after exception in with_bulk_config", %{
+      db: db,
+      manager: manager
+    } do
       triples = generate_synthetic_triples(1000)
       graph = RDF.Graph.new(triples)
 

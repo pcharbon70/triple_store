@@ -93,11 +93,15 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
   describe "delete_batch/3" do
     test "deletes multiple keys atomically", %{db: db} do
       # First, insert some data
-      NIF.write_batch(db, [
-        {:id2str, "key1", "value1"},
-        {:id2str, "key2", "value2"},
-        {:id2str, "key3", "value3"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:id2str, "key1", "value1"},
+          {:id2str, "key2", "value2"},
+          {:id2str, "key3", "value3"}
+        ],
+        true
+      )
 
       # Now delete
       operations = [
@@ -114,11 +118,15 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
 
     test "deletes from multiple column families atomically", %{db: db} do
       # First, insert some data
-      NIF.write_batch(db, [
-        {:id2str, "id1", "string1"},
-        {:str2id, "string1", "id1"},
-        {:spo, "s1p1o1", ""}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:id2str, "id1", "string1"},
+          {:str2id, "string1", "id1"},
+          {:spo, "s1p1o1", ""}
+        ],
+        true
+      )
 
       # Now delete
       operations = [
@@ -148,9 +156,13 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      NIF.write_batch(db, [
-        {:id2str, "key1", "value1"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:id2str, "key1", "value1"}
+        ],
+        true
+      )
 
       operations = [
         {:id2str, "key1"},
@@ -174,10 +186,14 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
   describe "mixed_batch/3" do
     test "performs mixed puts and deletes atomically", %{db: db} do
       # First, insert some data to delete
-      NIF.write_batch(db, [
-        {:id2str, "old_key1", "old_value1"},
-        {:id2str, "old_key2", "old_value2"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:id2str, "old_key1", "old_value1"},
+          {:id2str, "old_key2", "old_value2"}
+        ],
+        true
+      )
 
       # Now do mixed operations
       operations = [
@@ -203,11 +219,15 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       # This is the atomic update pattern needed for triple store
 
       # First add old triple
-      NIF.write_batch(db, [
-        {:spo, "old_spo", ""},
-        {:pos, "old_pos", ""},
-        {:osp, "old_osp", ""}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:spo, "old_spo", ""},
+          {:pos, "old_pos", ""},
+          {:osp, "old_osp", ""}
+        ],
+        true
+      )
 
       # Now atomically replace with new triple
       operations = [
@@ -249,10 +269,14 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
     end
 
     test "handles deletes only", %{db: db} do
-      NIF.write_batch(db, [
-        {:id2str, "key1", "value1"},
-        {:id2str, "key2", "value2"}
-      ], true)
+      NIF.write_batch(
+        db,
+        [
+          {:id2str, "key1", "value1"},
+          {:id2str, "key2", "value2"}
+        ],
+        true
+      )
 
       operations = [
         {:delete, :id2str, "key1"},

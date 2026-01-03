@@ -184,8 +184,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/name"),
          RDF.literal("Plain string")},
         # Typed literals
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/count"),
-         RDF.literal(42)},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/count"), RDF.literal(42)},
         # Language-tagged literals
         {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/label"),
          RDF.literal("English label", language: "en")}
@@ -302,12 +301,9 @@ defmodule TripleStore.Loader.ConsistencyTest do
     test "each triple is findable via all indices", %{db: db, manager: manager} do
       # Use a smaller set for detailed verification
       triples = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"),
-         RDF.literal("o1")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"),
-         RDF.literal("o2")},
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p2"),
-         RDF.literal("o3")}
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"), RDF.literal("o1")},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p1"), RDF.literal("o2")},
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p2"), RDF.literal("o3")}
       ]
 
       graph = RDF.Graph.new(triples)
@@ -588,7 +584,11 @@ defmodule TripleStore.Loader.ConsistencyTest do
       File.rm_rf(test_path)
     end
 
-    test "sequence counter resumes correctly after restart", %{db: db, manager: manager, path: path} do
+    test "sequence counter resumes correctly after restart", %{
+      db: db,
+      manager: manager,
+      path: path
+    } do
       # Close setup db first
       Manager.stop(manager)
       NIF.close(db)

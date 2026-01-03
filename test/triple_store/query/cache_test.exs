@@ -1137,8 +1137,7 @@ defmodule TripleStore.Query.CacheTest do
 
     test "normalizes nested patterns" do
       query =
-        {:join,
-         {:bgp, [{:triple, {:variable, "a"}, {:named_node, "pred1"}, {:variable, "b"}}]},
+        {:join, {:bgp, [{:triple, {:variable, "a"}, {:named_node, "pred1"}, {:variable, "b"}}]},
          {:bgp, [{:triple, {:variable, "b"}, {:named_node, "pred2"}, {:variable, "c"}}]}}
 
       normalized = Cache.normalize_query(query)
@@ -1160,8 +1159,10 @@ defmodule TripleStore.Query.CacheTest do
     test "preserves non-variable terms" do
       query =
         {:bgp,
-         [{:triple, {:named_node, "http://ex.org/s"}, {:named_node, "http://ex.org/p"},
-           {:literal, :simple, "value"}}]}
+         [
+           {:triple, {:named_node, "http://ex.org/s"}, {:named_node, "http://ex.org/p"},
+            {:literal, :simple, "value"}}
+         ]}
 
       normalized = Cache.normalize_query(query)
       assert normalized == query

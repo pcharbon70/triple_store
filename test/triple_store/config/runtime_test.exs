@@ -9,7 +9,9 @@ defmodule TripleStore.Config.RuntimeTest do
 
   setup do
     # Create a temporary database for testing
-    path = Path.join(System.tmp_dir!(), "runtime_config_test_#{:erlang.unique_integer([:positive])}")
+    path =
+      Path.join(System.tmp_dir!(), "runtime_config_test_#{:erlang.unique_integer([:positive])}")
+
     File.rm_rf!(path)
 
     {:ok, db} = NIF.open(path)
@@ -49,11 +51,14 @@ defmodule TripleStore.Config.RuntimeTest do
     end
 
     test "returns error for closed database" do
-      path = Path.join(System.tmp_dir!(), "runtime_closed_test_#{:erlang.unique_integer([:positive])}")
+      path =
+        Path.join(System.tmp_dir!(), "runtime_closed_test_#{:erlang.unique_integer([:positive])}")
+
       {:ok, db} = NIF.open(path)
       NIF.close(db)
 
-      assert {:error, :already_closed} = NIF.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
+      assert {:error, :already_closed} =
+               NIF.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
 
       File.rm_rf!(path)
     end
