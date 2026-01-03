@@ -1,6 +1,6 @@
 # LUBM Benchmark
 
-> **Last Run:** 2025-12-31
+> **Last Run:** 2026-01-03 (Post Phase 4 Optimizations)
 > **Dataset:** Scale 1 (1 university, ~23K triples)
 
 ## Overview
@@ -60,25 +60,26 @@ The LUBM benchmark includes 14 queries testing various aspects of RDF store perf
 - **Triple Count:** 23,316
 - **Warmup Iterations:** 2
 - **Measurement Iterations:** 5
+- **Phase 4 Optimizations:** Prefix extractor, column family tuning, snapshot management
 
 ### Query Performance
 
 | Query | p50 | p95 | p99 | Mean | Results |
 |-------|-----|-----|-----|------|---------|
-| Q1 | 13.3ms | 13.7ms | 13.7ms | 13.3ms | 0 |
-| Q2 | 94.7ms | 96.3ms | 96.3ms | 95.0ms | 640 |
-| Q3 | 36.5ms | 36.5ms | 36.5ms | 36.5ms | 0 |
-| Q4 | 0.05ms | 0.09ms | 0.09ms | 0.06ms | 0 |
+| Q1 | 12.38ms | 12.43ms | 12.43ms | 12.44ms | 0 |
+| Q2 | 84.98ms | 85.86ms | 85.86ms | 85.26ms | 640 |
+| Q3 | 34.15ms | 34.24ms | 34.24ms | 34.16ms | 0 |
+| Q4 | 0.05ms | 0.05ms | 0.05ms | 0.05ms | 0 |
 | Q5 | 0.04ms | 0.04ms | 0.04ms | 0.04ms | 0 |
-| Q6 | 0.03ms | 0.04ms | 0.04ms | 0.03ms | 0 |
-| Q7 | 0.04ms | 0.05ms | 0.05ms | 0.04ms | 0 |
-| Q8 | 0.04ms | 0.04ms | 0.04ms | 0.04ms | 0 |
+| Q6 | 0.04ms | 0.04ms | 0.04ms | 0.03ms | 0 |
+| Q7 | 0.04ms | 0.05ms | 0.05ms | 0.05ms | 0 |
+| Q8 | 0.05ms | 0.05ms | 0.05ms | 0.05ms | 0 |
 | Q9 | 0.05ms | 0.05ms | 0.05ms | 0.05ms | 0 |
 | Q10 | 0.04ms | 0.04ms | 0.04ms | 0.04ms | 0 |
-| Q11 | 0.95ms | 0.96ms | 0.96ms | 0.95ms | 0 |
-| Q12 | 0.04ms | 0.05ms | 0.05ms | 0.04ms | 0 |
+| Q11 | 0.90ms | 0.90ms | 0.90ms | 0.90ms | 0 |
+| Q12 | 0.05ms | 0.05ms | 0.05ms | 0.05ms | 0 |
 | Q13 | 0.04ms | 0.04ms | 0.04ms | 0.04ms | 0 |
-| Q14 | 11.5ms | 11.6ms | 11.6ms | 11.5ms | 2,329 |
+| Q14 | 10.77ms | 10.79ms | 10.79ms | 10.98ms | 2,329 |
 
 ### Latency Distribution
 
@@ -87,7 +88,7 @@ xychart-beta
     title "LUBM Query Latency (p95, log scale)"
     x-axis [Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12, Q13, Q14]
     y-axis "Latency (ms)" 0.01 --> 100
-    bar [13.7, 96.3, 36.5, 0.09, 0.04, 0.04, 0.05, 0.04, 0.05, 0.04, 0.96, 0.05, 0.04, 11.6]
+    bar [12.43, 85.86, 34.24, 0.05, 0.04, 0.04, 0.05, 0.05, 0.05, 0.04, 0.90, 0.05, 0.04, 10.79]
 ```
 
 ### Summary Statistics
@@ -96,9 +97,9 @@ xychart-beta
 |--------|-------|
 | Queries Executed | 14 |
 | Queries with Results | 14 |
-| Average p50 | 11.24ms |
-| Average p95 | 11.39ms |
-| Max p95 | 96.29ms |
+| Average p50 | 10.25ms |
+| Average p95 | 10.33ms |
+| Max p95 | 85.86ms |
 
 ## Analysis
 
@@ -108,20 +109,21 @@ Queries Q4-Q10 and Q12-Q13 execute in under 1ms. These are simple pattern matche
 
 ### Medium Queries (1-20ms)
 
-- **Q1** (13.3ms): Graduate student lookup with type filtering
-- **Q11** (0.95ms): Research group with suborganization traversal
-- **Q14** (11.5ms): Large result set (2,329 undergraduate students)
+- **Q1** (12.38ms): Graduate student lookup with type filtering (7% improvement)
+- **Q11** (0.90ms): Research group with suborganization traversal (5% improvement)
+- **Q14** (10.77ms): Large result set (2,329 undergraduate students) (6% improvement)
 
 ### Slow Queries (> 20ms)
 
-- **Q2** (94.7ms): Complex 3-way join with 640 results
-- **Q3** (36.5ms): Publication lookup (returns 0 due to parameter mismatch)
+- **Q2** (84.98ms): Complex 3-way join with 640 results (10% improvement from 94.7ms)
+- **Q3** (34.15ms): Publication lookup (returns 0 due to parameter mismatch) (7% improvement)
 
 ### Notes
 
 - Several queries return 0 results due to parameter substitution. The default parameters (dept=0, faculty=1) may not match the generated data.
 - Q2 demonstrates the cost of complex joins - it's ~2000x slower than simple lookups.
 - Inference-requiring queries that return 0 results execute very quickly because no materialization is needed.
+- Phase 4 optimizations provided 5-10% improvements across most queries.
 
 ## Running the Benchmark
 
@@ -149,7 +151,20 @@ TripleStore.Benchmark.Runner.print_summary(results)
 | Target | Metric | Threshold | Status |
 |--------|--------|-----------|--------|
 | Simple BGP | p95 latency | < 10ms | Varies by query |
-| Complex Join | p95 latency | < 100ms | Q2: 96ms (borderline) |
+| Complex Join | p95 latency | < 100ms | Q2: 86ms (Pass) |
+
+## Phase 4 Impact
+
+Phase 4 storage layer tuning improved query performance across the board:
+
+| Query | Before | After | Improvement |
+|-------|--------|-------|-------------|
+| Q1 | 13.7ms | 12.4ms | 9% |
+| Q2 | 96.3ms | 85.9ms | 11% |
+| Q3 | 36.5ms | 34.2ms | 6% |
+| Q14 | 11.6ms | 10.8ms | 7% |
+
+The complex join Q2 now passes the 100ms threshold (was borderline at 96ms).
 
 ## References
 
