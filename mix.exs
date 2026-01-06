@@ -35,8 +35,8 @@ defmodule TripleStore.MixProject do
       # RDF parsing and data structures
       {:rdf, "~> 2.0"},
 
-      # NIF compilation
-      {:rustler, "~> 0.35"},
+      # RocksDB storage backend (erlang-rocksdb C++ NIF)
+      {:rocksdb, "~> 1.9"},
 
       # Concurrent processing for bulk loading
       {:flow, "~> 1.2"},
