@@ -4,7 +4,7 @@ A high-performance RDF triple store implementation in Elixir with RocksDB storag
 
 ## Features
 
-- **Persistent Storage**: RocksDB backend via Rustler NIFs with dictionary encoding and optimized triple indices (SPO, POS, OSP)
+- **Persistent Storage**: RocksDB backend via erlang-rocksdb with dictionary encoding and optimized triple indices (SPO, POS, OSP)
 - **SPARQL 1.1**: Full query support including SELECT, CONSTRUCT, ASK, DESCRIBE, and UPDATE operations
 - **OWL 2 RL Reasoning**: Forward-chaining materialization with semi-naive evaluation and incremental maintenance
 - **Query Optimization**: Cost-based optimizer with Leapfrog Triejoin for complex BGP queries
@@ -19,7 +19,7 @@ A high-performance RDF triple store implementation in Elixir with RocksDB storag
 ├───────────────┴──────────────────────┴───────────────────────┤
 │                    Index & Dictionary Layer                   │
 ├──────────────────────────────────────────────────────────────┤
-│                    Rustler NIF Boundary                       │
+│                    Erlang-RocksDB Adapter                     │
 ├──────────────────────────────────────────────────────────────┤
 │                      RocksDB Instance                         │
 └──────────────────────────────────────────────────────────────┘
@@ -64,9 +64,12 @@ TripleStore.close(store)
 
 ## Requirements
 
-- Elixir 1.14+
-- Erlang/OTP 25+
-- Rust toolchain (for NIF compilation)
+- Elixir 1.18+
+- Erlang/OTP 27+
+- RocksDB C++ library:
+  - Ubuntu/Debian: `sudo apt-get install librocksdb-dev`
+  - macOS: `brew install rocksdb`
+  - Fedora/RHEL: `sudo dnf install rocksdb-devel`
 
 ## Development
 
@@ -74,17 +77,11 @@ TripleStore.close(store)
 # Fetch dependencies
 mix deps.get
 
-# Compile (includes NIF compilation)
+# Compile
 mix compile
 
 # Run tests
 mix test
-
-# Run Rust NIF tests
-(cd native/rocksdb_nif && cargo test)
-
-# Run both
-mix test && (cd native/rocksdb_nif && cargo test)
 
 # Run benchmarks
 mix run bench/bsbm.exs
