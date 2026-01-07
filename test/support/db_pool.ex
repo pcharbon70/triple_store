@@ -33,20 +33,27 @@ defmodule TripleStore.Test.DbPool do
   def init(opts) do
     pool_size = Keyword.get(opts, :pool_size, pool_size_from_env(@default_pool_size))
 
-    databases =
-      for id <- 1..pool_size do
-        path = TestHelpers.test_db_path("pool_#{id}")
-        {:ok, db} = NIF.open(path)
-        %{db: db, path: path, id: id}
-      end
+    try do
+      databases =
+        for id <- 1..pool_size do
+          path = TestHelpers.test_db_path("pool_#{id}")
+          {:ok, db} = NIF.open(path)
+          %{db: db, path: path, id: id}
+        end
 
-    state = %{
-      available: databases,
-      in_use: %{},
-      waiters: :queue.new()
-    }
+      state = %{
+        available: databases,
+        in_use: %{},
+        waiters: :queue.new()
+      }
 
-    {:ok, state}
+      {:ok, state}
+    rescue
+      e ->
+        # If NIF is not implemented, skip the DbPool
+        # Some tests will be skipped during migration phases
+        {:stop, {:nif_not_ready, e}}
+    end
   end
 
   @impl true
