@@ -1,4 +1,4 @@
-defmodule TripleStore.Section13Test do
+defmodule TripleStore.Backend.RocksDB.EncodingCompatibilityTest do
   @moduledoc """
   Unit tests for Section 1.3: Binary Encoding Compatibility
 

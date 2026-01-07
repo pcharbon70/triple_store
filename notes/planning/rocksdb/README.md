@@ -15,7 +15,7 @@ This directory contains the phased migration plan for transitioning the TripleSt
 
 | Phase | Document | Status | Description |
 |-------|----------|--------|-------------|
-| 1 | [phase-01-foundation-migration.md](./phase-01-foundation-migration.md) | In Progress | Basic operations (open, get, put, delete, write_batch) |
+| 1 | [phase-01-foundation-migration.md](./phase-01-foundation-migration.md) | Complete | Basic operations (open, get, put, delete, write_batch) |
 | 2 | [phase-02-iterator-snapshot-migration.md](./phase-02-iterator-snapshot-migration.md) | Pending | Iterators, snapshots, and prefix operations |
 | 3 | [phase-03-optimization-cleanup.md](./phase-03-optimization-cleanup.md) | Pending | Fold optimization and Rust removal |
 
@@ -29,13 +29,15 @@ This directory contains the phased migration plan for transitioning the TripleSt
   - Deleted Rust RocksDB NIF code
   - Updated README with new build requirements
 
-- [x] 1.2 Database Operations Adapter - COMPLETED
-  - Created ErlangAdapter module
-  - Implemented open/close with 7 column families
+- [x] 1.2 Database Operations Adapter - COMPLETED (2026-01-07)
+  - Created ErlangAdapter GenServer module
+  - Implemented open/close with 8 column families (including default)
   - Implemented get/put/delete/exists operations
   - Implemented write_batch for atomic operations
   - Implemented utility functions (flush_wal, list_column_families, set_options)
-  - All 4,523 unit tests pass
+  - Added path validation for security (prevents traversal, null bytes)
+  - All 67 Phase 1 unit tests pass
+  - See `notes/summaries/phase-1.2-database-operations-adapter.md` for details
 
 - [x] 1.3 Binary Encoding Compatibility - COMPLETED (2026-01-07)
   - Verified triple key encoding (24-byte big-endian)

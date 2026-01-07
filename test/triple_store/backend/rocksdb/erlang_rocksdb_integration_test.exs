@@ -1,4 +1,4 @@
-defmodule TripleStore.Section15Test do
+defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
   @moduledoc """
   Integration tests for Section 1.5: Basic Migration Functionality
 
@@ -6,9 +6,8 @@ defmodule TripleStore.Section15Test do
   column families and binary encoding format. They test the database lifecycle,
   basic operations, and compatibility with the TripleStore's data formats.
 
-  Note: These tests use erlang-rocksdb directly, not through the NIF adapter
-  (which is still stubbed). This verifies that erlang-rocksdb can handle our
-  data formats correctly when the adapter is implemented.
+  Note: These tests use erlang-rocksdb directly to verify the underlying
+  library functionality. The NIF adapter tests are in a separate suite.
 
   Configuration Note: Some advanced options (prefix_extractor, memtable_prefix_bloom)
   are version-dependent in erlang-rocksdb and are not included in these tests.
@@ -24,7 +23,7 @@ defmodule TripleStore.Section15Test do
 
   # Temporary database path helper
   defp temp_db_path(suffix \\ "") do
-    name = "test_integration_#{System.unique_integer([:positive])}#{suffix}"
+    name = "test_integration_#{System.unique_integer([:positive, :monotonic])}#{suffix}"
     Path.join(System.tmp_dir!(), name)
     |> String.to_charlist()
   end

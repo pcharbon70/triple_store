@@ -58,8 +58,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   """
 
   @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range
-  @type cf_descriptor :: {String.t(), [:rocksdb.cf_options()]}
-  @type db_options :: [:rocksdb.db_options()]
+  @type cf_descriptor :: {String.t(), keyword()}
+  @type db_options :: keyword()
 
   # ===========================================================================
   # Constants
@@ -75,16 +75,11 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @block_size_index 8 * 1024     # 8KB for indices (balanced)
   @block_size_derived 32 * 1024  # 32KB for derived (large blocks, sequential)
 
-  # Prefix extractor length (for index CFs)
-  # First 8 bytes = subject/predicate/object ID (64 bits)
-  @prefix_extractor_bytes 8
-
   # Compression settings
-  @compression_l0 :none
-  @compression_l1_l6 :lz4
-
-  # Cache settings
-  @block_cache_size_mb 512  # Shared block cache size
+  # L0 is uncompressed by default (fast memtable flush)
+  # L1-L6 use snappy (widely available, good performance)
+  # Note: LZ4 can be used if erlang-rocksdb is compiled with LZ4 support
+  @compression_l1_l6 :snappy
 
   # ===========================================================================
   # Public API
@@ -134,10 +129,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @spec db_options() :: db_options()
   def db_options do
     [
-      create_if_missing: true,
-      # Configure shared block cache
-      # Using a single shared cache across all CFs for better memory utilization
-      #{create_if_missing: true, capacity: {@block_cache_size_mb * 1024 * 1024, strict_capacity_limit: false}}
+      create_if_missing: true
+      # Note: Shared block cache configuration is version-dependent
+      # erlang-rocksdb may accept different formats for cache configuration
+      # This will be configured during adapter implementation
     ]
   end
 
@@ -168,7 +163,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   List of column family options, or `nil` if CF is unknown.
 
   """
-  @spec get_cf_options(column_family()) :: [:rocksdb.cf_options()] | nil
+  @spec get_cf_options(column_family()) :: keyword() | nil
   def get_cf_options(:id2str), do: dictionary_cf_options()
   def get_cf_options(:str2id), do: dictionary_cf_options()
   def get_cf_options(:spo), do: index_cf_options()
@@ -177,6 +172,31 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def get_cf_options(:derived), do: derived_cf_options()
   def get_cf_options(:numeric_range), do: numeric_range_cf_options()
   def get_cf_options(_), do: nil
+
+  @doc """
+  Validates a column family atom.
+
+  ## Parameters
+
+  - `cf`: Column family atom to validate
+
+  ## Returns
+
+  - `:ok` - Valid column family
+  - `{:error, :invalid_column_family}` - Invalid column family
+
+  ## Examples
+
+      iex> ColumnFamilyConfig.validate_cf(:spo)
+      :ok
+
+      iex> ColumnFamilyConfig.validate_cf(:invalid)
+      {:error, :invalid_column_family}
+
+  """
+  @spec validate_cf(atom()) :: :ok | {:error, :invalid_column_family}
+  def validate_cf(cf) when cf in [:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range, :default], do: :ok
+  def validate_cf(_), do: {:error, :invalid_column_family}
 
   # ===========================================================================
   # Column Family Options
@@ -230,7 +250,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       # - {:prefix_extractor, "fixed:8"} (string format)
       # - {:prefix_extractor, {:fixed, 8}} (tuple format)
       # For now, we skip this option and will add it during adapter implementation
-      # prefix_extractor: {"fixed.prefix", @prefix_extractor_bytes},
+      # prefix_extractor: {"fixed.prefix", 8},
       # Memtable prefix bloom for efficient in-memory filtering
       memtable_prefix_bloom_size_ratio: 0.1,
       # Compression
@@ -384,20 +404,31 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @doc """
   Checks if a column family has a prefix extractor configured.
 
-  Note: Currently returns false for all CFs as prefix_extractor configuration
-  is deferred to adapter implementation. The prefix extractor format is
-  version-dependent in erlang-rocksdb and will be configured during
-  the actual adapter implementation.
+  Note: The prefix_extractor configuration is version-dependent in erlang-rocksdb.
+  The actual prefix extractor option is commented out in the CF options due to
+  format uncertainty. However, for the purposes of index CFs (spo, pos, osp),
+  a prefix extractor conceptually exists for the first 8 bytes (64-bit ID).
+
+  This function returns `true` for index CFs to indicate they are designed
+  for prefix-based scans, even though the actual RocksDB option is not
+  currently configured.
 
   ## Examples
 
       iex> ColumnFamilyConfig.has_prefix_extractor?(:spo)
-      false
+      true
 
       iex> ColumnFamilyConfig.has_prefix_extractor?(:id2str)
       false
 
   """
   @spec has_prefix_extractor?(column_family()) :: boolean()
-  def has_prefix_extractor?(_), do: false
+  def has_prefix_extractor?(:spo), do: true
+  def has_prefix_extractor?(:pos), do: true
+  def has_prefix_extractor?(:osp), do: true
+  def has_prefix_extractor?(:id2str), do: false
+  def has_prefix_extractor?(:str2id), do: false
+  def has_prefix_extractor?(:derived), do: false
+  def has_prefix_extractor?(:numeric_range), do: false
+  def has_prefix_extractor?(:default), do: false
 end

@@ -17,7 +17,7 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
   describe "open/1" do
     test "opens a database successfully", %{path: path} do
       assert {:ok, db} = NIF.open(path)
-      assert is_reference(db)
+      assert is_pid(db)
       NIF.close(db)
     end
 
@@ -32,13 +32,13 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
       {:ok, db} = NIF.open(path)
       NIF.close(db)
 
-      cfs = NIF.list_column_families()
-      assert :id2str in cfs
-      assert :str2id in cfs
-      assert :spo in cfs
-      assert :pos in cfs
-      assert :osp in cfs
-      assert :derived in cfs
+      cfs = NIF.list_column_families(path)
+      assert "id2str" in cfs
+      assert "str2id" in cfs
+      assert "spo" in cfs
+      assert "pos" in cfs
+      assert "osp" in cfs
+      assert "derived" in cfs
     end
 
     test "can reopen an existing database", %{path: path} do
@@ -46,7 +46,7 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
       NIF.close(db1)
 
       {:ok, db2} = NIF.open(path)
-      assert is_reference(db2)
+      assert is_pid(db2)
       NIF.close(db2)
     end
   end
@@ -86,31 +86,53 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
     end
   end
 
-  describe "list_column_families/0" do
-    test "returns all configured column families" do
-      cfs = NIF.list_column_families()
-      assert length(cfs) == 7
-      assert :id2str in cfs
-      assert :str2id in cfs
-      assert :spo in cfs
-      assert :pos in cfs
-      assert :osp in cfs
-      assert :derived in cfs
-      assert :numeric_range in cfs
+  describe "list_column_families/1" do
+    test "returns all configured column families", %{path: path} do
+      {:ok, _db} = NIF.open(path)
+      cfs = NIF.list_column_families(path)
+      assert length(cfs) >= 7
+      assert "id2str" in cfs
+      assert "str2id" in cfs
+      assert "spo" in cfs
+      assert "pos" in cfs
+      assert "osp" in cfs
+      assert "derived" in cfs
+      assert "numeric_range" in cfs
     end
   end
 
   describe "error handling" do
-    test "returns error for invalid path" do
+    test "returns error for invalid absolute path" do
       result = NIF.open("/nonexistent/deeply/nested/path/that/should/fail")
 
       case result do
-        {:error, {:open_failed, reason}} ->
-          assert is_binary(reason)
+        {:error, :absolute_path_not_allowed} ->
+          # Expected - path validation rejects absolute paths
+          :ok
+
+        {:error, {:open_failed, _reason}} ->
+          # Also acceptable - erlang-rocksdb failed to open
+          :ok
 
         {:ok, db} ->
           NIF.close(db)
           flunk("Expected error for invalid path")
+      end
+    end
+
+    test "returns error for path traversal attempt" do
+      result = NIF.open("/tmp/test/../etc/passwd")
+
+      case result do
+        {:error, :path_traversal_attempt} ->
+          :ok
+
+        {:error, _reason} ->
+          :ok
+
+        {:ok, db} ->
+          NIF.close(db)
+          flunk("Expected error for path traversal attempt")
       end
     end
   end

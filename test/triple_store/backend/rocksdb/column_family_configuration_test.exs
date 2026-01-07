@@ -1,4 +1,4 @@
-defmodule TripleStore.Section14Test do
+defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
   @moduledoc """
   Unit tests for Section 1.4: Column Family Configuration
 
@@ -140,23 +140,24 @@ defmodule TripleStore.Section14Test do
       assert Keyword.has_key?(dict_opts, :compression)
     end
 
-    test "1.4.3.2 L1-L6 compression: lz4" do
+    test "1.4.3.2 L1-L6 compression: snappy" do
       dict_opts = ColumnFamilyConfig.get_cf_options(:id2str)
       index_opts = ColumnFamilyConfig.get_cf_options(:spo)
       derived_opts = ColumnFamilyConfig.get_cf_options(:derived)
 
-      # All CFs should use LZ4 compression for L1-L6
-      assert {:compression, :lz4} in dict_opts
-      assert {:compression, :lz4} in index_opts
-      assert {:compression, :lz4} in derived_opts
+      # All CFs should use snappy compression for L1-L6
+      # Note: LZ4 can be used if erlang-rocksdb is compiled with LZ4 support
+      assert {:compression, :snappy} in dict_opts
+      assert {:compression, :snappy} in index_opts
+      assert {:compression, :snappy} in derived_opts
     end
 
     test "1.4.3.3 Compression options per column family" do
       # All CFs should have both compression and bottommost_compression set
       for cf <- [:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range] do
         opts = ColumnFamilyConfig.get_cf_options(cf)
-        assert {:compression, :lz4} in opts
-        assert {:bottommost_compression, :lz4} in opts
+        assert {:compression, :snappy} in opts
+        assert {:bottommost_compression, :snappy} in opts
       end
     end
   end
