@@ -38,6 +38,9 @@ defmodule TripleStore.MixProject do
       # RocksDB storage backend (erlang-rocksdb C++ NIF)
       {:rocksdb, "~> 1.9"},
 
+      # Rustler for SPARQL parser NIF (separate from RocksDB NIF)
+      {:rustler, "~> 0.35"},
+
       # Concurrent processing for bulk loading
       {:flow, "~> 1.2"},
 
