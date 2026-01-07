@@ -208,53 +208,59 @@ Verify dictionary term encoding matches current implementation.
 
 ## 1.4 Column Family Configuration
 
-- [ ] **Section 1.4 Status** (Pending)
+- [x] **Section 1.4 Status** (Completed 2026-01-07)
 
 Configure erlang-rocksdb column families to match current Rust NIF tuning.
 
 ### 1.4.1 Column Family Options Mapping
 
-- [ ] **Task 1.4.1 Status** (Pending)
+- [x] **Task 1.4.1 Status** (Completed)
 
 Map current Rust ColumnFamily options to erlang-rocksdb format.
 
-- [ ] 1.4.1.1 Map bloom filter settings: 14 bits/key (dict), 12 bits/key (index), none (derived)
-- [ ] 1.4.1.2 Map block size settings: 2KB (dict), 8KB (index), 32KB (derived)
-- [ ] 1.4.1.3 Map compression settings: LZ4 for all levels, L0: none
-- [ ] 1.4.1.4 Configure prefix extractor: `fixed_prefix(8)` for index CFs
-- [ ] 1.4.1.5 Set memtable prefix bloom ratio: 0.1 for index CFs
+- [x] 1.4.1.1 Map bloom filter settings: 14 bits/key (dict), 12 bits/key (index), none (derived)
+- [x] 1.4.1.2 Map block size settings: 2KB (dict), 8KB (index), 32KB (derived)
+- [x] 1.4.1.3 Map compression settings: LZ4 for all levels, L0: none
+- [x] 1.4.1.4 Configure prefix extractor: `fixed_prefix(8)` for index CFs
+- [x] 1.4.1.5 Set memtable prefix bloom ratio: 0.1 for index CFs
 
 ### 1.4.2 Cache Configuration
 
-- [ ] **Task 1.4.2 Status** (Pending)
+- [x] **Task 1.4.2 Status** (Completed)
 
 Configure block cache and index/filter block caching.
 
-- [ ] 1.4.2.1 Configure shared block cache: `lru_cache` with appropriate size
-- [ ] 1.4.2.2 Set `cache_index_and_filter_blocks: true` for dict and index CFs
-- [ ] 1.4.2.3 Set `pin_l0_filter_and_index_blocks_in_cache: true` for dict CFs
-- [ ] 1.4.2.4 Disable cache pinning for derived CF (sequential access)
+- [x] 1.4.2.1 Configure shared block cache: 512MB shared cache
+- [x] 1.4.2.2 Set `cache_index_and_filter_blocks: true` for dict and index CFs
+- [x] 1.4.2.3 Set `pin_l0_filter_and_index_blocks_in_cache: true` for dict CFs
+- [x] 1.4.2.4 Disable cache pinning for derived CF (sequential access)
 
 ### 1.4.3 Compression Tuning
 
-- [ ] **Task 1.4.3 Status** (Pending)
+- [x] **Task 1.4.3 Status** (Completed)
 
 Configure per-level compression matching current settings.
 
-- [ ] 1.4.3.1 Set L0 compression: `none`
-- [ ] 1.4.3.2 Set L1-L6 compression: `lz4`
-- [ ] 1.4.3.3 Configure compression options per column family
-- [ ] 1.4.3.4 Verify compression ratios match Rust implementation
+- [x] 1.4.3.1 Set L0 compression: `none`
+- [x] 1.4.3.2 Set L1-L6 compression: `lz4`
+- [x] 1.4.3.3 Configure compression options per column family
+- [x] 1.4.3.4 Verify compression ratios match Rust implementation
 
 ### 1.4.4 Unit Tests
 
-- [ ] **Task 1.4.4 Status** (Pending)
+- [x] **Task 1.4.4 Status** (Completed)
 
-- [ ] 1.4.4.1 Test column families open with correct options
-- [ ] 1.4.4.2 Test bloom filter effectiveness matches configuration
-- [ ] 1.4.4.3 Test cache hit rates with tuned configuration
-- [ ] 1.4.4.4 Test compression ratios per column family
-- [ ] 1.4.4.5 Test prefix extractor works correctly for index CFs
+- [x] 1.4.4.1 Test column families open with correct options
+- [x] 1.4.4.2 Test bloom filter effectiveness matches configuration
+- [x] 1.4.4.3 Test cache hit rates with tuned configuration
+- [x] 1.4.4.4 Test compression ratios per column family
+- [x] 1.4.4.5 Test prefix extractor works correctly for index CFs
+
+**Implementation Notes:**
+- Created `ColumnFamilyConfig` module with all CF options
+- 25 unit tests created, all passing
+- Configuration matches Rust NIF tuning for data compatibility
+- See `notes/summaries/phase-1.4-column-family-configuration.md` for details
 
 ---
 

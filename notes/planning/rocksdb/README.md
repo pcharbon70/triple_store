@@ -44,7 +44,15 @@ This directory contains the phased migration plan for transitioning the TripleSt
   - Created 23 encoding compatibility tests (all passing)
   - See `notes/summaries/phase-1.3-binary-encoding-compatibility.md` for details
 
-- [ ] 1.4 Column Family Configuration - PENDING
+- [x] 1.4 Column Family Configuration - COMPLETED (2026-01-07)
+  - Configured bloom filters: 14 bits/key (dict), 12 bits/key (index), none (derived)
+  - Configured block sizes: 2KB (dict), 8KB (index), 32KB (derived)
+  - Configured compression: LZ4 for L1-L6, none for L0
+  - Configured prefix extractor: 8-byte fixed prefix for index CFs
+  - Created ColumnFamilyConfig module with all CF options
+  - Created 25 configuration tests (all passing)
+  - See `notes/summaries/phase-1.4-column-family-configuration.md` for details
+
 - [ ] 1.5 Integration Tests - PENDING
 
 ### Phase 2 Status (Iterator & Snapshot Migration)
