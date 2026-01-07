@@ -47,12 +47,15 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   require Logger
 
   alias TripleStore.Backend.RocksDB.ColumnFamilyConfig
+  alias TripleStore.Backend.RocksDB.Iterator
 
   @type adapter :: pid()
   @type db_ref :: reference()
   @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range
   @type cf_handle :: reference()
   @type cf_name :: charlist()
+  @type iterator_ref :: pid()
+  @type snapshot_ref :: pid()
 
   # ===========================================================================
   # Client API
@@ -389,6 +392,177 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # ===========================================================================
+  # Iterator Operations
+  # ===========================================================================
+
+  @doc """
+  Creates a prefix iterator for a column family.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate within
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully (iterator_ref is a PID)
+  - `{:error, reason}` - Failed to create iterator
+
+  ## Examples
+
+      {:ok, iter} = ErlangAdapter.prefix_iterator(adapter, :spo, <<subject_id::64-big>>)
+
+  """
+  @spec prefix_iterator(adapter(), column_family(), binary()) :: {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(adapter, cf, prefix) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+    GenServer.call(adapter, {:prefix_iterator, cf, prefix})
+  end
+
+  @doc """
+  Creates a prefix iterator with options.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate within
+  - `opts` - Iterator options
+
+  ## Options
+
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `total_order_seek` - Use total order seek (default: false)
+  - `prefix_same_as_start` - Optimize for prefix iteration (default: false)
+  - `snapshot` - Use a specific snapshot (placeholder for Section 2.2)
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
+  """
+  @spec prefix_iterator(adapter(), column_family(), binary(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(adapter, cf, prefix, opts) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+    GenServer.call(adapter, {:prefix_iterator, cf, prefix, opts})
+  end
+
+  @doc """
+  Creates a general iterator for a column family.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `opts` - Iterator options
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
+  """
+  @spec iterator(adapter(), column_family(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
+  def iterator(adapter, cf, opts \\ []) when is_pid(adapter) and is_atom(cf) do
+    GenServer.call(adapter, {:iterator, cf, opts})
+  end
+
+  @doc """
+  Moves the iterator and returns the next entry.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+  - `action` - Movement action (:first, :last, :next, :prev, or binary seek key)
+
+  ## Returns
+
+  - `{:ok, key, value}` - Entry found
+  - `:iterator_end` - Iterator exhausted
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec iterator_move(iterator_ref(), :first | :last | :next | :prev | binary()) ::
+          {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  def iterator_move(iterator_ref, action) when is_pid(iterator_ref) do
+    Iterator.move(iterator_ref, action)
+  end
+
+  @doc """
+  Gets the next entry from the iterator.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+
+  ## Returns
+
+  - `{:ok, key, value}` - Entry found
+  - `:iterator_end` - Iterator exhausted
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec iterator_next(iterator_ref()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  def iterator_next(iterator_ref) when is_pid(iterator_ref) do
+    Iterator.next(iterator_ref)
+  end
+
+  @doc """
+  Seeks the iterator to a specific key.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+  - `seek_key` - Binary key to seek to
+
+  ## Returns
+
+  - `:ok` - Seek successful
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec iterator_seek(iterator_ref(), binary()) :: :ok | {:error, term()}
+  def iterator_seek(iterator_ref, seek_key) when is_pid(iterator_ref) and is_binary(seek_key) do
+    Iterator.seek(iterator_ref, seek_key)
+  end
+
+  @doc """
+  Closes an iterator and releases resources.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+
+  ## Returns
+
+  - `:ok`
+
+  """
+  @spec iterator_close(iterator_ref()) :: :ok
+  def iterator_close(iterator_ref) when is_pid(iterator_ref) do
+    Iterator.close(iterator_ref)
+  end
+
+  @doc """
+  Collects all remaining entries from an iterator.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+  - `opts` - Options
+
+  ## Returns
+
+  - `{:ok, [{key, value}]}` - List of entries
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec iterator_collect(iterator_ref(), keyword()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
+  def iterator_collect(iterator_ref, opts \\ []) when is_pid(iterator_ref) do
+    Iterator.collect(iterator_ref, opts)
+  end
+
+  # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
 
@@ -561,6 +735,38 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     # erlang-rocksdb doesn't support runtime set_options
     # Options must be set at database open time
     {:reply, {:error, :not_supported}, state}
+  end
+
+  @impl true
+  def handle_call({:prefix_iterator, cf, prefix}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         opts = [prefix: prefix, fill_cache: true, total_order_seek: false, prefix_same_as_start: false],
+         {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
+      {:reply, {:ok, iter_pid}, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:prefix_iterator, cf, prefix, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         opts = Keyword.put(opts, :prefix, prefix),
+         {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
+      {:reply, {:ok, iter_pid}, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:iterator, cf, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
+      {:reply, {:ok, iter_pid}, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+    end
   end
 
   @impl true

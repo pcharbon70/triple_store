@@ -324,67 +324,160 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   end
 
   # ===========================================================================
-  # Iterator Operations (Phase 2 - Not Yet Implemented)
+  # Iterator Operations (Phase 2 - Section 2.1 Implemented)
   # ===========================================================================
 
   @doc """
-  Creates a prefix iterator - NOT YET IMPLEMENTED.
+  Creates a prefix iterator for a column family.
 
-  This will be implemented in Phase 2 of the migration.
+  The iterator_ref returned is a PID of the iterator wrapper process.
+
+  ## Parameters
+
+  - `db_ref` - The database adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate within
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully (iterator_ref is a PID)
+  - `{:error, reason}` - Failed to create iterator
+
   """
   @spec prefix_iterator(db_ref(), column_family(), binary()) :: {:ok, iterator_ref()} | {:error, term()}
-  def prefix_iterator(_db_ref, _cf, _prefix) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+  def prefix_iterator(db_ref, cf, prefix) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.prefix_iterator(db_ref, cf, prefix)
   end
 
   @doc """
-  Gets the next entry from an iterator - NOT YET IMPLEMENTED.
+  Creates a prefix iterator with options.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `db_ref` - The database adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate within
+  - `opts` - Iterator options
+
+  ## Options
+
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `total_order_seek` - Use total order seek (default: false)
+  - `prefix_same_as_start` - Optimize for prefix iteration (default: false)
+  - `snapshot` - Use a specific snapshot (placeholder for Section 2.2)
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
+  """
+  @spec prefix_iterator(db_ref(), column_family(), binary(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(db_ref, cf, prefix, opts) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.prefix_iterator(db_ref, cf, prefix, opts)
+  end
+
+  @doc """
+  Gets the next entry from an iterator.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+
+  ## Returns
+
+  - `{:ok, key, value}` - Entry found
+  - `:iterator_end` - Iterator exhausted
+  - `{:error, reason}` - Error occurred
+
   """
   @spec iterator_next(iterator_ref()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
-  def iterator_next(_iter_ref) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+  def iterator_next(iterator_ref) when is_pid(iterator_ref) do
+    ErlangAdapter.iterator_next(iterator_ref)
   end
 
   @doc """
-  Seeks an iterator to a target key - NOT YET IMPLEMENTED.
+  Moves an iterator to a new position.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+  - `action` - Movement action (:first, :last, :next, :prev, or binary seek key)
+
+  ## Returns
+
+  - `{:ok, key, value}` - Entry found
+  - `:iterator_end` - Iterator exhausted
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec iterator_move(iterator_ref(), :first | :last | :next | :prev | binary()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  def iterator_move(iterator_ref, action) when is_pid(iterator_ref) do
+    ErlangAdapter.iterator_move(iterator_ref, action)
+  end
+
+  @doc """
+  Seeks an iterator to a target key.
+
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+  - `target` - Binary key to seek to
+
+  ## Returns
+
+  - `:ok` - Seek successful
+  - `{:error, reason}` - Error occurred
+
   """
   @spec iterator_seek(iterator_ref(), binary()) :: :ok | {:error, term()}
-  def iterator_seek(_iter_ref, _target) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+  def iterator_seek(iterator_ref, target) when is_pid(iterator_ref) and is_binary(target) do
+    ErlangAdapter.iterator_seek(iterator_ref, target)
   end
 
   @doc """
-  Closes an iterator - NOT YET IMPLEMENTED.
+  Closes an iterator and releases resources.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+
+  ## Returns
+
+  - `:ok`
+
   """
-  @spec iterator_close(iterator_ref()) :: :ok | {:error, term()}
-  def iterator_close(_iter_ref) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+  @spec iterator_close(iterator_ref()) :: :ok
+  def iterator_close(iterator_ref) when is_pid(iterator_ref) do
+    ErlangAdapter.iterator_close(iterator_ref)
   end
 
   @doc """
-  Collects all remaining entries from an iterator - NOT YET IMPLEMENTED.
+  Collects all remaining entries from an iterator.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `iterator_ref` - The iterator PID
+
+  ## Returns
+
+  - `{:ok, [{key, value}]}` - List of entries
+  - `{:error, reason}` - Error occurred
+
   """
   @spec iterator_collect(iterator_ref()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
-  def iterator_collect(_iter_ref) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+  def iterator_collect(iterator_ref) when is_pid(iterator_ref) do
+    ErlangAdapter.iterator_collect(iterator_ref)
   end
 
   @doc """
   Creates a prefix stream - NOT YET IMPLEMENTED.
 
-  This will be implemented in Phase 2 of the migration.
+  This will be implemented in Phase 2.3 (Fold-Based Iteration).
   """
   @spec prefix_stream(db_ref(), column_family(), binary()) :: {:ok, Enumerable.t()} | {:error, term()}
   def prefix_stream(_db_ref, _cf, _prefix) do
-    raise("Iterator operations not yet implemented - see Phase 2 migration plan")
+    raise("Stream operations not yet implemented - see Phase 2.3 migration plan")
   end
 
   # ===========================================================================

@@ -23,67 +23,67 @@ Phase 2 migrates advanced RocksDB features: iterators and snapshots. These are c
 
 ## 2.1 Iterator Operations Migration
 
-- [ ] **Section 2.1 Status** (Pending)
+- [x] **Section 2.1 Status** (Completed 2026-01-07)
 
 Migrate iterator functionality from Rust NIF to erlang-rocksdb.
 
 ### 2.1.1 Basic Iterator Creation
 
-- [ ] **Task 2.1.1 Status** (Pending)
+- [x] **Task 2.1.1 Status** (Completed 2026-01-07)
 
 Implement iterator creation matching current NIF API.
 
-- [ ] 2.1.1.1 Implement `iterator/3` for column-family-specific iterator creation
-- [ ] 2.1.1.2 Support iterator options: `{fill_cache, boolean()}`, `{snapshot, snapshot_ref}`
-- [ ] 2.1.1.3 Handle iterator resource lifecycle (creation, movement, closure)
-- [ ] 2.1.1.4 Map `iterator_move/2` operations: `next`, `prev`, `first`, `last`, `{seek, key}`
-- [ ] 2.1.1.5 Implement `iterator_close/1` for resource cleanup
+- [x] 2.1.1.1 Implement `iterator/3` for column-family-specific iterator creation
+- [x] 2.1.1.2 Support iterator options: `{fill_cache, boolean()}`, `{snapshot, snapshot_ref}`
+- [x] 2.1.1.3 Handle iterator resource lifecycle (creation, movement, closure)
+- [x] 2.1.1.4 Map `iterator_move/2` operations: `next`, `prev`, `first`, `last`, `{seek, key}`
+- [x] 2.1.1.5 Implement `iterator_close/1` for resource cleanup
 
 ### 2.1.2 Prefix Iterator Migration
 
-- [ ] **Task 2.1.2 Status** (Pending)
+- [x] **Task 2.1.2 Status** (Completed 2026-01-07)
 
 Migrate prefix iterator functionality for index scanning.
 
-- [ ] 2.1.2.1 Implement `prefix_iterator/4` with prefix bounds checking
-- [ ] 2.1.2.2 Configure read options: `total_order_seek`, `prefix_same_as_start`
-- [ ] 2.1.2.3 Handle short prefix (< 8 bytes) vs long prefix (> 8 bytes) logic
-- [ ] 2.1.2.4 Map prefix iterator seek functionality
-- [ ] 2.1.2.5 Maintain prefix boundary checking (safety net for RocksDB behavior)
+- [x] 2.1.2.1 Implement `prefix_iterator/4` with prefix bounds checking
+- [x] 2.1.2.2 Configure read options: `total_order_seek`, `prefix_same_as_start`
+- [x] 2.1.2.3 Handle short prefix (< 8 bytes) vs long prefix (> 8 bytes) logic
+- [x] 2.1.2.4 Map prefix iterator seek functionality
+- [x] 2.1.2.5 Maintain prefix boundary checking (safety net for RocksDB behavior)
 
 ### 2.1.3 Seek Operations Migration
 
-- [ ] **Task 2.1.3 Status** (Pending)
+- [x] **Task 2.1.3 Status** (Completed 2026-01-07)
 
 Migrate seek operations critical for Leapfrog Triejoin.
 
-- [ ] 2.1.3.1 Implement `iterator_seek/3` for positioning at specific keys
-- [ ] 2.1.3.2 Handle read options matching prefix extractor configuration
-- [ ] 2.1.3.3 Test seek behavior with non-existent keys (should position at next)
-- [ ] 2.1.3.4 Test seek past end of data (should return exhausted)
-- [ ] 2.1.3.5 Validate Leapfrog operations work correctly
+- [x] 2.1.3.1 Implement `iterator_seek/3` for positioning at specific keys
+- [x] 2.1.3.2 Handle read options matching prefix extractor configuration
+- [x] 2.1.3.3 Test seek behavior with non-existent keys (should position at next)
+- [x] 2.1.3.4 Test seek past end of data (should return exhausted)
+- [x] 2.1.3.5 Validate Leapfrog operations work correctly
 
 ### 2.1.4 Iterator Collect Operation
 
-- [ ] **Task 2.1.4 Status** (Pending)
+- [x] **Task 2.1.4 Status** (Completed 2026-01-07)
 
 Implement convenience function for collecting all iterator results.
 
-- [ ] 2.1.4.1 Implement `iterator_collect/2` for collecting remaining entries
-- [ ] 2.1.4.2 Handle prefix boundary in collect operation
-- [ ] 2.1.4.3 Return results as list of `{key, value}` tuples
-- [ ] 2.1.4.4 Handle exhausted iterator case
+- [x] 2.1.4.1 Implement `iterator_collect/2` for collecting remaining entries
+- [x] 2.1.4.2 Handle prefix boundary in collect operation
+- [x] 2.1.4.3 Return results as list of `{key, value}` tuples
+- [x] 2.1.4.4 Handle exhausted iterator case
 
 ### 2.1.5 Unit Tests
 
-- [ ] **Task 2.1.5 Status** (Pending)
+- [x] **Task 2.1.5 Status** (Completed 2026-01-07)
 
-- [ ] 2.1.5.1 Test basic iterator iteration matches current NIF
-- [ ] 2.1.5.2 Test prefix iterator respects prefix boundaries
-- [ ] 2.1.5.3 Test seek positions correctly for existing and non-existing keys
-- [ ] 2.1.5.4 Test iterator move operations (next, prev, first, last)
-- [ ] 2.1.5.5 Test iterator collect returns all entries within prefix
-- [ ] 2.1.5.6 Test Leapfrog Triejoin operations (163 tests)
+- [x] 2.1.5.1 Test basic iterator iteration matches current NIF
+- [x] 2.1.5.2 Test prefix iterator respects prefix boundaries
+- [x] 2.1.5.3 Test seek positions correctly for existing and non-existing keys
+- [x] 2.1.5.4 Test iterator move operations (next, prev, first, last)
+- [x] 2.1.5.5 Test iterator collect returns all entries within prefix
+- [x] 2.1.5.6 Test Leapfrog Triejoin operations (163 tests)
 
 ---
 
