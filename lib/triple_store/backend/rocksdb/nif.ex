@@ -470,14 +470,157 @@ defmodule TripleStore.Backend.RocksDB.NIF do
     ErlangAdapter.iterator_collect(iterator_ref)
   end
 
-  @doc """
-  Creates a prefix stream - NOT YET IMPLEMENTED.
+  # ===========================================================================
+  # Fold Operations (Phase 2 - Section 2.3)
+  # ===========================================================================
 
-  This will be implemented in Phase 2.3 (Fold-Based Iteration).
+  @doc """
+  Folds over a prefix range in a column family.
+
+  This function efficiently iterates over all key-value pairs within a prefix
+  range, reducing BEAM-NIF boundary crossings for better performance.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `cf`: Column family atom
+  - `prefix`: Binary prefix to limit the fold to
+  - `acc`: Initial accumulator value
+  - `fun`: Fold function: `({key, value}, acc) -> new_acc`
+
+  ## Returns
+
+  - `acc` - Final accumulator value
+
+  ## Examples
+
+      # Count all entries with a prefix
+      count = NIF.fold(db, :spo, <<subject_id::64-big>>, 0, fn {_k, _v}, acc -> acc + 1 end)
+
+      # Sum all values
+      sum = NIF.fold(db, :spo, <<prefix::binary>>, 0, fn {_k, v}, acc -> acc + parse_value(v) end)
+
   """
-  @spec prefix_stream(db_ref(), column_family(), binary()) :: {:ok, Enumerable.t()} | {:error, term()}
-  def prefix_stream(_db_ref, _cf, _prefix) do
-    raise("Stream operations not yet implemented - see Phase 2.3 migration plan")
+  @spec fold(db_ref(), column_family(), binary(), term(), fold_fun()) :: term()
+  def fold(db_ref, cf, prefix, acc, fun)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    ErlangAdapter.fold(db_ref, cf, prefix, acc, fun)
+  end
+
+  @doc """
+  Folds over a prefix range with options.
+
+  ## Options
+
+  - `iterate_upper_bound` - Upper bound for iteration (binary)
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec fold(db_ref(), column_family(), binary(), term(), fold_fun(), keyword()) :: term()
+  def fold(db_ref, cf, prefix, acc, fun, opts)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    ErlangAdapter.fold(db_ref, cf, prefix, acc, fun, opts)
+  end
+
+  @doc """
+  Folds over keys only in a prefix range.
+
+  More efficient than `fold/5` when values are not needed.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `cf`: Column family atom
+  - `prefix`: Binary prefix to limit the fold to
+  - `acc`: Initial accumulator value
+  - `fun`: Fold function: `(key, acc) -> new_acc`
+
+  ## Returns
+
+  - `acc` - Final accumulator value
+
+  ## Examples
+
+      # Collect all keys with a prefix
+      keys = NIF.fold_keys(db, :spo, <<subject_id::64-big>>, [], fn k, acc -> [k | acc] end)
+
+  """
+  @spec fold_keys(db_ref(), column_family(), binary(), term(), fold_keys_fun()) :: term()
+  def fold_keys(db_ref, cf, prefix, acc, fun)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    ErlangAdapter.fold_keys(db_ref, cf, prefix, acc, fun)
+  end
+
+  @doc """
+  Folds over keys only in a prefix range with options.
+
+  ## Options
+
+  - `iterate_upper_bound` - Upper bound for iteration (binary)
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec fold_keys(db_ref(), column_family(), binary(), term(), fold_keys_fun(), keyword()) :: term()
+  def fold_keys(db_ref, cf, prefix, acc, fun, opts)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    ErlangAdapter.fold_keys(db_ref, cf, prefix, acc, fun, opts)
+  end
+
+  @type fold_fun :: ({{binary(), binary()}, term()} -> term())
+  @type fold_keys_fun :: ((binary(), term()) -> term())
+
+  # ===========================================================================
+  # Stream Operations (Phase 2 - Section 2.3)
+  # ===========================================================================
+
+  @doc """
+  Creates a lazy stream over a prefix range.
+
+  The stream properly manages resources and will close the underlying iterator
+  when the stream is terminated or if an error occurs.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `cf`: Column family atom
+  - `prefix`: Binary prefix to iterate over
+
+  ## Returns
+
+  - `Enumerable.t()` - A stream of `{key, value}` tuples
+
+  ## Examples
+
+      # Stream all entries with a prefix
+      db |> NIF.prefix_stream(:spo, <<subject_id::64-big>>) |> Enum.to_list()
+
+      # Use with Stream functions for lazy evaluation
+      db
+      |> NIF.prefix_stream(:spo, <<subject_id::64-big>>)
+      |> Stream.take(100)
+      |> Enum.to_list()
+
+  """
+  @spec prefix_stream(db_ref(), column_family(), binary()) :: Enumerable.t()
+  def prefix_stream(db_ref, cf, prefix) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.prefix_stream(db_ref, cf, prefix)
+  end
+
+  @doc """
+  Creates a lazy stream over a prefix range with options.
+
+  ## Options
+
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec prefix_stream(db_ref(), column_family(), binary(), keyword()) :: Enumerable.t()
+  def prefix_stream(db_ref, cf, prefix, opts)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.prefix_stream(db_ref, cf, prefix, opts)
   end
 
   # ===========================================================================

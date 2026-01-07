@@ -142,53 +142,53 @@ Implement iterator creation from snapshots.
 
 ## 2.3 Fold-Based Iteration Optimization
 
-- [ ] **Section 2.3 Status** (Pending)
+- [x] **Section 2.3 Status** (Completed 2026-01-07)
 
 Optimize iteration using erlang-rocksdb's `fold` operations to reduce BEAM-NIF boundary crossings.
 
 ### 2.3.1 Fold Operations Implementation
 
-- [ ] **Task 2.3.1 Status** (Pending)
+- [x] **Task 2.3.1 Status** (Completed 2026-01-07)
 
 Implement fold-based iteration for bulk operations.
 
-- [ ] 2.3.1.1 Implement `fold/5` for folding over prefix range
-- [ ] 2.3.1.2 Use `rocksdb:fold/4` with accumulator function
-- [ ] 2.3.1.3 Handle fold function signature: `fun(Key, Value, Acc) -> {ok, NewAcc}`
-- [ ] 2.3.1.4 Support `stop` return for early termination
-- [ ] 2.3.1.5 Configure read options for prefix-based folding
+- [x] 2.3.1.1 Implement `fold/5` for folding over prefix range
+- [x] 2.3.1.2 Use `rocksdb:fold/4` with accumulator function
+- [x] 2.3.1.3 Handle fold function signature: `fun(Key, Value, Acc) -> {ok, NewAcc}`
+- [x] 2.3.1.4 Support `stop` return for early termination
+- [x] 2.3.1.5 Configure read options for prefix-based folding
 
 ### 2.3.2 Fold Keys Operation
 
-- [ ] **Task 2.3.2 Status** (Pending)
+- [x] **Task 2.3.2 Status** (Completed 2026-01-07)
 
 Implement keys-only folding for index scanning.
 
-- [ ] 2.3.2.1 Implement `fold_keys/5` for iterating keys without values
-- [ ] 2.3.2.2 Use `rocksdb:fold_keys/4` for efficiency
-- [ ] 2.3.2.3 Handle prefix boundary in fold_keys
-- [ ] 2.3.2.4 Support accumulator and stop mechanisms
+- [x] 2.3.2.1 Implement `fold_keys/5` for iterating keys without values
+- [x] 2.3.2.2 Use `rocksdb:fold_keys/4` for efficiency
+- [x] 2.3.2.3 Handle prefix boundary in fold_keys
+- [x] 2.3.2.4 Support accumulator and stop mechanisms
 
 ### 2.3.3 Stream Operations
 
-- [ ] **Task 2.3.3 Status** (Pending)
+- [x] **Task 2.3.3 Status** (Completed 2026-01-07)
 
 Implement lazy stream operations for large result sets.
 
-- [ ] 2.3.3.1 Create `prefix_stream/4` for Elixir Stream compatibility
-- [ ] 2.3.3.2 Use Stream.resource for proper resource cleanup
-- [ ] 2.3.3.3 Ensure iterator closes on stream termination
-- [ ] 2.3.3.4 Handle stream consumer errors
+- [x] 2.3.3.1 Create `prefix_stream/4` for Elixir Stream compatibility
+- [x] 2.3.3.2 Use Stream.resource for proper resource cleanup
+- [x] 2.3.3.3 Ensure iterator closes on stream termination
+- [x] 2.3.3.4 Handle stream consumer errors
 
 ### 2.3.4 Unit Tests
 
-- [ ] **Task 2.3.4 Status** (Pending)
+- [x] **Task 2.3.4 Status** (Completed 2026-01-07)
 
-- [ ] 2.3.4.1 Test fold accumulates all entries in prefix
-- [ ] 2.3.4.2 Test fold_keys iterates keys only
-- [ ] 2.3.4.3 Test fold stop terminates early
-- [ ] 2.3.4.4 Test stream resources are properly cleaned up
-- [ ] 2.3.4.5 Benchmark fold vs manual iteration performance
+- [x] 2.3.4.1 Test fold accumulates all entries in prefix
+- [x] 2.3.4.2 Test fold_keys iterates keys only
+- [x] 2.3.4.3 Test fold stop terminates early
+- [x] 2.3.4.4 Test stream resources are properly cleaned up
+- [x] 2.3.4.5 Benchmark fold vs manual iteration performance
 
 ---
 

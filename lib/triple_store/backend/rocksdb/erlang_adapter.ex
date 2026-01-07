@@ -57,6 +57,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @type iterator_ref :: pid()
   @type snapshot_ref :: pid()
 
+  # Fold function types
+  @type fold_fun :: (({binary(), binary()}, term()) -> term())
+  @type fold_keys_fun :: ((binary(), term()) -> term())
+
   # ===========================================================================
   # Client API
   # ===========================================================================
@@ -687,6 +691,194 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # ===========================================================================
+  # Fold Operations (Phase 2 - Section 2.3)
+  # ===========================================================================
+
+  @doc """
+  Folds over a prefix range in a column family.
+
+  This function uses erlang-rocksdb's fold operation to efficiently iterate
+  over all key-value pairs within a prefix range. The fold operation is performed
+  in C++ land, reducing BEAM-NIF boundary crossings for better performance.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to limit the fold to
+  - `acc` - Initial accumulator value
+  - `fun` - Fold function: `({key, value}, acc) -> new_acc`
+
+  ## Returns
+
+  - `acc` - Final accumulator value
+
+  ## Examples
+
+      # Count all entries with a prefix
+      count = ErlangAdapter.fold(adapter, :spo, <<subject_id::64-big>>, 0, fn {_k, _v}, acc -> acc + 1 end)
+
+  """
+  @spec fold(adapter(), column_family(), binary(), term(), fold_fun()) :: term()
+  def fold(adapter, cf, prefix, acc, fun)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    GenServer.call(adapter, {:fold, cf, prefix, acc, fun})
+  end
+
+  @doc """
+  Folds over a prefix range with options.
+
+  ## Options
+
+  - `iterate_upper_bound` - Upper bound for iteration (binary)
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec fold(adapter(), column_family(), binary(), term(), fold_fun(), keyword()) :: term()
+  def fold(adapter, cf, prefix, acc, fun, opts)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    GenServer.call(adapter, {:fold, cf, prefix, acc, fun, opts})
+  end
+
+  @doc """
+  Folds over keys only in a prefix range.
+
+  More efficient than `fold/5` when values are not needed.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to limit the fold to
+  - `acc` - Initial accumulator value
+  - `fun` - Fold function: `(key, acc) -> new_acc`
+
+  ## Returns
+
+  - `acc` - Final accumulator value
+
+  ## Examples
+
+      # Collect all keys with a prefix
+      keys = ErlangAdapter.fold_keys(adapter, :spo, <<subject_id::64-big>>, [], fn k, acc -> [k | acc] end)
+
+  """
+  @spec fold_keys(adapter(), column_family(), binary(), term(), fold_keys_fun()) :: term()
+  def fold_keys(adapter, cf, prefix, acc, fun)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    GenServer.call(adapter, {:fold_keys, cf, prefix, acc, fun})
+  end
+
+  @doc """
+  Folds over keys only in a prefix range with options.
+
+  ## Options
+
+  - `iterate_upper_bound` - Upper bound for iteration (binary)
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec fold_keys(adapter(), column_family(), binary(), term(), fold_keys_fun(), keyword()) :: term()
+  def fold_keys(adapter, cf, prefix, acc, fun, opts)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
+    GenServer.call(adapter, {:fold_keys, cf, prefix, acc, fun, opts})
+  end
+
+  # ===========================================================================
+  # Stream Operations (Phase 2 - Section 2.3)
+  # ===========================================================================
+
+  @doc """
+  Creates a lazy stream over a prefix range.
+
+  The stream properly manages resources and will close the underlying iterator
+  when the stream is terminated or if an error occurs.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate over
+
+  ## Returns
+
+  - `Stream.t()` - A stream of `{key, value}` tuples
+
+  ## Examples
+
+      # Stream all entries with a prefix
+      adapter |> ErlangAdapter.prefix_stream(:spo, <<subject_id::64-big>>) |> Enum.to_list()
+
+      # Use with Stream functions for lazy evaluation
+      adapter
+      |> ErlangAdapter.prefix_stream(:spo, <<subject_id::64-big>>)
+      |> Stream.take(100)
+      |> Enum.to_list()
+
+  """
+  @spec prefix_stream(adapter(), column_family(), binary()) :: Enumerable.t()
+  def prefix_stream(adapter, cf, prefix) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+    prefix_stream(adapter, cf, prefix, [])
+  end
+
+  @doc """
+  Creates a lazy stream over a prefix range with options.
+
+  ## Options
+
+  - `fill_cache` - Whether to fill block cache (default: true)
+  - `snapshot` - Use a specific snapshot
+
+  """
+  @spec prefix_stream(adapter(), column_family(), binary(), keyword()) :: Enumerable.t()
+  def prefix_stream(adapter, cf, prefix, opts)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+    Stream.resource(
+      fn ->
+        # Setup: create the iterator
+        case GenServer.call(adapter, {:prefix_iterator, cf, prefix, opts}) do
+          {:ok, iter_pid} ->
+            # Monitor the iterator for cleanup
+            ref = Process.monitor(iter_pid)
+            {iter_pid, ref}
+
+          {:error, reason} ->
+            raise "Failed to create iterator: #{inspect(reason)}"
+        end
+      end,
+      fn
+        # Next: get one entry
+        {iter_pid, _ref} = acc ->
+          case Iterator.next(iter_pid) do
+            {:ok, key, value} ->
+              {[{key, value}], {iter_pid, nil}}
+
+            :iterator_end ->
+              {:halt, {iter_pid, nil}}
+          end
+
+        # Halted state
+        {:halt, acc} ->
+          {:halt, acc}
+      end,
+      fn
+        # Cleanup: close iterator and demonitor
+        {iter_pid, ref} when is_pid(iter_pid) ->
+          Iterator.close(iter_pid)
+
+          if is_reference(ref), do: Process.demonitor(ref, [:flush])
+
+          :ok
+
+        _ ->
+          :ok
+      end
+    )
+  end
+
+  # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
 
@@ -945,6 +1137,58 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     end
   end
 
+  # ===========================================================================
+  # Fold Operation Handlers
+  # ===========================================================================
+
+  @impl true
+  def handle_call({:fold, cf, prefix, acc, fun}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         read_opts = build_fold_read_opts(prefix, []),
+         result <- do_fold(db, cf_handle, prefix, read_opts, acc, fun) do
+      {:reply, result, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+      error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:fold, cf, prefix, acc, fun, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         read_opts = build_fold_read_opts(prefix, opts),
+         result <- do_fold(db, cf_handle, prefix, read_opts, acc, fun) do
+      {:reply, result, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+      error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:fold_keys, cf, prefix, acc, fun}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         read_opts = build_fold_read_opts(prefix, []),
+         result <- do_fold_keys(db, cf_handle, prefix, read_opts, acc, fun) do
+      {:reply, result, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+      error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:fold_keys, cf, prefix, acc, fun, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         read_opts = build_fold_read_opts(prefix, opts),
+         result <- do_fold_keys(db, cf_handle, prefix, read_opts, acc, fun) do
+      {:reply, result, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+      error -> {:reply, error, state}
+    end
+  end
+
   @impl true
   def terminate(_reason, %{db: db}) do
     # Close the RocksDB database
@@ -1093,5 +1337,143 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       :ok -> :ok
       {:error, reason} -> {:error, {:mkdir_failed, reason}}
     end
+  end
+
+  # ===========================================================================
+  # Fold Helper Functions
+  # ===========================================================================
+
+  # Builds read options for fold operations with prefix support
+  defp build_fold_read_opts(_prefix, opts) do
+    # Build read options list for erlang-rocksdb
+    read_opts = []
+
+    # Add fill_cache option (only add when false to reduce options)
+    read_opts =
+      case Keyword.get(opts, :fill_cache, true) do
+        true -> read_opts
+        false -> [:fill_cache_false | read_opts]
+      end
+
+    # Add iterate_upper_bound if provided
+    read_opts =
+      case Keyword.get(opts, :iterate_upper_bound) do
+        nil -> read_opts
+        bound -> [{:iterate_upper_bound, bound} | read_opts]
+      end
+
+    # Add snapshot if provided
+    read_opts =
+      case Keyword.get(opts, :snapshot) do
+        nil -> read_opts
+        snapshot -> [{:snapshot, snapshot} | read_opts]
+      end
+
+    read_opts
+  end
+
+  # Performs fold over key-value pairs with prefix checking
+  defp do_fold(db, cf_handle, prefix, read_opts, acc, fun) do
+    # Create iterator for fold
+    case :rocksdb.iterator(db, cf_handle, read_opts) do
+      {:ok, iter} ->
+        try do
+          # Seek to prefix
+          case :rocksdb.iterator_move(iter, prefix) do
+            {:ok, key, value} ->
+              if has_prefix?(key, prefix) do
+                fold_iteration(iter, prefix, fun.({key, value}, acc), fun)
+              else
+                acc
+              end
+
+            :iterator_end ->
+              acc
+
+            {:error, _reason} ->
+              acc
+          end
+
+        after
+          :rocksdb.iterator_close(iter)
+        end
+
+      {:error, _reason} ->
+        acc
+    end
+  end
+
+  # Performs fold over keys only with prefix checking
+  defp do_fold_keys(db, cf_handle, prefix, read_opts, acc, fun) do
+    # Create iterator for fold
+    case :rocksdb.iterator(db, cf_handle, read_opts) do
+      {:ok, iter} ->
+        try do
+          # Seek to prefix
+          case :rocksdb.iterator_move(iter, prefix) do
+            {:ok, key, _value} ->
+              if has_prefix?(key, prefix) do
+                fold_keys_iteration(iter, prefix, fun.(key, acc), fun)
+              else
+                acc
+              end
+
+            :iterator_end ->
+              acc
+
+            {:error, _reason} ->
+              acc
+          end
+
+        after
+          :rocksdb.iterator_close(iter)
+        end
+
+      {:error, _reason} ->
+        acc
+    end
+  end
+
+  # Continues fold iteration with key-value pairs
+  defp fold_iteration(iter, prefix, acc, fun) do
+    case :rocksdb.iterator_move(iter, :next) do
+      {:ok, key, value} ->
+        if has_prefix?(key, prefix) do
+          fold_iteration(iter, prefix, fun.({key, value}, acc), fun)
+        else
+          acc
+        end
+
+      :iterator_end ->
+        acc
+
+      {:error, _reason} ->
+        acc
+    end
+  end
+
+  # Continues fold iteration with keys only
+  defp fold_keys_iteration(iter, prefix, acc, fun) do
+    case :rocksdb.iterator_move(iter, :next) do
+      {:ok, key, _value} ->
+        if has_prefix?(key, prefix) do
+          fold_keys_iteration(iter, prefix, fun.(key, acc), fun)
+        else
+          acc
+        end
+
+      :iterator_end ->
+        acc
+
+      {:error, _reason} ->
+        acc
+    end
+  end
+
+  # Checks if a key has the given prefix
+  defp has_prefix?(key, prefix) when byte_size(prefix) == 0, do: true
+  defp has_prefix?(key, prefix) when byte_size(key) < byte_size(prefix), do: false
+  defp has_prefix?(key, prefix) do
+    binary_part(key, 0, byte_size(prefix)) == prefix
   end
 end
