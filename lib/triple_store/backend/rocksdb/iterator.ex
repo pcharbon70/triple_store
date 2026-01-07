@@ -390,11 +390,11 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
         false -> [:prefix_same_as_start_false | read_opts]
       end
 
-    # Snapshot option (placeholder for Section 2.2)
+    # Snapshot option - pass through to erlang-rocksdb read options
     read_opts =
       case Keyword.get(opts, :snapshot) do
         nil -> read_opts
-        _snapshot_ref -> read_opts  # TODO: Add snapshot support in Section 2.2
+        snapshot_ref -> [{:snapshot, snapshot_ref} | read_opts]
       end
 
     read_opts

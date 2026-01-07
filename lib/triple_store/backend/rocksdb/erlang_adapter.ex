@@ -563,6 +563,130 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # ===========================================================================
+  # Snapshot Operations
+  # ===========================================================================
+
+  @doc """
+  Creates a point-in-time snapshot of the database.
+
+  Snapshots provide consistent read-only views over the entire state of the key-value store.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+
+  ## Returns
+
+  - `{:ok, snapshot_ref}` - Snapshot created successfully
+  - `{:error, reason}` - Failed to create snapshot
+
+  ## Examples
+
+      iex> {:ok, snap} = ErlangAdapter.snapshot(adapter)
+      iex> is_reference(snap)
+      true
+
+  """
+  @spec snapshot(adapter()) :: {:ok, reference()} | {:error, term()}
+  def snapshot(adapter) when is_pid(adapter) do
+    GenServer.call(adapter, :snapshot)
+  end
+
+  @doc """
+  Releases a snapshot, freeing its resources.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - The snapshot reference to release
+
+  ## Returns
+
+  - `:ok` - Snapshot released successfully
+  - `{:error, reason}` - Failed to release snapshot
+
+  """
+  @spec release_snapshot(adapter(), reference()) :: :ok | {:error, term()}
+  def release_snapshot(adapter, snapshot_ref) when is_pid(adapter) and is_reference(snapshot_ref) do
+    GenServer.call(adapter, {:release_snapshot, snapshot_ref})
+  end
+
+  @doc """
+  Gets a value from a snapshot.
+
+  Reads the value as it existed when the snapshot was created.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - The snapshot reference
+  - `cf` - Column family atom
+  - `key` - Binary key to look up
+
+  ## Returns
+
+  - `{:ok, value}` - Key found in snapshot
+  - `:not_found` - Key does not exist in snapshot
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec snapshot_get(adapter(), reference(), column_family(), binary()) ::
+          {:ok, binary()} | :not_found | {:error, term()}
+  def snapshot_get(adapter, snapshot_ref, cf, key)
+      when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(key) do
+    GenServer.call(adapter, {:snapshot_get, snapshot_ref, cf, key})
+  end
+
+  @doc """
+  Creates a prefix iterator on a snapshot.
+
+  The iterator will see the database state as of the snapshot creation time.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - The snapshot reference
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate over
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
+  """
+  @spec snapshot_prefix_iterator(adapter(), reference(), column_family(), binary()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def snapshot_prefix_iterator(adapter, snapshot_ref, cf, prefix)
+      when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    GenServer.call(adapter, {:snapshot_prefix_iterator, snapshot_ref, cf, prefix})
+  end
+
+  @doc """
+  Creates a prefix iterator on a snapshot with options.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - The snapshot reference
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate over
+  - `opts` - Iterator options
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
+  """
+  @spec snapshot_prefix_iterator(adapter(), reference(), column_family(), binary(), keyword()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def snapshot_prefix_iterator(adapter, snapshot_ref, cf, prefix, opts)
+      when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    GenServer.call(adapter, {:snapshot_prefix_iterator, snapshot_ref, cf, prefix, opts})
+  end
+
+  # ===========================================================================
   # GenServer Callbacks
   # ===========================================================================
 
@@ -762,6 +886,58 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @impl true
   def handle_call({:iterator, cf, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
+      {:reply, {:ok, iter_pid}, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  # ===========================================================================
+  # Snapshot Operation Handlers
+  # ===========================================================================
+
+  @impl true
+  def handle_call(:snapshot, _from, %{db: db} = state) do
+    case :rocksdb.snapshot(db) do
+      {:ok, snapshot_ref} -> {:reply, {:ok, snapshot_ref}, state}
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:release_snapshot, snapshot_ref}, _from, state) do
+    result = :rocksdb.release_snapshot(snapshot_ref)
+    {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call({:snapshot_get, snapshot_ref, cf, key}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         read_opts = [{:snapshot, snapshot_ref}],
+         result <- :rocksdb.get(db, cf_handle, key, read_opts) do
+      {:reply, result, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+      error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:snapshot_prefix_iterator, snapshot_ref, cf, prefix}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         opts = [prefix: prefix, fill_cache: true, total_order_seek: false, prefix_same_as_start: false, snapshot: snapshot_ref],
+         {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
+      {:reply, {:ok, iter_pid}, state}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:snapshot_prefix_iterator, snapshot_ref, cf, prefix, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         opts = Keyword.put(opts, :snapshot, snapshot_ref) |> Keyword.put(:prefix, prefix),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else

@@ -87,14 +87,14 @@ defmodule TripleStore.Snapshot do
 
     case NIF.snapshot(db_ref) do
       {:ok, snapshot_ref} ->
-        case GenServer.call(__MODULE__, {:register, snapshot_ref, owner, ttl}) do
+        case GenServer.call(__MODULE__, {:register, snapshot_ref, owner, ttl, db_ref}) do
           :ok ->
             emit_created(snapshot_ref, ttl)
             {:ok, snapshot_ref}
 
           {:error, _} = error ->
             # Registration failed, release the snapshot
-            NIF.release_snapshot(snapshot_ref)
+            NIF.release_snapshot(db_ref, snapshot_ref)
             error
         end
 
@@ -114,14 +114,45 @@ defmodule TripleStore.Snapshot do
   @spec release(snapshot_ref()) :: :ok | {:error, term()}
   def release(snapshot_ref) do
     case GenServer.call(__MODULE__, {:unregister, snapshot_ref}) do
-      :ok ->
-        result = NIF.release_snapshot(snapshot_ref)
+      {:ok, db_ref} ->
+        result = NIF.release_snapshot(db_ref, snapshot_ref)
         emit_released(snapshot_ref, :manual)
         result
 
       {:error, :not_found} ->
-        # Not in registry, try direct release anyway
-        NIF.release_snapshot(snapshot_ref)
+        # Not in registry, cannot release without db_ref
+        {:error, :snapshot_not_found}
+    end
+  end
+
+  @doc """
+  Gets a value from a snapshot using the db_ref from the registry.
+
+  This is a convenience function that looks up the db_ref associated with
+  the snapshot and calls the underlying NIF function.
+
+  ## Parameters
+
+  - `snapshot_ref`: The snapshot reference
+  - `cf`: Column family atom
+  - `key`: Binary key to look up
+
+  ## Returns
+
+  - `{:ok, value}` - Key found in snapshot
+  - `:not_found` - Key does not exist in snapshot
+  - `{:error, reason}` - Error occurred
+
+  ## Examples
+
+      {:ok, value} = TripleStore.Snapshot.get(snapshot, :spo, "key1")
+
+  """
+  @spec get(snapshot_ref(), atom(), binary()) :: {:ok, binary()} | :not_found | {:error, term()}
+  def get(snapshot_ref, cf, key) do
+    case GenServer.call(__MODULE__, {:lookup_db_ref, snapshot_ref}) do
+      {:ok, db_ref} -> NIF.snapshot_get(db_ref, snapshot_ref, cf, key)
+      {:error, _reason} = error -> error
     end
   end
 
@@ -193,7 +224,7 @@ defmodule TripleStore.Snapshot do
     schedule_cleanup()
 
     state = %{
-      # snapshot_ref => %{owner: pid, monitor: ref, created_at: time, ttl: ms}
+      # snapshot_ref => %{owner: pid, monitor: ref, created_at: time, ttl: ms, db_ref: pid}
       snapshots: %{},
       # monitor_ref => snapshot_ref
       monitors: %{}
@@ -203,7 +234,7 @@ defmodule TripleStore.Snapshot do
   end
 
   @impl true
-  def handle_call({:register, snapshot_ref, owner, ttl}, _from, state) do
+  def handle_call({:register, snapshot_ref, owner, ttl, db_ref}, _from, state) do
     # Monitor the owner process
     monitor_ref = Process.monitor(owner)
     now = System.monotonic_time(:millisecond)
@@ -213,7 +244,8 @@ defmodule TripleStore.Snapshot do
       monitor: monitor_ref,
       created_at: now,
       ttl: ttl,
-      warned: false
+      warned: false,
+      db_ref: db_ref
     }
 
     new_state = %{
@@ -237,7 +269,17 @@ defmodule TripleStore.Snapshot do
             monitors: Map.delete(state.monitors, entry.monitor)
         }
 
-        {:reply, :ok, new_state}
+        {:reply, {:ok, entry.db_ref}, new_state}
+
+      :error ->
+        {:reply, {:error, :not_found}, state}
+    end
+  end
+
+  def handle_call({:lookup_db_ref, snapshot_ref}, _from, state) do
+    case Map.fetch(state.snapshots, snapshot_ref) do
+      {:ok, entry} ->
+        {:reply, {:ok, entry.db_ref}, state}
 
       :error ->
         {:reply, {:error, :not_found}, state}
@@ -273,7 +315,15 @@ defmodule TripleStore.Snapshot do
     case Map.fetch(state.monitors, monitor_ref) do
       {:ok, snapshot_ref} ->
         # Owner process died, release the snapshot
-        release_snapshot_internal(snapshot_ref, :owner_down)
+        # Look up db_ref from the snapshot entry
+        case Map.fetch(state.snapshots, snapshot_ref) do
+          {:ok, entry} ->
+            release_snapshot_internal(entry.db_ref, snapshot_ref, :owner_down)
+
+          :error ->
+            # Snapshot already gone, skip
+            :ok
+        end
 
         new_state = %{
           state
@@ -329,7 +379,7 @@ defmodule TripleStore.Snapshot do
     # Release expired snapshots
     Enum.each(expired, fn {ref, entry} ->
       Process.demonitor(entry.monitor, [:flush])
-      release_snapshot_internal(ref, :expired)
+      release_snapshot_internal(entry.db_ref, ref, :expired)
     end)
 
     # Update monitors map
@@ -343,8 +393,8 @@ defmodule TripleStore.Snapshot do
     %{state | snapshots: remaining, monitors: new_monitors}
   end
 
-  defp release_snapshot_internal(snapshot_ref, reason) do
-    case NIF.release_snapshot(snapshot_ref) do
+  defp release_snapshot_internal(db_ref, snapshot_ref, reason) do
+    case NIF.release_snapshot(db_ref, snapshot_ref) do
       :ok ->
         emit_released(snapshot_ref, reason)
         :ok

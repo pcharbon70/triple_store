@@ -481,88 +481,193 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   end
 
   # ===========================================================================
-  # Snapshot Operations (Phase 2 - Not Yet Implemented)
+  # Snapshot Operations (Phase 2 - Section 2.2)
   # ===========================================================================
 
   @doc """
-  Creates a snapshot - NOT YET IMPLEMENTED.
+  Creates a point-in-time snapshot of the database.
 
-  This will be implemented in Phase 2 of the migration.
+  Snapshots provide consistent read-only views over the entire state of the key-value store.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+
+  ## Returns
+
+  - `{:ok, snapshot_ref}` - Snapshot created successfully
+  - `{:error, reason}` - Failed to create snapshot
+
   """
   @spec snapshot(db_ref()) :: {:ok, snapshot_ref()} | {:error, term()}
-  def snapshot(_db_ref) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  def snapshot(db_ref) when is_pid(db_ref) do
+    ErlangAdapter.snapshot(db_ref)
   end
 
   @doc """
-  Gets a value from a snapshot - NOT YET IMPLEMENTED.
+  Gets a value from a snapshot.
 
-  This will be implemented in Phase 2 of the migration.
+  Reads the value as it existed when the snapshot was created.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `snapshot_ref`: The snapshot reference
+  - `cf`: Column family atom
+  - `key`: Binary key to look up
+
+  ## Returns
+
+  - `{:ok, value}` - Key found in snapshot
+  - `:not_found` - Key does not exist in snapshot
+  - `{:error, reason}` - Error occurred
+
   """
-  @spec snapshot_get(snapshot_ref(), column_family(), binary()) :: {:ok, binary()} | :not_found | {:error, term()}
-  def snapshot_get(_snapshot_ref, _cf, _key) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec snapshot_get(db_ref(), snapshot_ref(), column_family(), binary()) ::
+          {:ok, binary()} | :not_found | {:error, term()}
+  def snapshot_get(db_ref, snapshot_ref, cf, key)
+      when is_pid(db_ref) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(key) do
+    ErlangAdapter.snapshot_get(db_ref, snapshot_ref, cf, key)
   end
 
   @doc """
-  Creates a prefix iterator on a snapshot - NOT YET IMPLEMENTED.
+  Creates a prefix iterator on a snapshot.
 
-  This will be implemented in Phase 2 of the migration.
+  The iterator will see the database state as of the snapshot creation time.
+
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `snapshot_ref`: The snapshot reference
+  - `cf`: Column family atom
+  - `prefix`: Binary prefix to iterate over
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
   """
-  @spec snapshot_prefix_iterator(snapshot_ref(), column_family(), binary()) ::
-          {:ok, snapshot_iterator_ref()} | {:error, term()}
-  def snapshot_prefix_iterator(_snapshot_ref, _cf, _prefix) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec snapshot_prefix_iterator(db_ref(), snapshot_ref(), column_family(), binary()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def snapshot_prefix_iterator(db_ref, snapshot_ref, cf, prefix)
+      when is_pid(db_ref) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.snapshot_prefix_iterator(db_ref, snapshot_ref, cf, prefix)
   end
 
   @doc """
-  Gets the next entry from a snapshot iterator - NOT YET IMPLEMENTED.
+  Creates a prefix iterator on a snapshot with options.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `snapshot_ref`: The snapshot reference
+  - `cf`: Column family atom
+  - `prefix`: Binary prefix to iterate over
+  - `opts`: Iterator options
+
+  ## Returns
+
+  - `{:ok, iterator_ref}` - Iterator created successfully
+  - `{:error, reason}` - Failed to create iterator
+
   """
-  @spec snapshot_iterator_next(snapshot_iterator_ref()) ::
+  @spec snapshot_prefix_iterator(db_ref(), snapshot_ref(), column_family(), binary(), keyword()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def snapshot_prefix_iterator(db_ref, snapshot_ref, cf, prefix, opts)
+      when is_pid(db_ref) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    ErlangAdapter.snapshot_prefix_iterator(db_ref, snapshot_ref, cf, prefix, opts)
+  end
+
+  @doc """
+  Gets the next entry from a snapshot iterator.
+
+  This is the same as `iterator_next/1` - snapshot iterators use the same iterator process.
+
+  ## Parameters
+
+  - `iter_ref`: The iterator PID
+
+  ## Returns
+
+  - `{:ok, key, value}` - Entry found
+  - `:iterator_end` - Iterator exhausted
+  - `{:error, reason}` - Error occurred
+
+  """
+  @spec snapshot_iterator_next(iterator_ref()) ::
           {:ok, binary(), binary()} | :iterator_end | {:error, term()}
-  def snapshot_iterator_next(_iter_ref) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  def snapshot_iterator_next(iter_ref) when is_pid(iter_ref) do
+    iterator_next(iter_ref)
   end
 
   @doc """
-  Closes a snapshot iterator - NOT YET IMPLEMENTED.
+  Closes a snapshot iterator.
 
-  This will be implemented in Phase 2 of the migration.
+  This is the same as `iterator_close/1` - snapshot iterators use the same iterator process.
+
+  ## Parameters
+
+  - `iter_ref`: The iterator PID
+
+  ## Returns
+
+  - `:ok`
+
   """
-  @spec snapshot_iterator_close(snapshot_iterator_ref()) :: :ok | {:error, term()}
-  def snapshot_iterator_close(_iter_ref) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec snapshot_iterator_close(iterator_ref()) :: :ok
+  def snapshot_iterator_close(iter_ref) when is_pid(iter_ref) do
+    iterator_close(iter_ref)
   end
 
   @doc """
-  Collects all remaining entries from a snapshot iterator - NOT YET IMPLEMENTED.
+  Collects all remaining entries from a snapshot iterator.
 
-  This will be implemented in Phase 2 of the migration.
+  This is the same as `iterator_collect/1` - snapshot iterators use the same iterator process.
+
+  ## Parameters
+
+  - `iter_ref`: The iterator PID
+
+  ## Returns
+
+  - `{:ok, [{key, value}]}` - List of entries
+  - `{:error, reason}` - Error occurred
+
   """
-  @spec snapshot_iterator_collect(snapshot_iterator_ref()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
-  def snapshot_iterator_collect(_iter_ref) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec snapshot_iterator_collect(iterator_ref()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
+  def snapshot_iterator_collect(iter_ref) when is_pid(iter_ref) do
+    iterator_collect(iter_ref)
   end
 
   @doc """
-  Releases a snapshot - NOT YET IMPLEMENTED.
+  Releases a snapshot, freeing its resources.
 
-  This will be implemented in Phase 2 of the migration.
+  ## Parameters
+
+  - `db_ref`: The database reference (adapter PID)
+  - `snapshot_ref`: The snapshot reference to release
+
+  ## Returns
+
+  - `:ok` - Snapshot released successfully
+  - `{:error, reason}` - Failed to release snapshot
+
   """
-  @spec release_snapshot(snapshot_ref()) :: :ok | {:error, term()}
-  def release_snapshot(_snapshot_ref) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec release_snapshot(db_ref(), snapshot_ref()) :: :ok | {:error, term()}
+  def release_snapshot(db_ref, snapshot_ref) when is_pid(db_ref) and is_reference(snapshot_ref) do
+    ErlangAdapter.release_snapshot(db_ref, snapshot_ref)
   end
 
   @doc """
   Creates a prefix stream from a snapshot - NOT YET IMPLEMENTED.
 
-  This will be implemented in Phase 2 of the migration.
+  This will be implemented in Phase 2.3 (Fold-Based Iteration).
+
   """
-  @spec snapshot_stream(snapshot_ref(), column_family(), binary()) :: {:ok, Enumerable.t()} | {:error, term()}
-  def snapshot_stream(_snapshot_ref, _cf, _prefix) do
-    raise("Snapshot operations not yet implemented - see Phase 2 migration plan")
+  @spec snapshot_stream(db_ref(), snapshot_ref(), column_family(), binary()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
+  def snapshot_stream(_db_ref, _snapshot_ref, _cf, _prefix) do
+    raise("Stream operations not yet implemented - see Phase 2.3 migration plan")
   end
 end

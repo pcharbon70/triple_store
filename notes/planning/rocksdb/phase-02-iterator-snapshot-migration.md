@@ -89,54 +89,54 @@ Implement convenience function for collecting all iterator results.
 
 ## 2.2 Snapshot Operations Migration
 
-- [ ] **Section 2.2 Status** (Pending)
+- [x] **Section 2.2 Status** (Completed 2026-01-07)
 
 Migrate snapshot functionality for point-in-time consistent reads.
 
 ### 2.2.1 Snapshot Creation and Release
 
-- [ ] **Task 2.2.1 Status** (Pending)
+- [x] **Task 2.2.1 Status** (Completed 2026-01-07)
 
 Implement snapshot lifecycle management.
 
-- [ ] 2.2.1.1 Implement `snapshot/1` for creating point-in-time snapshots
-- [ ] 2.2.1.2 Implement `release_snapshot/1` for cleanup
-- [ ] 2.2.1.3 Track snapshot references for proper resource management
-- [ ] 2.2.1.4 Handle snapshot from database reference
-- [ ] 2.2.1.5 Return snapshot reference that can be used with read options
+- [x] 2.2.1.1 Implement `snapshot/1` for creating point-in-time snapshots
+- [x] 2.2.1.2 Implement `release_snapshot/1` for cleanup
+- [x] 2.2.1.3 Track snapshot references for proper resource management
+- [x] 2.2.1.4 Handle snapshot from database reference
+- [x] 2.2.1.5 Return snapshot reference that can be used with read options
 
 ### 2.2.2 Snapshot Read Operations
 
-- [ ] **Task 2.2.2 Status** (Pending)
+- [x] **Task 2.2.2 Status** (Completed 2026-01-07)
 
 Implement read operations from snapshots.
 
-- [ ] 2.2.2.1 Implement `snapshot_get/3` for reading from snapshot
-- [ ] 2.2.2.2 Configure read options with snapshot reference
-- [ ] 2.2.2.3 Handle not_found case consistently with normal get
-- [ ] 2.2.2.4 Verify snapshot provides point-in-time consistency
+- [x] 2.2.2.1 Implement `snapshot_get/3` for reading from snapshot
+- [x] 2.2.2.2 Configure read options with snapshot reference
+- [x] 2.2.2.3 Handle not_found case consistently with normal get
+- [x] 2.2.2.4 Verify snapshot provides point-in-time consistency
 
 ### 2.2.3 Snapshot Iterator Operations
 
-- [ ] **Task 2.2.3 Status** (Pending)
+- [x] **Task 2.2.3 Status** (Completed 2026-01-07)
 
 Implement iterator creation from snapshots.
 
-- [ ] 2.2.3.1 Implement `snapshot_prefix_iterator/4` for iterating over snapshot
-- [ ] 2.2.3.2 Pass snapshot reference in iterator read options
-- [ ] 2.2.3.3 Ensure iterator sees data as of snapshot time
-- [ ] 2.2.3.4 Handle iterator lifecycle with snapshot reference
+- [x] 2.2.3.1 Implement `snapshot_prefix_iterator/4` for iterating over snapshot
+- [x] 2.2.3.2 Pass snapshot reference in iterator read options
+- [x] 2.2.3.3 Ensure iterator sees data as of snapshot time
+- [x] 2.2.3.4 Handle iterator lifecycle with snapshot reference
 
 ### 2.2.4 Unit Tests
 
-- [ ] **Task 2.2.4 Status** (Pending)
+- [x] **Task 2.2.4 Status** (Completed 2026-01-07)
 
-- [ ] 2.2.4.1 Test snapshot creation captures current state
-- [ ] 2.2.4.2 Test snapshot doesn't see subsequent writes
-- [ ] 2.2.4.3 Test snapshot_get returns data from snapshot time
-- [ ] 2.2.4.4 Test snapshot iterator sees historical data
-- [ ] 2.2.4.5 Test multiple snapshots can coexist
-- [ ] 2.2.4.6 Test snapshot release allows compaction of old data
+- [x] 2.2.4.1 Test snapshot creation captures current state
+- [x] 2.2.4.2 Test snapshot doesn't see subsequent writes
+- [x] 2.2.4.3 Test snapshot_get returns data from snapshot time
+- [x] 2.2.4.4 Test snapshot iterator sees historical data
+- [x] 2.2.4.5 Test multiple snapshots can coexist
+- [x] 2.2.4.6 Test snapshot release allows compaction of old data
 
 ---
 
