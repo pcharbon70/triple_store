@@ -53,7 +53,10 @@ This directory contains the phased migration plan for transitioning the TripleSt
   - Created 25 configuration tests (all passing)
   - See `notes/summaries/phase-1.4-column-family-configuration.md` for details
 
-- [ ] 1.5 Integration Tests - PENDING
+- [x] 1.5 Integration Tests - COMPLETED (2026-01-07)
+  - Created 19 integration tests covering database lifecycle, CRUD operations, encoding compatibility
+  - All tests passing
+  - See `notes/summaries/phase-1.5-integration-tests.md` for details
 
 ### Phase 2 Status (Iterator & Snapshot Migration)
 

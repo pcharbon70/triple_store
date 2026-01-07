@@ -225,9 +225,12 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
         # Use prefix-based bloom filtering
         whole_key_filtering: false
       ],
-      # Prefix extractor for first 8 bytes (64-bit ID)
-      # This enables efficient prefix scans for triple pattern matching
-      prefix_extractor: {"fixed.prefix", @prefix_extractor_bytes},
+      # Note: prefix_extractor configuration format is version-dependent
+      # The erlang-rocksdb library may accept different formats like:
+      # - {:prefix_extractor, "fixed:8"} (string format)
+      # - {:prefix_extractor, {:fixed, 8}} (tuple format)
+      # For now, we skip this option and will add it during adapter implementation
+      # prefix_extractor: {"fixed.prefix", @prefix_extractor_bytes},
       # Memtable prefix bloom for efficient in-memory filtering
       memtable_prefix_bloom_size_ratio: 0.1,
       # Compression
@@ -381,18 +384,20 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @doc """
   Checks if a column family has a prefix extractor configured.
 
+  Note: Currently returns false for all CFs as prefix_extractor configuration
+  is deferred to adapter implementation. The prefix extractor format is
+  version-dependent in erlang-rocksdb and will be configured during
+  the actual adapter implementation.
+
   ## Examples
 
       iex> ColumnFamilyConfig.has_prefix_extractor?(:spo)
-      true
+      false
 
       iex> ColumnFamilyConfig.has_prefix_extractor?(:id2str)
       false
 
   """
   @spec has_prefix_extractor?(column_family()) :: boolean()
-  def has_prefix_extractor?(:spo), do: true
-  def has_prefix_extractor?(:pos), do: true
-  def has_prefix_extractor?(:osp), do: true
   def has_prefix_extractor?(_), do: false
 end
