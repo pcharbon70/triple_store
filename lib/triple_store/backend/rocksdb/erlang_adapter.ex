@@ -21,6 +21,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   erlang-rocksdb uses charlist strings (`~c"spo"`). The adapter handles
   this translation transparently.
 
+  ## Performance Characteristics
+
+  - **Fold operations**: Use `fold/5` and `fold_keys/5` for efficient iteration.
+    These operations minimize BEAM-NIF boundary crossings by performing iteration
+    in C++ land.
+  - **Point lookups**: Use `get/3` for single key access with O(log n) complexity.
+  - **Prefix scans**: Use `prefix_iterator/3` or `fold/5` for scanning keys with
+    a common prefix.
+  - **Batch writes**: Use `write_batch/3`, `delete_batch/3`, or `mixed_batch/3`
+    for atomic multi-key operations.
+  - **Streams**: Use `prefix_stream/3` for lazy, resource-safe iteration with
+    automatic cleanup.
+
   ## Usage
 
   ```elixir
@@ -30,6 +43,14 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # Perform operations
   :ok = ErlangAdapter.put(adapter, :spo, key, value)
   {:ok, value} = ErlangAdapter.get(adapter, :spo, key)
+
+  # Fold over a prefix (efficient for bulk operations)
+  count = ErlangAdapter.fold(adapter, :spo, prefix, 0, fn {_k, _v}, acc -> acc + 1 end)
+
+  # Stream with lazy evaluation
+  adapter
+  |> ErlangAdapter.prefix_stream(:spo, prefix)
+  |> Enum.take(100)
 
   # Close the database
   :ok = ErlangAdapter.close(adapter)
@@ -41,6 +62,21 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   standardized error tuples:
   - `{:error, reason}` - Operation failed
   - `:not_found` - Key does not exist (for get operations)
+
+  ## Migration from NIF Module
+
+  The `TripleStore.Backend.RocksDB.NIF` module is deprecated. Use this module
+  directly instead:
+
+  ```elixir
+  # Old way (deprecated)
+  {:ok, db} = TripleStore.Backend.RocksDB.NIF.open("/path/to/db")
+
+  # New way (recommended)
+  {:ok, adapter} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
+  ```
+
+  The API is identical - simply replace `NIF` with `ErlangAdapter`.
   """
 
   use GenServer
