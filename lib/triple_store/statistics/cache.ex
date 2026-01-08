@@ -262,13 +262,8 @@ defmodule TripleStore.Statistics.Cache do
     case state.histogram do
       nil ->
         # Histogram not computed yet, compute synchronously
-        case compute_histogram(state.db) do
-          {:ok, histogram} ->
-            {:reply, {:ok, histogram}, %{state | histogram: histogram}}
-
-          {:error, _} = error ->
-            {:reply, error, state}
-        end
+        {:ok, histogram} = compute_histogram(state.db)
+        {:reply, {:ok, histogram}, %{state | histogram: histogram}}
 
       histogram ->
         {:reply, {:ok, histogram}, state}
@@ -361,23 +356,20 @@ defmodule TripleStore.Statistics.Cache do
     end
   end
 
-  @spec compute_histogram(NIF.db_ref()) :: {:ok, predicate_histogram()} | {:error, term()}
+  @spec compute_histogram(NIF.db_ref()) :: {:ok, predicate_histogram()}
   defp compute_histogram(db) do
     # Get all predicates by scanning the POS index
-    case NIF.prefix_stream(db, :pos, <<>>) do
-      {:ok, stream} ->
-        histogram =
-          stream
-          |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
-          |> Enum.reduce(%{}, fn predicate_id, acc ->
-            Map.update(acc, predicate_id, 1, &(&1 + 1))
-          end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, :pos, <<>>)
 
-        {:ok, histogram}
+    histogram =
+      stream
+      |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
+      |> Enum.reduce(%{}, fn predicate_id, acc ->
+        Map.update(acc, predicate_id, 1, &(&1 + 1))
+      end)
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, histogram}
   end
 
   @spec compute_all(NIF.db_ref()) ::

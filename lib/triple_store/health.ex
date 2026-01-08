@@ -695,12 +695,8 @@ defmodule TripleStore.Health do
   defp maybe_add(map, key, value), do: Map.put(map, key, value)
 
   defp count_index_entries(db, cf) do
-    case NIF.prefix_stream(db, cf, <<>>) do
-      {:ok, stream} ->
-        Enum.count(stream)
-
-      {:error, _} ->
-        0
-    end
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, cf, <<>>)
+    Enum.count(stream)
   end
 end

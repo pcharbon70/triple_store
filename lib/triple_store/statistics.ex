@@ -447,23 +447,19 @@ defmodule TripleStore.Statistics do
       iex> histogram
       %{42 => 500, 43 => 1500, 44 => 300}
   """
-  @spec build_predicate_histogram(db_ref()) ::
-          {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
+  @spec build_predicate_histogram(db_ref()) :: {:ok, %{term_id() => non_neg_integer()}}
   def build_predicate_histogram(db) do
-    case NIF.prefix_stream(db, :pos, <<>>) do
-      {:ok, stream} ->
-        histogram =
-          stream
-          |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
-          |> Enum.reduce(%{}, fn predicate_id, acc ->
-            Map.update(acc, predicate_id, 1, &(&1 + 1))
-          end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, :pos, <<>>)
 
-        {:ok, histogram}
+    histogram =
+      stream
+      |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
+      |> Enum.reduce(%{}, fn predicate_id, acc ->
+        Map.update(acc, predicate_id, 1, &(&1 + 1))
+      end)
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, histogram}
   end
 
   # ===========================================================================
@@ -500,41 +496,43 @@ defmodule TripleStore.Statistics do
       }
   """
   @spec build_numeric_histogram(db_ref(), term_id(), pos_integer()) ::
-          {:ok, numeric_histogram() | nil} | {:error, term()}
+          {:ok, numeric_histogram() | nil}
   def build_numeric_histogram(db, predicate_id, bucket_count \\ @default_bucket_count) do
     prefix = <<predicate_id::64-big>>
 
     # Two-pass streaming to avoid loading all values into memory (B2 fix)
     # Pass 1: Find min, max, and count by streaming
-    with {:ok, stream1} <- NIF.prefix_stream(db, :pos, prefix) do
-      {min_val, max_val, count} =
-        stream1
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream1 = NIF.prefix_stream(db, :pos, prefix)
+
+    {min_val, max_val, count} =
+      stream1
+      |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
+      |> Stream.filter(&is_numeric_id?/1)
+      |> Stream.map(&decode_numeric_value/1)
+      |> Enum.reduce({nil, nil, 0}, fn value, {min_acc, max_acc, count_acc} ->
+        min_val = if min_acc == nil, do: value, else: min(min_acc, value)
+        max_val = if max_acc == nil, do: value, else: max(max_acc, value)
+        {min_val, max_val, count_acc + 1}
+      end)
+
+    if count == 0 do
+      {:ok, nil}
+    else
+      # Pass 2: Stream again to populate buckets
+      {:ok, histogram} = build_histogram_from_values(min_val, max_val, count, bucket_count)
+
+      # prefix_stream now returns the stream directly
+      stream2 = NIF.prefix_stream(db, :pos, prefix)
+
+      value_stream =
+        stream2
         |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
         |> Stream.filter(&is_numeric_id?/1)
         |> Stream.map(&decode_numeric_value/1)
-        |> Enum.reduce({nil, nil, 0}, fn value, {min_acc, max_acc, count_acc} ->
-          min_val = if min_acc == nil, do: value, else: min(min_acc, value)
-          max_val = if max_acc == nil, do: value, else: max(max_acc, value)
-          {min_val, max_val, count_acc + 1}
-        end)
 
-      if count == 0 do
-        {:ok, nil}
-      else
-        # Pass 2: Stream again to populate buckets
-        with {:ok, stream2} <- NIF.prefix_stream(db, :pos, prefix),
-             {:ok, histogram} <-
-               build_histogram_from_values(min_val, max_val, count, bucket_count) do
-          value_stream =
-            stream2
-            |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
-            |> Stream.filter(&is_numeric_id?/1)
-            |> Stream.map(&decode_numeric_value/1)
-
-          final_histogram = populate_histogram_buckets(histogram, value_stream)
-          {:ok, final_histogram}
-        end
-      end
+      final_histogram = populate_histogram_buckets(histogram, value_stream)
+      {:ok, final_histogram}
     end
   end
 
@@ -612,21 +610,18 @@ defmodule TripleStore.Statistics do
   # ===========================================================================
 
   @spec count_distinct_by_position(db_ref(), :spo | :pos | :osp) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()}
   defp count_distinct_by_position(db, cf) do
-    case NIF.prefix_stream(db, cf, <<>>) do
-      {:ok, stream} ->
-        count =
-          stream
-          |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
-          |> Stream.dedup()
-          |> Enum.count()
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, cf, <<>>)
 
-        {:ok, count}
+    count =
+      stream
+      |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
+      |> Stream.dedup()
+      |> Enum.count()
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, count}
   end
 
   # Extract the first 8-byte ID from a 24-byte index key
@@ -654,23 +649,17 @@ defmodule TripleStore.Statistics do
   defp maybe_build_numeric_histograms(db, predicate_histogram, bucket_count, true) do
     # Build histograms for predicates that have numeric values
     # We sample the first value to check if a predicate has numeric objects
-    results =
-      predicate_histogram
-      |> Map.keys()
-      |> Enum.reduce_while({:ok, %{}}, fn predicate_id, {:ok, acc} ->
-        case build_numeric_histogram(db, predicate_id, bucket_count) do
-          {:ok, nil} ->
-            {:cont, {:ok, acc}}
+    predicate_histogram
+    |> Map.keys()
+    |> Enum.reduce({:ok, %{}}, fn predicate_id, {:ok, acc} ->
+      case build_numeric_histogram(db, predicate_id, bucket_count) do
+        {:ok, nil} ->
+          {:ok, acc}
 
-          {:ok, histogram} ->
-            {:cont, {:ok, Map.put(acc, predicate_id, histogram)}}
-
-          {:error, _} = error ->
-            {:halt, error}
-        end
-      end)
-
-    results
+        {:ok, histogram} ->
+          {:ok, Map.put(acc, predicate_id, histogram)}
+      end
+    end)
   end
 
   @spec is_numeric_id?(non_neg_integer()) :: boolean()

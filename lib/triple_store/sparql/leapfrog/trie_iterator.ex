@@ -61,21 +61,21 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
   @typedoc """
   The TrieIterator struct.
 
-  - `:db` - Database reference
+  - `:db` - Database reference (adapter PID)
   - `:cf` - Column family (:spo, :pos, or :osp)
   - `:prefix` - Binary prefix to iterate within
   - `:level` - Which position in the key to extract (0, 1, or 2)
-  - `:iter_ref` - RocksDB iterator reference
+  - `:iter_ref` - RocksDB iterator reference (iterator PID)
   - `:current_key` - Current full key or nil if exhausted
   - `:current_value` - Current extracted value at level, or nil if exhausted
   - `:exhausted` - Whether the iterator is exhausted
   """
   @type t :: %__MODULE__{
-          db: reference(),
+          db: pid(),
           cf: :spo | :pos | :osp,
           prefix: binary(),
           level: 0 | 1 | 2,
-          iter_ref: reference() | nil,
+          iter_ref: pid() | nil,
           current_key: binary() | nil,
           current_value: non_neg_integer() | nil,
           exhausted: boolean()
@@ -130,7 +130,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
       {:ok, iter} = TrieIterator.new(db, :spo, <<s_id::64-big, p_id::64-big>>, 2)
 
   """
-  @spec new(reference(), :spo | :pos | :osp, binary(), 0 | 1 | 2) ::
+  @spec new(pid(), :spo | :pos | :osp, binary(), 0 | 1 | 2) ::
           {:ok, t()} | {:error, term()}
   def new(db, cf, prefix, level) when cf in [:spo, :pos, :osp] and level in [0, 1, 2] do
     case NIF.prefix_iterator(db, cf, prefix) do

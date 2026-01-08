@@ -755,15 +755,10 @@ defmodule TripleStore do
 
   # Load all triples from the database as facts for reasoning
   defp load_facts_from_db(db) do
-    case TripleStore.Index.lookup_all(db, {:var, :var, :var}) do
-      {:ok, triples} ->
-        # Convert internal triple list to MapSet of tuples
-        facts = MapSet.new(triples)
-        {:ok, facts}
-
-      {:error, _} = error ->
-        error
-    end
+    {:ok, triples} = TripleStore.Index.lookup_all(db, {:var, :var, :var})
+    # Convert internal triple list to MapSet of tuples
+    facts = MapSet.new(triples)
+    {:ok, facts}
   end
 
   @doc """

@@ -154,7 +154,10 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   """
   @spec close(pid()) :: :ok
   def close(iter_pid) when is_pid(iter_pid) do
-    GenServer.stop(iter_pid, :normal, 5000)
+    if Process.alive?(iter_pid) do
+      GenServer.stop(iter_pid, :normal, 5000)
+    end
+
     :ok
   end
 

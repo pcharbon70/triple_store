@@ -354,32 +354,28 @@ defmodule TripleStore.SPARQL.Executor do
             index_pattern = {s_pattern, p_pattern, o_pattern}
 
             # Query the index
-            case Index.lookup(db, index_pattern) do
-              {:ok, triple_stream} ->
-                # Convert matching triples to bindings
-                binding_stream =
-                  Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
-                    # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-                    case extend_binding_from_match(
-                           binding,
-                           s,
-                           p,
-                           o,
-                           s_id,
-                           p_id,
-                           o_id,
-                           dict_manager
-                         ) do
-                      {:ok, new_binding} -> [new_binding]
-                      {:error, _} -> []
-                    end
-                  end)
+            {:ok, triple_stream} = Index.lookup(db, index_pattern)
 
-                {:ok, binding_stream}
+            # Convert matching triples to bindings
+            binding_stream =
+              Stream.flat_map(triple_stream, fn {s_id, p_id, o_id} ->
+                # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+                case extend_binding_from_match(
+                       binding,
+                       s,
+                       p,
+                       o,
+                       s_id,
+                       p_id,
+                       o_id,
+                       dict_manager
+                     ) do
+                  {:ok, new_binding} -> [new_binding]
+                  {:error, _} -> []
+                end
+              end)
 
-              {:error, _} = error ->
-                error
-            end
+            {:ok, binding_stream}
         end
       end
     end
@@ -390,41 +386,37 @@ defmodule TripleStore.SPARQL.Executor do
   defp execute_subject_cache_pattern(ctx, binding, s, p, o, subject_id) do
     %{db: db, dict_manager: dict_manager} = ctx
 
-    case SubjectCache.get_or_fetch(db, subject_id) do
-      {:ok, property_map} ->
-        # property_map is %{predicate_id => [object_id, ...]}
-        # Convert to stream of bindings
-        binding_stream =
-          Stream.flat_map(property_map, fn {pred_id, object_ids} ->
-            Enum.flat_map(object_ids, fn obj_id ->
-              # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-              case extend_binding_from_match(
-                     binding,
-                     s,
-                     p,
-                     o,
-                     subject_id,
-                     pred_id,
-                     obj_id,
-                     dict_manager
-                   ) do
-                {:ok, new_binding} -> [new_binding]
-                {:error, _} -> []
-              end
-            end)
-          end)
+    {:ok, property_map} = SubjectCache.get_or_fetch(db, subject_id)
 
-        :telemetry.execute(
-          [:triple_store, :executor, :subject_cache, :used],
-          %{count: 1},
-          %{subject_id: subject_id, property_count: map_size(property_map)}
-        )
+    # property_map is %{predicate_id => [object_id, ...]}
+    # Convert to stream of bindings
+    binding_stream =
+      Stream.flat_map(property_map, fn {pred_id, object_ids} ->
+        Enum.flat_map(object_ids, fn obj_id ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+          case extend_binding_from_match(
+                 binding,
+                 s,
+                 p,
+                 o,
+                 subject_id,
+                 pred_id,
+                 obj_id,
+                 dict_manager
+               ) do
+            {:ok, new_binding} -> [new_binding]
+            {:error, _} -> []
+          end
+        end)
+      end)
 
-        {:ok, binding_stream}
+    :telemetry.execute(
+      [:triple_store, :executor, :subject_cache, :used],
+      %{count: 1},
+      %{subject_id: subject_id, property_count: map_size(property_map)}
+    )
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, binding_stream}
   end
 
   # Check if any pattern element is a "not found" marker
