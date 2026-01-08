@@ -191,7 +191,8 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec get(db_ref(), column_family(), binary()) :: {:ok, binary()} | :not_found | {:error, term()}
+  @spec get(db_ref(), column_family(), binary()) ::
+          {:ok, binary()} | :not_found | {:error, term()}
   def get(db_ref, cf, key) when is_pid(db_ref) and is_atom(cf) and is_binary(key) do
     ErlangAdapter.get(db_ref, cf, key)
   end
@@ -344,8 +345,10 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec prefix_iterator(db_ref(), column_family(), binary()) :: {:ok, iterator_ref()} | {:error, term()}
-  def prefix_iterator(db_ref, cf, prefix) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+  @spec prefix_iterator(db_ref(), column_family(), binary()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(db_ref, cf, prefix)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
     ErlangAdapter.prefix_iterator(db_ref, cf, prefix)
   end
 
@@ -372,8 +375,10 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec prefix_iterator(db_ref(), column_family(), binary(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
-  def prefix_iterator(db_ref, cf, prefix, opts) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+  @spec prefix_iterator(db_ref(), column_family(), binary(), keyword()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(db_ref, cf, prefix, opts)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
     ErlangAdapter.prefix_iterator(db_ref, cf, prefix, opts)
   end
 
@@ -391,7 +396,8 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec iterator_next(iterator_ref()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  @spec iterator_next(iterator_ref()) ::
+          {:ok, binary(), binary()} | :iterator_end | {:error, term()}
   def iterator_next(iterator_ref) when is_pid(iterator_ref) do
     ErlangAdapter.iterator_next(iterator_ref)
   end
@@ -411,7 +417,8 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec iterator_move(iterator_ref(), :first | :last | :next | :prev | binary()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  @spec iterator_move(iterator_ref(), :first | :last | :next | :prev | binary()) ::
+          {:ok, binary(), binary()} | :iterator_end | {:error, term()}
   def iterator_move(iterator_ref, action) when is_pid(iterator_ref) do
     ErlangAdapter.iterator_move(iterator_ref, action)
   end
@@ -562,14 +569,15 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `snapshot` - Use a specific snapshot
 
   """
-  @spec fold_keys(db_ref(), column_family(), binary(), term(), fold_keys_fun(), keyword()) :: term()
+  @spec fold_keys(db_ref(), column_family(), binary(), term(), fold_keys_fun(), keyword()) ::
+          term()
   def fold_keys(db_ref, cf, prefix, acc, fun, opts)
       when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
     ErlangAdapter.fold_keys(db_ref, cf, prefix, acc, fun, opts)
   end
 
   @type fold_fun :: ({{binary(), binary()}, term()} -> term())
-  @type fold_keys_fun :: ((binary(), term()) -> term())
+  @type fold_keys_fun :: (binary(), term() -> term())
 
   # ===========================================================================
   # Stream Operations (Phase 2 - Section 2.3)
@@ -604,7 +612,8 @@ defmodule TripleStore.Backend.RocksDB.NIF do
 
   """
   @spec prefix_stream(db_ref(), column_family(), binary()) :: Enumerable.t()
-  def prefix_stream(db_ref, cf, prefix) when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
+  def prefix_stream(db_ref, cf, prefix)
+      when is_pid(db_ref) and is_atom(cf) and is_binary(prefix) do
     ErlangAdapter.prefix_stream(db_ref, cf, prefix)
   end
 
@@ -778,7 +787,8 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec snapshot_iterator_collect(iterator_ref()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
+  @spec snapshot_iterator_collect(iterator_ref()) ::
+          {:ok, [{binary(), binary()}]} | {:error, term()}
   def snapshot_iterator_collect(iter_ref) when is_pid(iter_ref) do
     iterator_collect(iter_ref)
   end

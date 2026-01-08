@@ -230,12 +230,16 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   end
 
   @impl true
-  def handle_call({:move, action}, _from, %{iter_ref: iter_ref, prefix: prefix, exhausted: exhausted} = state) do
+  def handle_call(
+        {:move, action},
+        _from,
+        %{iter_ref: iter_ref, prefix: prefix, exhausted: exhausted} = state
+      ) do
     if exhausted do
       {:reply, :iterator_end, state}
     else
       case :rocksdb.iterator_move(iter_ref, action) do
-        {:ok, key, value} = result ->
+        {:ok, key, _value} = result ->
           # Check prefix boundary if set
           if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
             # Iterator moved past prefix boundary
@@ -265,7 +269,17 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   end
 
   @impl true
-  def handle_call(:next, _from, %{iter_ref: iter_ref, prefix: prefix, last_seek: last_seek, exhausted: exhausted, positioned: positioned} = state) do
+  def handle_call(
+        :next,
+        _from,
+        %{
+          iter_ref: iter_ref,
+          prefix: prefix,
+          last_seek: last_seek,
+          exhausted: exhausted,
+          positioned: positioned
+        } = state
+      ) do
     cond do
       exhausted ->
         {:reply, :iterator_end, state}
@@ -273,11 +287,12 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
       last_seek != nil ->
         # We have a pending seek - execute it and return the result
         case :rocksdb.iterator_move(iter_ref, last_seek) do
-          {:ok, key, value} = result ->
+          {:ok, key, _value} = result ->
             # Check prefix boundary if set
             if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
               # Seek moved past prefix boundary
-              {:reply, :iterator_end, %{state | last_seek: nil, exhausted: true, positioned: true}}
+              {:reply, :iterator_end,
+               %{state | last_seek: nil, exhausted: true, positioned: true}}
             else
               {:reply, result, %{state | last_seek: nil, positioned: true}}
             end
@@ -295,8 +310,9 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
       not positioned ->
         # Iterator hasn't been positioned yet - move to first entry (or prefix)
         start_key = prefix || :first
+
         case :rocksdb.iterator_move(iter_ref, start_key) do
-          {:ok, key, value} = result ->
+          result = {:ok, _key, _value} ->
             # Check prefix boundary if set (already satisfied since we used prefix as start_key)
             {:reply, result, %{state | positioned: true}}
 
@@ -313,7 +329,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
       true ->
         # No pending seek - just move to next entry
         case :rocksdb.iterator_move(iter_ref, :next) do
-          {:ok, key, value} = result ->
+          {:ok, key, _value} = result ->
             # Check prefix boundary if set
             if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
               # Iterator moved past prefix boundary
@@ -335,7 +351,11 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   end
 
   @impl true
-  def handle_call(:collect, _from, %{iter_ref: iter_ref, prefix: prefix, last_seek: last_seek} = state) do
+  def handle_call(
+        :collect,
+        _from,
+        %{iter_ref: iter_ref, prefix: prefix, last_seek: last_seek} = state
+      ) do
     # If there's a pending seek, use it as the starting position
     start_key = last_seek || prefix || :first
 

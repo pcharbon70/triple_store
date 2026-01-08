@@ -74,9 +74,14 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
 
       # Fold with upper bound at <<1::64-big, 11::64-big>>
       count =
-        NIF.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
-          acc + 1
-        end,
+        NIF.fold(
+          db,
+          :spo,
+          <<1::64-big>>,
+          0,
+          fn {_k, _v}, acc ->
+            acc + 1
+          end,
           iterate_upper_bound: <<1::64-big, 11::64-big>>
         )
 
@@ -203,9 +208,14 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
 
       # Fold keys with upper bound
       keys =
-        NIF.fold_keys(db, :spo, <<1::64-big>>, [], fn k, acc ->
-          [k | acc]
-        end,
+        NIF.fold_keys(
+          db,
+          :spo,
+          <<1::64-big>>,
+          [],
+          fn k, acc ->
+            [k | acc]
+          end,
           iterate_upper_bound: <<1::64-big, 11::64-big>>
         )
 
@@ -330,7 +340,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       # Stream non-existent prefix
       entries = Enum.to_list(NIF.prefix_stream(db, :spo, <<99::64-big>>))
 
-      assert length(entries) == 0
+      assert Enum.empty?(entries)
 
       # Clean up
       NIF.close(db)
@@ -387,7 +397,9 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
 
       iter_entries =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, k, v} -> {{k, v}, iter}
@@ -428,9 +440,14 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
 
       # Fold with snapshot should only see 5 entries
       count =
-        NIF.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
-          acc + 1
-        end,
+        NIF.fold(
+          db,
+          :spo,
+          <<1::64-big>>,
+          0,
+          fn {_k, _v}, acc ->
+            acc + 1
+          end,
           snapshot: snap
         )
 

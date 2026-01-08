@@ -401,7 +401,7 @@ defmodule TripleStore.Transaction do
   def terminate(_reason, state) do
     # Release any active snapshot
     if state.current_snapshot do
-      NIF.release_snapshot(state.current_snapshot)
+      NIF.release_snapshot(state.db, state.current_snapshot)
     end
 
     :ok
@@ -443,7 +443,7 @@ defmodule TripleStore.Transaction do
           end
         after
           # Always release snapshot
-          release_snapshot(snapshot)
+          release_snapshot(state.db, snapshot)
         end
 
       {:error, _} = error ->
@@ -518,8 +518,8 @@ defmodule TripleStore.Transaction do
     NIF.snapshot(db)
   end
 
-  defp release_snapshot(snapshot) do
-    NIF.release_snapshot(snapshot)
+  defp release_snapshot(db, snapshot) do
+    NIF.release_snapshot(db, snapshot)
   end
 
   # ===========================================================================

@@ -8,6 +8,7 @@ IO.puts("Testing erlang-rocksdb dependency...")
 
 # Test 1: Open database
 IO.puts("  [1/4] Opening database with column families...")
+
 case :rocksdb.open_with_cf(db_path, [{:create_if_missing, true}], [{~c"default", []}]) do
   {:ok, db, cf_handles} ->
     IO.puts("       Database opened successfully")
@@ -17,12 +18,14 @@ case :rocksdb.open_with_cf(db_path, [{:create_if_missing, true}], [{~c"default",
 
     # Test 2: Put operation
     IO.puts("  [2/4] Testing put operation...")
+
     case :rocksdb.put(db, cf, "test_key", "test_value", []) do
       :ok ->
         IO.puts("       Put successful")
 
         # Test 3: Get operation
         IO.puts("  [3/4] Testing get operation...")
+
         case :rocksdb.get(db, cf, "test_key", []) do
           {:ok, "test_value"} ->
             IO.puts("       Get successful - value matches")

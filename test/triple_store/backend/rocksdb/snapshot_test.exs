@@ -97,7 +97,10 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
 
     test "returns error for invalid column family", %{db: db} do
       {:ok, snap} = NIF.snapshot(db)
-      assert {:error, {:invalid_cf, :nonexistent}} = NIF.snapshot_get(db, snap, :nonexistent, "key")
+
+      assert {:error, {:invalid_cf, :nonexistent}} =
+               NIF.snapshot_get(db, snap, :nonexistent, "key")
+
       NIF.release_snapshot(db, snap)
     end
 
@@ -326,7 +329,10 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
 
     test "returns error for invalid column family", %{db: db} do
       {:ok, snap} = NIF.snapshot(db)
-      assert {:error, {:invalid_cf, :nonexistent}} = NIF.snapshot_stream(db, snap, :nonexistent, "")
+
+      assert {:error, {:invalid_cf, :nonexistent}} =
+               NIF.snapshot_stream(db, snap, :nonexistent, "")
+
       NIF.release_snapshot(db, snap)
     end
   end

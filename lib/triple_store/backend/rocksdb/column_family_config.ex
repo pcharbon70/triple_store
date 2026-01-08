@@ -66,14 +66,20 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   # ===========================================================================
 
   # Bloom filter bits per key
-  @bloom_dict_bits 14  # Dictionary CFs: high precision for point lookups
-  @bloom_index_bits 12 # Index CFs: balanced for prefix scans
-  @bloom_derived_bits 0 # Derived CF: no bloom filter (sequential access)
+  # Dictionary CFs: high precision for point lookups
+  @bloom_dict_bits 14
+  # Index CFs: balanced for prefix scans
+  @bloom_index_bits 12
+  # Derived CF: no bloom filter (sequential access)
+  @bloom_derived_bits 0
 
   # Block sizes
-  @block_size_dict 2 * 1024      # 2KB for dictionary (small blocks, better cache)
-  @block_size_index 8 * 1024     # 8KB for indices (balanced)
-  @block_size_derived 32 * 1024  # 32KB for derived (large blocks, sequential)
+  # 2KB for dictionary (small blocks, better cache)
+  @block_size_dict 2 * 1024
+  # 8KB for indices (balanced)
+  @block_size_index 8 * 1024
+  # 32KB for derived (large blocks, sequential)
+  @block_size_derived 32 * 1024
 
   # Compression settings
   # L0 is uncompressed by default (fast memtable flush)
@@ -195,7 +201,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   """
   @spec validate_cf(atom()) :: :ok | {:error, :invalid_column_family}
-  def validate_cf(cf) when cf in [:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range, :default], do: :ok
+  def validate_cf(cf)
+      when cf in [:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range, :default],
+      do: :ok
+
   def validate_cf(_), do: {:error, :invalid_column_family}
 
   # ===========================================================================
@@ -304,13 +313,15 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       # Disable write-ahead log sync for faster writes (durability handled by WAL fsync)
       # For ACID compliance, use sync: true in write operations
       # Write buffer size (memtable size)
-      write_buffer_size: 64 * 1024 * 1024, # 64MB memtable
+      # 64MB memtable
+      write_buffer_size: 64 * 1024 * 1024,
       # Maximum number of write buffers (memtables)
       max_write_buffer_number: 3,
       # Minimum number of write buffers to flush
       min_write_buffer_number_to_merge: 1,
       # Level 0 file size limit
-      target_file_size_base: 64 * 1024 * 1024, # 64MB L0 files
+      # 64MB L0 files
+      target_file_size_base: 64 * 1024 * 1024,
       # Level 0 compaction trigger
       level0_file_num_compaction_trigger: 4,
       # Level 0 slowdown trigger
@@ -318,7 +329,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       # Level 0 stop trigger
       level0_stop_writes_trigger: 12,
       # Max bytes for each level
-      max_bytes_for_level_base: 256 * 1024 * 1024, # 256MB for L1
+      # 256MB for L1
+      max_bytes_for_level_base: 256 * 1024 * 1024,
       # Multiplier for each level's size
       max_bytes_for_level_multiplier: 10
     ]

@@ -270,7 +270,8 @@ defmodule TripleStore.Backend.RocksDB.IteratorOperationsTest do
       {:ok, iter} = NIF.prefix_iterator(db, :spo, <<1::64-big>>)
 
       {:ok, entries} = NIF.iterator_collect(iter)
-      assert length(entries) == 5  # All entries with subject=1
+      # All entries with subject=1
+      assert length(entries) == 5
 
       NIF.iterator_close(iter)
     end
@@ -342,6 +343,7 @@ defmodule TripleStore.Backend.RocksDB.IteratorOperationsTest do
 
       # iter1 should only see subject=1 entries
       {:ok, entries1} = NIF.iterator_collect(iter1)
+
       assert Enum.all?(entries1, fn {k, _} ->
                <<s::64-big, _::binary>> = k
                s == 1
@@ -349,6 +351,7 @@ defmodule TripleStore.Backend.RocksDB.IteratorOperationsTest do
 
       # iter2 should only see subject=2 entries
       {:ok, entries2} = NIF.iterator_collect(iter2)
+
       assert Enum.all?(entries2, fn {k, _} ->
                <<s::64-big, _::binary>> = k
                s == 2

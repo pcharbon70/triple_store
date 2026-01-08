@@ -4,7 +4,9 @@ ExUnit.start(exclude: [:benchmark, :large_dataset, :slow])
 # Spawn without link to avoid crashes propagating
 spawn(fn ->
   case TripleStore.Test.DbPool.start_link() do
-    {:ok, _} -> :ok
+    {:ok, _} ->
+      :ok
+
     {:error, _} ->
       IO.warn("DbPool not started: NIF not yet implemented")
       IO.warn("Some tests may be skipped. This is expected during migration phases.")

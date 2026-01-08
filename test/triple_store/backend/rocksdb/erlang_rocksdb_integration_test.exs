@@ -24,6 +24,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
   # Temporary database path helper
   defp temp_db_path(suffix \\ "") do
     name = "test_integration_#{System.unique_integer([:positive, :monotonic])}#{suffix}"
+
     Path.join(System.tmp_dir!(), name)
     |> String.to_charlist()
   end
@@ -78,7 +79,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
         assert {:ok, db, cf_handles} = create_db_with_all_cfs(db_path, db_opts)
 
         # Verify we got the expected number of column family handles
-        assert length(cf_handles) == 8  # 7 TripleStore CFs + default
+        # 7 TripleStore CFs + default
+        assert length(cf_handles) == 8
 
         # Verify the database is open
         assert is_reference(db)
@@ -324,7 +326,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
         o = 30
 
         derived_key = Index.spo_key(s, p, o)
-        derived_value = <<1::8>>  # Some derivation metadata
+        # Some derivation metadata
+        derived_value = <<1::8>>
 
         :ok = :rocksdb.put(db, derived_cf, derived_key, derived_value, [])
 
@@ -343,6 +346,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
       try do
         db_opts = [create_if_missing: true, error_if_exists: false]
         {:ok, db, cf_handles} = create_db_with_all_cfs(db_path, db_opts)
+
         [_default, id2str_cf, str2id_cf, spo_cf, pos_cf, osp_cf, derived_cf, numeric_cf] =
           cf_handles
 
@@ -495,18 +499,24 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
 
         # Create mixed batch
         batch = [
-          {:put, cf, <<2::64-big>>, "new2"},  # Update
-          {:put, cf, <<3::64-big>>, "value3"}, # Insert
-          {:delete, cf, <<1::64-big>>}        # Delete
+          # Update
+          {:put, cf, <<2::64-big>>, "new2"},
+          # Insert
+          {:put, cf, <<3::64-big>>, "value3"},
+          # Delete
+          {:delete, cf, <<1::64-big>>}
         ]
 
         # Apply batch atomically
         :ok = :rocksdb.write(db, batch, [])
 
         # Verify results
-        assert :not_found = :rocksdb.get(db, cf, <<1::64-big>>, [])  # Deleted
-        assert {:ok, "new2"} = :rocksdb.get(db, cf, <<2::64-big>>, [])  # Updated
-        assert {:ok, "value3"} = :rocksdb.get(db, cf, <<3::64-big>>, []) # Inserted
+        # Deleted
+        assert :not_found = :rocksdb.get(db, cf, <<1::64-big>>, [])
+        # Updated
+        assert {:ok, "new2"} = :rocksdb.get(db, cf, <<2::64-big>>, [])
+        # Inserted
+        assert {:ok, "value3"} = :rocksdb.get(db, cf, <<3::64-big>>, [])
 
         :ok = :rocksdb.close(db)
       after
@@ -530,6 +540,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
 
         # Write triples with same subject
         subject = 1
+
         triples = [
           {subject, 10, 100},
           {subject, 10, 101},

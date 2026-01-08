@@ -320,8 +320,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
       dict_table_opts = Keyword.get(dict_opts, :block_based_table_options)
       index_table_opts = Keyword.get(index_opts, :block_based_table_options)
 
-      assert is_list(dict_table_opts) or is_list(dict_table_opts)
-      assert is_list(index_table_opts) or is_list(index_table_opts)
+      assert is_list(dict_table_opts) or Keyword.keyword?(dict_table_opts)
+      assert is_list(index_table_opts) or Keyword.keyword?(index_table_opts)
     end
 
     test "1.4.7.3 Numeric range CF has appropriate configuration" do

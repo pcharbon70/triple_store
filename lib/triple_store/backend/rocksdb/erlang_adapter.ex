@@ -58,8 +58,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @type snapshot_ref :: pid()
 
   # Fold function types
-  @type fold_fun :: (({binary(), binary()}, term()) -> term())
-  @type fold_keys_fun :: ((binary(), term()) -> term())
+  @type fold_fun :: ({binary(), binary()}, term() -> term())
+  @type fold_keys_fun :: (binary(), term() -> term())
 
   # ===========================================================================
   # Client API
@@ -262,7 +262,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec get(adapter(), column_family(), binary()) :: {:ok, binary()} | :not_found | {:error, term()}
+  @spec get(adapter(), column_family(), binary()) ::
+          {:ok, binary()} | :not_found | {:error, term()}
   def get(adapter, cf, key) when is_pid(adapter) and is_atom(cf) and is_binary(key) do
     GenServer.call(adapter, {:get, cf, key})
   end
@@ -366,7 +367,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec delete_batch(adapter(), [{column_family(), binary()}], boolean()) :: :ok | {:error, term()}
+  @spec delete_batch(adapter(), [{column_family(), binary()}], boolean()) ::
+          :ok | {:error, term()}
   def delete_batch(adapter, operations, sync \\ false)
       when is_pid(adapter) and is_list(operations) do
     GenServer.call(adapter, {:delete_batch, operations, sync})
@@ -389,7 +391,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec mixed_batch(adapter(), [{:put, column_family(), binary(), binary()} | {:delete, column_family(), binary()}], boolean()) :: :ok | {:error, term()}
+  @spec mixed_batch(
+          adapter(),
+          [{:put, column_family(), binary(), binary()} | {:delete, column_family(), binary()}],
+          boolean()
+        ) :: :ok | {:error, term()}
   def mixed_batch(adapter, operations, sync \\ false)
       when is_pid(adapter) and is_list(operations) do
     GenServer.call(adapter, {:mixed_batch, operations, sync})
@@ -418,8 +424,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:ok, iter} = ErlangAdapter.prefix_iterator(adapter, :spo, <<subject_id::64-big>>)
 
   """
-  @spec prefix_iterator(adapter(), column_family(), binary()) :: {:ok, iterator_ref()} | {:error, term()}
-  def prefix_iterator(adapter, cf, prefix) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+  @spec prefix_iterator(adapter(), column_family(), binary()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(adapter, cf, prefix)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
     GenServer.call(adapter, {:prefix_iterator, cf, prefix})
   end
 
@@ -446,8 +454,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec prefix_iterator(adapter(), column_family(), binary(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
-  def prefix_iterator(adapter, cf, prefix, opts) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+  @spec prefix_iterator(adapter(), column_family(), binary(), keyword()) ::
+          {:ok, iterator_ref()} | {:error, term()}
+  def prefix_iterator(adapter, cf, prefix, opts)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
     GenServer.call(adapter, {:prefix_iterator, cf, prefix, opts})
   end
 
@@ -466,7 +476,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec iterator(adapter(), column_family(), keyword()) :: {:ok, iterator_ref()} | {:error, term()}
+  @spec iterator(adapter(), column_family(), keyword()) ::
+          {:ok, iterator_ref()} | {:error, term()}
   def iterator(adapter, cf, opts \\ []) when is_pid(adapter) and is_atom(cf) do
     GenServer.call(adapter, {:iterator, cf, opts})
   end
@@ -506,7 +517,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec iterator_next(iterator_ref()) :: {:ok, binary(), binary()} | :iterator_end | {:error, term()}
+  @spec iterator_next(iterator_ref()) ::
+          {:ok, binary(), binary()} | :iterator_end | {:error, term()}
   def iterator_next(iterator_ref) when is_pid(iterator_ref) do
     Iterator.next(iterator_ref)
   end
@@ -561,7 +573,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec iterator_collect(iterator_ref(), keyword()) :: {:ok, [{binary(), binary()}]} | {:error, term()}
+  @spec iterator_collect(iterator_ref(), keyword()) ::
+          {:ok, [{binary(), binary()}]} | {:error, term()}
   def iterator_collect(iterator_ref, opts \\ []) when is_pid(iterator_ref) do
     Iterator.collect(iterator_ref, opts)
   end
@@ -611,7 +624,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   """
   @spec release_snapshot(adapter(), reference()) :: :ok | {:error, term()}
-  def release_snapshot(adapter, snapshot_ref) when is_pid(adapter) and is_reference(snapshot_ref) do
+  def release_snapshot(adapter, snapshot_ref)
+      when is_pid(adapter) and is_reference(snapshot_ref) do
     GenServer.call(adapter, {:release_snapshot, snapshot_ref})
   end
 
@@ -780,7 +794,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `snapshot` - Use a specific snapshot
 
   """
-  @spec fold_keys(adapter(), column_family(), binary(), term(), fold_keys_fun(), keyword()) :: term()
+  @spec fold_keys(adapter(), column_family(), binary(), term(), fold_keys_fun(), keyword()) ::
+          term()
   def fold_keys(adapter, cf, prefix, acc, fun, opts)
       when is_pid(adapter) and is_atom(cf) and is_binary(prefix) and is_function(fun, 2) do
     GenServer.call(adapter, {:fold_keys, cf, prefix, acc, fun, opts})
@@ -819,7 +834,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   """
   @spec prefix_stream(adapter(), column_family(), binary()) :: Enumerable.t()
-  def prefix_stream(adapter, cf, prefix) when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
+  def prefix_stream(adapter, cf, prefix)
+      when is_pid(adapter) and is_atom(cf) and is_binary(prefix) do
     prefix_stream(adapter, cf, prefix, [])
   end
 
@@ -850,7 +866,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       end,
       fn
         # Next: get one entry
-        {iter_pid, _ref} = acc ->
+        {iter_pid, _ref} ->
           case Iterator.next(iter_pid) do
             {:ok, key, value} ->
               {[{key, value}], {iter_pid, nil}}
@@ -971,7 +987,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:write_batch, operations, sync}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:write_batch, operations, sync},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     write_opts = if sync, do: [sync: true], else: []
 
     batch =
@@ -991,7 +1011,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:delete_batch, operations, sync}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:delete_batch, operations, sync},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     write_opts = if sync, do: [sync: true], else: []
 
     batch =
@@ -1011,7 +1035,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:mixed_batch, operations, sync}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:mixed_batch, operations, sync},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     write_opts = if sync, do: [sync: true], else: []
 
     batch =
@@ -1054,9 +1082,18 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:prefix_iterator, cf, prefix}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:prefix_iterator, cf, prefix},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
-         opts = [prefix: prefix, fill_cache: true, total_order_seek: false, prefix_same_as_start: false],
+         opts = [
+           prefix: prefix,
+           fill_cache: true,
+           total_order_seek: false,
+           prefix_same_as_start: false
+         ],
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else
@@ -1065,7 +1102,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:prefix_iterator, cf, prefix, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:prefix_iterator, cf, prefix, opts},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          opts = Keyword.put(opts, :prefix, prefix),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
@@ -1104,7 +1145,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:snapshot_get, snapshot_ref, cf, key}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:snapshot_get, snapshot_ref, cf, key},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          read_opts = [{:snapshot, snapshot_ref}],
          result <- :rocksdb.get(db, cf_handle, key, read_opts) do
@@ -1116,9 +1161,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:snapshot_prefix_iterator, snapshot_ref, cf, prefix}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:snapshot_prefix_iterator, snapshot_ref, cf, prefix},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
-         opts = [prefix: prefix, fill_cache: true, total_order_seek: false, prefix_same_as_start: false, snapshot: snapshot_ref],
+         opts = [
+           prefix: prefix,
+           fill_cache: true,
+           total_order_seek: false,
+           prefix_same_as_start: false,
+           snapshot: snapshot_ref
+         ],
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else
@@ -1127,7 +1182,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:snapshot_prefix_iterator, snapshot_ref, cf, prefix, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:snapshot_prefix_iterator, snapshot_ref, cf, prefix, opts},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          opts = Keyword.put(opts, :snapshot, snapshot_ref) |> Keyword.put(:prefix, prefix),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
@@ -1154,7 +1213,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:fold, cf, prefix, acc, fun, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:fold, cf, prefix, acc, fun, opts},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          read_opts = build_fold_read_opts(prefix, opts),
          result <- do_fold(db, cf_handle, prefix, read_opts, acc, fun) do
@@ -1166,7 +1229,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:fold_keys, cf, prefix, acc, fun}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:fold_keys, cf, prefix, acc, fun},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          read_opts = build_fold_read_opts(prefix, []),
          result <- do_fold_keys(db, cf_handle, prefix, read_opts, acc, fun) do
@@ -1178,7 +1245,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
-  def handle_call({:fold_keys, cf, prefix, acc, fun, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
+  def handle_call(
+        {:fold_keys, cf, prefix, acc, fun, opts},
+        _from,
+        %{db: db, cf_handles: cf_handles} = state
+      ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
          read_opts = build_fold_read_opts(prefix, opts),
          result <- do_fold_keys(db, cf_handle, prefix, read_opts, acc, fun) do
@@ -1195,6 +1266,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     if db do
       :rocksdb.close(db)
     end
+
     :ok
   end
 
@@ -1240,7 +1312,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     cf_descriptors = ColumnFamilyConfig.cf_descriptors()
 
     # Convert to charlist format for erlang-rocksdb
-    cf_descriptors_charlist = Enum.map(cf_descriptors, fn {name, opts} -> {String.to_charlist(name), opts} end)
+    cf_descriptors_charlist =
+      Enum.map(cf_descriptors, fn {name, opts} -> {String.to_charlist(name), opts} end)
 
     case :rocksdb.open_with_cf(db_path, db_opts, cf_descriptors_charlist) do
       {:ok, db, cf_handles} ->
@@ -1264,7 +1337,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
              {:ok, osp_cf} <- :rocksdb.create_column_family(db, ~c"osp", []),
              {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
              {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []) do
-          {:ok, db, [default_cf, id2str_cf, str2id_cf, spo_cf, pos_cf, osp_cf, derived_cf, numeric_cf]}
+          {:ok, db,
+           [default_cf, id2str_cf, str2id_cf, spo_cf, pos_cf, osp_cf, derived_cf, numeric_cf]}
         else
           {:error, _reason} = error ->
             # Clean up on error
@@ -1393,7 +1467,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
             {:error, _reason} ->
               acc
           end
-
         after
           :rocksdb.iterator_close(iter)
         end
@@ -1424,7 +1497,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
             {:error, _reason} ->
               acc
           end
-
         after
           :rocksdb.iterator_close(iter)
         end
@@ -1471,8 +1543,9 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # Checks if a key has the given prefix
-  defp has_prefix?(key, prefix) when byte_size(prefix) == 0, do: true
+  defp has_prefix?(_key, prefix) when byte_size(prefix) == 0, do: true
   defp has_prefix?(key, prefix) when byte_size(key) < byte_size(prefix), do: false
+
   defp has_prefix?(key, prefix) do
     binary_part(key, 0, byte_size(prefix)) == prefix
   end
