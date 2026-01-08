@@ -612,21 +612,17 @@ defmodule TripleStore.SPARQL.PropertyPath do
           wrap_bound(o_pattern)
         }
 
-        case Index.lookup(db, index_pattern) do
-          {:ok, triple_stream} ->
-            binding_stream =
-              Stream.flat_map(triple_stream, fn {s_id, _p_id, o_id} ->
-                case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
-                  {:ok, new_binding} -> [new_binding]
-                  {:error, _} -> []
-                end
-              end)
+        {:ok, triple_stream} = Index.lookup(db, index_pattern)
 
-            {:ok, binding_stream}
+        binding_stream =
+          Stream.flat_map(triple_stream, fn {s_id, _p_id, o_id} ->
+            case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
+              {:ok, new_binding} -> [new_binding]
+              {:error, _} -> []
+            end
+          end)
 
-          {:error, _} = error ->
-            error
-        end
+        {:ok, binding_stream}
       end
     end
   end
@@ -743,9 +739,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
               end)
 
             {:ok, binding_stream}
-
-          {:error, _} = error ->
-            error
         end
       end
     end
@@ -1352,24 +1345,20 @@ defmodule TripleStore.SPARQL.PropertyPath do
     max_nodes = max_all_nodes(ctx)
 
     # Query all triples with all variables
-    case Index.lookup(db, {:var, :var, :var}) do
-      {:ok, stream} ->
-        # Use Stream.take to limit memory usage during collection
-        nodes =
-          stream
-          |> Stream.take(max_nodes * 2)
-          |> Enum.flat_map(fn {s, _p, o} -> [s, o] end)
-          |> MapSet.new()
+    {:ok, stream} = Index.lookup(db, {:var, :var, :var})
 
-        if MapSet.size(nodes) >= max_nodes do
-          emit_telemetry(:all_nodes_limit, %{size: MapSet.size(nodes), limit: max_nodes})
-        end
+    # Use Stream.take to limit memory usage during collection
+    nodes =
+      stream
+      |> Stream.take(max_nodes * 2)
+      |> Enum.flat_map(fn {s, _p, o} -> [s, o] end)
+      |> MapSet.new()
 
-        nodes
-
-      {:error, _} ->
-        MapSet.new()
+    if MapSet.size(nodes) >= max_nodes do
+      emit_telemetry(:all_nodes_limit, %{size: MapSet.size(nodes), limit: max_nodes})
     end
+
+    nodes
   end
 
   # Check if two terms are equal

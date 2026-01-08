@@ -182,9 +182,6 @@ defmodule TripleStore.Index.SubjectCache do
             )
 
             {:ok, properties}
-
-          {:error, _} = error ->
-            error
         end
     end
   end

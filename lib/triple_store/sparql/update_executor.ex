@@ -523,20 +523,16 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp clear_all_triples(ctx) do
     # Stream triples and delete in batches to prevent OOM on large databases
-    case Index.lookup(ctx.db, {:var, :var, :var}) do
-      {:ok, stream} ->
-        stream
-        |> Stream.chunk_every(@clear_batch_size)
-        |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, count} ->
-          case Index.delete_triples(ctx.db, chunk) do
-            :ok -> {:cont, {:ok, count + length(chunk)}}
-            {:error, _} = error -> {:halt, error}
-          end
-        end)
+    {:ok, stream} = Index.lookup(ctx.db, {:var, :var, :var})
 
-      {:error, _} = error ->
-        error
-    end
+    stream
+    |> Stream.chunk_every(@clear_batch_size)
+    |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, count} ->
+      case Index.delete_triples(ctx.db, chunk) do
+        :ok -> {:cont, {:ok, count + length(chunk)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
   end
 
   # ===========================================================================

@@ -194,42 +194,42 @@ Implement lazy stream operations for large result sets.
 
 ## 2.4 Leapfrog TrieIterator Integration
 
-- [ ] **Section 2.4 Status** (Pending)
+- [x] **Section 2.4 Status** (Completed 2026-01-08)
 
 Update Leapfrog TrieIterator to use erlang-rocksdb adapter.
 
 ### 2.4.1 TrieIterator Module Updates
 
-- [ ] **Task 2.4.1 Status** (Pending)
+- [x] **Task 2.4.1 Status** (Completed 2026-01-08)
 
 Modify TrieIterator to use new adapter API.
 
-- [ ] 2.4.1.1 Update `TrieIterator.new/4` to use erlang adapter
-- [ ] 2.4.1.2 Update `TrieIterator.next/1` to use new iterator API
-- [ ] 2.4.1.3 Update `TrieIterator.seek/2` to use new seek API
-- [ ] 2.4.1.4 Update `TrieIterator.close/1` to use new close API
-- [ ] 2.4.1.5 Verify all 163 Leapfrog tests still pass
+- [x] 2.4.1.1 Update `TrieIterator.new/4` to use erlang adapter (type specs only)
+- [x] 2.4.1.2 Update `TrieIterator.next/1` to use new iterator API
+- [x] 2.4.1.3 Update `TrieIterator.seek/2` to use new seek API
+- [x] 2.4.1.4 Update `TrieIterator.close/1` to use new close API
+- [x] 2.4.1.5 Verify all 141 Leapfrog tests still pass
 
 ### 2.4.2 Index Module Updates
 
-- [ ] **Task 2.4.2 Status** (Pending)
+- [x] **Task 2.4.2 Status** (Completed 2026-01-08)
 
 Update Index module for iterator changes.
 
-- [ ] 2.4.2.1 Update index scan operations to use new prefix iterator
-- [ ] 2.4.2.2 Update range queries to use fold operations where beneficial
-- [ ] 2.4.2.3 Verify pattern matching still works correctly
-- [ ] 2.4.2.4 Test index lookup performance
+- [x] 2.4.2.1 Update index scan operations to use new prefix iterator
+- [x] 2.4.2.2 Update range queries to use fold operations where beneficial
+- [x] 2.4.2.3 Verify pattern matching still works correctly
+- [x] 2.4.2.4 Test index lookup performance
 
 ### 2.4.3 Unit Tests
 
-- [ ] **Task 2.4.3 Status** (Pending)
+- [x] **Task 2.4.3 Status** (Completed 2026-01-08)
 
-- [ ] 2.4.3.1 Test TrieIterator basic operations
-- [ ] 2.4.3.2 Test TrieIterator seek functionality
-- [ ] 2.4.3.3 Test TrieIterator multi-level iteration
-- [ ] 2.4.3.4 Test all Leapfrog integration tests pass
-- [ ] 2.4.3.5 Verify no regression in query performance
+- [x] 2.4.3.1 Test TrieIterator basic operations
+- [x] 2.4.3.2 Test TrieIterator seek functionality
+- [x] 2.4.3.3 Test TrieIterator multi-level iteration
+- [x] 2.4.3.4 Test all Leapfrog integration tests pass
+- [x] 2.4.3.5 Verify no regression in query performance
 
 ---
 

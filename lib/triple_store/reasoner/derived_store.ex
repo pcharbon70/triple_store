@@ -205,21 +205,18 @@ defmodule TripleStore.Reasoner.DerivedStore do
   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def clear_all(db) do
     # Use batched deletion to avoid loading all keys into memory
-    case NIF.prefix_stream(db, @derived_cf, <<>>) do
-      {:ok, stream} ->
-        stream
-        |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
-        |> Stream.chunk_every(@clear_batch_size)
-        |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
-          case NIF.delete_batch(db, chunk, true) do
-            :ok -> {:cont, {:ok, acc + length(chunk)}}
-            error -> {:halt, error}
-          end
-        end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, @derived_cf, <<>>)
 
-      error ->
-        error
-    end
+    stream
+    |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
+    |> Stream.chunk_every(@clear_batch_size)
+    |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
+      case NIF.delete_batch(db, chunk, true) do
+        :ok -> {:cont, {:ok, acc + length(chunk)}}
+        error -> {:halt, error}
+      end
+    end)
   end
 
   @doc """
@@ -234,12 +231,11 @@ defmodule TripleStore.Reasoner.DerivedStore do
   - `{:ok, count}` with the count
   - `{:error, reason}` on failure
   """
-  @spec count(db_ref()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec count(db_ref()) :: {:ok, non_neg_integer()}
   def count(db) do
-    case NIF.prefix_stream(db, @derived_cf, <<>>) do
-      {:ok, stream} -> {:ok, Enum.count(stream)}
-      error -> error
-    end
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, @derived_cf, <<>>)
+    {:ok, Enum.count(stream)}
   end
 
   # ============================================================================
@@ -266,22 +262,19 @@ defmodule TripleStore.Reasoner.DerivedStore do
       # Find all derived facts with subject 123
       {:ok, stream} = DerivedStore.lookup_derived(db, {{:bound, 123}, :var, :var})
   """
-  @spec lookup_derived(db_ref(), pattern()) :: {:ok, Enumerable.t()} | {:error, term()}
+  @spec lookup_derived(db_ref(), pattern()) :: {:ok, Enumerable.t()}
   def lookup_derived(db, pattern) do
     prefix = pattern_to_prefix(pattern)
 
-    case NIF.prefix_stream(db, @derived_cf, prefix) do
-      {:ok, stream} ->
-        decoded_stream =
-          stream
-          |> Stream.map(fn {key, _value} -> Index.decode_spo_key(key) end)
-          |> Stream.filter(&triple_matches_pattern?(&1, pattern))
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, @derived_cf, prefix)
 
-        {:ok, decoded_stream}
+    decoded_stream =
+      stream
+      |> Stream.map(fn {key, _value} -> Index.decode_spo_key(key) end)
+      |> Stream.filter(&triple_matches_pattern?(&1, pattern))
 
-      error ->
-        error
-    end
+    {:ok, decoded_stream}
   end
 
   @doc """

@@ -953,22 +953,23 @@ defmodule TripleStore.Index do
       [{1, 2, 3}]
 
   """
-  @spec lookup(NIF.db_ref(), pattern()) :: {:ok, Enumerable.t()} | {:error, term()}
+  @spec lookup(NIF.db_ref(), pattern()) :: {:ok, Enumerable.t()}
   def lookup(db, pattern) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    with {:ok, stream} <- NIF.prefix_stream(db, index, prefix) do
-      decoded_stream = Stream.map(stream, fn {key, _value} -> key_to_triple(index, key) end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, index, prefix)
 
-      final_stream =
-        if needs_filter do
-          Stream.filter(decoded_stream, &triple_matches_pattern?(&1, pattern))
-        else
-          decoded_stream
-        end
+    decoded_stream = Stream.map(stream, fn {key, _value} -> key_to_triple(index, key) end)
 
-      {:ok, final_stream}
-    end
+    final_stream =
+      if needs_filter do
+        Stream.filter(decoded_stream, &triple_matches_pattern?(&1, pattern))
+      else
+        decoded_stream
+      end
+
+    {:ok, final_stream}
   end
 
   @doc """
@@ -994,12 +995,10 @@ defmodule TripleStore.Index do
       {:ok, [{1, 2, 3}, {1, 2, 4}]}
 
   """
-  @spec lookup_all(NIF.db_ref(), pattern()) :: {:ok, [triple()]} | {:error, term()}
+  @spec lookup_all(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
   def lookup_all(db, pattern) do
-    case lookup(db, pattern) do
-      {:ok, stream} -> {:ok, Enum.to_list(stream)}
-      {:error, _} = error -> error
-    end
+    {:ok, stream} = lookup(db, pattern)
+    {:ok, Enum.to_list(stream)}
   end
 
   @doc """
@@ -1022,12 +1021,10 @@ defmodule TripleStore.Index do
       {:ok, 3}
 
   """
-  @spec count(NIF.db_ref(), pattern()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec count(NIF.db_ref(), pattern()) :: {:ok, non_neg_integer()}
   def count(db, pattern) do
-    case lookup(db, pattern) do
-      {:ok, stream} -> {:ok, Enum.count(stream)}
-      {:error, _} = error -> error
-    end
+    {:ok, stream} = lookup(db, pattern)
+    {:ok, Enum.count(stream)}
   end
 
   # ===========================================================================
@@ -1065,26 +1062,23 @@ defmodule TripleStore.Index do
   This is more efficient than m separate point lookups when m > 1.
   """
   @spec lookup_all_properties(NIF.db_ref(), term_id()) ::
-          {:ok, %{term_id() => [term_id()]}} | {:error, term()}
+          {:ok, %{term_id() => [term_id()]}}
   def lookup_all_properties(db, subject_id) when valid_term_id?(subject_id) do
     prefix = spo_prefix(subject_id)
 
-    case NIF.prefix_stream(db, :spo, prefix) do
-      {:ok, stream} ->
-        properties =
-          stream
-          |> Enum.reduce(%{}, fn {key, _value}, acc ->
-            {_s, p, o} = decode_spo_key(key)
-            Map.update(acc, p, [o], fn objects -> [o | objects] end)
-          end)
-          # Reverse the lists to maintain insertion order
-          |> Map.new(fn {p, objects} -> {p, Enum.reverse(objects)} end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, :spo, prefix)
 
-        {:ok, properties}
+    properties =
+      stream
+      |> Enum.reduce(%{}, fn {key, _value}, acc ->
+        {_s, p, o} = decode_spo_key(key)
+        Map.update(acc, p, [o], fn objects -> [o | objects] end)
+      end)
+      # Reverse the lists to maintain insertion order
+      |> Map.new(fn {p, objects} -> {p, Enum.reverse(objects)} end)
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, properties}
   end
 
   @doc """
@@ -1111,23 +1105,19 @@ defmodule TripleStore.Index do
       iex> Enum.to_list(stream)
       [{2, 3}, {2, 4}, {5, 6}]
   """
-  @spec stream_all_properties(NIF.db_ref(), term_id()) ::
-          {:ok, Enumerable.t()} | {:error, term()}
+  @spec stream_all_properties(NIF.db_ref(), term_id()) :: {:ok, Enumerable.t()}
   def stream_all_properties(db, subject_id) when valid_term_id?(subject_id) do
     prefix = spo_prefix(subject_id)
 
-    case NIF.prefix_stream(db, :spo, prefix) do
-      {:ok, stream} ->
-        property_stream =
-          Stream.map(stream, fn {key, _value} ->
-            {_s, p, o} = decode_spo_key(key)
-            {p, o}
-          end)
+    # prefix_stream now returns the stream directly (may raise on error)
+    stream = NIF.prefix_stream(db, :spo, prefix)
 
-        {:ok, property_stream}
+    property_stream =
+      Stream.map(stream, fn {key, _value} ->
+        {_s, p, o} = decode_spo_key(key)
+        {p, o}
+      end)
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, property_stream}
   end
 end
