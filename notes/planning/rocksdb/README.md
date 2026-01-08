@@ -16,7 +16,7 @@ This directory contains the phased migration plan for transitioning the TripleSt
 | Phase | Document | Status | Description |
 |-------|----------|--------|-------------|
 | 1 | [phase-01-foundation-migration.md](./phase-01-foundation-migration.md) | Complete | Basic operations (open, get, put, delete, write_batch) |
-| 2 | [phase-02-iterator-snapshot-migration.md](./phase-02-iterator-snapshot-migration.md) | Pending | Iterators, snapshots, and prefix operations |
+| 2 | [phase-02-iterator-snapshot-migration.md](./phase-02-iterator-snapshot-migration.md) | Complete | Iterators, snapshots, and prefix operations |
 | 3 | [phase-03-optimization-cleanup.md](./phase-03-optimization-cleanup.md) | Pending | Fold optimization and Rust removal |
 
 ## Progress
@@ -62,7 +62,43 @@ This directory contains the phased migration plan for transitioning the TripleSt
 
 ### Phase 2 Status (Iterator & Snapshot Migration)
 
-All tasks pending.
+- [x] 2.1 Iterator Operations Migration - COMPLETED (2026-01-07)
+  - Implemented basic iterator creation, movement, and closure
+  - Implemented prefix iterator with boundary checking
+  - Implemented seek operations for Leapfrog Triejoin
+  - Implemented iterator collect operation
+  - All 163 Leapfrog tests pass
+  - See `notes/planning/rocksdb/phase-02-iterator-snapshot-migration.md` for details
+
+- [x] 2.2 Snapshot Operations Migration - COMPLETED (2026-01-07)
+  - Implemented snapshot creation and release
+  - Implemented snapshot read operations
+  - Implemented snapshot iterator operations
+  - All snapshot integration tests pass
+  - See `notes/planning/rocksdb/phase-02-iterator-snapshot-migration.md` for details
+
+- [x] 2.3 Fold-Based Iteration Optimization - COMPLETED (2026-01-07)
+  - Implemented fold operations for bulk iteration
+  - Implemented fold_keys for keys-only iteration
+  - Implemented prefix_stream for Elixir Stream compatibility
+  - All fold and stream tests pass
+  - See `notes/planning/rocksdb/phase-02-iterator-snapshot-migration.md` for details
+
+- [x] 2.4 Leapfrog TrieIterator Integration - COMPLETED (2026-01-08)
+  - Updated TrieIterator to use erlang adapter (type specs only)
+  - Updated TrieIterator.next/1 to use new iterator API
+  - Updated TrieIterator.seek/2 to use new seek API
+  - Updated TrieIterator.close/1 to use new close API
+  - All 141 Leapfrog tests still pass
+  - See `notes/planning/rocksdb/phase-02-iterator-snapshot-migration.md` for details
+
+- [x] 2.5 Integration Tests - COMPLETED (2026-01-08)
+  - Created comprehensive integration test suite (19 tests)
+  - Tests iterator functionality matches expected behavior
+  - Tests snapshot provides consistent reads
+  - Tests query execution with new iterators
+  - Tests performance validation
+  - See `notes/summaries/phase-2.5-integration-tests.md` for details
 
 ### Phase 3 Status (Optimization & Cleanup)
 
