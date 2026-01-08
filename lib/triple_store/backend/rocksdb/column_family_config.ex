@@ -77,9 +77,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   # Compression settings
   # L0 is uncompressed by default (fast memtable flush)
-  # L1-L6 use snappy (widely available, good performance)
-  # Note: LZ4 can be used if erlang-rocksdb is compiled with LZ4 support
-  @compression_l1_l6 :snappy
+  # L1-L6 currently use :none due to erlang-rocksdb build limitations
+  # Note: To enable compression, recompile erlang-rocksdb with LZ4 or Snappy support
+  @compression_l1_l6 :none
 
   # ===========================================================================
   # Public API

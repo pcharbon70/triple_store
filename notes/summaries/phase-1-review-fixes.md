@@ -173,13 +173,48 @@ Changes:
 
 ## Test Results
 
-All 67 Phase 1 tests pass:
+All 79 Phase 1 tests pass:
 
 | Section | Tests | Status |
 |---------|-------|--------|
+| 1.2 Database Operations Adapter | 10 | All passing |
 | 1.3 Binary Encoding Compatibility | 23 | All passing |
 | 1.4 Column Family Configuration | 25 | All passing (was 23, fixed 2) |
 | 1.5 Integration Tests | 19 | All passing |
+| **TOTAL** | **79** | **All passing** |
+
+---
+
+## Additional Fixes
+
+### 7. Compression Configuration
+
+**Issue**: The erlang-rocksdb binary was not compiled with LZ4 or Snappy compression support, causing database open failures.
+
+**Fix**: Changed compression from `:lz4` → `:snappy` → `:none` to work with the available erlang-rocksdb build.
+
+**Files Modified**:
+- `lib/triple_store/backend/rocksdb/column_family_config.ex`
+- `test/triple_store/backend/rocksdb/column_family_configuration_test.exs`
+
+**Note**: Compression can be re-enabled by recompiling erlang-rocksdb with LZ4 or Snappy support and updating `@compression_l1_l6` in `ColumnFamilyConfig`.
+
+### 8. Path.absname?/1 Fix
+
+**Issue**: Elixir doesn't have `Path.absname?/1` function.
+
+**Fix**: Replaced with `String.starts_with?(path, "/")` for Unix path detection.
+
+**File**: `lib/triple_store/backend/rocksdb/erlang_adapter.ex`
+
+### 9. Module Attributes Cleanup
+
+**Issue**: Unused module attributes generating compiler warnings.
+
+**Fix**: Removed unused attributes:
+- `@cf_atoms` and `@cf_names` from `ErlangAdapter` (use ColumnFamilyConfig instead)
+- `@prefix_extractor_bytes` and `@compression_l0` from `ColumnFamilyConfig`
+- `@block_cache_size_mb` from `ColumnFamilyConfig`
 
 ---
 
@@ -191,6 +226,8 @@ All 67 Phase 1 tests pass:
 2. **GenServer state variable**: Added `= state` to handle_call patterns so state is accessible in else blocks
 3. **Path validation too strict**: Updated to allow `/tmp` paths for testing
 4. **Prefix extractor logic**: Implemented proper pattern matching instead of always returning false
+5. **list_column_families arity**: Changed from `list_column_families/0` to `list_column_families/1` (takes path)
+6. **close/1 error handling**: Added try/rescue to handle already-closed databases gracefully
 
 ---
 
