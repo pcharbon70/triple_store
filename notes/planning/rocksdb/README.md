@@ -113,6 +113,17 @@ This directory contains the phased migration plan for transitioning the TripleSt
   - Verified no regression in existing tests (141 Leapfrog tests pass, 19 Phase 2 tests pass)
   - See `notes/summaries/phase-3.1-query-optimization.md` for details
 
+- [x] 3.2 Configuration Tuning - COMPLETED (2026-01-08)
+  - Created ReadOptions module with presets for different query patterns
+  - Created WriteOptions module with presets for different write patterns
+  - Enhanced ColumnFamilyConfig with dedicated compaction options per CF type
+  - Dictionary CFs use universal compaction for point lookup performance
+  - Index CFs use level compaction with balanced settings
+  - Derived CF uses level compaction optimized for write throughput
+  - Created 40 Phase 3.2 configuration tests (all passing)
+  - Verified no regression in existing tests (19 Phase 2 tests pass)
+  - See `notes/summaries/phase-3.2-configuration-tuning.md` for details
+
 ## References
 
 - [Research Analysis](../../research/1.03-key-value-storage/1.03.1-erlang-rocksdb.md)

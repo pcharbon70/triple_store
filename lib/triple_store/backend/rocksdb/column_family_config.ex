@@ -216,10 +216,124 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     dictionary_cf_options()
   end
 
+  # ===========================================================================
+  # Compaction Options (Section 3.2.3)
+  # ===========================================================================
+
+  @doc """
+  Returns compaction options optimized for dictionary column families.
+
+  Dictionary CFs have high read-to-write ratios with point lookups,
+  so we prioritize read performance over write throughput.
+  """
+  @spec dictionary_compaction_options() :: keyword()
+  def dictionary_compaction_options do
+    [
+      # Use universal compaction for better read performance on point lookups
+      # Universal compaction reduces space amplification at the cost of
+      # slightly higher write amplification
+      compaction_style: :universal,
+      # Size amplification threshold (5% = database size can be 5% larger than ideal)
+      # Lower values reduce space but increase write amplification
+      compaction_options_universal_size_amp_percent: 105,
+      # Number of levels for universal compaction
+      num_levels: 7,
+      # Target file size for compaction (64MB)
+      target_file_size_base: 64 * 1024 * 1024,
+      # Compression levels
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    ]
+  end
+
+  @doc """
+  Returns compaction options optimized for index column families.
+
+  Index CFs have balanced read/write patterns with prefix scans,
+  so we use level compaction for good overall performance.
+  """
+  @spec index_compaction_options() :: keyword()
+  def index_compaction_options do
+    [
+      # Use level compaction (default) for balanced performance
+      compaction_style: :level,
+      # Write buffer size (64MB memtable)
+      write_buffer_size: 64 * 1024 * 1024,
+      # Maximum number of write buffers (memtables)
+      max_write_buffer_number: 3,
+      # Minimum number of write buffers to flush
+      min_write_buffer_number_to_merge: 1,
+      # Target file size for L1 (64MB)
+      target_file_size_base: 64 * 1024 * 1024,
+      # Target file size multiplier for each level
+      target_file_size_multiplier: 1,
+      # Level 0 file size limit
+      level0_file_num_compaction_trigger: 4,
+      # Level 0 slowdown trigger
+      level0_slowdown_writes_trigger: 8,
+      # Level 0 stop trigger
+      level0_stop_writes_trigger: 12,
+      # Max bytes for each level
+      # 256MB for L1, scaling up by 10x each level
+      max_bytes_for_level_base: 256 * 1024 * 1024,
+      # Multiplier for each level's size
+      max_bytes_for_level_multiplier: 10,
+      # Compaction priority (0 = lowest, 1 = highest)
+      # Index CFs get higher priority due to query performance impact
+      # (Note: this would be set via set_options_cf during runtime)
+      # compaction_priority: 1,
+      # Number of levels
+      num_levels: 7,
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    ]
+  end
+
+  @doc """
+  Returns compaction options optimized for derived column family.
+
+  Derived CF has write-heavy bulk load patterns with periodic full scans,
+  so we optimize for write throughput.
+  """
+  @spec derived_compaction_options() :: keyword()
+  def derived_compaction_options do
+    [
+      # Use level compaction for write-heavy workload
+      compaction_style: :level,
+      # Larger write buffer for bulk writes (128MB)
+      write_buffer_size: 128 * 1024 * 1024,
+      # More write buffers for concurrent writes
+      max_write_buffer_number: 4,
+      # Minimum number of write buffers to flush
+      min_write_buffer_number_to_merge: 1,
+      # Larger target file size for sequential access (128MB)
+      target_file_size_base: 128 * 1024 * 1024,
+      # Delayed L0 compaction for bulk loading
+      level0_file_num_compaction_trigger: 8,
+      # Higher slowdown trigger for bulk writes
+      level0_slowdown_writes_trigger: 16,
+      # Higher stop trigger for bulk writes
+      level0_stop_writes_trigger: 24,
+      # Max bytes for each level (larger due to sequential access)
+      max_bytes_for_level_base: 512 * 1024 * 1024,
+      # Multiplier for each level's size
+      max_bytes_for_level_multiplier: 10,
+      # Lower compaction priority (background task)
+      # compaction_priority: 0,
+      # Number of levels
+      num_levels: 7,
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    ]
+  end
+
   # Dictionary CF options (id2str, str2id)
   # Optimized for random point lookups with high cache hit rates
   defp dictionary_cf_options do
     base_options()
+    |> Keyword.merge(dictionary_compaction_options())
     |> Keyword.merge(
       # High bloom filter for effective point lookup filtering
       block_based_table_options: [
@@ -243,6 +357,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   # Optimized for prefix-based scans with efficient in-memory filtering
   defp index_cf_options do
     base_options()
+    |> Keyword.merge(index_compaction_options())
     |> Keyword.merge(
       # Medium bloom filter for prefix scan filtering
       block_based_table_options: [
@@ -272,6 +387,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   # Optimized for sequential bulk writes and scans
   defp derived_cf_options do
     base_options()
+    |> Keyword.merge(derived_compaction_options())
     |> Keyword.merge(
       # No bloom filter (sequential access pattern)
       block_based_table_options: [
@@ -292,6 +408,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   # Optimized for range queries on numeric values
   defp numeric_range_cf_options do
     base_options()
+    |> Keyword.merge(index_compaction_options())
     |> Keyword.merge(
       # Medium bloom filter for range queries
       block_based_table_options: [
@@ -307,32 +424,13 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     )
   end
 
-  # Base options shared by all column families
+  # Base options shared by all column families (minimal common settings)
   defp base_options do
     [
       # Disable write-ahead log sync for faster writes (durability handled by WAL fsync)
       # For ACID compliance, use sync: true in write operations
-      # Write buffer size (memtable size)
-      # 64MB memtable
-      write_buffer_size: 64 * 1024 * 1024,
-      # Maximum number of write buffers (memtables)
-      max_write_buffer_number: 3,
-      # Minimum number of write buffers to flush
-      min_write_buffer_number_to_merge: 1,
-      # Level 0 file size limit
-      # 64MB L0 files
-      target_file_size_base: 64 * 1024 * 1024,
-      # Level 0 compaction trigger
-      level0_file_num_compaction_trigger: 4,
-      # Level 0 slowdown trigger
-      level0_slowdown_writes_trigger: 8,
-      # Level 0 stop trigger
-      level0_stop_writes_trigger: 12,
-      # Max bytes for each level
-      # 256MB for L1
-      max_bytes_for_level_base: 256 * 1024 * 1024,
-      # Multiplier for each level's size
-      max_bytes_for_level_multiplier: 10
+      # Note: Compaction-specific options are now in dedicated functions
+      # (dictionary_compaction_options, index_compaction_options, derived_compaction_options)
     ]
   end
 
