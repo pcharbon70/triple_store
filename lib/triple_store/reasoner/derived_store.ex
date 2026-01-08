@@ -233,9 +233,9 @@ defmodule TripleStore.Reasoner.DerivedStore do
   """
   @spec count(db_ref()) :: {:ok, non_neg_integer()}
   def count(db) do
-    # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, @derived_cf, <<>>)
-    {:ok, Enum.count(stream)}
+    # Use fold for efficient counting without creating a stream
+    count = NIF.fold(db, @derived_cf, <<>>, 0, fn {_key, _value}, acc -> acc + 1 end)
+    {:ok, count}
   end
 
   # ============================================================================
@@ -344,10 +344,41 @@ defmodule TripleStore.Reasoner.DerivedStore do
   """
   @spec lookup_derived_all(db_ref(), pattern()) :: {:ok, [id_triple()]} | {:error, term()}
   def lookup_derived_all(db, pattern) do
-    case lookup_derived(db, pattern) do
-      {:ok, stream} -> {:ok, Enum.to_list(stream)}
-      error -> error
-    end
+    # Use fold-based lookup for better performance
+    lookup_derived_fold(db, pattern)
+  end
+
+  @doc """
+  Looks up derived facts using fold operation for better performance.
+
+  More efficient than `lookup_derived_all/2` for materializing all results.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `pattern` - Triple pattern with bound/var elements
+
+  ## Returns
+
+  - `{:ok, [triple]}` with matching triples
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_derived_fold(db_ref(), pattern()) :: {:ok, [id_triple()]} | {:error, term()}
+  def lookup_derived_fold(db, pattern) do
+    prefix = pattern_to_prefix(pattern)
+
+    # Use fold to collect results directly, avoiding stream overhead
+    results =
+      NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+        triple = Index.decode_spo_key(key)
+        if triple_matches_pattern?(triple, pattern) do
+          [triple | acc]
+        else
+          acc
+        end
+      end)
+
+    {:ok, Enum.reverse(results)}
   end
 
   # ============================================================================
@@ -386,19 +417,17 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
       case source do
         :explicit ->
-          case lookup_explicit(db, lookup_pattern) do
-            {:ok, stream} -> {:ok, Enum.to_list(stream)}
-            error -> error
-          end
+          # Use fold-based lookup for better performance
+          Index.lookup_all_fold(db, lookup_pattern)
 
         :derived ->
-          lookup_derived_all(db, lookup_pattern)
+          lookup_derived_fold(db, lookup_pattern)
 
         :both ->
-          case lookup_all(db, lookup_pattern) do
-            {:ok, stream} -> {:ok, Enum.to_list(stream)}
-            error -> error
-          end
+          # Combine results from both sources using fold
+          {:ok, explicit} = Index.lookup_all_fold(db, lookup_pattern)
+          {:ok, derived} = lookup_derived_fold(db, lookup_pattern)
+          {:ok, explicit ++ derived}
       end
     end
   end

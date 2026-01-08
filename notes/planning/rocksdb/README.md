@@ -17,7 +17,7 @@ This directory contains the phased migration plan for transitioning the TripleSt
 |-------|----------|--------|-------------|
 | 1 | [phase-01-foundation-migration.md](./phase-01-foundation-migration.md) | Complete | Basic operations (open, get, put, delete, write_batch) |
 | 2 | [phase-02-iterator-snapshot-migration.md](./phase-02-iterator-snapshot-migration.md) | Complete | Iterators, snapshots, and prefix operations |
-| 3 | [phase-03-optimization-cleanup.md](./phase-03-optimization-cleanup.md) | Pending | Fold optimization and Rust removal |
+| 3 | [phase-03-optimization-cleanup.md](./phase-03-optimization-cleanup.md) | In Progress | Fold optimization and Rust removal |
 
 ## Progress
 
@@ -102,7 +102,16 @@ This directory contains the phased migration plan for transitioning the TripleSt
 
 ### Phase 3 Status (Optimization & Cleanup)
 
-All tasks pending.
+- [x] 3.1 Query Engine Optimization - COMPLETED (2026-01-08)
+  - Implemented fold-based pattern matching in Index module
+  - Implemented count_fold for efficient counting
+  - Implemented lookup_all_fold for materialized results
+  - Implemented lookup_keys_fold for keys-only queries
+  - Implemented lookup_all_properties_fold for property fetching
+  - Optimized DerivedStore to use fold operations
+  - Created 25 Phase 3.1 optimization tests (all passing)
+  - Verified no regression in existing tests (141 Leapfrog tests pass, 19 Phase 2 tests pass)
+  - See `notes/summaries/phase-3.1-query-optimization.md` for details
 
 ## References
 

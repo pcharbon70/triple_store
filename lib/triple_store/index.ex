@@ -1120,4 +1120,202 @@ defmodule TripleStore.Index do
 
     {:ok, property_stream}
   end
+
+  # ===========================================================================
+  # Fold-Based Optimizations (Phase 3 - Section 3.1)
+  # ===========================================================================
+
+  @doc """
+  Folds over triples matching the given pattern using erlang-rocksdb's fold operation.
+
+  This is more efficient than `lookup/2` + `Enum.reduce` for operations that
+  process all results, as it reduces BEAM-NIF boundary crossings by performing
+  the iteration in C++ land.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `pattern` - A tuple of three pattern elements, each being `{:bound, id}` or `:var`
+  - `acc` - Initial accumulator value
+  - `fun` - Fold function: `({s, p, o}, acc) -> new_acc`
+
+  ## Returns
+
+  - `acc` - Final accumulator value
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> Index.lookup_fold(db, {{:bound, 1}, :var, :var}, [], fn triple, acc -> [triple | acc] end)
+      [{1, 5, 6}, {1, 2, 4}, {1, 2, 3}]
+
+  """
+  @spec lookup_fold(NIF.db_ref(), pattern(), term(), (triple(), term() -> term())) :: term()
+  def lookup_fold(db, pattern, acc, fun) do
+    %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
+
+    fold_fun = if needs_filter do
+      fn {key, _value}, inner_acc ->
+        triple = key_to_triple(index, key)
+        if triple_matches_pattern?(triple, pattern) do
+          fun.(triple, inner_acc)
+        else
+          inner_acc
+        end
+      end
+    else
+      fn {key, _value}, inner_acc ->
+        triple = key_to_triple(index, key)
+        fun.(triple, inner_acc)
+      end
+    end
+
+    NIF.fold(db, index, prefix, acc, fold_fun)
+  end
+
+  @doc """
+  Counts triples matching the given pattern using fold operation.
+
+  More efficient than `count/2` for large result sets as it avoids creating
+  an intermediate stream.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `pattern` - A tuple of three pattern elements
+
+  ## Returns
+
+  - `{:ok, count}` - Number of matching triples
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> Index.count_fold(db, {{:bound, 1}, :var, :var})
+      {:ok, 3}
+
+  """
+  @spec count_fold(NIF.db_ref(), pattern()) :: {:ok, non_neg_integer()}
+  def count_fold(db, pattern) do
+    count = lookup_fold(db, pattern, 0, fn _triple, acc -> acc + 1 end)
+    {:ok, count}
+  end
+
+  @doc """
+  Collects all triples matching the pattern using fold operation.
+
+  More efficient than `lookup_all/2` for large result sets.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `pattern` - A tuple of three pattern elements
+
+  ## Returns
+
+  - `{:ok, [triple()]}` - List of matching triples
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> Index.lookup_all_fold(db, {{:bound, 1}, {:bound, 2}, :var})
+      {:ok, [{1, 2, 3}, {1, 2, 4}]}
+
+  """
+  @spec lookup_all_fold(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
+  def lookup_all_fold(db, pattern) do
+    results = lookup_fold(db, pattern, [], fn triple, acc -> [triple | acc] end)
+    {:ok, Enum.reverse(results)}
+  end
+
+  @doc """
+  Fetches all properties for a subject using fold operation.
+
+  More efficient than `lookup_all_properties/2` as it performs the iteration
+  entirely in C++ land via erlang-rocksdb's fold operation.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `subject_id` - The subject's term ID
+
+  ## Returns
+
+  - `{:ok, properties}` where `properties` is a map of `%{predicate_id => [object_id, ...]}`
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
+      iex> {:ok, props} = Index.lookup_all_properties_fold(db, 1)
+      iex> props
+      %{2 => [3, 4], 5 => [6]}
+
+  """
+  @spec lookup_all_properties_fold(NIF.db_ref(), term_id()) ::
+          {:ok, %{term_id() => [term_id()]}}
+  def lookup_all_properties_fold(db, subject_id) when valid_term_id?(subject_id) do
+    prefix = spo_prefix(subject_id)
+
+    # Use fold to build the map directly, avoiding stream overhead
+    properties =
+      NIF.fold(db, :spo, prefix, %{}, fn {key, _value}, acc ->
+        {_s, p, o} = decode_spo_key(key)
+        Map.update(acc, p, [o], fn objects -> [o | objects] end)
+      end)
+      # Reverse the lists to maintain insertion order
+      |> Map.new(fn {p, objects} -> {p, Enum.reverse(objects)} end)
+
+    {:ok, properties}
+  end
+
+  @doc """
+  Collects all keys matching a pattern using fold_keys (values not loaded).
+
+  More efficient when only the keys (triples) are needed and values are empty
+  (as is the case for index entries where the key contains all information).
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `pattern` - A tuple of three pattern elements
+
+  ## Returns
+
+  - `{:ok, [triple()]}` - List of matching triples
+
+  ## Examples
+
+      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}])
+      iex> Index.lookup_keys_fold(db, {{:bound, 1}, :var, :var})
+      {:ok, [{1, 2, 3}, {1, 2, 4}]}
+
+  """
+  @spec lookup_keys_fold(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
+  def lookup_keys_fold(db, pattern) do
+    %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
+
+    fold_fun = if needs_filter do
+      fn key, inner_acc ->
+        triple = key_to_triple(index, key)
+        if triple_matches_pattern?(triple, pattern) do
+          [triple | inner_acc]
+        else
+          inner_acc
+        end
+      end
+    else
+      fn key, inner_acc ->
+        triple = key_to_triple(index, key)
+        [triple | inner_acc]
+      end
+    end
+
+    results = NIF.fold_keys(db, index, prefix, [], fold_fun)
+    {:ok, Enum.reverse(results)}
+  end
 end
