@@ -1,11 +1,26 @@
 defmodule TripleStore.Backend.RocksDB.NIF do
   @moduledoc """
-  NIF bindings for RocksDB operations.
+  Convenience wrapper for RocksDB operations via ErlangAdapter.
 
-  This module provides the interface to RocksDB storage, implemented via
-  the erlang-rocksdb C++ NIF library. The NIF module delegates to the
-  ErlangAdapter GenServer which manages the database connection and
-  column family handles.
+  **DEPRECATED**: This module is deprecated as of Phase 3.3.
+  Please use `TripleStore.Backend.RocksDB.ErlangAdapter` directly for new code.
+
+  This module provides backward compatibility by delegating all calls to
+  `ErlangAdapter`, which manages the erlang-rocksdb C++ NIF library connection.
+
+  ## Migration Guide
+
+  To migrate from this module to `ErlangAdapter`:
+
+  ```elixir
+  # Old way (deprecated)
+  {:ok, db} = TripleStore.Backend.RocksDB.NIF.open("/path/to/db")
+
+  # New way (recommended)
+  {:ok, db} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
+  ```
+
+  The API is identical - just replace `NIF` with `ErlangAdapter` in your calls.
 
   ## Column Families
 
@@ -20,14 +35,16 @@ defmodule TripleStore.Backend.RocksDB.NIF do
 
   ## Architecture
 
-  The NIF module is a thin wrapper around `ErlangAdapter` which:
+  This module delegates to `ErlangAdapter`, which:
   - Manages database lifecycle via GenServer
   - Translates column family atoms to erlang-rocksdb handles
   - Handles path validation and security
   - Translates error returns
 
-  The `db_ref()` type is now a GenServer PID (adapter process).
+  The `db_ref()` type is a GenServer PID (adapter process).
   """
+
+  @deprecated "Use TripleStore.Backend.RocksDB.ErlangAdapter instead"
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
 
