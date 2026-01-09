@@ -295,60 +295,60 @@ Update read options for quad access patterns.
 
 ### 1.8.1 Key Encoding Tests
 
-- [ ] 1.8.1.1 Test GSPO key encoding/decoding roundtrip
-- [ ] 1.8.1.2 Test GPOS key encoding/decoding roundtrip
-- [ ] 1.8.1.3 Test SPOG key encoding/decoding roundtrip
-- [ ] 1.8.1.4 Test POSG key encoding/decoding roundtrip
-- [ ] 1.8.1.5 Test all four indices encode same quad consistently
-- [ ] 1.8.1.6 Test big-endian ordering is preserved
+- [x] 1.8.1.1 Test GSPO key encoding/decoding roundtrip
+- [x] 1.8.1.2 Test GPOS key encoding/decoding roundtrip
+- [x] 1.8.1.3 Test SPOG key encoding/decoding roundtrip
+- [x] 1.8.1.4 Test POSG key encoding/decoding roundtrip
+- [x] 1.8.1.5 Test all four indices encode same quad consistently
+- [x] 1.8.1.6 Test big-endian ordering is preserved
 
 ### 1.8.2 Prefix Tests
 
-- [ ] 1.8.2.1 Test gspo_prefix(g) returns 8-byte prefix
-- [ ] 1.8.2.2 Test gspo_prefix(g, s) returns 16-byte prefix
-- [ ] 1.8.2.3 Test gspo_prefix(g, s, p) returns 24-byte prefix
-- [ ] 1.8.2.4 Test prefix scans return correct results
-- [ ] 1.8.2.5 Test prefix boundary conditions
+- [x] 1.8.2.1 Test gspo_prefix(g) returns 8-byte prefix
+- [x] 1.8.2.2 Test gspo_prefix(g, s) returns 16-byte prefix
+- [x] 1.8.2.3 Test gspo_prefix(g, s, p) returns 24-byte prefix
+- [x] 1.8.2.4 Test prefix scans return correct results
+- [x] 1.8.2.5 Test prefix boundary conditions
 
 ### 1.8.3 Pattern Matching Tests
 
-- [ ] 1.8.3.1 Test all 16 quad patterns map to correct indices
-- [ ] 1.8.3.2 Test bound graph patterns select GSPO/GPOS
-- [ ] 1.8.3.3 Test unbound graph patterns select SPOG/POSG
-- [ ] 1.8.3.4 Test pattern with all bound returns exact lookup
-- [ ] 1.8.3.5 Test pattern with all vars returns full scan
+- [x] 1.8.3.1 Test all 16 quad patterns map to correct indices
+- [x] 1.8.3.2 Test bound graph patterns select GSPO/GPOS
+- [x] 1.8.3.3 Test unbound graph patterns select SPOG/POSG
+- [x] 1.8.3.4 Test pattern with all bound returns exact lookup
+- [x] 1.8.3.5 Test pattern with all vars returns full scan
 
 ### 1.8.4 Insert/Delete Tests
 
-- [ ] 1.8.4.1 Test single quad insert writes to all four indices
-- [ ] 1.8.4.2 Test quad insert is idempotent
-- [ ] 1.8.4.3 Test quad delete removes from all four indices
-- [ ] 1.8.4.4 Test delete of non-existent quad is no-op
-- [ ] 1.8.4.5 Test batch insert/delete atomicity
+- [x] 1.8.4.1 Test single quad insert writes to all four indices
+- [x] 1.8.4.2 Test quad insert is idempotent
+- [x] 1.8.4.3 Test quad delete removes from all four indices
+- [x] 1.8.4.4 Test delete of non-existent quad is no-op
+- [x] 1.8.4.5 Test batch insert/delete atomicity
 
 ### 1.8.5 Graph ID Tests
 
-- [ ] 1.8.5.1 Test default graph ID is 0
-- [ ] 1.8.5.2 Test dictionary never allocates ID 0
-- [ ] 1.8.5.3 Test named graph IDs are > 0
-- [ ] 1.8.5.4 Test graph term encoding roundtrip
-- [ ] 1.8.5.5 Test blank node graph encoding
+- [x] 1.8.5.1 Test default graph ID is 0
+- [x] 1.8.5.2 Test dictionary never allocates ID 0
+- [x] 1.8.5.3 Test named graph IDs are > 0
+- [x] 1.8.5.4 Test graph term encoding roundtrip
+- [x] 1.8.5.5 Test blank node graph encoding
 
 ### 1.8.6 Lookup Tests
 
-- [ ] 1.8.6.1 Test exact quad lookup returns single result
-- [ ] 1.8.6.2 Test graph-scoped query returns only quads from that graph
-- [ ] 1.8.6.3 Test cross-graph query returns quads from all graphs
-- [ ] 1.8.6.4 Test default graph query excludes named graphs
-- [ ] 1.8.6.5 Test pattern with post-filter applies filter correctly
+- [x] 1.8.6.1 Test exact quad lookup returns single result
+- [x] 1.8.6.2 Test graph-scoped query returns only quads from that graph
+- [x] 1.8.6.3 Test cross-graph query returns quads from all graphs
+- [x] 1.8.6.4 Test default graph query excludes named graphs
+- [x] 1.8.6.5 Test pattern with post-filter applies filter correctly
 
 ### 1.8.7 Backend Tests
 
-- [ ] 1.8.7.1 Test database open fails on triple store schema
-- [ ] 1.8.7.2 Test quad store schema version is persisted
-- [ ] 1.8.7.3 Test all four CFs created on new database
-- [ ] 1.8.7.4 Test CF handles are accessible via ErlangAdapter
-- [ ] 1.8.7.5 Test read options optimize for quad access
+- [x] 1.8.7.1 Test database open fails on triple store schema
+- [x] 1.8.7.2 Test quad store schema version is persisted
+- [x] 1.8.7.3 Test all four CFs created on new database
+- [x] 1.8.7.4 Test CF handles are accessible via ErlangAdapter
+- [x] 1.8.7.5 Test read options optimize for quad access
 
 ---
 
