@@ -496,4 +496,260 @@ defmodule TripleStore.QuadIndexTest do
       end
     end
   end
+
+  # ===========================================================================
+  # Section 1.4: Quad Pattern Matching
+  # ===========================================================================
+
+  describe "1.4.1 Pattern Representation" do
+    test "quad pattern type accepts valid patterns" do
+      # All bound
+      pattern = {:bound, :bound, :bound, :bound}
+      assert is_tuple(pattern)
+      assert tuple_size(pattern) == 4
+
+      # All var
+      pattern = {:var, :var, :var, :var}
+      assert is_tuple(pattern)
+      assert tuple_size(pattern) == 4
+
+      # Mixed
+      pattern = {:bound, :var, :bound, :var}
+      assert is_tuple(pattern)
+      assert tuple_size(pattern) == 4
+    end
+  end
+
+  describe "1.4.2 Index Selection for Quads" do
+    test "selects GSPO for fully bound pattern" do
+      result = QuadIndex.select_index_for_quad({:bound, :bound, :bound, :bound})
+      assert result.index == :gspo
+      assert result.prefix_len == 24
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects SPOG for S-P-O bound pattern" do
+      result = QuadIndex.select_index_for_quad({:bound, :bound, :bound, :var})
+      assert result.index == :spog
+      assert result.prefix_len == 24
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects GSPO for G-S bound pattern with filter on p" do
+      result = QuadIndex.select_index_for_quad({:bound, :bound, :var, :bound})
+      assert result.index == :gspo
+      assert result.prefix_len == 16
+      assert result.needs_filter
+      assert result.filter_positions == [:p]
+    end
+
+    test "selects GSPO for G bound pattern with filter on s, p" do
+      result = QuadIndex.select_index_for_quad({:bound, :var, :var, :bound})
+      assert result.index == :gspo
+      assert result.prefix_len == 8
+      assert result.needs_filter
+      assert :s in result.filter_positions
+      assert :p in result.filter_positions
+    end
+
+    test "selects GPOS for P-O-G bound pattern" do
+      result = QuadIndex.select_index_for_quad({:var, :bound, :bound, :bound})
+      assert result.index == :gpos
+      assert result.prefix_len == 24
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects GPOS for G-P bound pattern with filter on o" do
+      result = QuadIndex.select_index_for_quad({:var, :bound, :var, :bound})
+      assert result.index == :gpos
+      assert result.prefix_len == 16
+      assert result.needs_filter
+      assert result.filter_positions == [:o]
+    end
+
+    test "selects SPOG for S-P bound pattern" do
+      result = QuadIndex.select_index_for_quad({:bound, :bound, :var, :var})
+      assert result.index == :spog
+      assert result.prefix_len == 16
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects SPOG for S bound pattern" do
+      result = QuadIndex.select_index_for_quad({:bound, :var, :var, :var})
+      assert result.index == :spog
+      assert result.prefix_len == 8
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects POSG for P bound pattern" do
+      result = QuadIndex.select_index_for_quad({:var, :bound, :var, :var})
+      assert result.index == :posg
+      assert result.prefix_len == 8
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects GSPO for G bound pattern" do
+      result = QuadIndex.select_index_for_quad({:var, :var, :var, :bound})
+      assert result.index == :gspo
+      assert result.prefix_len == 8
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "selects GSPO for all var pattern (full scan)" do
+      result = QuadIndex.select_index_for_quad({:var, :var, :var, :var})
+      assert result.index == :gspo
+      assert result.prefix_len == 0
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "returns :no_match for invalid patterns" do
+      assert :no_match == QuadIndex.select_index_for_quad({"invalid", :var, :var, :var})
+      assert :no_match == QuadIndex.select_index_for_quad({:var, :var, :var, :invalid})
+    end
+  end
+
+  describe "1.4.3 Prefix Construction for Quads" do
+    test "builds prefix for subject-scoped pattern" do
+      pattern = {:bound, :var, :var, :var}
+      values = %{s: 100}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :spog
+      assert result.prefix == <<100::64-big>>
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "builds prefix for graph-scoped pattern" do
+      pattern = {:var, :var, :var, :bound}
+      values = %{g: 0}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :gspo
+      assert result.prefix == <<0::64-big>>
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "builds prefix for graph-subject pattern" do
+      # Pattern {bound, var, var, bound} means graph-only prefix with filter on s, p
+      pattern = {:bound, :var, :var, :bound}
+      values = %{s: 100, g: 0}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :gspo
+      # Note: prefix is 8 bytes (g-only) per design, s/p are filtered
+      assert result.prefix == <<0::64-big>>
+      assert result.needs_filter
+      assert :s in result.filter_positions
+      assert :p in result.filter_positions
+    end
+
+    test "builds prefix for subject-predicate pattern" do
+      pattern = {:bound, :bound, :var, :var}
+      values = %{s: 100, p: 200}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :spog
+      assert result.prefix == <<100::64-big, 200::64-big>>
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "builds prefix for fully bound pattern" do
+      pattern = {:bound, :bound, :bound, :bound}
+      values = %{s: 100, p: 200, o: 300, g: 0}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :gspo
+      assert result.prefix == <<0::64-big, 100::64-big, 200::64-big>>
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+
+    test "builds prefix for predicate-scoped pattern" do
+      pattern = {:var, :bound, :var, :var}
+      values = %{p: 200}
+
+      result = QuadIndex.build_quad_prefix(pattern, values)
+      assert result.index == :posg
+      assert result.prefix == <<200::64-big>>
+      refute result.needs_filter
+      assert result.filter_positions == []
+    end
+  end
+
+  describe "1.4.4 Post-Filtering for Quads" do
+    test "quad_matches_pattern? returns true for matching quad" do
+      quad = {100, 200, 300, 0}
+      pattern = {:bound, :var, :var, :bound}
+      values = %{s: 100, g: 0}
+
+      assert QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? returns false for non-matching subject" do
+      quad = {999, 200, 300, 0}
+      pattern = {:bound, :var, :var, :bound}
+      values = %{s: 100, g: 0}
+
+      refute QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? returns false for non-matching graph" do
+      quad = {100, 200, 300, 0}
+      pattern = {:bound, :var, :var, :bound}
+      values = %{s: 100, g: 1}
+
+      refute QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? returns true for all var pattern" do
+      quad = {100, 200, 300, 0}
+      pattern = {:var, :var, :var, :var}
+      values = %{}
+
+      assert QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? checks all bound positions" do
+      quad = {100, 200, 300, 0}
+      pattern = {:bound, :bound, :bound, :bound}
+      values = %{s: 100, p: 200, o: 300, g: 0}
+
+      assert QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? returns false if any bound position mismatches" do
+      quad = {100, 200, 300, 0}
+      pattern = {:bound, :bound, :bound, :bound}
+      values = %{s: 100, p: 200, o: 999, g: 0}
+
+      refute QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? handles subject-predicate pattern" do
+      quad = {100, 200, 300, 0}
+      pattern = {:bound, :bound, :var, :var}
+      values = %{s: 100, p: 200}
+
+      assert QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+
+    test "quad_matches_pattern? handles predicate only pattern" do
+      quad = {100, 200, 300, 0}
+      pattern = {:var, :bound, :var, :var}
+      values = %{p: 200}
+
+      assert QuadIndex.quad_matches_pattern?(quad, pattern, values)
+    end
+  end
 end
