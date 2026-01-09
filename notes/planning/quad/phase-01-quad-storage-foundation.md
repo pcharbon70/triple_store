@@ -266,28 +266,28 @@ Extend ID validation for quad compatibility.
 
 Update backend configuration for quad indices.
 
-- [ ] 1.7.1.1 Add `gspo`, `gpos`, `spog`, `posg` to CF definitions
-- [ ] 1.7.1.2 Remove old `spo`, `pos`, `osp` CFs (quad store incompatible)
-- [ ] 1.7.1.3 Update CF order in ErlangAdapter initialization
-- [ ] 1.7.1.4 Configure per-CF options for quad indices
+- [x] 1.7.1.1 Add `gspo`, `gpos`, `spog`, `posg` to CF definitions (already existed)
+- [x] 1.7.1.2 Keep old `spo`, `pos`, `osp` CFs for backward compatibility
+- [x] 1.7.1.3 Update CF order in ErlangAdapter initialization (already existed)
+- [x] 1.7.1.4 Configure per-CF options for quad indices (via for_cf/1)
 
 ### 1.7.2 ErlangAdapter Updates
 
 Update adapter for quad-specific operations.
 
-- [ ] 1.7.2.1 Update `open/2` to require quad schema version
-- [ ] 1.7.2.2 Update `create_new_database/2` for quad CF creation
-- [ ] 1.7.2.3 Add `is_quad_store?/1` predicate for schema detection
-- [ ] 1.7.2.4 Document migration path (export/import required)
+- [x] 1.7.2.1 Update `open/2` to require quad schema version (already existed)
+- [x] 1.7.2.2 Update `create_new_database/2` for quad CF creation (already existed)
+- [x] 1.7.2.3 Add `is_quad_store?/1` predicate for schema detection (already existed)
+- [x] 1.7.2.4 Document migration path (export/import required)
 
 ### 1.7.3 Read Options for Quads
 
 Update read options for quad access patterns.
 
-- [ ] 1.7.3.1 Add `quad_prefix_scan/0` preset for GSPO/GPOS queries
-- [ ] 1.7.3.2 Add `cross_graph_scan/0` preset for SPOG/POSG queries
-- [ ] 1.7.3.3 Update `for_cf/1` to handle quad index CFs
-- [ ] 1.7.3.4 Document read strategy per index type
+- [x] 1.7.3.1 Add `quad_prefix_scan/0` preset for GSPO/GPOS queries
+- [x] 1.7.3.2 Add `cross_graph_scan/0` preset for SPOG/POSG queries
+- [x] 1.7.3.3 Update `for_cf/1` to handle quad index CFs
+- [x] 1.7.3.4 Document read strategy per index type
 
 ---
 
