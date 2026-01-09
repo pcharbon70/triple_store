@@ -2,12 +2,12 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @moduledoc """
   Column Family configuration for erlang-rocksdb.
 
-  This module defines the column family options that match the current
-  Rust NIF tuning settings, ensuring data compatibility and optimal performance.
+  This module defines the column family options for both triple and quad stores,
+  ensuring data compatibility and optimal performance.
 
-  ## Column Families
+  ## Triple Store Column Families (Schema v1)
 
-  The TripleStore uses the following column families:
+  The triple store uses the following column families:
 
   | CF Name | Purpose | Access Pattern |
   |---------|---------|----------------|
@@ -18,6 +18,24 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   | `osp` | Object-Subject-Predicate index | Prefix scans (object, object-subject) |
   | `derived` | Inferred triples from reasoning | Sequential bulk writes, batch scans |
   | `numeric_range` | Numeric range indices | Range queries |
+
+  ## Quad Store Column Families (Schema v2)
+
+  The quad store uses four quad indices for named graph support:
+
+  | CF Name | Key Ordering | Primary Use Case |
+  |---------|-------------|------------------|
+  | `gspo` | Graph-Subject-Predicate-Object | All quads in specific graph |
+  | `gpos` | Graph-Predicate-Object-Subject | All predicates in specific graph |
+  | `spog` | Subject-Predicate-Object-Graph | Subject-scoped queries across graphs |
+  | `posg` | Predicate-Object-Subject-Graph | Predicate-scoped queries across graphs |
+
+  ## Storage Tradeoffs
+
+  Quad keys are 32 bytes (4 × 64-bit IDs) vs 24 bytes for triples:
+  - Key size: 32 bytes vs 24 bytes (~33% increase)
+  - Write amplification: 4x instead of 3x
+  - Skip `ospg` and `gosp` indices (less common patterns handled via filtering)
 
   ## Configuration Strategy
 
@@ -57,7 +75,18 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   This matches the Rust NIF configuration for optimal performance.
   """
 
-  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range
+  @type column_family ::
+          :id2str
+          | :str2id
+          | :spo
+          | :pos
+          | :osp
+          | :derived
+          | :numeric_range
+          | :gspo
+          | :gpos
+          | :spog
+          | :posg
   @type cf_descriptor :: {String.t(), keyword()}
   @type db_options :: keyword()
 
@@ -97,6 +126,13 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   Each descriptor is a tuple `{cf_name, cf_options}` suitable for
   `:rocksdb.open_with_cf/3`.
 
+  By default, returns triple store (v1) column families. Use `cf_descriptors(:quad)`
+  for quad store (v2) column families.
+
+  ## Parameters
+
+  - `schema` - Schema version: `:triple` (v1, default) or `:quad` (v2)
+
   ## Returns
 
   List of column family descriptors.
@@ -106,9 +142,14 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> length(ColumnFamilyConfig.cf_descriptors())
       7
 
+      iex> length(ColumnFamilyConfig.cf_descriptors(:quad))
+      8
+
   """
-  @spec cf_descriptors() :: [cf_descriptor()]
-  def cf_descriptors do
+  @spec cf_descriptors(:triple | :quad) :: [cf_descriptor()]
+  def cf_descriptors(schema \\ :triple)
+
+  def cf_descriptors(:triple) do
     [
       {"default", default_cf_options()},
       {"id2str", dictionary_cf_options()},
@@ -116,6 +157,20 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"spo", index_cf_options()},
       {"pos", index_cf_options()},
       {"osp", index_cf_options()},
+      {"derived", derived_cf_options()},
+      {"numeric_range", numeric_range_cf_options()}
+    ]
+  end
+
+  def cf_descriptors(:quad) do
+    [
+      {"default", default_cf_options()},
+      {"id2str", dictionary_cf_options()},
+      {"str2id", dictionary_cf_options()},
+      {"gspo", quad_index_cf_options()},
+      {"gpos", quad_index_cf_options()},
+      {"spog", quad_index_cf_options()},
+      {"posg", quad_index_cf_options()},
       {"derived", derived_cf_options()},
       {"numeric_range", numeric_range_cf_options()}
     ]
@@ -147,14 +202,24 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   This order matches the handles returned by `:rocksdb.open_with_cf/3`.
 
+  ## Parameters
+
+  - `schema` - Schema version: `:triple` (v1, default) or `:quad` (v2)
+
   ## Returns
 
   List of column family names.
 
   """
-  @spec column_family_names() :: [String.t()]
-  def column_family_names do
+  @spec column_family_names(:triple | :quad) :: [String.t()]
+  def column_family_names(schema \\ :triple)
+
+  def column_family_names(:triple) do
     ["default", "id2str", "str2id", "spo", "pos", "osp", "derived", "numeric_range"]
+  end
+
+  def column_family_names(:quad) do
+    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "numeric_range"]
   end
 
   @doc """
@@ -162,7 +227,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   ## Parameters
 
-  - `cf`: Column family atom (`:id2str`, `:spo`, etc.)
+  - `cf`: Column family atom (`:id2str`, `:spo`, `:gspo`, etc.)
 
   ## Returns
 
@@ -175,6 +240,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def get_cf_options(:spo), do: index_cf_options()
   def get_cf_options(:pos), do: index_cf_options()
   def get_cf_options(:osp), do: index_cf_options()
+  def get_cf_options(:gspo), do: quad_index_cf_options()
+  def get_cf_options(:gpos), do: quad_index_cf_options()
+  def get_cf_options(:spog), do: quad_index_cf_options()
+  def get_cf_options(:posg), do: quad_index_cf_options()
   def get_cf_options(:derived), do: derived_cf_options()
   def get_cf_options(:numeric_range), do: numeric_range_cf_options()
   def get_cf_options(_), do: nil
@@ -196,13 +265,29 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.validate_cf(:spo)
       :ok
 
+      iex> ColumnFamilyConfig.validate_cf(:gspo)
+      :ok
+
       iex> ColumnFamilyConfig.validate_cf(:invalid)
       {:error, :invalid_column_family}
 
   """
   @spec validate_cf(atom()) :: :ok | {:error, :invalid_column_family}
   def validate_cf(cf)
-      when cf in [:id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range, :default],
+      when cf in [
+             :id2str,
+             :str2id,
+             :spo,
+             :pos,
+             :osp,
+             :derived,
+             :numeric_range,
+             :default,
+             :gspo,
+             :gpos,
+             :spog,
+             :posg
+           ],
       do: :ok
 
   def validate_cf(_), do: {:error, :invalid_column_family}
@@ -383,6 +468,36 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     )
   end
 
+  # Quad Index CF options (gspo, gpos, spog, posg)
+  # Optimized for 32-byte quad keys with prefix-based scans
+  #
+  # Quad keys are larger (32 bytes vs 24 bytes for triples), so we use similar
+  # tuning but adjust for the different access patterns:
+  # - GSPO/GPOS: Graph-scoped queries (prefix on graph ID)
+  # - SPOG/POSG: Cross-graph queries (prefix on subject/predicate)
+  defp quad_index_cf_options do
+    base_options()
+    |> Keyword.merge(index_compaction_options())
+    |> Keyword.merge(
+      # Medium bloom filter for prefix scan filtering
+      block_based_table_options: [
+        bloom_filter_policy: @bloom_index_bits,
+        block_size: @block_size_index,
+        cache_index_and_filter_blocks: true,
+        # Don't pin L0 blocks (sequential scan pattern)
+        pin_l0_filter_and_index_blocks_in_cache: false,
+        # Use prefix-based bloom filtering
+        whole_key_filtering: false
+      ],
+      # Memtable prefix bloom for efficient in-memory filtering
+      # Quad indices benefit even more from prefix bloom due to 4-part keys
+      memtable_prefix_bloom_size_ratio: 0.1,
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    )
+  end
+
   # Derived CF options
   # Optimized for sequential bulk writes and scans
   defp derived_cf_options do
@@ -446,6 +561,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.cf_name_to_string(:id2str)
       "id2str"
 
+      iex> ColumnFamilyConfig.cf_name_to_string(:gspo)
+      "gspo"
+
   """
   @spec cf_name_to_string(column_family()) :: String.t()
   def cf_name_to_string(:id2str), do: "id2str"
@@ -453,6 +571,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_name_to_string(:spo), do: "spo"
   def cf_name_to_string(:pos), do: "pos"
   def cf_name_to_string(:osp), do: "osp"
+  def cf_name_to_string(:gspo), do: "gspo"
+  def cf_name_to_string(:gpos), do: "gpos"
+  def cf_name_to_string(:spog), do: "spog"
+  def cf_name_to_string(:posg), do: "posg"
   def cf_name_to_string(:derived), do: "derived"
   def cf_name_to_string(:numeric_range), do: "numeric_range"
 
@@ -464,6 +586,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.cf_string_to_name("id2str")
       :id2str
 
+      iex> ColumnFamilyConfig.cf_string_to_name("gspo")
+      :gspo
+
   """
   @spec cf_string_to_name(String.t()) :: column_family() | nil
   def cf_string_to_name("id2str"), do: :id2str
@@ -471,6 +596,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_string_to_name("spo"), do: :spo
   def cf_string_to_name("pos"), do: :pos
   def cf_string_to_name("osp"), do: :osp
+  def cf_string_to_name("gspo"), do: :gspo
+  def cf_string_to_name("gpos"), do: :gpos
+  def cf_string_to_name("spog"), do: :spog
+  def cf_string_to_name("posg"), do: :posg
   def cf_string_to_name("derived"), do: :derived
   def cf_string_to_name("numeric_range"), do: :numeric_range
   def cf_string_to_name(_), do: nil
@@ -483,6 +612,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.bloom_bits(:id2str)
       14
 
+      iex> ColumnFamilyConfig.bloom_bits(:gspo)
+      12
+
   """
   @spec bloom_bits(column_family()) :: non_neg_integer()
   def bloom_bits(:id2str), do: @bloom_dict_bits
@@ -490,6 +622,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def bloom_bits(:spo), do: @bloom_index_bits
   def bloom_bits(:pos), do: @bloom_index_bits
   def bloom_bits(:osp), do: @bloom_index_bits
+  def bloom_bits(:gspo), do: @bloom_index_bits
+  def bloom_bits(:gpos), do: @bloom_index_bits
+  def bloom_bits(:spog), do: @bloom_index_bits
+  def bloom_bits(:posg), do: @bloom_index_bits
   def bloom_bits(:derived), do: @bloom_derived_bits
   def bloom_bits(:numeric_range), do: @bloom_index_bits
 
@@ -501,6 +637,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.block_size(:id2str)
       2048
 
+      iex> ColumnFamilyConfig.block_size(:gspo)
+      8192
+
   """
   @spec block_size(column_family()) :: pos_integer()
   def block_size(:id2str), do: @block_size_dict
@@ -508,6 +647,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def block_size(:spo), do: @block_size_index
   def block_size(:pos), do: @block_size_index
   def block_size(:osp), do: @block_size_index
+  def block_size(:gspo), do: @block_size_index
+  def block_size(:gpos), do: @block_size_index
+  def block_size(:spog), do: @block_size_index
+  def block_size(:posg), do: @block_size_index
   def block_size(:derived), do: @block_size_derived
   def block_size(:numeric_range), do: @block_size_index
 
@@ -516,8 +659,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   Note: The prefix_extractor configuration is version-dependent in erlang-rocksdb.
   The actual prefix extractor option is commented out in the CF options due to
-  format uncertainty. However, for the purposes of index CFs (spo, pos, osp),
-  a prefix extractor conceptually exists for the first 8 bytes (64-bit ID).
+  format uncertainty. However, for the purposes of index CFs (spo, pos, osp,
+  gspo, gpos, spog, posg), a prefix extractor conceptually exists for the first
+  8 bytes (64-bit ID).
 
   This function returns `true` for index CFs to indicate they are designed
   for prefix-based scans, even though the actual RocksDB option is not
@@ -528,6 +672,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       iex> ColumnFamilyConfig.has_prefix_extractor?(:spo)
       true
 
+      iex> ColumnFamilyConfig.has_prefix_extractor?(:gspo)
+      true
+
       iex> ColumnFamilyConfig.has_prefix_extractor?(:id2str)
       false
 
@@ -536,6 +683,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def has_prefix_extractor?(:spo), do: true
   def has_prefix_extractor?(:pos), do: true
   def has_prefix_extractor?(:osp), do: true
+  def has_prefix_extractor?(:gspo), do: true
+  def has_prefix_extractor?(:gpos), do: true
+  def has_prefix_extractor?(:spog), do: true
+  def has_prefix_extractor?(:posg), do: true
   def has_prefix_extractor?(:id2str), do: false
   def has_prefix_extractor?(:str2id), do: false
   def has_prefix_extractor?(:derived), do: false
