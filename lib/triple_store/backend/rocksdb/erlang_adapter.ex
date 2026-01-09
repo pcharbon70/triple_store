@@ -77,6 +77,67 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   ```
 
   The API is identical - simply replace `NIF` with `ErlangAdapter`.
+
+  ## Schema Versions
+
+  The adapter supports two database schemas:
+
+  | Schema | Version | Key Size | Indices | Column Families |
+  |--------|---------|----------|---------|-----------------|
+  | Triple Store | v1 | 24 bytes | spo, pos, osp | id2str, str2id, spo, pos, osp, derived, numeric_range |
+  | Quad Store | v2 | 32 bytes | gspo, gpos, spog, posg | id2str, str2id, gspo, gpos, spog, posg, derived, numeric_range |
+
+  ### Opening a Database
+
+  ```elixir
+  # Open as triple store (default, v1)
+  {:ok, adapter} = ErlangAdapter.open("/path/to/db")
+
+  # Open as quad store (v2)
+  {:ok, adapter} = ErlangAdapter.open("/path/to/quad_db", schema: :quad)
+
+  # Check if database is a quad store
+  {:ok, is_quad} = ErlangAdapter.is_quad_store?(adapter)
+  ```
+
+  ## Schema Migration
+
+  **Direct in-place migration from triple store (v1) to quad store (v2) is NOT supported.**
+
+  Triple stores and quad stores use different column families and key formats:
+  - Triple stores use 24-byte keys with SPO, POS, OSP indices
+  - Quad stores use 32-byte keys with GSPO, GPOS, SPOG, POSG indices
+
+  To migrate from triple store to quad store:
+
+  1. **Export data from triple store:**
+     ```elixir
+     {:ok, triple_adapter} = ErlangAdapter.open("/path/to/triple_db")
+     # Export all triples to N-Triples or another format
+     ```
+
+  2. **Import into new quad store:**
+     ```elixir
+     {:ok, quad_adapter} = ErlangAdapter.open("/path/to/quad_db", schema: :quad)
+     # Import exported data with graph context (default graph = ID 0)
+     ```
+
+  3. **Verification:**
+     ```elixir
+     {:ok, true} = ErlangAdapter.is_quad_store?(quad_adapter)
+     ```
+
+  ### Why Export/Import?
+
+  - **Key format change**: 24-byte → 32-byte keys requires rewriting all keys
+  - **Index structure change**: 3 indices → 4 indices requires rebuilding indices
+  - **Graph context**: Triples gain graph position (default graph = ID 0)
+  - **Column families**: Old CFs (spo, pos, osp) are not compatible with new CFs (gspo, gpos, spog, posg)
+
+  The export/import process ensures data integrity and allows for:
+  - Adding named graph context to existing triples
+  - Rebuilding all four quad indices from scratch
+  - Proper validation of the new schema
   """
 
   use GenServer
