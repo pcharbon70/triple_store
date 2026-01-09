@@ -4,6 +4,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
 
   These tests verify that the column family configuration matches the
   Rust NIF tuning settings for data compatibility and performance.
+
+  Also includes tests for Section 1.1: Quad Index Architecture
   """
   use ExUnit.Case, async: true
 
@@ -335,6 +337,178 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
 
       # Should not have prefix extractor (range queries, not prefix scans)
       refute ColumnFamilyConfig.has_prefix_extractor?(:numeric_range)
+    end
+  end
+
+  # ===========================================================================
+  # Section 1.1.2: Quad Index Column Family Definitions
+  # ===========================================================================
+
+  describe "1.1.2 Quad Index Column Family Definitions" do
+    test "1.1.2.1 Quad index CFs are defined in type specification" do
+      # The quad index CFs should be valid column families
+      quad_cfs = [:gspo, :gpos, :spog, :posg]
+
+      for cf <- quad_cfs do
+        # Should be able to get options for each quad CF
+        opts = ColumnFamilyConfig.get_cf_options(cf)
+        assert is_list(opts), "Quad CF #{cf} should have valid options"
+      end
+    end
+
+    test "1.1.2.2 Quad index CFs have correct bloom filter settings" do
+      # Quad indices should use 12 bits/key (same as triple indices)
+      assert ColumnFamilyConfig.bloom_bits(:gspo) == 12
+      assert ColumnFamilyConfig.bloom_bits(:gpos) == 12
+      assert ColumnFamilyConfig.bloom_bits(:spog) == 12
+      assert ColumnFamilyConfig.bloom_bits(:posg) == 12
+    end
+
+    test "1.1.2.3 Quad index CFs have correct block size settings" do
+      # Quad indices should use 8KB blocks (same as triple indices)
+      assert ColumnFamilyConfig.block_size(:gspo) == 8 * 1024
+      assert ColumnFamilyConfig.block_size(:gpos) == 8 * 1024
+      assert ColumnFamilyConfig.block_size(:spog) == 8 * 1024
+      assert ColumnFamilyConfig.block_size(:posg) == 8 * 1024
+    end
+
+    test "1.1.2.4 Quad index CFs have prefix extractor" do
+      # Quad indices should have prefix extractor for 64-bit components
+      assert ColumnFamilyConfig.has_prefix_extractor?(:gspo) == true
+      assert ColumnFamilyConfig.has_prefix_extractor?(:gpos) == true
+      assert ColumnFamilyConfig.has_prefix_extractor?(:spog) == true
+      assert ColumnFamilyConfig.has_prefix_extractor?(:posg) == true
+    end
+
+    test "1.1.2.5 Quad schema returns 9 column families (8 CFs + default)" do
+      descriptors = ColumnFamilyConfig.cf_descriptors(:quad)
+
+      # Quad schema should have 9 CFs (4 quad indices + dict + derived + numeric + default)
+      assert length(descriptors) == 9
+    end
+
+    test "1.1.2.6 Quad schema has correct column families" do
+      cf_names = ColumnFamilyConfig.cf_descriptors(:quad) |> Enum.map(fn {name, _opts} -> name end)
+
+      # Should have quad indices
+      assert "gspo" in cf_names
+      assert "gpos" in cf_names
+      assert "spog" in cf_names
+      assert "posg" in cf_names
+
+      # Should NOT have triple indices
+      refute "spo" in cf_names
+      refute "pos" in cf_names
+      refute "osp" in cf_names
+
+      # Should have shared CFs
+      assert "default" in cf_names
+      assert "id2str" in cf_names
+      assert "str2id" in cf_names
+      assert "derived" in cf_names
+      assert "numeric_range" in cf_names
+    end
+
+    test "1.1.2.7 Triple schema returns 8 column families (7 CFs + default)" do
+      descriptors = ColumnFamilyConfig.cf_descriptors(:triple)
+
+      # Triple schema should have 8 CFs (3 indices + dict + derived + numeric + default)
+      assert length(descriptors) == 8
+    end
+
+    test "1.1.2.8 Triple schema has correct column families" do
+      cf_names = ColumnFamilyConfig.cf_descriptors(:triple) |> Enum.map(fn {name, _opts} -> name end)
+
+      # Should have triple indices
+      assert "spo" in cf_names
+      assert "pos" in cf_names
+      assert "osp" in cf_names
+
+      # Should NOT have quad indices
+      refute "gspo" in cf_names
+      refute "gpos" in cf_names
+      refute "spog" in cf_names
+      refute "posg" in cf_names
+
+      # Should have shared CFs
+      assert "default" in cf_names
+      assert "id2str" in cf_names
+      assert "str2id" in cf_names
+      assert "derived" in cf_names
+      assert "numeric_range" in cf_names
+    end
+
+    test "1.1.2.9 Quad index CFs have identical configuration" do
+      gspo_opts = ColumnFamilyConfig.get_cf_options(:gspo)
+      gpos_opts = ColumnFamilyConfig.get_cf_options(:gpos)
+      spog_opts = ColumnFamilyConfig.get_cf_options(:spog)
+      posg_opts = ColumnFamilyConfig.get_cf_options(:posg)
+
+      # All quad index CFs should have identical options
+      assert gspo_opts == gpos_opts
+      assert gpos_opts == spog_opts
+      assert spog_opts == posg_opts
+    end
+
+    test "1.1.2.10 Quad and triple indices have same tuning" do
+      _spo_opts = ColumnFamilyConfig.get_cf_options(:spo)
+      _gspo_opts = ColumnFamilyConfig.get_cf_options(:gspo)
+
+      # Quad indices should have same tuning as triple indices
+      # (same bloom bits, block size, etc.)
+      assert ColumnFamilyConfig.bloom_bits(:spo) == ColumnFamilyConfig.bloom_bits(:gspo)
+      assert ColumnFamilyConfig.block_size(:spo) == ColumnFamilyConfig.block_size(:gspo)
+      assert ColumnFamilyConfig.has_prefix_extractor?(:spo) == ColumnFamilyConfig.has_prefix_extractor?(:gspo)
+    end
+
+    test "1.1.2.11 Column family name conversion includes quad CFs" do
+      # Test atom to string conversion for quad CFs
+      assert ColumnFamilyConfig.cf_name_to_string(:gspo) == "gspo"
+      assert ColumnFamilyConfig.cf_name_to_string(:gpos) == "gpos"
+      assert ColumnFamilyConfig.cf_name_to_string(:spog) == "spog"
+      assert ColumnFamilyConfig.cf_name_to_string(:posg) == "posg"
+
+      # Test string to atom conversion for quad CFs
+      assert ColumnFamilyConfig.cf_string_to_name("gspo") == :gspo
+      assert ColumnFamilyConfig.cf_string_to_name("gpos") == :gpos
+      assert ColumnFamilyConfig.cf_string_to_name("spog") == :spog
+      assert ColumnFamilyConfig.cf_string_to_name("posg") == :posg
+
+      # Test round-trip conversion for quad CFs
+      for cf <- [:gspo, :gpos, :spog, :posg] do
+        str = ColumnFamilyConfig.cf_name_to_string(cf)
+        assert ColumnFamilyConfig.cf_string_to_name(str) == cf
+      end
+    end
+
+    test "1.1.2.12 Column family names function accepts schema type" do
+      triple_names = ColumnFamilyConfig.column_family_names(:triple)
+      quad_names = ColumnFamilyConfig.column_family_names(:quad)
+
+      # Triple should have 8 CFs
+      assert length(triple_names) == 8
+
+      # Quad should have 9 CFs
+      assert length(quad_names) == 9
+
+      # Triple should have spo, pos, osp
+      assert "spo" in triple_names
+      assert "pos" in triple_names
+      assert "osp" in triple_names
+
+      # Quad should have gspo, gpos, spog, posg
+      assert "gspo" in quad_names
+      assert "gpos" in quad_names
+      assert "spog" in quad_names
+      assert "posg" in quad_names
+    end
+
+    test "1.1.2.13 Validation accepts quad column families" do
+      # Quad CFs should be valid
+      assert ColumnFamilyConfig.validate_cf(:gspo) == :ok
+      assert ColumnFamilyConfig.validate_cf(:gpos) == :ok
+      assert ColumnFamilyConfig.validate_cf(:spog) == :ok
+      assert ColumnFamilyConfig.validate_cf(:posg) == :ok
     end
   end
 end
