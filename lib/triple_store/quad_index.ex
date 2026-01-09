@@ -108,12 +108,26 @@ defmodule TripleStore.QuadIndex do
   @typedoc "Quad index type"
   @type quad_index :: :gspo | :gpos | :spog | :posg
 
+  @typedoc "Pattern position: :bound for known values, :var for variables"
+  @type pattern_pos :: :bound | :var
+
+  @typedoc "Quad pattern: {s_pattern, p_pattern, o_pattern, g_pattern}"
+  @type quad_pattern :: {pattern_pos(), pattern_pos(), pattern_pos(), pattern_pos()}
+
   @typedoc "Map of all four index keys for a quad"
   @type encoded_keys :: %{
           gspo: quad_index_key(),
           gpos: quad_index_key(),
           spog: quad_index_key(),
           posg: quad_index_key()
+        }
+
+  @typedoc "Quad pattern match result with index selection info"
+  @type pattern_match :: %{
+          index: quad_index(),
+          prefix: binary(),
+          needs_filter: boolean(),
+          filter_positions: [:s | :p | :o | :g]
         }
 
   # ===========================================================================
@@ -808,4 +822,447 @@ defmodule TripleStore.QuadIndex do
   """
   @spec is_default_graph?(term_id()) :: boolean()
   def is_default_graph?(graph_id) when is_integer(graph_id), do: graph_id == @default_graph_id
+
+  # ===========================================================================
+  # Graph ID Resolution Functions (Section 1.3.3)
+  # ===========================================================================
+
+  @doc """
+  Resolves a graph reference to its term ID.
+
+  Handles both named graphs and the default graph:
+  - `:default` → Returns 0 (default graph ID)
+  - RDF.IRI.t() → Returns the term ID for the graph IRI (lookup only)
+  - RDF.BlankNode.t() → Returns the term ID for the graph blank node (lookup only)
+
+  ## Arguments
+
+  - `graph_ref` - Graph reference: `:default` atom or RDF term (IRI or BlankNode)
+  - `db` - Database reference for dictionary lookup (required for named graphs)
+
+  ## Returns
+
+  - `{:ok, graph_id}` - The resolved graph ID
+  - `:not_found` - If the named graph is not in the dictionary
+  - `{:error, reason}` - If resolution fails
+
+  ## Examples
+
+      # Default graph
+      iex> QuadIndex.resolve_graph_id(:default, db)
+      {:ok, 0}
+
+      # Named graph (lookup only - does not create new entries)
+      # For lookups that might fail, use pattern matching:
+      # case QuadIndex.resolve_graph_id(graph_iri, db) do
+      #   {:ok, graph_id} -> ...
+      #   :not_found -> ... # Graph not in dictionary
+      # end
+  """
+  @spec resolve_graph_id(:default | RDF.IRI.t() | RDF.BlankNode.t(), term()) ::
+          {:ok, term_id()} | :not_found | {:error, term()}
+  def resolve_graph_id(:default, _db), do: {:ok, @default_graph_id}
+
+  def resolve_graph_id(%RDF.IRI{} = iri, db) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, iri)
+  end
+
+  def resolve_graph_id(%RDF.BlankNode{} = bnode, db) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, bnode)
+  end
+
+  def resolve_graph_id(graph_term, _db) do
+    {:error, {:invalid_graph_reference, graph_term}}
+  end
+
+  @doc """
+  Gets or creates a term ID for a named graph.
+
+  This function looks up or creates a dictionary entry for the graph term.
+  Graph terms are encoded as regular RDF terms (IRIs or blank nodes).
+
+  ## Note
+
+  This function requires a Dictionary Manager process (GenServer), not a
+  raw database reference. For read-only lookups, use `resolve_graph_id/2`
+  with a database reference instead.
+
+  ## Arguments
+
+  - `graph_term` - RDF term for the graph (IRI or BlankNode)
+  - `manager` - Dictionary Manager process reference
+
+  ## Returns
+
+  - `{:ok, graph_id}` - The term ID for the graph
+  - `{:error, reason}` - If the operation fails
+
+  ## Examples
+
+      iex> graph = RDF.iri("http://example.org/mygraph")
+      iex> {:ok, graph_id} = QuadIndex.get_or_create_graph_id(graph, manager)
+  """
+  @spec get_or_create_graph_id(RDF.IRI.t() | RDF.BlankNode.t(), GenServer.server()) ::
+          {:ok, term_id()} | {:error, term()}
+  def get_or_create_graph_id(%RDF.IRI{} = iri, manager) do
+    TripleStore.Dictionary.Manager.get_or_create_id(manager, iri)
+  end
+
+  def get_or_create_graph_id(%RDF.BlankNode{} = bnode, manager) do
+    TripleStore.Dictionary.Manager.get_or_create_id(manager, bnode)
+  end
+
+  def get_or_create_graph_id(graph_term, _manager) do
+    {:error, {:invalid_graph_term, graph_term}}
+  end
+
+  @doc """
+  Converts a graph ID back to its RDF term representation.
+
+  This function looks up the graph ID in the dictionary and returns
+  the corresponding RDF term.
+
+  ## Arguments
+
+  - `graph_id` - Graph term ID to look up
+  - `db` - Database reference for dictionary lookup
+
+  ## Returns
+
+  - `{:ok, rdf_term}` - The RDF term (IRI or BlankNode)
+  - `:not_found` - If the graph ID is not in the dictionary
+  - `{:error, reason}` - On database error
+
+  ## Note
+
+  For the default graph (ID 0), this function returns `:not_found`.
+  Callers should use `is_default_graph?(graph_id)` to check for the
+  default graph before calling this function.
+
+  ## Examples
+
+      iex> # Check for default graph first
+      iex> if QuadIndex.is_default_graph?(graph_id) do
+      ...>   :default_graph
+      ...> else
+      ...>   case QuadIndex.id_to_graph_term(graph_id, db) do
+      ...>     {:ok, term} -> term
+      ...>     :not_found -> :unknown_graph
+      ...>   end
+      ...> end
+  """
+  @spec id_to_graph_term(term_id(), term()) ::
+          {:ok, RDF.IRI.t() | RDF.BlankNode.t()} | :not_found | {:error, term()}
+  def id_to_graph_term(0, _db) do
+    # Default graph is a special case - it has no RDF term representation
+    # Callers should use is_default_graph?(0) to check for default graph
+    :not_found
+  end
+
+  def id_to_graph_term(graph_id, db) when is_integer(graph_id) and graph_id > 0 do
+    TripleStore.Dictionary.IdToString.lookup_term(db, graph_id)
+  end
+
+  # ===========================================================================
+  # Quad Pattern Matching (Section 1.4)
+  # ===========================================================================
+
+  @doc """
+  Selects the optimal index and prefix for a quad pattern.
+
+  This function analyzes which positions in the quad pattern are bound
+  (known values) versus variables, then selects the index that provides
+  the most efficient prefix-based scan.
+
+  ## Arguments
+
+  - `pattern` - Quad pattern `{s_pat, p_pat, o_pat, g_pat}` where each is
+    `:bound` or `:var`
+
+  ## Returns
+
+  A map with:
+  - `:index` - The optimal quad index to use (`:gspo`, `:gpos`, `:spog`, `:posg`)
+  - `:prefix` - Binary prefix for the scan (8, 16, or 24 bytes)
+  - `:needs_filter` - Whether post-filtering is required
+  - `:filter_positions` - List of positions that need filtering
+
+  ## Pattern to Index Mapping
+
+  | Pattern | Index | Prefix | Filter |
+  |---------|-------|--------|--------|
+  | `{b,b,b,b}` | GSPO | g-s-p (24) | none |
+  | `{b,b,b,v}` | SPOG | s-p-o (24) | none |
+  | `{b,b,v,b}` | GSPO | g-s (16) | [:p] |
+  | `{b,v,v,b}` | GSPO | g (8) | [:s, :p] |
+  | `{v,b,b,b}` | GPOS | g-p-o (24) | none |
+  | `{v,b,v,b}` | GPOS | g-p (16) | [:o] |
+  | `{v,v,b,b}` | GSPO | g-s (16) | [:p] |
+  | `{b,b,v,v}` | SPOG | s-p (16) | [] |
+  | `{b,v,v,v}` | SPOG | s (8) | [] |
+  | `{v,b,v,v}` | POSG | p (8) | [] |
+  | `{v,v,b,v}` | SPOG | s-o (16) | [:p] |
+  | `{v,v,v,b}` | GSPO | g (8) | [] |
+
+  ## Examples
+
+      iex> # Fully bound pattern - use GSPO with max prefix
+      iex> QuadIndex.select_index_for_quad({:bound, :bound, :bound, :bound})
+      %{index: :gspo, prefix: <<g::64, s::64, p::64>>, needs_filter: false, filter_positions: []}
+
+      iex> # Subject-scoped pattern - use SPOG
+      iex> QuadIndex.select_index_for_quad({:bound, :var, :var, :var})
+      %{index: :spog, prefix: <<s::64>>, needs_filter: false, filter_positions: []}
+
+  Note: Examples above show conceptual return values. Actual values depend on
+  the specific term IDs passed to `build_quad_prefix/2`.
+  """
+  @spec select_index_for_quad(quad_pattern()) :: :no_match | pattern_match()
+  def select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
+      when s_pat in [:bound, :var] and p_pat in [:bound, :var] and
+           o_pat in [:bound, :var] and g_pat in [:bound, :var] do
+    do_select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
+  end
+
+  def select_index_for_quad(_pattern), do: :no_match
+
+  # Private function for index selection logic
+  defp do_select_index_for_quad(pattern) do
+    case pattern do
+      # Fully bound - use GSPO with max prefix
+      {:bound, :bound, :bound, :bound} ->
+        %{index: :gspo, prefix_len: 24, needs_filter: false, filter_positions: []}
+
+      # S-P-O bound, graph unbound - use SPOG (cross-graph subject lookup)
+      {:bound, :bound, :bound, :var} ->
+        %{index: :spog, prefix_len: 24, needs_filter: false, filter_positions: []}
+
+      # G-S bound, pattern unbound - use GSPO with 16-byte prefix, filter on p
+      {:bound, :bound, :var, :bound} ->
+        %{index: :gspo, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
+
+      # G bound only - use GSPO with 8-byte prefix, filter on s, p
+      {:bound, :var, :var, :bound} ->
+        %{index: :gspo, prefix_len: 8, needs_filter: true, filter_positions: [:s, :p]}
+
+      # P-O-G bound - use GPOS
+      {:var, :bound, :bound, :bound} ->
+        %{index: :gpos, prefix_len: 24, needs_filter: false, filter_positions: []}
+
+      # G-P bound - use GPOS with 16-byte prefix, filter on o
+      {:var, :bound, :var, :bound} ->
+        %{index: :gpos, prefix_len: 16, needs_filter: true, filter_positions: [:o]}
+
+      # G-O bound - use GSPO with g prefix, filter on s, p
+      {:var, :var, :bound, :bound} ->
+        %{index: :gspo, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
+
+      # S-P bound - use SPOG with 16-byte prefix
+      {:bound, :bound, :var, :var} ->
+        %{index: :spog, prefix_len: 16, needs_filter: false, filter_positions: []}
+
+      # S bound only - use SPOG with 8-byte prefix
+      {:bound, :var, :var, :var} ->
+        %{index: :spog, prefix_len: 8, needs_filter: false, filter_positions: []}
+
+      # P bound only - use POSG with 8-byte prefix
+      {:var, :bound, :var, :var} ->
+        %{index: :posg, prefix_len: 8, needs_filter: false, filter_positions: []}
+
+      # S-O bound - use SPOG with 16-byte prefix, filter on p
+      {:var, :var, :bound, :var} ->
+        %{index: :spog, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
+
+      # G bound only - use GSPO with 8-byte prefix
+      {:var, :var, :var, :bound} ->
+        %{index: :gspo, prefix_len: 8, needs_filter: false, filter_positions: []}
+
+      # All vars - use GSPO (will full scan, but GSPO is primary)
+      {:var, :var, :var, :var} ->
+        %{index: :gspo, prefix_len: 0, needs_filter: false, filter_positions: []}
+    end
+  end
+
+  @doc """
+  Builds the prefix for a quad pattern with specific bound values.
+
+  This function takes a quad pattern and the corresponding bound term IDs,
+  then constructs the appropriate prefix for the selected index.
+
+  ## Arguments
+
+  - `pattern` - Quad pattern `{s_pat, p_pat, o_pat, g_pat}`
+  - `values` - Map of bound term IDs `%{s: id, p: id, o: id, g: id}`
+    (only contains entries for bound positions)
+
+  ## Returns
+
+  A map with:
+  - `:index` - The quad index to use
+  - `:prefix` - Binary prefix for the scan
+  - `:needs_filter` - Whether post-filtering is required
+  - `:filter_positions` - List of positions that need filtering
+
+  ## Examples
+
+      iex> # Subject-scoped pattern with bound values
+      iex> pattern = {:bound, :var, :var, :var}
+      iex> values = %{s: 100}
+      iex> QuadIndex.build_quad_prefix(pattern, values)
+      %{index: :spog, prefix: <<100::64-big>>, needs_filter: false, filter_positions: []}
+
+      iex> # Graph-scoped pattern with subject, predicate bound
+      iex> pattern = {:bound, :bound, :var, :bound}
+      iex> values = %{s: 100, p: 200, g: 0}
+      iex> QuadIndex.build_quad_prefix(pattern, values)
+      %{index: :gspo, prefix: <<0::64-big, 100::64-big>>, needs_filter: true, filter_positions: [:p]}
+  """
+  @spec build_quad_prefix(quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+          pattern_match()
+  def build_quad_prefix(pattern, values) when is_tuple(pattern) and is_map(values) do
+    selection = select_index_for_quad(pattern)
+
+    case selection do
+      :no_match ->
+        %{index: :gspo, prefix: <<>>, needs_filter: false, filter_positions: []}
+
+      %{index: index, prefix_len: len, needs_filter: needs_filter, filter_positions: filter_positions} ->
+        prefix = build_prefix_for_index(index, pattern, values, len)
+        %{index: index, prefix: prefix, needs_filter: needs_filter, filter_positions: filter_positions}
+    end
+  end
+
+  # Builds prefix for specific index based on pattern and values
+  defp build_prefix_for_index(:gspo, {s_pat, p_pat, _o_pat, g_pat}, values, len) do
+    g = if g_pat == :bound, do: Map.get(values, :g, 0), else: nil
+    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
+    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
+
+    cond do
+      len >= 24 and g != nil and s != nil and p != nil ->
+        <<g::64-big, s::64-big, p::64-big>>
+
+      len >= 16 and g != nil and s != nil ->
+        <<g::64-big, s::64-big>>
+
+      len >= 8 and g != nil ->
+        <<g::64-big>>
+
+      true ->
+        <<>>
+    end
+  end
+
+  defp build_prefix_for_index(:gpos, {_s_pat, p_pat, o_pat, g_pat}, values, len) do
+    g = if g_pat == :bound, do: Map.get(values, :g, 0), else: nil
+    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
+    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
+
+    cond do
+      len >= 24 and g != nil and p != nil and o != nil ->
+        <<g::64-big, p::64-big, o::64-big>>
+
+      len >= 16 and g != nil and p != nil ->
+        <<g::64-big, p::64-big>>
+
+      len >= 8 and g != nil ->
+        <<g::64-big>>
+
+      true ->
+        <<>>
+    end
+  end
+
+  defp build_prefix_for_index(:spog, {s_pat, p_pat, o_pat, _g_pat}, values, len) do
+    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
+    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
+    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
+
+    cond do
+      len >= 24 and s != nil and p != nil and o != nil ->
+        <<s::64-big, p::64-big, o::64-big>>
+
+      len >= 16 and s != nil and p != nil ->
+        <<s::64-big, p::64-big>>
+
+      len >= 16 and s != nil and o != nil ->
+        # s-o pattern (non-contiguous in SPOG)
+        <<s::64-big, p::64-big>>
+
+      len >= 8 and s != nil ->
+        <<s::64-big>>
+
+      true ->
+        <<>>
+    end
+  end
+
+  defp build_prefix_for_index(:posg, {s_pat, p_pat, o_pat, _g_pat}, values, len) do
+    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
+    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
+    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
+
+    cond do
+      len >= 24 and p != nil and o != nil and s != nil ->
+        <<p::64-big, o::64-big, s::64-big>>
+
+      len >= 16 and p != nil and o != nil ->
+        <<p::64-big, o::64-big>>
+
+      len >= 8 and p != nil ->
+        <<p::64-big>>
+
+      true ->
+        <<>>
+    end
+  end
+
+  @doc """
+  Checks if a quad matches a pattern.
+
+  This function is used for post-filtering quads that were returned
+  from a prefix scan but may not match all bound positions in the pattern.
+
+  ## Arguments
+
+  - `quad` - Quad tuple `{s, p, o, g}` with term IDs
+  - `pattern` - Quad pattern `{s_pat, p_pat, o_pat, g_pat}`
+  - `values` - Map of bound term IDs `%{s: id, p: id, o: id, g: id}`
+
+  ## Returns
+
+  - `true` if the quad matches the pattern
+  - `false` otherwise
+
+  ## Examples
+
+      iex> quad = {100, 200, 300, 0}
+      iex> pattern = {:bound, :var, :var, :bound}
+      iex> values = %{s: 100, g: 0}
+      iex> QuadIndex.quad_matches_pattern?(quad, pattern, values)
+      true
+
+      iex> quad = {100, 200, 300, 0}
+      iex> pattern = {:bound, :bound, :var, :bound}
+      iex> values = %{s: 100, p: 999, g: 0}
+      iex> QuadIndex.quad_matches_pattern?(quad, pattern, values)
+      false
+  """
+  @spec quad_matches_pattern?(
+          quad(),
+          quad_pattern(),
+          %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}
+        ) :: boolean()
+  def quad_matches_pattern?({s, p, o, g}, {s_pat, p_pat, o_pat, g_pat}, values) do
+    matches_position?(:s, s, s_pat, values) and
+      matches_position?(:p, p, p_pat, values) and
+      matches_position?(:o, o, o_pat, values) and
+      matches_position?(:g, g, g_pat, values)
+  end
+
+  defp matches_position?(:s, value, :bound, values), do: Map.get(values, :s) == value
+  defp matches_position?(:p, value, :bound, values), do: Map.get(values, :p) == value
+  defp matches_position?(:o, value, :bound, values), do: Map.get(values, :o) == value
+  defp matches_position?(:g, value, :bound, values), do: Map.get(values, :g) == value
+  defp matches_position?(_, _value, :var, _values), do: true
 end
