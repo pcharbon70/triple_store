@@ -244,19 +244,19 @@ Implement pattern-based quad lookup.
 
 Ensure dictionary module works with quad store.
 
-- [ ] 1.6.1.1 Verify ID 0 is never allocated by `get_or_create_id/2`
-- [ ] 1.6.1.2 Add `get_or_create_graph_id/2` as wrapper for graph terms
-- [ ] 1.6.1.3 Ensure graph IRIs use standard IRI encoding
-- [ ] 1.6.1.4 Test blank node graph encoding
+- [x] 1.6.1.1 Verify ID 0 is never allocated by `get_or_create_id/2`
+- [x] 1.6.1.2 Add `get_or_create_graph_id/2` as wrapper for graph terms
+- [x] 1.6.1.3 Ensure graph IRIs use standard IRI encoding
+- [x] 1.6.1.4 Test blank node graph encoding
 
 ### 1.6.2 Term ID Bounds Validation
 
 Extend ID validation for quad compatibility.
 
-- [ ] 1.6.2.1 Add `valid_graph_id?/1` excluding ID 0 for named graphs
-- [ ] 1.6.2.2 Document that ID 0 reserved for default graph
-- [ ] 1.6.2.3 Update sequence counter to skip ID 0
-- [ ] 1.6.2.4 Add tests for ID boundary conditions
+- [x] 1.6.2.1 Add `valid_graph_id?/1` excluding ID 0 for named graphs
+- [x] 1.6.2.2 Document that ID 0 reserved for default graph
+- [x] 1.6.2.3 Verify sequence counter skips ID 0 by design (type tagging)
+- [x] 1.6.2.4 Add tests for ID boundary conditions
 
 ---
 
