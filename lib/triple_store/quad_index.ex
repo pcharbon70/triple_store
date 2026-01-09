@@ -808,4 +808,144 @@ defmodule TripleStore.QuadIndex do
   """
   @spec is_default_graph?(term_id()) :: boolean()
   def is_default_graph?(graph_id) when is_integer(graph_id), do: graph_id == @default_graph_id
+
+  # ===========================================================================
+  # Graph ID Resolution Functions (Section 1.3.3)
+  # ===========================================================================
+
+  @doc """
+  Resolves a graph reference to its term ID.
+
+  Handles both named graphs and the default graph:
+  - `:default` → Returns 0 (default graph ID)
+  - RDF.IRI.t() → Returns the term ID for the graph IRI (lookup only)
+  - RDF.BlankNode.t() → Returns the term ID for the graph blank node (lookup only)
+
+  ## Arguments
+
+  - `graph_ref` - Graph reference: `:default` atom or RDF term (IRI or BlankNode)
+  - `db` - Database reference for dictionary lookup (required for named graphs)
+
+  ## Returns
+
+  - `{:ok, graph_id}` - The resolved graph ID
+  - `:not_found` - If the named graph is not in the dictionary
+  - `{:error, reason}` - If resolution fails
+
+  ## Examples
+
+      # Default graph
+      iex> QuadIndex.resolve_graph_id(:default, db)
+      {:ok, 0}
+
+      # Named graph (lookup only - does not create new entries)
+      # For lookups that might fail, use pattern matching:
+      # case QuadIndex.resolve_graph_id(graph_iri, db) do
+      #   {:ok, graph_id} -> ...
+      #   :not_found -> ... # Graph not in dictionary
+      # end
+  """
+  @spec resolve_graph_id(:default | RDF.IRI.t() | RDF.BlankNode.t(), term()) ::
+          {:ok, term_id()} | :not_found | {:error, term()}
+  def resolve_graph_id(:default, _db), do: {:ok, @default_graph_id}
+
+  def resolve_graph_id(%RDF.IRI{} = iri, db) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, iri)
+  end
+
+  def resolve_graph_id(%RDF.BlankNode{} = bnode, db) do
+    TripleStore.Dictionary.StringToId.lookup_id(db, bnode)
+  end
+
+  def resolve_graph_id(graph_term, _db) do
+    {:error, {:invalid_graph_reference, graph_term}}
+  end
+
+  @doc """
+  Gets or creates a term ID for a named graph.
+
+  This function looks up or creates a dictionary entry for the graph term.
+  Graph terms are encoded as regular RDF terms (IRIs or blank nodes).
+
+  ## Note
+
+  This function requires a Dictionary Manager process (GenServer), not a
+  raw database reference. For read-only lookups, use `resolve_graph_id/2`
+  with a database reference instead.
+
+  ## Arguments
+
+  - `graph_term` - RDF term for the graph (IRI or BlankNode)
+  - `manager` - Dictionary Manager process reference
+
+  ## Returns
+
+  - `{:ok, graph_id}` - The term ID for the graph
+  - `{:error, reason}` - If the operation fails
+
+  ## Examples
+
+      iex> graph = RDF.iri("http://example.org/mygraph")
+      iex> {:ok, graph_id} = QuadIndex.get_or_create_graph_id(graph, manager)
+  """
+  @spec get_or_create_graph_id(RDF.IRI.t() | RDF.BlankNode.t(), GenServer.server()) ::
+          {:ok, term_id()} | {:error, term()}
+  def get_or_create_graph_id(%RDF.IRI{} = iri, manager) do
+    TripleStore.Dictionary.Manager.get_or_create_id(manager, iri)
+  end
+
+  def get_or_create_graph_id(%RDF.BlankNode{} = bnode, manager) do
+    TripleStore.Dictionary.Manager.get_or_create_id(manager, bnode)
+  end
+
+  def get_or_create_graph_id(graph_term, _manager) do
+    {:error, {:invalid_graph_term, graph_term}}
+  end
+
+  @doc """
+  Converts a graph ID back to its RDF term representation.
+
+  This function looks up the graph ID in the dictionary and returns
+  the corresponding RDF term.
+
+  ## Arguments
+
+  - `graph_id` - Graph term ID to look up
+  - `db` - Database reference for dictionary lookup
+
+  ## Returns
+
+  - `{:ok, rdf_term}` - The RDF term (IRI or BlankNode)
+  - `:not_found` - If the graph ID is not in the dictionary
+  - `{:error, reason}` - On database error
+
+  ## Note
+
+  For the default graph (ID 0), this function returns `:not_found`.
+  Callers should use `is_default_graph?(graph_id)` to check for the
+  default graph before calling this function.
+
+  ## Examples
+
+      iex> # Check for default graph first
+      iex> if QuadIndex.is_default_graph?(graph_id) do
+      ...>   :default_graph
+      ...> else
+      ...>   case QuadIndex.id_to_graph_term(graph_id, db) do
+      ...>     {:ok, term} -> term
+      ...>     :not_found -> :unknown_graph
+      ...>   end
+      ...> end
+  """
+  @spec id_to_graph_term(term_id(), term()) ::
+          {:ok, RDF.IRI.t() | RDF.BlankNode.t()} | :not_found | {:error, term()}
+  def id_to_graph_term(0, _db) do
+    # Default graph is a special case - it has no RDF term representation
+    # Callers should use is_default_graph?(0) to check for default graph
+    :not_found
+  end
+
+  def id_to_graph_term(graph_id, db) when is_integer(graph_id) and graph_id > 0 do
+    TripleStore.Dictionary.IdToString.lookup_term(db, graph_id)
+  end
 end

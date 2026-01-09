@@ -454,4 +454,46 @@ defmodule TripleStore.QuadIndexTest do
       refute key_default == key_named
     end
   end
+
+  # ===========================================================================
+  # Section 1.3: Graph ID Representation
+  # ===========================================================================
+
+  describe "1.3.1 Default Graph Identifier" do
+    test "is_default_graph? returns true for ID 0" do
+      assert QuadIndex.is_default_graph?(0) == true
+    end
+
+    test "is_default_graph? returns false for positive IDs" do
+      refute QuadIndex.is_default_graph?(1)
+      refute QuadIndex.is_default_graph?(100)
+      refute QuadIndex.is_default_graph?(0xFFFFFFFFFFFFFFFF)
+    end
+
+    test "default_graph_id returns 0" do
+      assert QuadIndex.default_graph_id() == 0
+    end
+  end
+
+  describe "1.3.3 Graph ID Resolution" do
+    test "resolve_graph_id :default returns 0" do
+      assert {:ok, 0} == QuadIndex.resolve_graph_id(:default, nil)
+    end
+
+    test "resolve_graph_id invalid reference returns error" do
+      assert {:error, {:invalid_graph_reference, _}} =
+        QuadIndex.resolve_graph_id("invalid", nil)
+    end
+
+    test "id_to_graph_term for default graph ID returns :not_found" do
+      assert :not_found == QuadIndex.id_to_graph_term(0, nil)
+    end
+
+    test "id_to_graph_term for positive ID raises without valid db" do
+      # Without a valid database reference, the lookup will fail
+      assert_raise FunctionClauseError, fn ->
+        QuadIndex.id_to_graph_term(12345, nil)
+      end
+    end
+  end
 end
