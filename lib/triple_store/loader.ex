@@ -648,6 +648,138 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Public API - Quad Loading (N-Quads Format)
+  # ===========================================================================
+
+  @doc """
+  Loads an N-Quads file into the quad store.
+
+  Parses the N-Quads file and loads all quads (including named graphs)
+  into the store. Unlike `load_file/3`, this function preserves all
+  named graphs instead of discarding them.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to the N-Quads file
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:progress_callback` - Function called periodically with progress info
+  - `:progress_interval` - Call callback every N batches (default: 10)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Quads with named graphs are loaded with their graph ID > 0
+  - Quads without a graph name (default graph) are loaded with graph ID 0
+  - All named graphs in the file are preserved
+
+  ## Examples
+
+      {:ok, 1000} = Loader.load_nquads_file(db, manager, "data.nq")
+
+      # With bulk mode for large files
+      {:ok, count} = Loader.load_nquads_file(db, manager, "large.nq",
+        batch_size: 50_000,
+        bulk_mode: true
+      )
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :nquads` metadata.
+  """
+  @spec load_nquads_file(db_ref(), manager(), Path.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_nquads_file(db, manager, path, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :file,
+      path: path,
+      format: :nquads
+    }
+
+    with_telemetry(start_metadata, fn ->
+      case parse_nquads_file_full(path) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Loads N-Quads data from a string into the quad store.
+
+  Parses the N-Quads string and loads all quads (including named graphs)
+  into the store.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `content` - N-Quads formatted string
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      nquads = \"\"\"
+      <http://example.org/s> <http://example.org/p> "o" <http://example.org/g> .
+      \"\"\"
+      {:ok, 1} = Loader.load_nquads_string(db, manager, nquads)
+  """
+  @spec load_nquads_string(db_ref(), manager(), String.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_nquads_string(db, manager, content, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :string,
+      path: nil,
+      format: :nquads
+    }
+
+    with_telemetry(start_metadata, fn ->
+      parse_opts = [base_iri: Keyword.get(opts, :base_iri)]
+
+      case parse_nquads_string_full(content, parse_opts) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  # ===========================================================================
   # Private - Core Loading Logic
   # ===========================================================================
 
@@ -706,6 +838,66 @@ defmodule TripleStore.Loader do
             # Data was written successfully but final sync failed.
             # Data is in the WAL and will survive process restart,
             # but may be lost on OS crash or power failure.
+            {:error, {:flush_failed, count, reason}}
+        end
+
+      other ->
+        other
+    end
+  end
+
+  # Load quads - similar to load_triples but uses QuadOperations instead of Index
+  @spec load_quads(db_ref(), manager(), Enumerable.t(), pos_integer(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads(db, manager, quads, batch_size, opts) do
+    alias TripleStore.QuadOperations
+
+    parallel? = Keyword.get(opts, :parallel, @default_parallel)
+    bulk_mode? = Keyword.get(opts, :bulk_mode, false)
+    progress_callback = Keyword.get(opts, :progress_callback)
+    progress_interval = validate_progress_interval(Keyword.get(opts, :progress_interval))
+    start_time = System.monotonic_time(:millisecond)
+
+    # In bulk mode, use sync: false for writes
+    sync? = not bulk_mode?
+
+    progress_opts = %{
+      callback: progress_callback,
+      interval: progress_interval,
+      start_time: start_time
+    }
+
+    write_opts = %{
+      sync: sync?
+    }
+
+    result =
+      if parallel? do
+        stages = resolve_stages(opts)
+        max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
+
+        load_quads_parallel(
+          db,
+          manager,
+          quads,
+          batch_size,
+          stages,
+          max_demand,
+          progress_opts,
+          write_opts
+        )
+      else
+        load_quads_sequential(db, manager, quads, batch_size, progress_opts, write_opts)
+      end
+
+    # In bulk mode, flush WAL after successful load for durability.
+    case result do
+      {:ok, count} when bulk_mode? ->
+        case NIF.flush_wal(db, true) do
+          :ok ->
+            {:ok, count}
+
+          {:error, reason} ->
             {:error, {:flush_failed, count, reason}}
         end
 
@@ -1019,6 +1211,258 @@ defmodule TripleStore.Loader do
     end
   end
 
+  # ===========================================================================
+  # Private - Quad Loading Functions
+  # ===========================================================================
+
+  # Sequential quad loading - similar to triple loading but uses QuadOperations
+  @spec load_quads_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map(), map()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads_sequential(db, manager, quads, batch_size, progress_opts, write_opts) do
+    alias TripleStore.QuadOperations
+
+    quads
+    |> Stream.chunk_every(batch_size)
+    |> Stream.with_index(1)
+    |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
+      batch_start = System.monotonic_time()
+      batch_count = length(batch)
+
+      case process_quad_batch(db, manager, batch, write_opts) do
+        :ok ->
+          new_total = total + batch_count
+          batch_duration = System.monotonic_time() - batch_start
+
+          emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+
+          # Check if we should report progress and handle cancellation
+          case maybe_report_quad_progress(progress_opts, batch_number, new_total) do
+            :continue ->
+              {:cont, {:ok, new_total}}
+
+            :halt ->
+              {:halt, {:halted, new_total}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  # Parallel quad loading - Flow-based pipeline for quads
+  @spec load_quads_parallel(
+          db_ref(),
+          manager(),
+          Enumerable.t(),
+          pos_integer(),
+          pos_integer(),
+          pos_integer(),
+          map(),
+          map()
+        ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads_parallel(
+         db,
+         manager,
+         quads,
+         batch_size,
+         stages,
+         max_demand,
+         progress_opts,
+         write_opts
+       ) do
+    alias TripleStore.QuadOperations
+
+    # Use Agent for error tracking
+    {:ok, error_agent} = Agent.start_link(fn -> nil end)
+    halt_ref = :atomics.new(1, signed: false)
+
+    try do
+      result =
+        quads
+        |> Stream.chunk_every(batch_size)
+        |> Flow.from_enumerable(stages: stages, max_demand: max_demand)
+        # Stage 2: Parallel dictionary encoding for quads
+        |> Flow.map(fn batch ->
+          if halted?(halt_ref) do
+            {:halted, []}
+          else
+            encode_quad_batch(manager, batch, error_agent)
+          end
+        end)
+        # Stage 3: Sequential writing via single partition
+        |> Flow.partition(stages: 1, max_demand: max_demand)
+        |> Flow.reduce(fn -> {0, 0} end, fn encoded_batch, {total, batch_num} ->
+          write_encoded_quad_batch_with_progress(
+            db,
+            encoded_batch,
+            batch_num + 1,
+            error_agent,
+            halt_ref,
+            total,
+            progress_opts,
+            write_opts
+          )
+        end)
+        |> Flow.emit(:state)
+        |> Enum.to_list()
+
+      cond do
+        halted?(halt_ref) ->
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:halted, total}
+
+        error = Agent.get(error_agent, & &1) ->
+          error
+
+        true ->
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:ok, total}
+      end
+    after
+      Agent.stop(error_agent)
+    end
+  end
+
+  # Process a batch of quads for insertion
+  @spec process_quad_batch(db_ref(), manager(), [RDF.Quad.t()], map()) :: :ok | {:error, term()}
+  defp process_quad_batch(db, manager, rdf_quads, write_opts) do
+    alias TripleStore.QuadOperations
+
+    case Adapter.from_rdf_quads(manager, rdf_quads) do
+      {:ok, internal_quads} ->
+        QuadOperations.insert_quads(db, internal_quads, sync: write_opts.sync)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Encode a batch of RDF quads to internal representation
+  @spec encode_quad_batch(manager(), [RDF.Quad.t()], pid()) ::
+          {:ok, list()} | {:error, term()}
+  defp encode_quad_batch(manager, rdf_quads, error_agent) do
+    case Adapter.from_rdf_quads(manager, rdf_quads) do
+      {:ok, internal_quads} ->
+        {:ok, internal_quads}
+
+      {:error, reason} = error ->
+        Agent.update(error_agent, fn _ -> error end)
+        {:error, reason}
+    end
+  end
+
+  # Write encoded quad batch with progress reporting
+  @spec write_encoded_quad_batch_with_progress(
+          db_ref(),
+          {:ok, list()} | {:error, term()} | {:halted, list()},
+          pos_integer(),
+          pid(),
+          reference(),
+          non_neg_integer(),
+          map(),
+          map()
+        ) :: {non_neg_integer(), pos_integer()}
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:error, _reason},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:halted, _quads},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:ok, []},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         db,
+         {:ok, internal_quads},
+         batch_num,
+         _error_agent,
+         halt_ref,
+         total,
+         progress_opts,
+         write_opts
+       ) do
+    batch_start = System.monotonic_time()
+    batch_count = length(internal_quads)
+
+    case TripleStore.QuadOperations.insert_quads(db, internal_quads, sync: write_opts.sync) do
+      :ok ->
+        new_total = total + batch_count
+        batch_duration = System.monotonic_time() - batch_start
+
+        emit_batch_telemetry(batch_count, batch_duration, batch_num, write_opts.sync)
+
+        case maybe_report_quad_progress(progress_opts, batch_num, new_total) do
+          :continue ->
+            {new_total, batch_num}
+
+          :halt ->
+            set_halted(halt_ref)
+            {new_total, batch_num}
+        end
+
+      {:error, _reason} ->
+        {total, batch_num}
+    end
+  end
+
+  # Report progress for quad loading
+  @spec maybe_report_quad_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
+  defp maybe_report_quad_progress(%{callback: nil}, _batch_number, _total), do: :continue
+
+  defp maybe_report_quad_progress(
+         %{callback: callback, interval: interval, start_time: start_time},
+         batch_number,
+         total
+       ) do
+    if rem(batch_number, interval) == 0 do
+      elapsed_ms = System.monotonic_time(:millisecond) - start_time
+      rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
+
+      progress_info = %{
+        quads_loaded: total,
+        batch_number: batch_number,
+        elapsed_ms: elapsed_ms,
+        rate_per_second: rate
+      }
+
+      # Return the callback's result (:continue or :halt)
+      callback.(progress_info)
+    else
+      :continue
+    end
+  end
+
   # Resolve stage count from options, defaulting to CPU cores
   @spec resolve_stages(keyword()) :: pos_integer()
   defp resolve_stages(opts) do
@@ -1189,6 +1633,17 @@ defmodule TripleStore.Loader do
   @spec parse_nquads_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_nquads_string(content, opts) do
     RDF.NQuads.read_string(content, opts) |> extract_default_graph()
+  end
+
+  # Full N-Quads parsing - returns the complete dataset (preserves named graphs)
+  @spec parse_nquads_file_full(Path.t()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_nquads_file_full(path) do
+    RDF.NQuads.read_file(path)
+  end
+
+  @spec parse_nquads_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_nquads_string_full(content, opts) do
+    RDF.NQuads.read_string(content, opts)
   end
 
   @spec parse_trig_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}

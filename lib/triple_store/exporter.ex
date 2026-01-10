@@ -59,6 +59,9 @@ defmodule TripleStore.Exporter do
   @typedoc "Triple pattern for filtering"
   @type pattern :: Index.pattern()
 
+  @typedoc "Quad pattern for filtering: {s_pat, p_pat, o_pat, g_pat} where each is :bound or :var"
+  @type quad_pattern :: {:bound | :var, :bound | :var, :bound | :var, :bound | :var}
+
   @typedoc "RDF serialization format"
   @type format :: :turtle | :ntriples | :nquads | :trig | :rdfxml | :jsonld
 
@@ -246,6 +249,143 @@ defmodule TripleStore.Exporter do
     else
       :ok
     end
+  end
+
+  # ===========================================================================
+  # Public API - Quad Export (N-Quads Format)
+  # ===========================================================================
+
+  @doc """
+  Exports all quads to an N-Quads file.
+
+  Writes all quads (including named graphs) from the quad store
+  to the given file path in N-Quads format.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `path` - Output file path
+
+  ## Options
+
+  - `:pattern` - Quad pattern for filtering (default: all quads)
+  - `:batch_size` - Number of quads to process at once (default: #{@default_batch_size})
+
+  ## Pattern Format
+
+  Each element of the pattern tuple is either:
+  - `:var` - Matches any value (variable)
+  - `{:bound, term_id}` - Matches specific term ID
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads exported
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Quads in the default graph (ID 0) are exported without a graph name
+  - Quads in named graphs (ID > 0) are exported with their graph IRI
+
+  ## Examples
+
+      # Export all quads
+      {:ok, 1000} = Exporter.export_nquads_file(db, "output.nq")
+
+      # Export only quads from a specific graph
+      {:ok, count} = Exporter.export_nquads_file(db, "output.nq",
+        pattern: {:var, :var, :var, {:bound, graph_id}}
+      )
+  """
+  @spec export_nquads_file(db_ref(), Path.t(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def export_nquads_file(db, path, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    # Validate path to prevent path traversal attacks
+    with :ok <- validate_file_path(path) do
+      pattern = Keyword.get(opts, :pattern, {:var, :var, :var, :var})
+      _batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+      with_telemetry(%{operation: :file, path: Path.basename(path), format: :nquads}, fn ->
+        # Get all matching quads
+        values = extract_bound_values(pattern, opts)
+
+        internal_quads = QuadOperations.lookup_quads(db, pattern, values)
+
+        # Convert to RDF.Quads
+        all_rdf_quads =
+          case Adapter.to_rdf_quads(db, internal_quads) do
+            {:ok, rdf_quads} -> rdf_quads
+            _ -> []
+          end
+
+        # Write to file
+        dataset = RDF.Dataset.new(all_rdf_quads)
+
+        case RDF.NQuads.write_file(dataset, path) do
+          :ok -> {:ok, length(all_rdf_quads)}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+    end
+  end
+
+  @doc """
+  Exports all quads to an N-Quads string.
+
+  Serializes all quads (including named graphs) from the quad store
+  to a string in N-Quads format.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+
+  ## Options
+
+  - `:pattern` - Quad pattern for filtering (default: all quads)
+  - `:batch_size` - Number of quads to process at once (default: #{@default_batch_size})
+
+  ## Returns
+
+  - `{:ok, content}` - N-Quads formatted string
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      {:ok, nquads} = Exporter.export_nquads_string(db)
+      String.contains?(nquads, "<http://example.org/subject>")
+  """
+  @spec export_nquads_string(db_ref(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def export_nquads_string(db, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    pattern = Keyword.get(opts, :pattern, {:var, :var, :var, :var})
+    _batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+    with_telemetry(%{operation: :string, path: nil, format: :nquads}, fn ->
+      # Get all matching quads
+      values = extract_bound_values(pattern, opts)
+
+      internal_quads = QuadOperations.lookup_quads(db, pattern, values)
+
+      # Convert to RDF.Quads
+      all_rdf_quads =
+        case Adapter.to_rdf_quads(db, internal_quads) do
+          {:ok, rdf_quads} -> rdf_quads
+          _ -> []
+        end
+
+      # Serialize to string
+      dataset = RDF.Dataset.new(all_rdf_quads)
+
+      case RDF.NQuads.write_string(dataset, []) do
+        {:ok, content} -> {:ok, content}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
   end
 
   # Raw export without telemetry (for use by export_file to avoid double telemetry)
@@ -642,5 +782,62 @@ defmodule TripleStore.Exporter do
 
         reraise e, __STACKTRACE__
     end
+  end
+
+  # ===========================================================================
+  # Private - Quad Export Helpers
+  # ===========================================================================
+
+  # Extracts bound values from opts based on the quad pattern.
+  # For positions that are :bound in the pattern, extracts the corresponding
+  # value from opts. For :var positions, no value is needed.
+  #
+  # This is used for N-Quads export where the pattern specifies which
+  # positions are bound (e.g., {:var, :var, :var, :bound} for graph-scoped export).
+  @spec extract_bound_values(quad_pattern(), keyword()) :: map()
+  defp extract_bound_values({s_pat, p_pat, o_pat, g_pat}, opts) do
+    values = %{}
+
+    values =
+      if s_pat == :bound do
+        case Keyword.get(opts, :subject_id) do
+          nil -> values
+          val -> Map.put(values, :s, val)
+        end
+      else
+        values
+      end
+
+    values =
+      if p_pat == :bound do
+        case Keyword.get(opts, :predicate_id) do
+          nil -> values
+          val -> Map.put(values, :p, val)
+        end
+      else
+        values
+      end
+
+    values =
+      if o_pat == :bound do
+        case Keyword.get(opts, :object_id) do
+          nil -> values
+          val -> Map.put(values, :o, val)
+        end
+      else
+        values
+      end
+
+    values =
+      if g_pat == :bound do
+        case Keyword.get(opts, :graph_id) do
+          nil -> values
+          val -> Map.put(values, :g, val)
+        end
+      else
+        values
+      end
+
+    values
   end
 end
