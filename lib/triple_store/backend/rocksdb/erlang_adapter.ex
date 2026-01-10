@@ -1656,30 +1656,36 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # Validates the database path for security
+
+  # Uses Path.wildcard to safely check if the expanded path is within allowed directories.
+  # This handles path traversal attempts more securely than checking for literal ".."
+  # since Path.expand normalizes "../" sequences and we verify the result is within bounds.
   defp validate_path(path) when is_binary(path) do
     expanded_path = Path.expand(path)
     tmp_dir = Path.expand(System.tmp_dir!())
+    current_dir = Path.expand(File.cwd!())
     is_absolute = String.starts_with?(path, "/")
 
     cond do
-      # Check for path traversal attempts
-      String.contains?(path, "..") ->
-        {:error, :path_traversal_attempt}
-
-      # Check for suspicious characters
+      # Check for null bytes (security: can be used to bypass string checks)
       String.contains?(path, "\0") ->
         {:error, :null_byte_in_path}
 
-      # Allow relative paths (will be expanded to current working directory)
+      # Check if expanded path attempts to escape allowed directories
+      # For relative paths: check they don't escape current directory after expansion
+      not is_absolute and not path_within_directory?(expanded_path, current_dir) ->
+        {:error, :path_traversal_attempt}
+
+      # Allow relative paths that stay within current directory
       not is_absolute ->
         :ok
 
       # Allow paths under /tmp
-      String.starts_with?(expanded_path, tmp_dir) ->
+      path_within_directory?(expanded_path, tmp_dir) ->
         :ok
 
       # Allow paths under the current project directory
-      String.starts_with?(expanded_path, Path.expand(File.cwd!())) ->
+      path_within_directory?(expanded_path, current_dir) ->
         :ok
 
       # Reject other absolute paths for security
@@ -1689,6 +1695,15 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       true ->
         :ok
     end
+  end
+
+  # Checks if a path is within a directory (after expansion)
+  defp path_within_directory?(path, directory) do
+    # Ensure both paths end with / for proper prefix comparison
+    dir_with_slash = directory <> "/"
+
+    # Check if path starts with directory (or equals it)
+    path == directory or String.starts_with?(path <> "/", dir_with_slash)
   end
 
   # Ensures the database directory exists
