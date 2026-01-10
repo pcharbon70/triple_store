@@ -13,6 +13,7 @@ defmodule TripleStore.Loader do
   - **Sequential fallback**: Uses `Enum.reduce_while` when parallel mode disabled
   - **Progress reporting**: Emits Telemetry events for monitoring
   - **Format support**: Turtle, N-Triples, N-Quads, RDF/XML, TriG, JSON-LD
+  - **Named graphs**: Full quad support for loading data into specific graphs
   - **Path validation**: File paths are validated to prevent path traversal attacks
   - **File size limits**: Configurable maximum file size (default 100MB)
 
@@ -29,6 +30,33 @@ defmodule TripleStore.Loader do
   | Bulk import | 100,000 | ~7.2 MB |
 
   Memory usage estimate: batch_size × 3 indices × 24 bytes per key ≈ 72 bytes/triple
+
+  ## Quad and Graph Support
+
+  The loader supports both triple and quad formats. For quad-capable stores:
+
+  - **N-Quads (`.nq`)**: Loads all quads including named graphs
+  - **TriG (`.trig`)**: Loads all quads including named graphs
+  - **Turtle/N-Triples**: Can be loaded to specific named graphs using `:graph` option
+
+  ### Loading to Named Graphs
+
+  For formats without native graph support (Turtle, N-Triples), use the `:graph` option:
+
+      # Load Turtle file to named graph
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: RDF.iri("http://example.org/mygraph"))
+
+      # Load to default graph explicitly
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: :default)
+
+  ### Graph-Scoped Loading Functions
+
+  For more advanced graph-scoped loading, see:
+
+  - `load_to_graph/5` - Load a file to a specific named graph
+  - `load_files_to_graphs/3` - Load multiple files to multiple graphs
 
   ### Memory Budget Options
 
@@ -148,14 +176,10 @@ defmodule TripleStore.Loader do
 
   ## Important Limitations
 
-  ### Named Graphs Not Supported
+  ### Triple Store Mode
 
-  When loading N-Quads (`.nq`) or TriG (`.trig`) files, **only the default graph
-  is loaded**. Named graphs are discarded. This is a current architectural
-  limitation of the triple store which stores triples, not quads.
-
-  If you need named graph support for provenance tracking or SPARQL named graph
-  queries, this will be addressed in Phase 2 (SPARQL Engine) with quad storage.
+  When using the triple store schema (default), only the default graph is supported.
+  Named graphs require the quad store schema (`schema: :quad` option when opening the database).
 
   ## Telemetry Events
 
@@ -177,11 +201,15 @@ defmodule TripleStore.Loader do
 
   ## Usage
 
-      # Load from an RDF.Graph
+      # Load from an RDF.Graph (to default graph)
       {:ok, count} = Loader.load_graph(db, manager, graph)
 
       # Load from a file (format auto-detected)
       {:ok, count} = Loader.load_file(db, manager, "data.ttl")
+
+      # Load to named graph
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: RDF.iri("http://example.org/mygraph"))
 
       # With custom options
       {:ok, count} = Loader.load_graph(db, manager, graph,
@@ -246,7 +274,8 @@ defmodule TripleStore.Loader do
           progress_interval: pos_integer(),
           format: atom() | nil,
           base_iri: String.t() | nil,
-          max_file_size: pos_integer() | nil
+          max_file_size: pos_integer() | nil,
+          graph: RDF.IRI.t() | RDF.BlankNode.t() | :default | nil
         ]
 
   @typedoc """
@@ -318,24 +347,27 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @doc """
-  Loads an RDF.Graph into the triple store.
+  Loads an RDF.Graph or RDF.Dataset into the store.
 
-  Converts all triples in the graph to internal representation and
+  Converts all triples in the graph/dataset to internal representation and
   inserts them in batches for efficient storage.
 
   ## Arguments
 
   - `db` - Database reference
   - `manager` - Dictionary manager process
-  - `graph` - RDF.Graph to load
+  - `graph_or_dataset` - RDF.Graph or RDF.Dataset to load
 
   ## Options
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). When loading
+    an RDF.Graph, all triples are loaded to the specified graph. When loading an
+    RDF.Dataset, this option is ignored and graphs in the dataset are preserved.
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples loaded
+  - `{:ok, count}` - Number of triples/quads loaded
   - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
   - `{:error, reason}` - On failure
   - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
@@ -345,26 +377,84 @@ defmodule TripleStore.Loader do
       iex> graph = RDF.Graph.new([{~I<http://ex.org/s>, ~I<http://ex.org/p>, "o"}])
       iex> {:ok, 1} = Loader.load_graph(db, manager, graph)
 
+      iex> # Load to named graph
+      iex> Loader.load_graph(db, manager, graph, graph: RDF.iri("http://example.org/g"))
+
   ## Telemetry
 
   Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
   and `[:triple_store, :loader, :stop]` events.
   """
-  @spec load_graph(db_ref(), manager(), RDF.Graph.t(), load_opts()) ::
+  @spec load_graph(db_ref(), manager(), RDF.Graph.t() | RDF.Dataset.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
-  def load_graph(db, manager, %RDF.Graph{} = graph, opts \\ []) do
+
+  def load_graph(db, manager, graph_or_dataset, opts \\ [])
+  def load_graph(db, manager, %RDF.Dataset{} = dataset, opts) do
     batch_size = resolve_batch_size(opts)
 
     start_metadata = %{
-      source: :graph,
+      source: :dataset,
       path: nil,
-      triple_count: RDF.Graph.triple_count(graph)
+      graph_count: RDF.Dataset.graph_count(dataset)
     }
 
     with_telemetry(start_metadata, fn ->
-      triples = RDF.Graph.triples(graph)
-      load_triples(db, manager, triples, batch_size, opts)
+      quads = RDF.Dataset.quads(dataset)
+      load_quads(db, manager, quads, batch_size, opts)
     end)
+  end
+
+  def load_graph(db, manager, %RDF.Graph{} = graph, opts) do
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
+
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+
+    batch_size = resolve_batch_size(opts)
+
+    cond do
+      # Named graph specified - load to specified named graph
+      graph_opt && graph_opt != :default ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          quads = triples_to_quads(triples, graph_opt)
+          load_quads(db, manager, quads, batch_size, opts)
+        end)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          quads = triples_to_quads(triples, :default)
+          load_quads(db, manager, quads, batch_size, opts)
+        end)
+
+      # Triple store - use original triple loading logic
+      true ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          load_triples(db, manager, triples, batch_size, opts)
+        end)
+    end
   end
 
   # ===========================================================================
@@ -388,6 +478,9 @@ defmodule TripleStore.Loader do
   - `:format` - Force specific format (`:turtle`, `:ntriples`, `:rdfxml`, etc.)
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
   - `:max_file_size` - Maximum file size in bytes (default: 100MB)
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). For Turtle/N-Triples,
+    all triples are loaded to the specified graph. For N-Quads/TriG with native graphs, this option
+    is ignored and graphs in the file are preserved.
 
   ## Supported Formats
 
@@ -423,20 +516,52 @@ defmodule TripleStore.Loader do
   @spec load_file(db_ref(), manager(), Path.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_file(db, manager, path, opts \\ []) do
-    batch_size = resolve_batch_size(opts)
-    max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
 
-    start_metadata = %{source: :file, path: Path.basename(path)}
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
 
-    with_telemetry(start_metadata, fn ->
-      with {:ok, validated_path} <- validate_file_path(path),
-           {:ok, format} <- detect_format(validated_path, opts),
-           :ok <- check_file_size(validated_path, max_file_size),
-           {:ok, graph} <- parse_file(validated_path, format) do
-        triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size, opts)
-      end
-    end)
+    cond do
+      # Named graph specified - delegate to load_to_graph
+      graph_opt && graph_opt != :default ->
+        load_to_graph(db, manager, path, graph_opt, opts)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        batch_size = resolve_batch_size(opts)
+        max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+
+        start_metadata = %{source: :file, path: Path.basename(path)}
+
+        with_telemetry(start_metadata, fn ->
+          with {:ok, validated_path} <- validate_file_path(path),
+               {:ok, format} <- detect_format(validated_path, opts),
+               :ok <- check_file_size(validated_path, max_file_size),
+               {:ok, graph} <- parse_file(validated_path, format) do
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, :default)
+            load_quads(db, manager, quads, batch_size, opts)
+          end
+        end)
+
+      # Triple store - use original triple loading logic
+      true ->
+        batch_size = resolve_batch_size(opts)
+        max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+
+        start_metadata = %{source: :file, path: Path.basename(path)}
+
+        with_telemetry(start_metadata, fn ->
+          with {:ok, validated_path} <- validate_file_path(path),
+               {:ok, format} <- detect_format(validated_path, opts),
+               :ok <- check_file_size(validated_path, max_file_size),
+               {:ok, graph} <- parse_file(validated_path, format) do
+            triples = RDF.Graph.triples(graph)
+            load_triples(db, manager, triples, batch_size, opts)
+          end
+        end)
+    end
   end
 
   @doc """
@@ -455,6 +580,8 @@ defmodule TripleStore.Loader do
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
   - `:base_iri` - Base IRI for relative URI resolution
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). For Turtle/N-Triples,
+    all triples are loaded to the specified graph.
 
   ## Returns
 
@@ -474,18 +601,56 @@ defmodule TripleStore.Loader do
   @spec load_string(db_ref(), manager(), String.t(), atom(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_string(db, manager, content, format, opts \\ []) do
-    batch_size = resolve_batch_size(opts)
-    base_iri = Keyword.get(opts, :base_iri)
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
 
-    parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
 
-    case parse_string(content, format, parse_opts) do
-      {:ok, graph} ->
-        triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size, opts)
+    cond do
+      # Named graph specified - load as quads
+      graph_opt && graph_opt != :default ->
+        case parse_string(content, format, Keyword.take(opts, [:base_iri])) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, graph_opt)
+            batch_size = resolve_batch_size(opts)
+            load_quads(db, manager, quads, batch_size, opts)
 
-      {:error, _} = error ->
-        error
+          {:error, _} = error ->
+            error
+        end
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        base_iri = Keyword.get(opts, :base_iri)
+        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+
+        case parse_string(content, format, parse_opts) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, :default)
+            batch_size = resolve_batch_size(opts)
+            load_quads(db, manager, quads, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
+
+      # Triple store - use original triple loading logic
+      true ->
+        batch_size = resolve_batch_size(opts)
+        base_iri = Keyword.get(opts, :base_iri)
+        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+
+        case parse_string(content, format, parse_opts) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            load_triples(db, manager, triples, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
     end
   end
 
@@ -508,6 +673,8 @@ defmodule TripleStore.Loader do
   ## Options
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). All triples
+    are loaded to the specified graph.
 
   ## Returns
 
@@ -527,8 +694,29 @@ defmodule TripleStore.Loader do
   @spec load_stream(db_ref(), manager(), Enumerable.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_stream(db, manager, triple_stream, opts \\ []) do
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
+
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+
     batch_size = resolve_batch_size(opts)
-    load_triples(db, manager, triple_stream, batch_size, opts)
+
+    cond do
+      # Named graph specified - load as quads
+      graph_opt && graph_opt != :default ->
+        quads = triples_to_quads(triple_stream, graph_opt)
+        load_quads(db, manager, quads, batch_size, opts)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        quads = triples_to_quads(triple_stream, :default)
+        load_quads(db, manager, quads, batch_size, opts)
+
+      # Triple store - use original triple loading logic
+      true ->
+        load_triples(db, manager, triple_stream, batch_size, opts)
+    end
   end
 
   # ===========================================================================
@@ -1156,9 +1344,20 @@ defmodule TripleStore.Loader do
   # Convert a stream of triples to quads with a specific graph term
   # The graph term is used directly (IRI or BlankNode), and will be
   # converted to graph_id by Adapter.from_rdf_quads during encoding
-  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t()) :: Enumerable.t()
+  # :default is converted to nil which RDF.ex uses for the default graph
+  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t() | :default) :: Enumerable.t()
+  defp triples_to_quads(triples, :default) do
+    Stream.map(triples, fn
+      {s, p, o} -> RDF.Quad.new(s, p, o, nil)
+      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, nil)
+    end)
+  end
+
   defp triples_to_quads(triples, graph_term) do
-    Stream.map(triples, fn {s, p, o} -> {s, p, o, graph_term} end)
+    Stream.map(triples, fn
+      {s, p, o} -> RDF.Quad.new(s, p, o, graph_term)
+      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, graph_term)
+    end)
   end
 
   # Sequential multi-graph loading
