@@ -388,6 +388,161 @@ defmodule TripleStore.Exporter do
     end)
   end
 
+  # ===========================================================================
+  # Public API - TriG Export
+  # ===========================================================================
+
+  @doc """
+  Exports all quads to a TriG file.
+
+  Writes all quads (including named graphs) from the quad store
+  to the given file path in TriG format.
+
+  TriG is a Turtle-like RDF syntax that supports named graphs using
+  the GRAPH keyword. This format is more human-readable than N-Quads.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `path` - Output file path
+
+  ## Options
+
+  - `:pattern` - Quad pattern for filtering (default: all quads)
+  - `:batch_size` - Number of quads to process at once (default: #{@default_batch_size})
+  - `:base_iri` - Base IRI for the graph
+  - `:prefixes` - Prefix mappings for serialization
+
+  ## Pattern Format
+
+  Each element of the pattern tuple is either:
+  - `:var` - Matches any value (variable)
+  - `:bound` - Matches specific term ID
+
+  For pattern-based filtering, provide the corresponding ID options:
+  - `:subject_id` - For bound subject position
+  - `:predicate_id` - For bound predicate position
+  - `:object_id` - For bound object position
+  - `:graph_id` - For bound graph position
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads exported
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Quads in the default graph (ID 0) are exported outside GRAPH blocks
+  - Quads in named graphs (ID > 0) are exported within GRAPH <iri> { ... } blocks
+
+  ## Examples
+
+      # Export all quads
+      {:ok, 1000} = Exporter.export_trig_file(db, "output.trig")
+
+      # Export only quads from a specific graph
+      {:ok, count} = Exporter.export_trig_file(db, "output.trig",
+        pattern: {:var, :var, :var, :bound},
+        graph_id: graph_id
+      )
+  """
+  @spec export_trig_file(db_ref(), Path.t(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def export_trig_file(db, path, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    # Validate path to prevent path traversal attacks
+    with :ok <- validate_file_path(path) do
+      pattern = Keyword.get(opts, :pattern, {:var, :var, :var, :var})
+      _batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+      with_telemetry(%{operation: :file, path: Path.basename(path), format: :trig}, fn ->
+        # Get all matching quads
+        values = extract_bound_values(pattern, opts)
+
+        internal_quads = QuadOperations.lookup_quads(db, pattern, values)
+
+        # Convert to RDF.Quads
+        all_rdf_quads =
+          case Adapter.to_rdf_quads(db, internal_quads) do
+            {:ok, rdf_quads} -> rdf_quads
+            _ -> []
+          end
+
+        # Write to file
+        dataset = RDF.Dataset.new(all_rdf_quads)
+
+        trig_opts = build_trig_opts(opts)
+
+        case RDF.TriG.write_file(dataset, path, trig_opts) do
+          :ok -> {:ok, length(all_rdf_quads)}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+    end
+  end
+
+  @doc """
+  Exports all quads to a TriG string.
+
+  Serializes all quads (including named graphs) from the quad store
+  to a string in TriG format.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+
+  ## Options
+
+  - `:pattern` - Quad pattern for filtering (default: all quads)
+  - `:batch_size` - Number of quads to process at once (default: #{@default_batch_size})
+  - `:base_iri` - Base IRI for the graph
+  - `:prefixes` - Prefix mappings for serialization
+
+  ## Returns
+
+  - `{:ok, content}` - TriG formatted string
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      {:ok, trig} = Exporter.export_trig_string(db)
+      String.contains?(trig, "GRAPH <http://example.org/mygraph>")
+  """
+  @spec export_trig_string(db_ref(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def export_trig_string(db, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    pattern = Keyword.get(opts, :pattern, {:var, :var, :var, :var})
+    _batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+    with_telemetry(%{operation: :string, path: nil, format: :trig}, fn ->
+      # Get all matching quads
+      values = extract_bound_values(pattern, opts)
+
+      internal_quads = QuadOperations.lookup_quads(db, pattern, values)
+
+      # Convert to RDF.Quads
+      all_rdf_quads =
+        case Adapter.to_rdf_quads(db, internal_quads) do
+          {:ok, rdf_quads} -> rdf_quads
+          _ -> []
+        end
+
+      # Serialize to string
+      dataset = RDF.Dataset.new(all_rdf_quads)
+
+      trig_opts = build_trig_opts(opts)
+
+      case RDF.TriG.write_string(dataset, trig_opts) do
+        {:ok, content} -> {:ok, content}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+  end
+
   # Raw export without telemetry (for use by export_file to avoid double telemetry)
   defp do_export_graph_raw(db, pattern, opts) do
     with {:ok, internal_triples} <- Index.lookup_all(db, pattern) do
@@ -839,5 +994,29 @@ defmodule TripleStore.Exporter do
       end
 
     values
+  end
+
+  # ===========================================================================
+  # Helper Functions - TriG Options
+  # ===========================================================================
+
+  @doc """
+  Extracts TriG-specific options from the opts keyword list.
+
+  Returns a keyword list containing only the options that are relevant
+  for TriG serialization (base_iri, prefixes).
+
+  ## Arguments
+
+  - `opts` - Full options keyword list
+
+  ## Returns
+
+  - Keyword list with TriG-specific options
+  """
+  @spec build_trig_opts(keyword()) :: keyword()
+  defp build_trig_opts(opts) do
+    opts
+    |> Keyword.take([:base_iri, :prefixes])
   end
 end

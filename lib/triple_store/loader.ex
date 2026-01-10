@@ -780,6 +780,147 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Public API - TriG Loading
+  # ===========================================================================
+
+  @doc """
+  Loads TriG format file into the quad store.
+
+  TriG is a Turtle-like RDF syntax that supports named graphs using
+  the GRAPH keyword. This function loads all quads from the TriG file,
+  including both named graphs and the default graph.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to TriG file
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+  - `:progress_callback` - Callback function for progress updates
+  - `:progress_interval` - Report progress every N batches (default: #{@default_progress_interval})
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Triples inside `GRAPH <iri> { ... }` blocks are loaded into that named graph
+  - Triples outside any GRAPH block are loaded into the default graph (ID 0)
+  - Named graph IRIs are automatically registered in the dictionary
+
+  ## Examples
+
+      {:ok, 42} = Loader.load_trig_file(db, manager, "data.trig")
+
+      # With progress callback
+      {:ok, count} = Loader.load_trig_file(db, manager, "large.trig",
+        progress_callback: fn info -> IO.inspect(info) :continue end
+      )
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :trig` metadata.
+  """
+  @spec load_trig_file(db_ref(), manager(), Path.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_trig_file(db, manager, path, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :file,
+      path: path,
+      format: :trig
+    }
+
+    with_telemetry(start_metadata, fn ->
+      case parse_trig_file_full(path) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Loads TriG format data from a string into the quad store.
+
+  Parses the TriG string and loads all quads (including named graphs)
+  into the store.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `content` - TriG formatted string
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+  - `:progress_callback` - Callback function for progress updates
+  - `:progress_interval` - Report progress every N batches (default: #{@default_progress_interval})
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      trig = \"\"\"
+      @prefix ex: <http://example.org/>.
+
+      GRAPH <http://example.org/g1> {
+        ex:s1 ex:p "o1" .
+      }
+
+      ex:s2 ex:p "o2" .
+      \"\"\"
+
+      {:ok, 2} = Loader.load_trig_string(db, manager, trig)
+  """
+  @spec load_trig_string(db_ref(), manager(), String.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_trig_string(db, manager, content, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :string,
+      path: nil,
+      format: :trig
+    }
+
+    with_telemetry(start_metadata, fn ->
+      parse_opts = [base_iri: Keyword.get(opts, :base_iri)]
+
+      case parse_trig_string_full(content, parse_opts) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  # ===========================================================================
   # Private - Core Loading Logic
   # ===========================================================================
 
@@ -1644,6 +1785,17 @@ defmodule TripleStore.Loader do
   @spec parse_nquads_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
   defp parse_nquads_string_full(content, opts) do
     RDF.NQuads.read_string(content, opts)
+  end
+
+  # Full TriG parsing - returns the complete dataset (preserves named graphs)
+  @spec parse_trig_file_full(Path.t()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_trig_file_full(path) do
+    RDF.TriG.read_file(path)
+  end
+
+  @spec parse_trig_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_trig_string_full(content, opts) do
+    RDF.TriG.read_string(content, opts)
   end
 
   @spec parse_trig_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}
