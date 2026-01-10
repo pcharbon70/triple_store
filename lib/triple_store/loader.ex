@@ -921,6 +921,345 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Public API - Graph-Scoped Loading
+  # ===========================================================================
+
+  @doc """
+  Loads an RDF file into a specific named graph.
+
+  This function loads RDF data (Turtle, N-Triples, etc.) into a specific
+  named graph in the quad store. Unlike standard loading which puts data
+  in the default graph, this function forces all triples into the specified
+  graph.
+
+  This is useful for:
+  - Loading Turtle/N-Triples files into named graphs
+  - Organizing data from different sources into separate graphs
+  - Building multi-dataset stores from single-format files
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to the RDF file
+  - `graph` - Target graph (RDF.IRI or RDF.BlankNode)
+
+  ## Options
+
+  - `:format` - Force specific format (`:turtle`, `:ntriples`, etc.)
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:clear_graph` - Clear target graph before loading (default: false)
+  - `:progress_callback` - Callback function for progress updates
+  - `:max_file_size` - Maximum file size in bytes (default: 100MB)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Load Turtle file to named graph
+      {:ok, 42} = Loader.load_to_graph(db, manager, "data.ttl",
+        RDF.iri("http://example.org/graph1"))
+
+      # Load with graph clearing
+      {:ok, count} = Loader.load_to_graph(db, manager, "update.nt",
+        RDF.iri("http://example.org/graph1"), clear_graph: true)
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :graph_scoped` metadata.
+  """
+  @spec load_to_graph(
+          db_ref(),
+          manager(),
+          Path.t(),
+          RDF.IRI.t() | RDF.BlankNode.t(),
+          load_opts()
+        ) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_to_graph(db, manager, path, graph, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+    max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+    clear_graph? = Keyword.get(opts, :clear_graph, false)
+
+    start_metadata = %{
+      source: :file,
+      path: Path.basename(path),
+      format: :graph_scoped,
+      graph: graph
+    }
+
+    with_telemetry(start_metadata, fn ->
+      with {:ok, validated_path} <- validate_file_path(path),
+           {:ok, format} <- detect_format(validated_path, opts),
+           :ok <- check_file_size(validated_path, max_file_size) do
+        # Clear graph if requested
+        if clear_graph? do
+          alias TripleStore.QuadOperations
+          QuadOperations.delete_graph(db, manager, graph)
+        else
+          :ok
+        end
+
+        # Parse file and convert to quads with target graph
+        case parse_file(validated_path, format) do
+          {:ok, %RDF.Graph{} = rdf_graph} ->
+            triples = RDF.Graph.triples(rdf_graph)
+            quads = triples_to_quads(triples, graph)
+            load_quads(db, manager, quads, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
+      end
+    end)
+  end
+
+  @doc """
+  Loads multiple RDF files into separate named graphs.
+
+  This function accepts a map where keys are graph terms and values are
+  file paths. Each file is loaded into its corresponding graph.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `graph_files` - Map of `%{graph_term => file_path}`
+
+  ## Options
+
+  - `:parallel` - Enable parallel loading (default: false)
+  - `:on_conflict` - Behavior on error: `:continue` (default), `:stop`, or `:abort`
+  - `:batch_size` - Number of quads per batch
+  - `:bulk_mode` - Enable bulk loading optimizations
+  - `:clear_graphs` - Clear target graphs before loading (default: false)
+  - `:progress_callback` - Callback with per-file progress
+
+  ## Returns
+
+  - `{:ok, summary}` - Map of `%{graph_term => quad_count}`
+  - `{:error, reason}` - On failure (depends on `:on_conflict`)
+
+  ## Examples
+
+      graph_files = %{
+        RDF.iri("http://example.org/g1") => "data1.ttl",
+        RDF.iri("http://example.org/g2") => "data2.nt"
+      }
+
+      {:ok, summary} = Loader.load_files_to_graphs(db, manager, graph_files)
+
+  ## Conflict Modes
+
+  - `:continue` - Continue loading other files on error (default)
+  - `:stop` - Stop loading on first error, return partial results
+  - `:abort` - Abort entire operation, rollback no data (not yet implemented)
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :multi_graph_start]` on start and
+  `[:triple_store, :loader, :multi_graph_stop]` on completion.
+  """
+  @spec load_files_to_graphs(
+          db_ref(),
+          manager(),
+          %{(RDF.IRI.t() | RDF.BlankNode.t()) => Path.t()},
+          keyword()
+        ) ::
+          {:ok, %{(RDF.IRI.t() | RDF.BlankNode.t()) => non_neg_integer()}}
+          | {:error, term()}
+  def load_files_to_graphs(db, manager, graph_files, opts \\ []) do
+    # Validate inputs - return early for empty map
+    if map_size(graph_files) == 0 do
+      {:ok, %{}}
+    else
+      do_load_files_to_graphs(db, manager, graph_files, opts)
+    end
+  end
+
+  # Internal implementation of load_files_to_graphs
+  defp do_load_files_to_graphs(db, manager, graph_files, opts) do
+    parallel? = Keyword.get(opts, :parallel, false)
+    on_conflict = Keyword.get(opts, :on_conflict, :continue)
+    clear_graphs? = Keyword.get(opts, :clear_graphs, false)
+    progress_callback = Keyword.get(opts, :progress_callback)
+
+    start_metadata = %{
+      source: :multi_graph,
+      file_count: map_size(graph_files),
+      parallel: parallel?
+    }
+
+    emit_start_telemetry(start_metadata)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    result =
+      if parallel? do
+        load_files_to_graphs_parallel(db, manager, graph_files, opts, clear_graphs?)
+      else
+        load_files_to_graphs_sequential(
+          db,
+          manager,
+          graph_files,
+          opts,
+          clear_graphs?,
+          on_conflict,
+          progress_callback,
+          start_time
+        )
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      {:ok, summary} ->
+        :telemetry.execute(
+          [:triple_store, :loader, :multi_graph_stop],
+          %{duration: duration, count: map_size(summary)},
+          %{status: :ok}
+        )
+
+        {:ok, summary}
+
+      {:error, _} = error ->
+        :telemetry.execute(
+          [:triple_store, :loader, :multi_graph_stop],
+          %{duration: duration},
+          %{status: :error}
+        )
+
+        error
+    end
+  end
+
+  # ===========================================================================
+  # Private - Graph-Scoped Loading Helpers
+  # ===========================================================================
+
+  # Emit telemetry start event for multi-graph loading
+  defp emit_start_telemetry(metadata) do
+    :telemetry.execute(
+      [:triple_store, :loader, :multi_graph_start],
+      %{system_time: System.system_time()},
+      metadata
+    )
+  end
+
+  # Convert a stream of triples to quads with a specific graph term
+  # The graph term is used directly (IRI or BlankNode), and will be
+  # converted to graph_id by Adapter.from_rdf_quads during encoding
+  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t()) :: Enumerable.t()
+  defp triples_to_quads(triples, graph_term) do
+    Stream.map(triples, fn {s, p, o} -> {s, p, o, graph_term} end)
+  end
+
+  # Sequential multi-graph loading
+  defp load_files_to_graphs_sequential(
+         db,
+         manager,
+         graph_files,
+         opts,
+         clear_graphs?,
+         on_conflict,
+         progress_callback,
+         start_time
+       ) do
+    Enum.reduce_while(graph_files, {:ok, %{}}, fn {graph, path}, {:ok, summary} ->
+      # Call progress callback if provided
+      callback_result =
+        if progress_callback do
+          progress_info = %{
+            graph: graph,
+            file: Path.basename(path),
+            loaded_so_far: map_size(summary),
+            total_files: map_size(graph_files),
+            elapsed_ms: System.monotonic_time(:millisecond) - start_time
+          }
+
+          case progress_callback.(progress_info) do
+            :continue -> :continue
+            :halt -> :halt
+          end
+        else
+          :continue
+        end
+
+      # Check if callback requested halt
+      if callback_result == :halt do
+        {:halt, {:ok, summary}}
+      else
+        # Load single file to graph
+        load_opts =
+          opts
+          |> Keyword.put(:clear_graph, clear_graphs?)
+          |> Keyword.delete(:on_conflict)
+          |> Keyword.delete(:progress_callback)
+
+        case load_to_graph(db, manager, path, graph, load_opts) do
+          {:ok, count} ->
+            {:cont, {:ok, Map.put(summary, graph, count)}}
+
+          {:halted, count} ->
+            {:cont, {:ok, Map.put(summary, graph, count)}}
+
+          {:error, reason} ->
+            case on_conflict do
+              :continue ->
+                {:cont, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+              :stop ->
+                {:halt, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+              :abort ->
+                {:halt, {:error, {:load_error, graph, path, reason}}}
+            end
+        end
+      end
+    end)
+  end
+
+  # Parallel multi-graph loading using Task.async_stream
+  defp load_files_to_graphs_parallel(db, manager, graph_files, opts, clear_graphs?) do
+    # Note: Parallel loading requires caution with Dictionary Manager access
+    # For now, use Task.async_stream with limited concurrency
+    load_opts =
+      opts
+      |> Keyword.put(:clear_graph, clear_graphs?)
+      |> Keyword.delete(:on_conflict)
+      |> Keyword.delete(:progress_callback)
+      |> Keyword.delete(:parallel)
+
+    graph_files
+    |> Task.async_stream(
+      fn {graph, path} ->
+        case load_to_graph(db, manager, path, graph, load_opts) do
+          {:ok, count} -> {graph, count}
+          {:halted, count} -> {graph, count}
+          {:error, reason} -> {graph, {:error, reason}}
+        end
+      end,
+      max_concurrency: System.schedulers_online(),
+      timeout: :infinity,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce_while({:ok, %{}}, fn
+      {:ok, {graph, result}}, {:ok, summary} ->
+        {:cont, {:ok, Map.put(summary, graph, result)}}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, {:task_exit, reason}}}
+    end)
+  end
+
+  # ===========================================================================
   # Private - Core Loading Logic
   # ===========================================================================
 
