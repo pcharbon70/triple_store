@@ -547,4 +547,535 @@ defmodule TripleStore.QuadOperations do
   defp apply_post_filter(quad, pattern, values) do
     QuadIndex.quad_matches_pattern?(quad, pattern, values)
   end
+
+  # ===========================================================================
+  # Dataset Operations - Graph Management
+  # ===========================================================================
+
+  @doc """
+  Lists all named graphs in the database.
+
+  Returns a list of graph terms (RDF.IRI or RDF.BlankNode) representing
+  all named graphs that contain at least one quad. Uses the GSPO index
+  to efficiently scan for distinct graph IDs.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `opts` - Keyword list of options:
+    - `:include_default` - When `true`, includes the default graph in results.
+      Default is `false` (excludes default graph).
+
+  ## Returns
+
+  - `{:ok, [graph_term]}` - List of RDF.IRI or RDF.BlankNode terms
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      # List all named graphs
+      {:ok, graphs} = QuadOperations.list_graphs(db)
+      # => {:ok, [%RDF.IRI{value: "http://example.org/g1"}, ...]}
+
+      # Include default graph in results
+      {:ok, graphs} = QuadOperations.list_graphs(db, include_default: true)
+
+  """
+  @spec list_graphs(NIF.db_ref(), keyword()) :: {:ok, [RDF.IRI.t() | RDF.BlankNode.t()]} | {:error, term()}
+  def list_graphs(db, opts \\ []) do
+    Telemetry.span(:quad, :list_graphs, %{}, fn ->
+      include_default = Keyword.get(opts, :include_default, false)
+
+      # Use GSPO index to find all distinct graph IDs
+      # Scan GSPO and extract first 8 bytes (graph ID) from each key
+      case scan_distinct_graph_ids(db) do
+        {:ok, graph_ids} ->
+          # Filter out default graph (ID 0) if not requested
+          filtered_ids =
+            if include_default do
+              graph_ids
+            else
+              Enum.reject(graph_ids, &(&1 == 0))
+            end
+
+          # Convert graph IDs to RDF terms
+          graph_terms = convert_graph_ids_to_terms(db, filtered_ids)
+          {{:ok, graph_terms}, %{count: length(graph_terms)}}
+
+        {:error, reason} ->
+          {{:error, reason}, %{count: 0}}
+      end
+    end)
+  end
+
+  @doc """
+  Checks if a named graph exists in the database.
+
+  A graph exists if it contains at least one quad. This uses a GSPO
+  prefix scan to efficiently check for any quad with the given graph ID.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `graph_term` - Graph term (RDF.IRI, RDF.BlankNode) to check
+
+  ## Returns
+
+  - `true` if graph exists (has at least one quad)
+  - `false` if graph doesn't exist
+
+  ## Examples
+
+      QuadOperations.graph_exists?(db, manager, RDF.iri("http://example.org/g1"))
+      # => true
+
+      QuadOperations.graph_exists?(db, manager, RDF.iri("http://example.org/nonexistent"))
+      # => false
+
+  """
+  @spec graph_exists?(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) :: boolean()
+  def graph_exists?(db, manager, graph_term) do
+    # Convert graph term to ID
+    case TripleStore.Adapter.term_to_id(manager, graph_term) do
+      {:ok, graph_id} ->
+        graph_id_exists?(db, graph_id)
+
+      _ ->
+        false
+    end
+  end
+
+  @doc """
+  Checks if the default graph exists in the database.
+
+  The default graph exists if it contains at least one quad.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+
+  ## Returns
+
+  - `true` if default graph exists
+  - `false` if default graph is empty
+
+  ## Examples
+
+      QuadOperations.default_graph_exists?(db)
+      # => true
+
+  """
+  @spec default_graph_exists?(NIF.db_ref()) :: boolean()
+  def default_graph_exists?(db) do
+    graph_id_exists?(db, 0)
+  end
+
+  @doc """
+  Deletes all quads from a named graph.
+
+  Removes all quads belonging to the specified graph from all four indices
+  (GSPO, GPOS, SPOG, POSG) atomically.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `graph_term` - Graph term (RDF.IRI, RDF.BlankNode, or :default)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads deleted
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      {:ok, count} = QuadOperations.delete_graph(db, manager, RDF.iri("http://example.org/g1"))
+
+      # Delete default graph (clears all data)
+      {:ok, count} = QuadOperations.delete_graph(db, manager, :default)
+
+  """
+  @spec delete_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def delete_graph(db, _manager, :default) do
+    Telemetry.span(:quad, :delete_graph, %{graph: :default}, fn ->
+      # Delete all quads with graph ID 0
+      case delete_all_quads_in_graph(db, 0) do
+        {:ok, count} -> {{:ok, count}, %{count: count}}
+        {:error, reason} -> {{:error, reason}, %{count: 0}}
+      end
+    end)
+  end
+
+  def delete_graph(db, manager, graph_term) do
+    Telemetry.span(:quad, :delete_graph, %{graph: graph_term}, fn ->
+      # Convert graph term to ID
+      case TripleStore.Adapter.term_to_id(manager, graph_term) do
+        {:ok, graph_id} ->
+          case delete_all_quads_in_graph(db, graph_id) do
+            {:ok, count} -> {{:ok, count}, %{count: count}}
+            {:error, reason} -> {{:error, reason}, %{count: 0}}
+          end
+
+        {:error, reason} ->
+          {{:error, reason}, %{count: 0}}
+      end
+    end)
+  end
+
+  @doc """
+  Copies all quads from a source graph to a target graph.
+
+  Copies all quads from the source graph and inserts them into the target
+  graph with the new graph ID. The target graph is created if it doesn't exist.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `source_graph` - Source graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `target_graph` - Target graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `opts` - Keyword list of options:
+    - `:on_conflict` - How to handle existing target graph:
+      - `:merge` (default) - Add quads to existing target graph
+      - `:replace` - Clear target graph before copying
+      - `:error` - Fail if target graph has any quads
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads copied
+  - `{:error, reason}` - On failure or conflict
+
+  ## Examples
+
+      # Copy to a new graph (merge behavior)
+      {:ok, count} = QuadOperations.copy_graph(db, manager, :default, RDF.iri("http://example.org/g1"))
+
+      # Replace existing target graph
+      {:ok, count} = QuadOperations.copy_graph(db, manager, g1, g2, on_conflict: :replace)
+
+      # Fail if target exists
+      :error = QuadOperations.copy_graph(db, manager, g1, g2, on_conflict: :error)
+
+  """
+  @spec copy_graph(
+          NIF.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t() | :default,
+          RDF.IRI.t() | RDF.BlankNode.t() | :default,
+          keyword()
+        ) :: {:ok, non_neg_integer()} | {:error, term()}
+  def copy_graph(db, manager, source_graph, target_graph, opts \\ []) do
+    Telemetry.span(
+      :quad,
+      :copy_graph,
+      %{source: source_graph, target: target_graph},
+      fn ->
+        on_conflict = Keyword.get(opts, :on_conflict, :merge)
+
+        # Get source graph ID
+        source_id =
+          case source_graph do
+            :default -> {:ok, 0}
+            term -> TripleStore.Adapter.term_to_id(manager, term)
+          end
+
+        # Get target graph ID
+        target_id =
+          case target_graph do
+            :default -> {:ok, 0}
+            term -> TripleStore.Adapter.term_to_id(manager, term)
+          end
+
+        with {:ok, src_id} <- source_id,
+             {:ok, tgt_id} <- target_id,
+             {:ok, _} <- handle_copy_conflict(db, tgt_id, on_conflict),
+             {:ok, count} <- do_copy_graph(db, src_id, tgt_id) do
+          {{:ok, count}, %{count: count}}
+        else
+          {:error, reason} -> {{:error, reason}, %{count: 0}}
+        end
+      end
+    )
+  end
+
+  @doc """
+  Returns the count of quads in a specific graph.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `graph_term` - Graph term (RDF.IRI, RDF.BlankNode, or :default)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads in the graph
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      {:ok, count} = QuadOperations.graph_quad_count(db, manager, RDF.iri("http://example.org/g1"))
+      # => {:ok, 42}
+
+      {:ok, count} = QuadOperations.graph_quad_count(db, manager, :default)
+      # => {:ok, 100}
+
+  """
+  @spec graph_quad_count(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def graph_quad_count(db, _manager, :default) do
+    count_quads_in_graph(db, 0)
+  end
+
+  def graph_quad_count(db, manager, graph_term) do
+    case TripleStore.Adapter.term_to_id(manager, graph_term) do
+      {:ok, graph_id} ->
+        count_quads_in_graph(db, graph_id)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Returns a summary of quad counts for all graphs.
+
+  Returns a map where keys are graph terms (RDF.IRI, RDF.BlankNode, or :default)
+  and values are the number of quads in each graph.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `opts` - Keyword list of options:
+    - `:include_default` - When `true`, includes the default graph in results.
+      Default is `true`.
+
+  ## Returns
+
+  - `{:ok, map}` - Map of `%{graph_term => quad_count}`
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      {:ok, summary} = QuadOperations.graphs_summary(db)
+      # => {:ok, %{%RDF.IRI{value: "http://example.org/g1"} => 42, :default => 100}}
+
+      {:ok, summary} = QuadOperations.graphs_summary(db, include_default: false)
+      # => {:ok, %{%RDF.IRI{value: "http://example.org/g1"} => 42}}
+
+  """
+  @spec graphs_summary(NIF.db_ref(), keyword()) ::
+          {:ok, %{(RDF.IRI.t() | RDF.BlankNode.t() | :default) => non_neg_integer()}} | {:error, term()}
+  def graphs_summary(db, opts \\ []) do
+    Telemetry.span(:quad, :graphs_summary, %{}, fn ->
+      include_default = Keyword.get(opts, :include_default, true)
+
+      with {:ok, graph_ids} <- scan_distinct_graph_ids(db),
+           {:ok, counts} <- count_quads_by_graph_id(db, graph_ids) do
+        # Build map with graph terms as keys
+        result =
+          counts
+          |> Enum.filter(fn {graph_id, _count} ->
+            include_default or graph_id != 0
+          end)
+          |> Map.new(fn {graph_id, count} ->
+            graph_term = graph_id_to_term(db, graph_id)
+            {graph_term, count}
+          end)
+
+        {{:ok, result}, %{graph_count: map_size(result)}}
+      else
+        {:error, reason} -> {{:error, reason}, %{graph_count: 0}}
+      end
+    end)
+  end
+
+  # ===========================================================================
+  # Private Helper Functions - Dataset Operations
+  # ===========================================================================
+
+  # Scans the GSPO index to find all distinct graph IDs
+  defp scan_distinct_graph_ids(db) do
+    try do
+      graph_ids =
+        NIF.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
+          # Extract first 8 bytes (graph ID) from GSPO key
+          <<graph_id::unsigned-big-integer-size(64), _rest::binary>> = key
+          MapSet.put(acc, graph_id)
+        end)
+
+      {:ok, MapSet.to_list(graph_ids)}
+    catch
+      {:exit, reason} -> {:error, reason}
+      :throw -> {:ok, []}
+    end
+  end
+
+  # Converts a list of graph IDs to RDF terms
+  defp convert_graph_ids_to_terms(db, graph_ids) do
+    Enum.map(graph_ids, fn graph_id -> graph_id_to_term(db, graph_id) end)
+  end
+
+  # Converts a graph ID to a term (:default for 0, or looked up term)
+  defp graph_id_to_term(_db, 0), do: :default
+  defp graph_id_to_term(db, graph_id), do: lookup_graph_term(db, graph_id)
+
+  # Looks up a graph ID and returns the term, or a placeholder IRI if not found
+  defp lookup_graph_term(db, graph_id) do
+    case TripleStore.Adapter.id_to_term(db, graph_id) do
+      {:ok, term} -> term
+      :not_found -> RDF.iri("_:graph#{graph_id}")
+      {:error, _} -> RDF.iri("_:graph#{graph_id}")
+    end
+  end
+
+  # Checks if any quad exists with the given graph ID
+  defp graph_id_exists?(db, graph_id) do
+    # Use count_quads_in_graph which properly handles the iteration
+    case count_quads_in_graph(db, graph_id) do
+      {:ok, 0} -> false
+      {:ok, _count} -> true
+      {:error, _} -> false
+    end
+  end
+
+  # Deletes all quads in a graph by scanning GSPO and deleting from all indices
+  defp delete_all_quads_in_graph(db, graph_id) do
+    # First, collect all quads in the graph
+    prefix = QuadIndex.gspo_prefix(graph_id)
+
+    try do
+      quads =
+        NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+          case key do
+            <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
+              {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+              [{s, p, o, g} | acc]
+
+            _ ->
+              throw({:halt, acc})
+          end
+        end)
+        |> Enum.reverse()
+
+      # Delete all quads atomically
+      if quads == [] do
+        {:ok, 0}
+      else
+        delete_quads(db, quads, sync: true)
+        {:ok, length(quads)}
+      end
+    catch
+      {:halt, acc} ->
+        # End of prefix reached
+        if acc == [] do
+          {:ok, 0}
+        else
+          delete_quads(db, Enum.reverse(acc), sync: true)
+          {:ok, length(acc)}
+        end
+
+      {:exit, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Handles copy operation based on conflict mode
+  defp handle_copy_conflict(_db, _tgt_id, :merge), do: {:ok, :merge}
+
+  defp handle_copy_conflict(db, tgt_id, :replace) do
+    case delete_all_quads_in_graph(db, tgt_id) do
+      {:ok, _} -> {:ok, :replaced}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_copy_conflict(db, tgt_id, :error) do
+    if graph_id_exists?(db, tgt_id) do
+      {:error, :graph_exists}
+    else
+      {:ok, :proceed}
+    end
+  end
+
+  # Performs the actual copy operation
+  defp do_copy_graph(db, src_id, tgt_id) do
+    # Don't copy if source and target are the same
+    if src_id == tgt_id do
+      {:ok, 0}
+    else
+      # Collect all quads from source graph
+      prefix = QuadIndex.gspo_prefix(src_id)
+
+      try do
+        quads =
+          NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+            case key do
+              <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
+                {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
+                # Create quad with target graph ID
+                [{s, p, o, tgt_id} | acc]
+
+              _ ->
+                throw({:halt, acc})
+            end
+          end)
+          |> Enum.reverse()
+
+        # Insert all quads with new graph ID
+        if quads == [] do
+          {:ok, 0}
+        else
+          insert_quads(db, quads, sync: true)
+          {:ok, length(quads)}
+        end
+      catch
+        {:halt, acc} ->
+          if acc == [] do
+            {:ok, 0}
+          else
+            insert_quads(db, Enum.reverse(acc), sync: true)
+            {:ok, length(acc)}
+          end
+
+        {:exit, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Counts quads in a specific graph
+  defp count_quads_in_graph(db, graph_id) do
+    prefix = QuadIndex.gspo_prefix(graph_id)
+
+    try do
+      count =
+        NIF.fold_keys(db, :gspo, prefix, 0, fn key, acc ->
+          case key do
+            <<^graph_id::unsigned-big-integer-size(64), _::binary>> -> acc + 1
+            _ -> throw({:halt, acc})
+          end
+        end)
+
+      {:ok, count}
+    catch
+      {:halt, acc} -> {:ok, acc}
+      {:exit, reason} -> {:error, reason}
+    end
+  end
+
+  # Counts quads for each graph ID
+  defp count_quads_by_graph_id(db, graph_ids) do
+    counts =
+      Enum.map(graph_ids, fn graph_id ->
+        case count_quads_in_graph(db, graph_id) do
+          {:ok, count} -> {graph_id, count}
+          {:error, _} -> {graph_id, 0}
+        end
+      end)
+
+    {:ok, Map.new(counts)}
+  end
 end
