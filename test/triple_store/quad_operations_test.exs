@@ -35,7 +35,7 @@ defmodule TripleStore.QuadOperationsTest do
     test "insert_quad/2 inserts a quad to all four indices", %{db: db} do
       quad = {1, 2, 3, 0}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
 
       # Verify the quad exists in all indices by checking existence
       assert QuadOperations.quad_exists?(db, quad)
@@ -44,28 +44,28 @@ defmodule TripleStore.QuadOperationsTest do
     test "insert_quad/2 is idempotent", %{db: db} do
       quad = {1, 2, 3, 0}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
     end
 
     test "insert_quad/2 handles default graph (ID 0)", %{db: db} do
       quad = {10, 20, 30, 0}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
       assert QuadOperations.quad_exists?(db, quad)
     end
 
     test "insert_quad/2 handles named graph (positive ID)", %{db: db} do
       quad = {10, 20, 30, 100}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
       assert QuadOperations.quad_exists?(db, quad)
     end
 
     test "insert_quads/3 inserts multiple quads atomically", %{db: db} do
       quads = [{1, 2, 3, 0}, {4, 5, 6, 0}, {7, 8, 9, 1}]
 
-      assert {:ok, 3} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Verify all quads exist
       for quad <- quads do
@@ -76,7 +76,7 @@ defmodule TripleStore.QuadOperationsTest do
     test "insert_quads/3 with sync: false for bulk loading", %{db: db} do
       quads = [{1, 2, 3, 0}, {4, 5, 6, 0}]
 
-      assert {:ok, 2} = QuadOperations.insert_quads(db, quads, sync: false)
+      assert :ok = QuadOperations.insert_quads(db, quads, sync: false)
 
       for quad <- quads do
         assert QuadOperations.quad_exists?(db, quad)
@@ -84,7 +84,7 @@ defmodule TripleStore.QuadOperationsTest do
     end
 
     test "insert_quads/3 handles empty list", %{db: db} do
-      assert {:ok, 0} = QuadOperations.insert_quads(db, [], [])
+      assert :ok = QuadOperations.insert_quads(db, [], [])
     end
   end
 
@@ -97,38 +97,39 @@ defmodule TripleStore.QuadOperationsTest do
       quad = {1, 2, 3, 0}
 
       # Insert the quad first
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
 
       # Delete the quad
-      assert {:ok, :deleted} = QuadOperations.delete_quad(db, quad)
+      assert :ok = QuadOperations.delete_quad(db, quad)
 
       # Verify it no longer exists
       refute QuadOperations.quad_exists?(db, quad)
     end
 
-    test "delete_quad/2 returns :not_found for non-existent quad", %{db: db} do
+    test "delete_quad/2 is idempotent - deleting non-existent quad succeeds", %{db: db} do
       quad = {999, 888, 777, 0}
 
-      assert {:ok, :not_found} = QuadOperations.delete_quad(db, quad)
+      # Deleting a non-existent quad returns :ok (idempotent operation)
+      assert :ok = QuadOperations.delete_quad(db, quad)
     end
 
     test "delete_quad/2 is idempotent", %{db: db} do
       quad = {1, 2, 3, 0}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
-      assert {:ok, :deleted} = QuadOperations.delete_quad(db, quad)
-      assert {:ok, :not_found} = QuadOperations.delete_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.delete_quad(db, quad)
+      assert :ok = QuadOperations.delete_quad(db, quad)
     end
 
     test "delete_quads/3 deletes multiple quads atomically", %{db: db} do
       quads = [{1, 2, 3, 0}, {4, 5, 6, 0}, {7, 8, 9, 1}]
 
       # Insert all quads
-      assert {:ok, 3} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Delete the first two
       to_delete = [{1, 2, 3, 0}, {4, 5, 6, 0}]
-      assert {:ok, 2} = QuadOperations.delete_quads(db, to_delete, [])
+      assert :ok = QuadOperations.delete_quads(db, to_delete, [])
 
       # Verify deletions
       refute QuadOperations.quad_exists?(db, {1, 2, 3, 0})
@@ -138,15 +139,16 @@ defmodule TripleStore.QuadOperationsTest do
 
     test "delete_quads/3 handles non-existent quads gracefully", %{db: db} do
       # Only insert the first quad
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, {1, 2, 3, 0})
+      assert :ok = QuadOperations.insert_quad(db, {1, 2, 3, 0})
 
       # Try to delete multiple quads, only one exists
+      # Operation should succeed regardless (idempotent)
       quads = [{1, 2, 3, 0}, {999, 888, 777, 0}]
-      assert {:ok, 1} = QuadOperations.delete_quads(db, quads, [])
+      assert :ok = QuadOperations.delete_quads(db, quads, [])
     end
 
     test "delete_quads/3 handles empty list", %{db: db} do
-      assert {:ok, 0} = QuadOperations.delete_quads(db, [], [])
+      assert :ok = QuadOperations.delete_quads(db, [], [])
     end
   end
 
@@ -160,7 +162,7 @@ defmodule TripleStore.QuadOperationsTest do
 
       refute QuadOperations.quad_exists?(db, quad)
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
       assert QuadOperations.quad_exists?(db, quad)
     end
 
@@ -172,8 +174,8 @@ defmodule TripleStore.QuadOperationsTest do
       default_quad = {1, 2, 3, 0}
       named_quad = {1, 2, 3, 100}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, default_quad)
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, named_quad)
+      assert :ok = QuadOperations.insert_quad(db, default_quad)
+      assert :ok = QuadOperations.insert_quad(db, named_quad)
 
       assert QuadOperations.quad_exists?(db, default_quad)
       assert QuadOperations.quad_exists?(db, named_quad)
@@ -196,10 +198,10 @@ defmodule TripleStore.QuadOperationsTest do
         {7, 8, 9, 0}
       ]
 
-      assert {:ok, 3} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Also insert a quad in a different graph
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, {1, 2, 3, 100})
+      assert :ok = QuadOperations.insert_quad(db, {1, 2, 3, 100})
 
       # Lookup all quads in default graph
       pattern = {:var, :var, :var, :bound}
@@ -218,10 +220,10 @@ defmodule TripleStore.QuadOperationsTest do
         {1, 2, 9, 100}
       ]
 
-      assert {:ok, 3} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Also insert a quad with different subject
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, {99, 2, 3, 0})
+      assert :ok = QuadOperations.insert_quad(db, {99, 2, 3, 0})
 
       # Lookup all quads with subject=1
       pattern = {:bound, :var, :var, :var}
@@ -240,7 +242,7 @@ defmodule TripleStore.QuadOperationsTest do
         {1, 5, 6, 0}
       ]
 
-      assert {:ok, 3} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Lookup all quads with s=1, p=2 in graph 0
       pattern = {:bound, :bound, :var, :bound}
@@ -258,7 +260,7 @@ defmodule TripleStore.QuadOperationsTest do
         {4, 5, 6, 1}
       ]
 
-      assert {:ok, 2} = QuadOperations.insert_quads(db, quads, [])
+      assert :ok = QuadOperations.insert_quads(db, quads, [])
 
       # Lookup all quads
       pattern = {:var, :var, :var, :var}
@@ -290,10 +292,10 @@ defmodule TripleStore.QuadOperationsTest do
     test "insert then delete same quad works correctly", %{db: db} do
       quad = {42, 43, 44, 0}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad)
+      assert :ok = QuadOperations.insert_quad(db, quad)
       assert QuadOperations.quad_exists?(db, quad)
 
-      assert {:ok, :deleted} = QuadOperations.delete_quad(db, quad)
+      assert :ok = QuadOperations.delete_quad(db, quad)
       refute QuadOperations.quad_exists?(db, quad)
     end
 
@@ -301,15 +303,15 @@ defmodule TripleStore.QuadOperationsTest do
       quad_default = {1, 2, 3, 0}
       quad_named = {1, 2, 3, 100}
 
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad_default)
-      assert {:ok, :inserted} = QuadOperations.insert_quad(db, quad_named)
+      assert :ok = QuadOperations.insert_quad(db, quad_default)
+      assert :ok = QuadOperations.insert_quad(db, quad_named)
 
       # Both exist independently
       assert QuadOperations.quad_exists?(db, quad_default)
       assert QuadOperations.quad_exists?(db, quad_named)
 
       # Delete from default graph
-      assert {:ok, :deleted} = QuadOperations.delete_quad(db, quad_default)
+      assert :ok = QuadOperations.delete_quad(db, quad_default)
 
       # Default graph quad is gone, named graph quad remains
       refute QuadOperations.quad_exists?(db, quad_default)

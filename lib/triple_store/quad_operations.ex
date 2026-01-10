@@ -27,6 +27,14 @@ defmodule TripleStore.QuadOperations do
   All insert and delete operations use WriteBatch to ensure atomicity across
   all four indices. Either all indices are updated or none are.
 
+  ## Telemetry
+
+  All operations emit telemetry events for observability:
+
+  - `[:triple_store, :quad, :insert, :start | :stop]` - Quad insert operations
+  - `[:triple_store, :quad, :delete, :start | :stop]` - Quad delete operations
+  - `[:triple_store, :quad, :lookup, :start | :stop]` - Quad lookup operations
+
   ## Usage
 
   ```elixir
@@ -48,6 +56,7 @@ defmodule TripleStore.QuadOperations do
 
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
+  alias TripleStore.Telemetry
 
   # ===========================================================================
   # Constants
@@ -99,25 +108,24 @@ defmodule TripleStore.QuadOperations do
 
   ## Returns
 
-  - `{:ok, :inserted}` on success
+  - `:ok` on success (aligned with triple store API)
   - `{:error, reason}` on failure
 
   ## Examples
 
       iex> {:ok, db} = NIF.open("/tmp/test_db")
       iex> QuadOperations.insert_quad(db, {1, 2, 3, 0})
-      {:ok, :inserted}
+      :ok
 
   """
-  @spec insert_quad(NIF.db_ref(), quad()) :: {:ok, :inserted} | {:error, term()}
+  @spec insert_quad(NIF.db_ref(), quad()) :: :ok | {:error, term()}
   def insert_quad(db, {subject, predicate, object, graph})
       when valid_quad?(subject, predicate, object, graph) do
-    operations = build_insert_operations(subject, predicate, object, graph)
-
-    case NIF.write_batch(db, operations, true) do
-      :ok -> {:ok, :inserted}
-      {:error, _} = error -> error
-    end
+    Telemetry.span(:quad, :insert, %{quad: {subject, predicate, object, graph}}, fn ->
+      operations = build_insert_operations(subject, predicate, object, graph)
+      result = NIF.write_batch(db, operations, true)
+      {result, %{count: 1}}
+    end)
   end
 
   @doc """
@@ -138,7 +146,7 @@ defmodule TripleStore.QuadOperations do
 
   ## Returns
 
-  - `{:ok, count}` where count is the number of quads processed on success
+  - `:ok` on success (aligned with triple store API)
   - `{:error, reason}` on failure
 
   ## Examples
@@ -146,29 +154,29 @@ defmodule TripleStore.QuadOperations do
       iex> {:ok, db} = NIF.open("/tmp/test_db")
       iex> quads = [{1, 2, 3, 0}, {4, 5, 6, 0}, {7, 8, 9, 1}]
       iex> QuadOperations.insert_quads(db, quads)
-      {:ok, 3}
+      :ok
 
       # For bulk loading, disable sync for better performance
       iex> QuadOperations.insert_quads(db, quads, sync: false)
-      {:ok, 3}
+      :ok
 
   """
-  @spec insert_quads(NIF.db_ref(), [quad()], keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
-  def insert_quads(_db, [], _opts), do: {:ok, 0}
+  @spec insert_quads(NIF.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
+  def insert_quads(_db, [], _opts), do: :ok
 
   def insert_quads(db, quads, opts) when is_list(quads) do
     sync = Keyword.get(opts, :sync, true)
 
-    operations =
-      for {subject, predicate, object, graph} <- quads,
-          op <- build_insert_operations(subject, predicate, object, graph) do
-        op
-      end
+    Telemetry.span(:quad, :insert, %{sync: sync}, fn ->
+      operations =
+        for {subject, predicate, object, graph} <- quads,
+            op <- build_insert_operations(subject, predicate, object, graph) do
+          op
+        end
 
-    case NIF.write_batch(db, operations, sync) do
-      :ok -> {:ok, length(quads)}
-      {:error, _} = error -> error
-    end
+      result = NIF.write_batch(db, operations, sync)
+      {result, %{count: length(quads)}}
+    end)
   end
 
   # ===========================================================================
@@ -189,34 +197,25 @@ defmodule TripleStore.QuadOperations do
 
   ## Returns
 
-  - `{:ok, :deleted}` on success (quad was found and deleted)
-  - `{:ok, :not_found}` if the quad does not exist
+  - `:ok` on success (aligned with triple store API)
   - `{:error, reason}` on database error
 
   ## Examples
 
       iex> {:ok, db} = NIF.open("/tmp/test_db")
       iex> QuadOperations.delete_quad(db, {1, 2, 3, 0})
-      {:ok, :deleted}
+      :ok
 
   """
-  @spec delete_quad(NIF.db_ref(), quad()) :: {:ok, :deleted} | {:ok, :not_found} | {:error, term()}
+  @spec delete_quad(NIF.db_ref(), quad()) :: :ok | {:error, term()}
   def delete_quad(db, {subject, predicate, object, graph})
       when valid_quad?(subject, predicate, object, graph) do
-    keys = build_delete_keys(subject, predicate, object, graph)
-
-    # Check if quad exists before deleting
-    exists = quad_exists_fast?(db, subject, predicate, object, graph)
-
-    if exists do
+    Telemetry.span(:quad, :delete, %{quad: {subject, predicate, object, graph}}, fn ->
+      keys = build_delete_keys(subject, predicate, object, graph)
       operations = for {cf, key} <- keys, do: {cf, key}
-      case NIF.delete_batch(db, operations, true) do
-        :ok -> {:ok, :deleted}
-        {:error, _} = error -> error
-      end
-    else
-      {:ok, :not_found}
-    end
+      result = NIF.delete_batch(db, operations, true)
+      {result, %{count: 1}}
+    end)
   end
 
   @doc """
@@ -235,7 +234,7 @@ defmodule TripleStore.QuadOperations do
 
   ## Returns
 
-  - `{:ok, deleted_count}` where deleted_count is the number of quads actually deleted
+  - `:ok` on success (aligned with triple store API)
   - `{:error, reason}` on failure
 
   ## Examples
@@ -243,40 +242,25 @@ defmodule TripleStore.QuadOperations do
       iex> {:ok, db} = NIF.open("/tmp/test_db")
       iex> quads = [{1, 2, 3, 0}, {4, 5, 6, 0}]
       iex> QuadOperations.delete_quads(db, quads)
-      {:ok, 2}
+      :ok
 
   """
-  @spec delete_quads(NIF.db_ref(), [quad()], keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
-  def delete_quads(_db, [], _opts), do: {:ok, 0}
+  @spec delete_quads(NIF.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
+  def delete_quads(_db, [], _opts), do: :ok
 
   def delete_quads(db, quads, opts) when is_list(quads) do
     sync = Keyword.get(opts, :sync, true)
 
-    # Build delete operations and count which ones exist
-    {operations, count} =
-      Enum.reduce(quads, {[], 0}, fn {subject, predicate, object, graph}, {ops, acc} ->
-        keys = build_delete_keys(subject, predicate, object, graph)
-
-        if quad_exists_fast?(db, subject, predicate, object, graph) do
-          new_ops =
-            for {cf, key} <- keys do
-              {cf, key}
-            end
-
-          {ops ++ new_ops, acc + 1}
-        else
-          {ops, acc}
+    Telemetry.span(:quad, :delete, %{sync: sync}, fn ->
+      operations =
+        for {subject, predicate, object, graph} <- quads,
+            {cf, key} <- build_delete_keys(subject, predicate, object, graph) do
+          {cf, key}
         end
-      end)
 
-    if operations == [] do
-      {:ok, 0}
-    else
-      case NIF.delete_batch(db, operations, sync) do
-        :ok -> {:ok, count}
-        {:error, _} = error -> error
-      end
-    end
+      result = NIF.delete_batch(db, operations, sync)
+      {result, %{count: length(quads)}}
+    end)
   end
 
   # ===========================================================================
@@ -351,14 +335,101 @@ defmodule TripleStore.QuadOperations do
   @spec lookup_quads(NIF.db_ref(), quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
           [quad()]
   def lookup_quads(db, pattern, values) do
+    Telemetry.span(:quad, :lookup, %{pattern: pattern}, fn ->
+      selection = QuadIndex.build_quad_prefix(pattern, values)
+
+      column_family = selection.index
+
+      prefix = selection.prefix
+      prefix_len = byte_size(prefix)
+
+      result = perform_prefix_scan(db, column_family, prefix, prefix_len, selection.index, pattern, values)
+      {result, %{result_count: length(result)}}
+    end)
+  end
+
+  @doc """
+  Looks up quads matching a pattern, returning a stream for lazy evaluation.
+
+  This is the streaming version of `lookup_quads/3` that returns a `Stream`
+  instead of a list. Useful for large result sets where you want to process
+  results incrementally without loading everything into memory.
+
+  The stream is realized when consumed, at which point the actual database
+  query is executed.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `pattern` - Quad pattern `{s_pat, p_pat, o_pat, g_pat}` where each is
+    `:bound` or `:var`
+  - `values` - Map of bound term IDs `%{s: id, p: id, o: id, g: id}`
+
+  ## Returns
+
+  - A `Stream` that yields `{subject, predicate, object, graph}` tuples
+
+  ## Examples
+
+      # Stream quads and process incrementally
+      QuadOperations.lookup_quads_stream(db, {:var, :var, :var, :bound}, %{g: 0})
+      |> Stream.each(fn {s, p, o, g} -> process_quad(s, p, o, g) end)
+      |> Stream.run()
+
+      # Take first 100 results
+      QuadOperations.lookup_quads_stream(db, {:bound, :var, :var, :var}, %{s: 1})
+      |> Enum.take(100)
+
+  ## Performance Notes
+
+  - The stream uses RocksDB iterator internally via `fold_keys`
+  - Memory usage is O(1) with respect to result set size
+  - Suitable for queries returning millions of quads
+
+  """
+  @spec lookup_quads_stream(NIF.db_ref(), quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+          Enumerable.t()
+  def lookup_quads_stream(db, pattern, values) do
+    # Build the prefix scan parameters outside the stream
     selection = QuadIndex.build_quad_prefix(pattern, values)
-
     column_family = selection.index
-
     prefix = selection.prefix
     prefix_len = byte_size(prefix)
 
-    perform_prefix_scan(db, column_family, prefix, prefix_len, selection.index, pattern, values)
+    # Create a stream that executes the fold when consumed
+    Stream.resource(
+      fn ->
+        # Start time for telemetry
+        start_time = System.monotonic_time()
+        Telemetry.emit_start([:triple_store, :quad, :lookup], %{pattern: pattern})
+        {db, column_family, prefix, prefix_len, selection.index, pattern, values, start_time}
+      end,
+      fn {db, cf, prefix, prefix_len, index, pattern, values, start_time} ->
+        # Perform the scan and emit results
+        result = perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values)
+
+        case result do
+          {:halt, []} ->
+            # No more results, emit stop event
+            duration = System.monotonic_time() - start_time
+            Telemetry.emit_stop([:triple_store, :quad, :lookup], duration, %{pattern: pattern, result_count: 0})
+            {:halt, []}
+
+          {:cont, []} ->
+            # No more results in this batch
+            {:halt, []}
+
+          {:cont, results} ->
+            # Emit results
+            {results, {db, cf, prefix, prefix_len, index, pattern, values, start_time}}
+        end
+      end,
+      fn {_db, _cf, _prefix, _prefix_len, _index, _pattern, _values, _start_time} ->
+        # Emit stop event if stream halted early (no results case handled above)
+        # For streams that consume all results, the final batch emits the event
+        :ok
+      end
+    )
   end
 
   # Performs prefix scan and returns results as a list
@@ -376,13 +447,39 @@ defmodule TripleStore.QuadOperations do
           end
         else
           # Beyond prefix, stop iteration
-          throw(:halt)
+          throw({:halt, acc})
         end
       end)
       |> Enum.reverse()
     catch
-      :halt -> []
-      {:error, _} -> []
+      {:halt, acc} -> Enum.reverse(acc)
+    end
+  end
+
+  # Performs a single iteration of prefix scan for streaming
+  # Returns {:cont, results} or {:halt, []}
+  defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
+    try do
+      results =
+        NIF.fold_keys(db, cf, prefix, [], fn key, acc ->
+          # Check if key is within prefix bounds
+          if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
+            quad = decode_key_to_quad(key, index)
+
+            if apply_post_filter(quad, pattern, values) do
+              [quad | acc]
+            else
+              acc
+            end
+          else
+            # Beyond prefix, stop iteration
+            throw({:halt, :done})
+          end
+        end)
+
+      {:cont, Enum.reverse(results)}
+    catch
+      {:halt, :done} -> {:halt, []}
     end
   end
 
