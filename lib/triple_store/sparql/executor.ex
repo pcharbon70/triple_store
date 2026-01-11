@@ -287,6 +287,32 @@ defmodule TripleStore.SPARQL.Executor do
   @spec default_graph_id() :: 0
   def default_graph_id, do: @default_graph_id
 
+  @doc """
+  Checks if a BGP (Basic Graph Pattern) contains any quad patterns.
+
+  Returns true if any pattern in the BGP is a quad pattern (4-tuple),
+  false if all patterns are triple patterns (3-tuple).
+
+  ## Examples
+
+      iex> Executor.is_quad_bgp?([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
+      false
+
+      iex> Executor.is_quad_bgp?([{:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}])
+      true
+
+      iex> Executor.is_quad_bgp?([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}, {:quad, ...}])
+      true
+
+  """
+  @spec is_quad_bgp?(list()) :: boolean()
+  def is_quad_bgp?(patterns) when is_list(patterns) do
+    Enum.any?(patterns, fn
+      {:quad, _s, _p, _o, _g} -> true
+      _ -> false
+    end)
+  end
+
   # ===========================================================================
   # GRAPH Clause Execution (Section 3.2: GRAPH Clause Execution)
   # ===========================================================================
@@ -586,6 +612,19 @@ defmodule TripleStore.SPARQL.Executor do
     {:ok, result_stream}
   end
 
+  # Quad pattern - extends bindings using quad index lookup
+  defp extend_bindings(ctx, binding_stream, {:quad, s, p, o, g}) do
+    result_stream =
+      Stream.flat_map(binding_stream, fn binding ->
+        case execute_single_quad_pattern(ctx, binding, s, p, o, g) do
+          {:ok, matches} -> matches
+          {:error, _} -> []
+        end
+      end)
+
+    {:ok, result_stream}
+  end
+
   # Execute a single triple pattern with a specific binding
   defp execute_single_pattern(ctx, binding, s, p, o) do
     # Check if we can use range index for this pattern
@@ -596,6 +635,61 @@ defmodule TripleStore.SPARQL.Executor do
 
       :use_regular_index ->
         execute_regular_pattern(ctx, binding, s, p, o)
+    end
+  end
+
+  # Execute a single quad pattern with a specific binding
+  defp execute_single_quad_pattern(ctx, binding, s, p, o, g) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    # Substitute bound variables and encode terms for all 4 positions
+    with {:ok, s_pattern} <- term_to_index_pattern(s, binding, dict_manager),
+         {:ok, p_pattern} <- term_to_index_pattern(p, binding, dict_manager),
+         {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
+         {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
+      # Check if any bound term was not found in the dictionary
+      if has_not_found?([s_pattern, p_pattern, o_pattern, g_pattern]) do
+        {:ok, empty_stream()}
+      else
+        # Build quad index pattern
+        quad_pattern = {s_pattern, p_pattern, o_pattern, g_pattern}
+
+        # Use QuadOperations for quad lookup
+        # QuadOperations uses the internal index-level pattern format
+        # which maps SPARQL algebra terms to index operations
+        case QuadOperations.lookup_quads(db, quad_pattern, %{
+          s: elem(s_pattern, 1),
+          p: elem(p_pattern, 1),
+          o: elem(o_pattern, 1),
+          g: elem(g_pattern, 1)
+        }) do
+          {:ok, quad_stream} ->
+            # Convert matching quads to bindings
+            binding_stream =
+              Stream.flat_map(quad_stream, fn {s_id, p_id, o_id, g_id} ->
+                case extend_binding_from_quad_match(
+                       binding,
+                       s,
+                       p,
+                       o,
+                       g,
+                       s_id,
+                       p_id,
+                       o_id,
+                       g_id,
+                       dict_manager
+                     ) do
+                  {:ok, new_binding} -> [new_binding]
+                  {:error, _} -> []
+                end
+              end)
+
+            {:ok, binding_stream}
+
+          {:error, _} = error ->
+            error
+        end
+      end
     end
   end
 
@@ -830,6 +924,35 @@ defmodule TripleStore.SPARQL.Executor do
     term_to_bound_pattern(term, dict_manager)
   end
 
+  # Convert a graph term to an index pattern element
+  # Handles special cases for :default_graph and graph variables
+  defp term_to_index_pattern_for_graph(:default_graph, _binding, _dict_manager) do
+    # Default graph always has ID 0
+    {:ok, {:bound, @default_graph_id}}
+  end
+
+  defp term_to_index_pattern_for_graph({:variable, name}, binding, dict_manager) do
+    case Map.get(binding, name) do
+      nil ->
+        # Unbound graph variable - match any graph
+        {:ok, :var}
+
+      term ->
+        # Graph variable is bound - encode the term
+        term_to_bound_pattern(term, dict_manager)
+    end
+  end
+
+  defp term_to_index_pattern_for_graph({:named_node, _iri} = term, _binding, dict_manager) do
+    # Named graph IRI - encode it
+    term_to_bound_pattern(term, dict_manager)
+  end
+
+  defp term_to_index_pattern_for_graph(_term, _binding, _dict_manager) do
+    # Other graph terms (shouldn't happen in practice)
+    {:ok, :var}
+  end
+
   # Convert a concrete term to a bound index pattern
   defp term_to_bound_pattern(term, dict_manager) do
     case Term.encode(term, dict_manager) do
@@ -850,6 +973,42 @@ defmodule TripleStore.SPARQL.Executor do
          {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager) do
       maybe_bind(binding2, o, o_id, dict_manager)
     end
+  end
+
+  # Extend a binding with values from a matched quad
+  # Similar to extend_binding_from_match but handles 4 positions
+  defp extend_binding_from_quad_match(binding, s, p, o, g, s_id, p_id, o_id, g_id, dict_manager) do
+    with {:ok, binding1} <- maybe_bind(binding, s, s_id, dict_manager),
+         {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager),
+         {:ok, binding3} <- maybe_bind(binding2, o, o_id, dict_manager) do
+      # Handle graph position - only bind if it's a variable
+      maybe_bind_graph(binding3, g, g_id, dict_manager)
+    end
+  end
+
+  # Bind a graph variable if the graph position is a variable
+  # If graph is bound (:default_graph or named IRI), don't bind to binding
+  defp maybe_bind_graph(binding, {:variable, name}, graph_id, dict_manager) do
+    # Bind graph variable to the graph IRI term
+    case Term.decode(graph_id, dict_manager) do
+      {:ok, term} -> {:ok, Map.put(binding, name, term)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp maybe_bind_graph(binding, :default_graph, _graph_id, _dict_manager) do
+    # Default graph - don't add to binding (default graph is implicit in SPARQL)
+    {:ok, binding}
+  end
+
+  defp maybe_bind_graph(binding, {:named_node, _iri}, _graph_id, _dict_manager) do
+    # Named graph IRI that's not a variable - don't add to binding
+    {:ok, binding}
+  end
+
+  defp maybe_bind_graph(_binding, _other, _graph_id, _dict_manager) do
+    # Other graph terms - don't add to binding
+    {:ok, %{}}
   end
 
   # Bind a variable to a term ID, or verify consistency if already bound
