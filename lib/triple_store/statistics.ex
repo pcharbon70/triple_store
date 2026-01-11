@@ -606,6 +606,213 @@ defmodule TripleStore.Statistics do
   end
 
   # ===========================================================================
+  # Public API - Graph-Specific Statistics (Quad Store)
+  # ===========================================================================
+
+  @doc """
+  Returns statistics for a specific named graph or the default graph.
+
+  Computes per-graph statistics including:
+  - Quad count in the graph
+  - Distinct subjects in the graph
+  - Per-predicate counts within the graph
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+
+  ## Returns
+
+  - `{:ok, stats_map}` - Map with graph-specific statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, stats} = Statistics.graph_statistics(db, 0)
+      iex> stats
+      %{
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        predicate_counts: %{42 => 500, 43 => 1500}
+      }
+
+      iex> {:ok, stats} = Statistics.graph_statistics(db, named_graph_id)
+  """
+  @spec graph_statistics(db_ref(), term_id()) :: {:ok, map()} | {:error, term()}
+  def graph_statistics(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    with {:ok, quad_count} <- graph_quad_count(db, graph_id),
+         {:ok, distinct_subjects} <- graph_distinct_subjects(db, graph_id),
+         {:ok, predicate_counts} <- graph_predicate_histogram(db, graph_id) do
+      {:ok,
+       %{
+         quad_count: quad_count,
+         distinct_subjects: distinct_subjects,
+         distinct_predicates: map_size(predicate_counts),
+         predicate_counts: predicate_counts
+       }}
+    end
+  end
+
+  @doc """
+  Returns the number of quads in a specific graph.
+
+  Uses the GSPO index for efficient graph-scoped counting.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads in this graph
+  - `{:error, reason}` - On failure
+  """
+  @spec graph_quad_count(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def graph_quad_count(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    # Count quads with the specified graph ID using GSPO index
+    # GSPO key is: graph_id (64-bit) | subject_id (64-bit) | predicate_id (64-bit) | object_id (64-bit)
+    prefix = <<graph_id::64-big>>
+
+    # Use prefix_stream and count results
+    stream = NIF.prefix_stream(db, :gspo, prefix)
+    count = Enum.count(stream)
+    {:ok, count}
+  end
+
+  @doc """
+  Returns the count of distinct subjects in a specific graph.
+
+  Scans the GSPO index for the specified graph and counts unique subject IDs.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of distinct subjects in this graph
+  - `{:error, reason}` - On failure
+  """
+  @spec graph_distinct_subjects(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def graph_distinct_subjects(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    prefix = <<graph_id::64-big>>
+    stream = NIF.prefix_stream(db, :gspo, prefix)
+
+    count =
+      stream
+      |> Stream.map(fn {key, _value} ->
+        # GSPO key: graph_id | subject_id | predicate_id | object_id
+        # Extract subject_id (bytes 9-16, 0-indexed as 8-15)
+        <<_graph::64, subject_id::64-big, _rest::binary>> = key
+        subject_id
+      end)
+      |> Stream.dedup()
+      |> Enum.count()
+
+    {:ok, count}
+  end
+
+  @doc """
+  Builds a predicate histogram for a specific graph.
+
+  Scans the GSPO index for the specified graph and counts triples
+  for each unique predicate.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+
+  ## Returns
+
+  - `{:ok, histogram}` - Map of predicate_id => count within the graph
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, histogram} = Statistics.graph_predicate_histogram(db, 0)
+      iex> histogram
+      %{42 => 500, 43 => 1500}
+  """
+  @spec graph_predicate_histogram(db_ref(), term_id()) ::
+          {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
+  def graph_predicate_histogram(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    prefix = <<graph_id::64-big>>
+    stream = NIF.prefix_stream(db, :gspo, prefix)
+
+    histogram =
+      stream
+      |> Stream.map(fn {key, _value} ->
+        # GSPO key: graph_id | subject_id | predicate_id | object_id
+        # Extract predicate_id (bytes 17-24, 0-indexed as 16-23)
+        <<_graph::64, _subject::64, predicate_id::64-big, _object::64>> = key
+        predicate_id
+      end)
+      |> Enum.reduce(%{}, fn predicate_id, acc ->
+        Map.update(acc, predicate_id, 1, &(&1 + 1))
+      end)
+
+    {:ok, histogram}
+  end
+
+  @doc """
+  Builds predicate histograms for all graphs.
+
+  Returns a map of graph_id to predicate histograms.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `opts` - Options:
+    - `:include_default` - Include default graph (ID 0) in results (default: true)
+
+  ## Returns
+
+  - `{:ok, histograms}` - Map of graph_id => predicate_histogram
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, histograms} = Statistics.build_per_graph_histograms(db)
+      iex> histograms
+      %{
+        0 => %{42 => 500, 43 => 100},
+        123 => %{42 => 200, 44 => 50}
+      }
+  """
+  @spec build_per_graph_histograms(db_ref(), keyword()) ::
+          {:ok, %{term_id() => %{term_id() => non_neg_integer()}}} | {:error, term()}
+  def build_per_graph_histograms(db, opts \\ []) do
+    include_default = Keyword.get(opts, :include_default, true)
+
+    # Scan GSPO index and extract all graph IDs
+    stream = NIF.prefix_stream(db, :gspo, <<>>)
+
+    # Extract unique graph IDs
+    graph_ids =
+      stream
+      |> Stream.map(fn {key, _value} ->
+        <<graph_id::64-big, _rest::binary>> = key
+        graph_id
+      end)
+      |> Stream.uniq()
+      |> Enum.filter(fn graph_id -> include_default or graph_id > 0 end)
+
+    # Build histogram for each graph
+    histograms =
+      Enum.reduce(graph_ids, %{}, fn graph_id, acc ->
+        {:ok, histogram} = graph_predicate_histogram(db, graph_id)
+        Map.put(acc, graph_id, histogram)
+      end)
+
+    {:ok, histograms}
+  end
+
+  # ===========================================================================
   # Private Helpers - Distinct Counting
   # ===========================================================================
 

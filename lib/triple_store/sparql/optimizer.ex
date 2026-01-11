@@ -1623,7 +1623,26 @@ defmodule TripleStore.SPARQL.Optimizer do
     apply_range_filter_boost(triple, base_score, filter_context, range_indexed, predicate)
   end
 
-  # Fallback for non-triple patterns
+  def estimate_selectivity({:quad, subject, predicate, object, graph}, bound_vars, stats) do
+    # Score each position - quad patterns have an additional graph position
+    s_score = position_score(subject, bound_vars, :subject, stats)
+    p_score = position_score(predicate, bound_vars, :predicate, stats)
+    o_score = position_score(object, bound_vars, :object, stats)
+    g_score = graph_position_score(graph, bound_vars, stats)
+
+    # Base score - multiplicative model with graph position
+    # Bound graph significantly reduces search space (graph-first optimization)
+    base_score = s_score * p_score * o_score * g_score
+
+    # Check if this pattern can benefit from a range filter
+    filter_context = Map.get(stats, :filter_context, %{})
+    range_indexed = Map.get(stats, :range_indexed, MapSet.new())
+
+    # Apply range filter boost if applicable (quad version)
+    apply_range_filter_boost_quad({:quad, subject, predicate, object, graph}, base_score, filter_context, range_indexed, predicate)
+  end
+
+  # Fallback for non-triple/non-quad patterns
   def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
 
   # Apply selectivity boost for patterns that bind range-filtered variables
@@ -1657,6 +1676,36 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   defp apply_range_filter_boost(_, base_score, _, _, _), do: base_score
+
+  # Apply range filter boost for quad patterns (same logic as triple but with graph)
+  defp apply_range_filter_boost_quad(
+         {:quad, _subj, predicate, {:variable, var}, _graph},
+         base_score,
+         filter_context,
+         range_indexed,
+         _pred_term
+       ) do
+    range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
+
+    # Check if the object variable has a range filter
+    if MapSet.member?(range_vars, var) do
+      # Check if the predicate has a range index
+      predicate_uri = extract_predicate_uri(predicate)
+
+      if predicate_uri && predicate_has_range_index?(predicate_uri, range_indexed) do
+        # Strong boost - range index can be used
+        base_score / 100.0
+      else
+        # Variable has range filter but predicate doesn't have range index
+        # Still give moderate boost - the filter will eliminate results
+        base_score / 10.0
+      end
+    else
+      base_score
+    end
+  end
+
+  defp apply_range_filter_boost_quad(_, base_score, _, _, _), do: base_score
 
   # Extract the URI from a predicate term
   defp extract_predicate_uri({:named_node, uri}), do: uri
@@ -1713,6 +1762,32 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
+  # Score the graph position in a quad pattern
+  # Bound graphs are highly selective - they partition the data
+  @spec graph_position_score(term(), MapSet.t(), map()) :: float()
+  defp graph_position_score(:default_graph, _bound_vars, _stats) do
+    # Default graph is bound - very selective
+    0.1
+  end
+
+  defp graph_position_score({:named_node, _iri}, _bound_vars, _stats) do
+    # Named graph is bound - very selective
+    0.1
+  end
+
+  defp graph_position_score({:variable, name}, bound_vars, _stats) do
+    if MapSet.member?(bound_vars, name) do
+      # Graph variable is bound from previous pattern - very selective
+      0.1
+    else
+      # Unbound graph variable - will scan all graphs
+      # Less selective than bound graph but more than unbound subject/object
+      10.0
+    end
+  end
+
+  defp graph_position_score(_, _bound_vars, _stats), do: 100.0
+
   # Get selectivity score for a predicate based on statistics
   defp predicate_selectivity(predicate_uri, stats) do
     # Check if we have cardinality info for this predicate
@@ -1747,6 +1822,12 @@ defmodule TripleStore.SPARQL.Optimizer do
   @spec pattern_variables(tuple()) :: MapSet.t(String.t())
   defp pattern_variables({:triple, subject, predicate, object}) do
     [subject, predicate, object]
+    |> Enum.flat_map(&term_variables/1)
+    |> MapSet.new()
+  end
+
+  defp pattern_variables({:quad, subject, predicate, object, graph}) do
+    [subject, predicate, object, graph]
     |> Enum.flat_map(&term_variables/1)
     |> MapSet.new()
   end
@@ -2011,6 +2092,11 @@ defmodule TripleStore.SPARQL.Optimizer do
   """
   @spec binds_range_filtered_variable?(tuple(), map()) :: boolean()
   def binds_range_filtered_variable?({:triple, _subj, _pred, {:variable, var}}, filter_context) do
+    range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
+    MapSet.member?(range_vars, var)
+  end
+
+  def binds_range_filtered_variable?({:quad, _subj, _pred, {:variable, var}, _graph}, filter_context) do
     range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
     MapSet.member?(range_vars, var)
   end
