@@ -243,12 +243,72 @@ defmodule TripleStore.Exporter do
   end
 
   # Validate file path to prevent path traversal attacks
-  defp validate_file_path(path) when is_binary(path) do
-    if String.contains?(path, "..") do
-      {:error, :path_traversal_attempt}
+  # When allowed_dirs is specified, validates that the path is within those directories
+  defp validate_file_path(path, allowed_dirs \\ nil) when is_binary(path) do
+    # Check for path traversal in the original path before expansion
+    # This catches attempts like "../", "..\\", "%2e%2e", etc.
+    if has_path_traversal?(path) do
+      {:error, :invalid_path}
     else
-      :ok
+      expanded = Path.expand(path)
+
+      # If allowed_dirs is specified, verify the parent directory is within them
+      if allowed_dirs != nil do
+        parent = Path.dirname(expanded)
+        if Path.type(parent) == :absolute and is_within_allowed_dirs?(parent, allowed_dirs) do
+          :ok
+        else
+          {:error, :invalid_path}
+        end
+      else
+        # No directory restrictions - safe to use
+        :ok
+      end
     end
+  rescue
+    _ -> {:error, :invalid_path}
+  end
+
+  # Check if a path contains path traversal attempts
+  # This checks for literal "..", URL-encoded variants, and other bypasses
+  defp has_path_traversal?(path) when is_binary(path) do
+    # Check for literal dot-dot-slash sequences
+    dot_dot_checks = [
+      "..",           # Literal ".."
+      "%2e%2e",       # URL encoded ".."
+      "%2e.",         # Partially encoded
+      ".%2e",         # Partially encoded
+      "..\\",         # Windows backslash separator (if on Unix, this is safe check)
+      "%252e",        # Double-encoded "."
+      "%c0%ae",       # Unicode bypass (UTF-8)
+      "%e0%80%af"     # Unicode bypass (overlong)
+    ]
+
+    # Normalize path for checking (lowercase for case-insensitive checks)
+    normalized = String.downcase(path)
+
+    Enum.any?(dot_dot_checks, fn pattern ->
+      String.contains?(normalized, pattern)
+    end)
+  end
+
+  # Check if a path is within the list of allowed directories
+  defp is_within_allowed_dirs?(path, allowed_dirs) do
+    normalized_path = normalize_path(path)
+
+    Enum.any?(allowed_dirs, fn dir ->
+      normalized_allowed = normalize_path(dir)
+      # Check if path starts with allowed directory (with trailing slash for proper prefix match)
+      String.starts_with?(normalized_path <> "/", normalized_allowed <> "/") or
+        normalized_path == normalized_allowed
+    end)
+  end
+
+  # Normalize a path for comparison
+  defp normalize_path(path) do
+    path
+    |> Path.expand()
+    |> String.replace_trailing("/", "")
   end
 
   # ===========================================================================
