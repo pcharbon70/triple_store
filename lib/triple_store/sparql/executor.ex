@@ -63,6 +63,30 @@ defmodule TripleStore.SPARQL.Executor do
   # Types
   # ===========================================================================
 
+  @typedoc "SPARQL algebra term - can be a variable, named node, literal, or other RDF term"
+  @type sparql_term ::
+          {:variable, String.t()}
+          | {:named_node, String.t()}
+          | {:literal, :simple, String.t()}
+          | {:literal, :typed, String.t(), String.t()}
+          | {:literal, :lang, String.t(), String.t()}
+          | :default_graph
+          | term()
+
+  @typedoc "Triple pattern from SPARQL algebra: {:triple, subject, predicate, object}"
+  @type triple_pattern :: {:triple, sparql_term(), sparql_term(), sparql_term()}
+
+  @typedoc "Quad pattern from SPARQL algebra: {:quad, subject, predicate, object, graph}
+  The graph position can be:
+  - A variable: {:variable, \"g\"}
+  - A named node IRI: {:named_node, \"http...\"}
+  - The atom :default_graph for SPARQL default graph
+  "
+  @type quad_pattern :: {:quad, sparql_term(), sparql_term(), sparql_term(), sparql_term()}
+
+  @typedoc "Pattern - either a triple or quad pattern"
+  @type pattern :: triple_pattern() | quad_pattern()
+
   @typedoc "A solution binding - map from variable names to RDF terms"
   @type binding :: %{String.t() => term()}
 
@@ -88,6 +112,9 @@ defmodule TripleStore.SPARQL.Executor do
           optional(:range_indexed_predicates) => MapSet.t()
         }
 
+  @typedoc "Graph context for pattern conversion"
+  @type graph_context :: :default | :default_graph | {:named_node, String.t()} | {:variable, String.t()} | nil
+
   # ===========================================================================
   # Security Limits
   # ===========================================================================
@@ -102,6 +129,163 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Maximum number of triples to collect in DESCRIBE (blank node following)
   @max_describe_triples 10_000
+
+  # Default graph ID (matches TripleStore.QuadIndex.default_graph_id/0)
+  @default_graph_id 0
+
+  # ===========================================================================
+  # Quad Pattern Helpers (Section 3.1: Quad Pattern Representation)
+  # ===========================================================================
+
+  @doc """
+  Checks if a pattern is a quad pattern (4-element tuple).
+
+  ## Examples
+
+      iex> Executor.is_quad_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      true
+
+      iex> Executor.is_quad_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      false
+
+  """
+  @spec is_quad_pattern?(term()) :: boolean()
+  def is_quad_pattern?({:quad, _s, _p, _o, _g}), do: true
+  def is_quad_pattern?(_), do: false
+
+  @doc """
+  Checks if a pattern is a triple pattern (3-element tuple).
+
+  ## Examples
+
+      iex> Executor.is_triple_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      true
+
+      iex> Executor.is_triple_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      false
+
+  """
+  @spec is_triple_pattern?(term()) :: boolean()
+  def is_triple_pattern?({:triple, _s, _p, _o}), do: true
+  def is_triple_pattern?(_), do: false
+
+  @doc """
+  Converts a triple pattern to a quad pattern by adding a graph context.
+
+  ## Arguments
+
+  - `triple_pattern` - A triple pattern `{:triple, s, p, o}`
+  - `graph_context` - The graph context to add:
+    - `:default` or `:default_graph` - Use default graph (ID 0)
+    - `{:named_node, iri}` - Use specific named graph
+    - `{:variable, var}` - Use as graph variable
+    - `nil` - Use `:var` (unbound, matches any graph)
+
+  ## Returns
+
+  - A quad pattern `{:quad, s, p, o, graph}`
+
+  ## Examples
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, :default)
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, {:named_node, "http://example.org/graph"})
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/graph"}}
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, {:variable, "g"})
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+  """
+  @spec triple_pattern_to_quad(triple_pattern(), graph_context()) :: quad_pattern()
+
+  def triple_pattern_to_quad({:triple, s, p, o}, :default) do
+    {:quad, s, p, o, :default_graph}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, :default_graph) do
+    {:quad, s, p, o, :default_graph}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, {:named_node, _iri} = graph_iri) do
+    {:quad, s, p, o, graph_iri}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, {:variable, _var} = graph_var) do
+    {:quad, s, p, o, graph_var}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, nil) do
+    {:quad, s, p, o, {:variable, "_graph"}}
+  end
+
+  @doc """
+  Checks if a binding contains a specific graph variable.
+
+  ## Arguments
+
+  - `binding` - A solution binding map
+  - `graph_var` - Either a variable name (String) or `{:variable, name}` tuple
+
+  ## Returns
+
+  - `true` if the graph variable is bound in the binding
+  - `false` otherwise
+
+  ## Examples
+
+      iex> binding = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}}
+      iex> Executor.binding_has_graph?(binding, "g")
+      true
+
+      iex> Executor.binding_has_graph?(binding, {:variable, "g"})
+      true
+
+      iex> Executor.binding_has_graph?(binding, "x")
+      false
+
+  """
+  @spec binding_has_graph?(binding(), String.t() | {:variable, String.t()}) :: boolean()
+  def binding_has_graph?(binding, {:variable, var_name}), do: Map.has_key?(binding, var_name)
+  def binding_has_graph?(binding, var_name) when is_binary(var_name), do: Map.has_key?(binding, var_name)
+
+  @doc """
+  Extracts the graph value from a binding.
+
+  Returns information about the graph context in the binding:
+  - `{:bound, graph_id}` - If graph variable is bound to a specific graph ID
+  - `{:bound, :default}` - If bound to the default graph
+  - `{:var, var_name}` - If graph is a variable (not yet bound)
+  - `:not_bound` - If graph context is unknown
+
+  ## Examples
+
+      iex> binding = %{"g" => {:named_node, "http://example.org/graph1"}}
+      iex> Executor.extract_graph_from_binding(binding, {:variable, "g"})
+      {:bound, {:named_node, "http://example.org/graph1"}}
+
+  """
+  @spec extract_graph_from_binding(binding(), {:variable, String.t()}) ::
+          {:bound, term()} | {:var, String.t()} | :not_bound
+  def extract_graph_from_binding(binding, {:variable, var_name}) do
+    case Map.get(binding, var_name) do
+      nil -> :not_bound
+      graph_term -> {:bound, graph_term}
+    end
+  end
+
+  @doc """
+  Gets the default graph ID.
+
+  Returns the reserved ID used to represent the default graph in quad storage.
+  This matches the value in `TripleStore.QuadIndex.default_graph_id/0`.
+
+  """
+  @spec default_graph_id() :: 0
+  def default_graph_id, do: @default_graph_id
 
   # ===========================================================================
   # BGP Execution (Task 2.4.1)
