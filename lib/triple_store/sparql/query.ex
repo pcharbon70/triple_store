@@ -1223,6 +1223,10 @@ defmodule TripleStore.SPARQL.Query do
           object
         )
 
+      # GRAPH clause - execute in graph context
+      {:graph, graph_spec, inner_pattern} ->
+        Executor.execute_graph(ctx, graph_spec, inner_pattern, %{})
+
       nil ->
         # Empty pattern - return unit stream
         {:ok, Executor.unit_stream()}
