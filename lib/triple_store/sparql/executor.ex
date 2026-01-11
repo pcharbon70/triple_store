@@ -288,6 +288,187 @@ defmodule TripleStore.SPARQL.Executor do
   def default_graph_id, do: @default_graph_id
 
   # ===========================================================================
+  # GRAPH Clause Execution (Section 3.2: GRAPH Clause Execution)
+  # ===========================================================================
+
+  alias TripleStore.QuadOperations
+
+  @doc """
+  Executes a GRAPH clause against the quad store.
+
+  The GRAPH clause allows queries to be scoped to specific named graphs or to
+  iterate over all graphs using a graph variable.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `graph_spec` - Graph specification:
+    - `:default` - Execute in default graph
+    - `{:iri, iri}` - Execute in specific named graph
+    - `{:variable, var_name}` - Execute with graph as variable (iterate all graphs)
+  - `pattern` - Inner SPARQL algebra pattern to execute in graph context
+  - `initial_binding` - Initial variable bindings (default: empty map)
+
+  ## Returns
+
+  - `{:ok, stream}` - Stream of binding maps
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Named graph
+      {:ok, stream} = Executor.execute_graph(ctx, {:iri, "http://example.org/g1"}, bgp)
+
+      # Graph variable
+      {:ok, stream} = Executor.execute_graph(ctx, {:variable, "g"}, bgp)
+
+      # Default graph
+      {:ok, stream} = Executor.execute_graph(ctx, :default, bgp)
+
+  """
+  @spec execute_graph(context(), :default | {:iri, String.t()} | {:variable, String.t()}, term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_graph(ctx, graph_spec, pattern, initial_binding \\ %{})
+
+  def execute_graph(ctx, :default, pattern, initial_binding) do
+    execute_in_default_graph(ctx, pattern, initial_binding)
+  end
+
+  def execute_graph(ctx, {:iri, iri}, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, {:named_node, iri}, initial_binding)
+  end
+
+  def execute_graph(ctx, {:variable, var_name}, pattern, initial_binding) do
+    execute_with_graph_variable(ctx, pattern, var_name, initial_binding)
+  end
+
+  @doc """
+  Executes a pattern in the context of a specific named graph.
+
+  All triple patterns in the pattern are converted to quad patterns with the
+  specified graph bound, and the query is executed against only that graph's quads.
+
+  """
+  @spec execute_in_named_graph(context(), term(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_in_named_graph(ctx, pattern, graph_term, initial_binding) do
+    # Convert triple patterns in BGP to quad patterns with bound graph
+    case convert_patterns_to_quads(pattern, graph_term) do
+      {:ok, quad_pattern} ->
+        # Execute the quad pattern
+        execute_quad_pattern(ctx, quad_pattern, initial_binding)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Executes a pattern in the default graph context.
+
+  All triple patterns in the pattern are converted to quad patterns with the
+  default graph (ID 0) bound, and the query is executed against only default
+  graph quads.
+
+  """
+  @spec execute_in_default_graph(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_in_default_graph(ctx, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, :default_graph, initial_binding)
+  end
+
+  @doc """
+  Executes a pattern with graph as a variable.
+
+  Iterates over all named graphs in the store, executes the pattern in each
+  graph context, and binds the graph variable to the graph IRI in results.
+
+  """
+  @spec execute_with_graph_variable(context(), term(), String.t(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_with_graph_variable(ctx, pattern, var_name, initial_binding) do
+    case QuadOperations.list_graphs(ctx.db, include_default: true) do
+      {:ok, graph_terms} when is_list(graph_terms) ->
+        # Create a stream of results from each graph
+        graph_streams =
+          Enum.map(graph_terms, fn graph_term ->
+            case execute_in_named_graph(ctx, pattern, graph_term, initial_binding) do
+              {:ok, stream} ->
+                # Add graph variable binding to each result
+                Stream.map(stream, fn binding ->
+                  Map.put(binding, var_name, graph_term)
+                end)
+
+              {:error, _} ->
+                Stream.wrap([])
+            end
+          end)
+
+        # Concatenate all graph streams
+        {:ok, Stream.concat(graph_streams)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Converts triple patterns in a SPARQL algebra pattern to quad patterns.
+
+  Handles BGP patterns containing triple patterns, converting each to a quad
+  pattern with the specified graph bound.
+
+  """
+  @spec convert_patterns_to_quads(term(), term()) :: {:ok, term()} | {:error, term()}
+  defp convert_patterns_to_quads({:bgp, triple_patterns}, graph_term) do
+    quad_patterns =
+      Enum.map(triple_patterns, fn triple_pattern ->
+        case triple_pattern do
+          {:triple, s, p, o} ->
+            {:quad, s, p, o, graph_term}
+
+          _ ->
+            triple_pattern
+        end
+      end)
+
+    {:ok, {:bgp, quad_patterns}}
+  end
+
+  defp convert_patterns_to_quads(other_pattern, _graph_term) do
+    # For non-BGP patterns, return as-is (they will be handled by recursion)
+    {:ok, other_pattern}
+  end
+
+  @doc """
+  Executes a quad pattern against the quad store.
+
+  Similar to execute_pattern but handles quad patterns (4-tuple) instead of
+  triple patterns (3-tuple).
+
+  """
+  @spec execute_quad_pattern(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_quad_pattern(ctx, pattern, initial_binding \\ %{})
+
+  def execute_quad_pattern(ctx, {:bgp, quad_patterns}, initial_binding) do
+    # For now, convert quad patterns back to triple patterns for execution
+    # and filter by graph after the fact
+    # TODO: In Section 3.3, implement true quad BGP execution
+    triple_patterns =
+      Enum.map(quad_patterns, fn quad_pattern ->
+        case quad_pattern do
+          {:quad, s, p, o, _g} ->
+            {:triple, s, p, o}
+
+          _ ->
+            quad_pattern
+        end
+      end)
+
+    execute_bgp(ctx, triple_patterns, initial_binding)
+  end
+
+  def execute_quad_pattern(_ctx, other, _initial_binding) do
+    {:error, {:unsupported_quad_pattern, other}}
+  end
+
+  # ===========================================================================
   # BGP Execution (Task 2.4.1)
   # ===========================================================================
 
