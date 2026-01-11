@@ -327,6 +327,15 @@ defmodule TripleStore.Loader do
   @memory_threshold_low 4 * 1024 * 1024 * 1024
   @memory_threshold_high 16 * 1024 * 1024 * 1024
 
+  # Resource limits to prevent DoS
+  # Maximum number of triples/quads that can be loaded in a single operation
+  @max_triples 1_000_000_000
+  # Maximum concurrent batches for parallel loading (reserved for future use)
+  # The unused warning is expected - this constant is reserved for future use
+  @max_concurrent_batches 1000
+  # Progress callback timeout in milliseconds (5 seconds)
+  @progress_callback_timeout 5000
+
   # Supported RDF file formats
   @supported_formats %{
     ".ttl" => :turtle,
@@ -1633,27 +1642,37 @@ defmodule TripleStore.Loader do
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
     |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
-      batch_start = System.monotonic_time()
-      batch_count = length(batch)
+      # Check max triples limit before processing batch
+      if total >= @max_triples do
+        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+      else
+        batch_start = System.monotonic_time()
+        batch_count = length(batch)
 
-      case process_batch(db, manager, batch, write_opts) do
-        :ok ->
-          new_total = total + batch_count
-          batch_duration = System.monotonic_time() - batch_start
+        # Don't process batch if it would exceed max triples
+        if total + batch_count > @max_triples do
+          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+        else
+          case process_batch(db, manager, batch, write_opts) do
+            :ok ->
+              new_total = total + batch_count
+              batch_duration = System.monotonic_time() - batch_start
 
-          emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
 
-          # Check if we should report progress and handle cancellation
-          case maybe_report_progress(progress_opts, batch_number, new_total) do
-            :continue ->
-              {:cont, {:ok, new_total}}
+              # Check if we should report progress and handle cancellation
+              case maybe_report_progress(progress_opts, batch_number, new_total) do
+                :continue ->
+                  {:cont, {:ok, new_total}}
 
-            :halt ->
-              {:halt, {:halted, new_total}}
+                :halt ->
+                  {:halt, {:halted, new_total}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
           end
-
-        {:error, reason} ->
-          {:halt, {:error, reason}}
+        end
       end
     end)
   end
@@ -1853,6 +1872,7 @@ defmodule TripleStore.Loader do
   end
 
   # Report progress if callback is set and interval is reached
+  # Includes timeout protection to prevent slow/hanging callbacks from blocking load
   @spec maybe_report_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
   defp maybe_report_progress(%{callback: nil}, _batch_number, _total), do: :continue
 
@@ -1873,7 +1893,13 @@ defmodule TripleStore.Loader do
         rate_per_second: rate
       }
 
-      callback.(progress_info)
+      # Call callback with timeout to prevent blocking
+      task = Task.async(fn -> callback.(progress_info) end)
+
+      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
+        {:ok, :halt} -> :halt
+        _ -> :continue
+      end
     else
       :continue
     end
@@ -1904,27 +1930,37 @@ defmodule TripleStore.Loader do
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
     |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
-      batch_start = System.monotonic_time()
-      batch_count = length(batch)
+      # Check max triples limit before processing batch
+      if total >= @max_triples do
+        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+      else
+        batch_start = System.monotonic_time()
+        batch_count = length(batch)
 
-      case process_quad_batch(db, manager, batch, write_opts) do
-        :ok ->
-          new_total = total + batch_count
-          batch_duration = System.monotonic_time() - batch_start
+        # Don't process batch if it would exceed max triples
+        if total + batch_count > @max_triples do
+          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+        else
+          case process_quad_batch(db, manager, batch, write_opts) do
+            :ok ->
+              new_total = total + batch_count
+              batch_duration = System.monotonic_time() - batch_start
 
-          emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
 
-          # Check if we should report progress and handle cancellation
-          case maybe_report_quad_progress(progress_opts, batch_number, new_total) do
-            :continue ->
-              {:cont, {:ok, new_total}}
+              # Check if we should report progress and handle cancellation
+              case maybe_report_quad_progress(progress_opts, batch_number, new_total) do
+                :continue ->
+                  {:cont, {:ok, new_total}}
 
-            :halt ->
-              {:halt, {:halted, new_total}}
+                :halt ->
+                  {:halt, {:halted, new_total}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
           end
-
-        {:error, reason} ->
-          {:halt, {:error, reason}}
+        end
       end
     end)
   end
@@ -2116,6 +2152,7 @@ defmodule TripleStore.Loader do
   end
 
   # Report progress for quad loading
+  # Includes timeout protection to prevent slow/hanging callbacks from blocking load
   @spec maybe_report_quad_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
   defp maybe_report_quad_progress(%{callback: nil}, _batch_number, _total), do: :continue
 
@@ -2135,8 +2172,13 @@ defmodule TripleStore.Loader do
         rate_per_second: rate
       }
 
-      # Return the callback's result (:continue or :halt)
-      callback.(progress_info)
+      # Call callback with timeout to prevent blocking
+      task = Task.async(fn -> callback.(progress_info) end)
+
+      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
+        {:ok, :halt} -> :halt
+        _ -> :continue
+      end
     else
       :continue
     end
@@ -2214,14 +2256,71 @@ defmodule TripleStore.Loader do
   # Private - Path Validation
   # ===========================================================================
 
-  @spec validate_file_path(Path.t()) :: {:ok, Path.t()} | {:error, :invalid_path}
-  defp validate_file_path(path) do
-    # Prevent path traversal attacks
-    if String.contains?(path, "..") do
+  @spec validate_file_path(Path.t(), [Path.t()] | nil) :: {:ok, Path.t()} | {:error, :invalid_path}
+  defp validate_file_path(path, allowed_dirs \\ nil) do
+    # Check for path traversal in the original path before expansion
+    # This catches attempts like "../", "..\\", "%2e%2e", etc.
+    if has_path_traversal?(path) do
       {:error, :invalid_path}
     else
-      {:ok, Path.expand(path)}
+      expanded = Path.expand(path)
+
+      # If allowed_dirs is specified, verify the path is within them
+      if allowed_dirs != nil and Path.type(expanded) == :absolute do
+        if is_within_allowed_dirs?(expanded, allowed_dirs) do
+          {:ok, expanded}
+        else
+          {:error, :invalid_path}
+        end
+      else
+        # No directory restrictions or relative path - safe to use
+        {:ok, expanded}
+      end
     end
+  rescue
+    _ -> {:error, :invalid_path}
+  end
+
+  # Check if a path contains path traversal attempts
+  # This checks for literal "..", URL-encoded variants, and other bypasses
+  defp has_path_traversal?(path) when is_binary(path) do
+    # Check for literal dot-dot-slash sequences
+    dot_dot_checks = [
+      "..",           # Literal ".."
+      "%2e%2e",       # URL encoded ".."
+      "%2e.",         # Partially encoded
+      ".%2e",         # Partially encoded
+      "..\\",         # Windows backslash separator (if on Unix, this is safe check)
+      "%252e",        # Double-encoded "."
+      "%c0%ae",       # Unicode bypass (UTF-8)
+      "%e0%80%af"     # Unicode bypass (overlong)
+    ]
+
+    # Normalize path for checking (lowercase for case-insensitive checks)
+    normalized = String.downcase(path)
+
+    Enum.any?(dot_dot_checks, fn pattern ->
+      String.contains?(normalized, pattern)
+    end)
+  end
+
+  # Check if a path is within the list of allowed directories
+  defp is_within_allowed_dirs?(path, allowed_dirs) do
+    normalized_path = normalize_path(path)
+
+    Enum.any?(allowed_dirs, fn dir ->
+      normalized_allowed = normalize_path(dir)
+      # Check if path starts with allowed directory (with trailing slash for proper prefix match)
+      String.starts_with?(normalized_path <> "/", normalized_allowed <> "/") or
+        normalized_path == normalized_allowed
+    end)
+  end
+
+  # Normalize a path for comparison
+  defp normalize_path(path) do
+    path
+    |> Path.expand()
+    |> String.replace_trailing("/", "")
   end
 
   @spec check_file_size(Path.t(), pos_integer()) ::
