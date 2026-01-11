@@ -593,6 +593,325 @@ defmodule TripleStore.Exporter do
   end
 
   # ===========================================================================
+  # Public API - Graph-Scoped Export
+  # ===========================================================================
+
+  @doc """
+  Exports all quads from the store as an RDF.Dataset.
+
+  Retrieves all quads (including named graphs) and converts them
+  to an RDF.Dataset structure containing all graphs.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+
+  ## Options
+
+  - `:pattern` - Quad pattern for filtering (default: all quads)
+  - `:batch_size` - Number of quads to process at once (default: #{@default_batch_size})
+
+  ## Returns
+
+  - `{:ok, RDF.Dataset.t()}` - The exported dataset
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, dataset} = Exporter.export_dataset(db)
+      iex> RDF.Dataset.graph_count(dataset)
+      3
+      iex> {:ok, dataset} = Exporter.export_dataset(db, pattern: {:var, :var, :var, :bound})
+  """
+  @spec export_dataset(db_ref(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  def export_dataset(db, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    pattern = Keyword.get(opts, :pattern, {:var, :var, :var, :var})
+    _batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+    with_telemetry(%{operation: :dataset, path: nil}, fn ->
+      values = extract_bound_values(pattern, opts)
+      internal_quads = QuadOperations.lookup_quads(db, pattern, values)
+
+      case Adapter.to_rdf_quads(db, internal_quads) do
+        {:ok, rdf_quads} ->
+          # Filter out :not_found entries
+          valid_quads = Enum.filter(rdf_quads, &is_tuple/1)
+          {:ok, RDF.Dataset.new(valid_quads)}
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Exports specific named graphs as an RDF.Dataset.
+
+  Retrieves all quads from the specified named graphs and converts them
+  to an RDF.Dataset structure.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process for term-to-ID conversion
+  - `graphs` - List of graph terms (RDF.IRI or RDF.BlankNode) to export
+
+  ## Options
+
+  - `:include_default` - Whether to include default graph (default: false)
+  - `:batch_size` - Number of quads to process at once
+
+  ## Returns
+
+  - `{:ok, RDF.Dataset.t()}` - The exported dataset
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> graphs = [RDF.iri("http://example.org/g1"), RDF.iri("http://example.org/g2")]
+      iex> {:ok, dataset} = Exporter.export_graphs(db, manager, graphs)
+      iex> RDF.Dataset.graph_count(dataset)
+      2
+  """
+  @spec export_graphs(
+          db_ref(),
+          TripleStore.Dictionary.manager(),
+          [RDF.IRI.t() | RDF.BlankNode.t()],
+          keyword()
+        ) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  def export_graphs(db, manager, graphs, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    include_default = Keyword.get(opts, :include_default, false)
+    batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
+
+    with_telemetry(%{operation: :graphs, path: nil}, fn ->
+      # Convert graph terms to IDs
+      graph_ids =
+        Enum.map(graphs, fn graph_term ->
+          case Adapter.term_to_id(manager, graph_term) do
+            {:ok, graph_id} -> graph_id
+            _ -> nil
+          end
+        end)
+        |> Enum.filter(& &1)
+
+      # Collect all quads from specified graphs
+      all_quads =
+        Enum.flat_map(graph_ids, fn graph_id ->
+          QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
+        end)
+
+      # Optionally include default graph
+      all_quads =
+        if include_default do
+          default_quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: 0})
+          default_quads ++ all_quads
+        else
+          all_quads
+        end
+
+      # Process in batches to avoid memory issues
+      all_quads
+      |> Enum.chunk_every(batch_size)
+      |> Enum.reduce_while({:ok, []}, fn batch, {:ok, acc} ->
+        case Adapter.to_rdf_quads(db, batch) do
+          {:ok, rdf_quads} ->
+            valid_quads = Enum.filter(rdf_quads, &is_tuple/1)
+            {:cont, {:ok, acc ++ valid_quads}}
+
+          {:error, _} = error ->
+            {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, rdf_quads} ->
+          {:ok, RDF.Dataset.new(rdf_quads)}
+
+        error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Exports only the default graph as an RDF.Graph.
+
+  Retrieves all quads from the default graph and converts them
+  to an RDF.Graph structure.
+
+  ## Arguments
+
+  - `db` - Database reference
+
+  ## Options
+
+  - `:name` - Graph name (IRI)
+  - `:base_iri` - Base IRI for the graph
+  - `:prefixes` - Prefix mappings for serialization
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - The exported graph
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, graph} = Exporter.export_default_graph(db)
+      iex> RDF.Graph.triple_count(graph)
+      42
+  """
+  @spec export_default_graph(db_ref(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  def export_default_graph(db, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    graph_opts = Keyword.take(opts, [:name, :base_iri, :prefixes])
+
+    with_telemetry(%{operation: :default_graph, path: nil}, fn ->
+      # Get quads from default graph (ID 0)
+      internal_quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: 0})
+
+      # Convert to RDF.Graph (triples only, no graph context)
+      with {:ok, rdf_quads} <- Adapter.to_rdf_quads(db, internal_quads) do
+        # Filter out :not_found entries and extract triples
+        triples =
+          rdf_quads
+          |> Enum.filter(&is_tuple/1)
+          |> Enum.map(fn {s, p, o, _g} -> {s, p, o} end)
+
+        {:ok, RDF.Graph.new(triples, graph_opts)}
+      end
+    end)
+  end
+
+  @doc """
+  Exports a single named graph as an RDF.Graph.
+
+  Retrieves all quads from the specified named graph and converts them
+  to an RDF.Graph structure.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process for term-to-ID conversion
+  - `graph` - Graph term (RDF.IRI or RDF.BlankNode)
+
+  ## Options
+
+  - `:name` - Graph name override (defaults to the graph term)
+  - `:base_iri` - Base IRI for the graph
+  - `:prefixes` - Prefix mappings for serialization
+
+  ## Returns
+
+  - `{:ok, RDF.Graph.t()}` - The exported graph
+  - `{:error, :graph_not_found}` - If graph doesn't exist
+  - `{:error, reason}` - On other failures
+
+  ## Examples
+
+      iex> graph = RDF.iri("http://example.org/mygraph")
+      iex> {:ok, graph} = Exporter.export_single_graph(db, manager, graph)
+      iex> RDF.Graph.triple_count(graph)
+      10
+  """
+  @spec export_single_graph(
+          db_ref(),
+          TripleStore.Dictionary.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t(),
+          keyword()
+        ) :: {:ok, RDF.Graph.t()} | {:error, term()}
+  def export_single_graph(db, manager, graph_term, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.QuadOperations
+
+    with_telemetry(%{operation: :single_graph, path: nil}, fn ->
+      # Convert graph term to ID
+      case Adapter.term_to_id(manager, graph_term) do
+        {:ok, graph_id} ->
+          # Check if graph exists
+          if QuadOperations.graph_exists?(db, manager, graph_term) do
+            # Get quads from the graph
+            internal_quads =
+              QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
+
+            # Convert to RDF.Graph
+            with {:ok, rdf_quads} <- Adapter.to_rdf_quads(db, internal_quads) do
+              triples =
+                rdf_quads
+                |> Enum.filter(&is_tuple/1)
+                |> Enum.map(fn {s, p, o, _g} -> {s, p, o} end)
+
+              # Use graph term as name if not provided
+              graph_opts =
+                if Keyword.has_key?(opts, :name) do
+                  Keyword.take(opts, [:name, :base_iri, :prefixes])
+                else
+                  opts
+                  |> Keyword.take([:base_iri, :prefixes])
+                  |> Keyword.put(:name, graph_term)
+                end
+
+              {:ok, RDF.Graph.new(triples, graph_opts)}
+            end
+          else
+            {:error, :graph_not_found}
+          end
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Exports multiple named graphs as an RDF.Dataset.
+
+  Retrieves all quads from the specified named graphs and converts them
+  to an RDF.Dataset structure containing all the graphs.
+
+  This is an alias for `export_graphs/4` with clearer naming for the
+  multiple graph use case.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process for term-to-ID conversion
+  - `graphs` - List of graph terms (RDF.IRI or RDF.BlankNode) to export
+
+  ## Options
+
+  - `:include_default` - Whether to include default graph (default: false)
+  - `:batch_size` - Number of quads to process at once
+
+  ## Returns
+
+  - `{:ok, RDF.Dataset.t()}` - The exported dataset
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> graphs = [RDF.iri("http://example.org/g1"), RDF.iri("http://example.org/g2")]
+      iex> {:ok, dataset} = Exporter.export_multiple_graphs(db, manager, graphs)
+      iex> RDF.Dataset.graph_count(dataset)
+      2
+  """
+  @spec export_multiple_graphs(
+          db_ref(),
+          TripleStore.Dictionary.manager(),
+          [RDF.IRI.t() | RDF.BlankNode.t()],
+          keyword()
+        ) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  def export_multiple_graphs(db, manager, graphs, opts \\ []) do
+    export_graphs(db, manager, graphs, opts)
+  end
+
+  # ===========================================================================
   # Public API - Streaming Export
   # ===========================================================================
 
@@ -891,6 +1210,17 @@ defmodule TripleStore.Exporter do
 
     try do
       case func.() do
+        {:ok, %RDF.Dataset{} = dataset} ->
+          duration = System.monotonic_time() - start_time
+
+          :telemetry.execute(
+            [:triple_store, :exporter, :stop],
+            %{graph_count: RDF.Dataset.graph_count(dataset), duration: duration},
+            Map.take(metadata, [:operation, :path])
+          )
+
+          {:ok, dataset}
+
         {:ok, %RDF.Graph{} = graph} ->
           duration = System.monotonic_time() - start_time
 
