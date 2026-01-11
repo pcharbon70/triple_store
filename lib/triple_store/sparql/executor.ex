@@ -2874,10 +2874,13 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   @doc """
-  Serializes CONSTRUCT query results to an RDF.Graph.
+  Serializes CONSTRUCT query results to an RDF.Graph or RDF.Dataset.
 
   Takes a template (list of triple patterns with variables) and instantiates
-  it with each binding to produce triples for the result graph.
+  it with each binding to produce triples for the result graph/dataset.
+
+  When bindings contain graph variables, returns an RDF.Dataset with named
+  graphs. Otherwise, returns an RDF.Graph (default graph).
 
   ## Arguments
 
@@ -2885,11 +2888,12 @@ defmodule TripleStore.SPARQL.Executor do
   - `stream` - Binding stream from query execution
   - `template` - List of triple patterns `{:triple, s, p, o}` where components
                  can be variables or concrete terms
-  - `opts` - Options passed to `RDF.Graph.new/2` (optional)
+  - `opts` - Options passed to `RDF.Graph.new/2` or `RDF.Dataset.new/2` (optional)
 
   ## Returns
 
-  - `{:ok, graph}` - RDF.Graph containing constructed triples
+  - `{:ok, graph}` - RDF.Graph containing constructed triples (no graph context)
+  - `{:ok, dataset}` - RDF.Dataset containing constructed quads (with graph context)
   - `{:error, reason}` - On failure
 
   ## Template Variable Substitution
@@ -2899,26 +2903,53 @@ defmodule TripleStore.SPARQL.Executor do
   - Concrete terms are passed through unchanged
   - If a variable is unbound, that triple is skipped
 
+  ## Graph Context
+
+  When bindings contain a graph variable (e.g., from `GRAPH ?g { ... }`),
+  the constructed quads include the graph context and an RDF.Dataset is returned.
+
   ## Examples
 
+      # Without graph context - returns RDF.Graph
       template = [
         {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
       ]
       {:ok, graph} = Executor.to_construct_result(ctx, stream, template)
 
+      # With graph context - returns RDF.Dataset
+      {:ok, dataset} = Executor.to_construct_result(ctx, stream_with_graph, template)
+
   """
   @spec to_construct_result(context(), Enumerable.t(), [tuple()], keyword()) ::
-          {:ok, RDF.Graph.t()} | {:error, term()}
+          {:ok, RDF.Graph.t()} | {:ok, RDF.Dataset.t()} | {:error, term()}
   def to_construct_result(ctx, stream, template, opts \\ []) do
-    triples =
-      stream
-      |> Stream.flat_map(fn binding ->
-        instantiate_template(template, binding)
-      end)
-      |> Enum.to_list()
+    # Materialize stream to check for graph variables
+    bindings = Enum.to_list(stream)
 
-    # Convert internal terms to RDF terms and build graph
-    build_graph_from_terms(ctx, triples, opts)
+    # Check if any binding has graph variables
+    has_graph_vars? =
+      Enum.any?(bindings, fn binding ->
+        Enum.any?(binding, fn {k, _v} ->
+          # Graph variables often named "g", "graph", etc.
+          # We check if the key exists in the binding
+          String.contains?(k, "g") or k == "graph"
+        end)
+      end)
+
+    {quads_or_triples, graph_names} =
+      Enum.reduce(bindings, {[], MapSet.new()}, fn binding, {acc, graphs} ->
+        instantiated = instantiate_template_with_graph(template, binding)
+        new_graphs = extract_graph_names(binding, instantiated)
+        {acc ++ instantiated, MapSet.union(graphs, new_graphs)}
+      end)
+
+    if has_graph_vars? and MapSet.size(graph_names) > 0 do
+      # Return RDF.Dataset when there are graph variables
+      build_dataset_from_terms(ctx, quads_or_triples, opts)
+    else
+      # Return RDF.Graph for default graph queries
+      build_graph_from_terms(ctx, quads_or_triples, opts)
+    end
   end
 
   @doc """
@@ -3023,6 +3054,75 @@ defmodule TripleStore.SPARQL.Executor do
       end)
 
     {:ok, RDF.Graph.new(rdf_triples, opts)}
+  end
+
+  # Build RDF.Dataset from internal term quads (for named graph queries)
+  defp build_dataset_from_terms(_ctx, [], _opts) do
+    {:ok, RDF.Dataset.new([])}
+  end
+
+  defp build_dataset_from_terms(_ctx, quads, _opts) do
+    # Convert internal quads to RDF quads
+    # Quads are {s, p, o, g} or {s, p, o} with graph context from binding
+    rdf_quads =
+      Enum.flat_map(quads, fn
+        {s, _p, _o, g} = quad ->
+          with {:ok, s_term} <- internal_to_rdf(s),
+               {:ok, p_term} <- internal_to_rdf(elem(quad, 1)),
+               {:ok, o_term} <- internal_to_rdf(elem(quad, 2)),
+               {:ok, g_term} <- internal_to_rdf(g) do
+            [{s_term, p_term, o_term, g_term}]
+          else
+            _ -> []
+          end
+
+        {_s, _p, _o} ->
+          # Triple without explicit graph - skip in dataset mode
+          # (this shouldn't happen if has_graph_vars? is true)
+          []
+      end)
+
+    {:ok, RDF.Dataset.new(rdf_quads)}
+  end
+
+  # Instantiate template with graph context
+  # Returns list of {s, p, o, g} quads when graph is present, or {s, p, o} when not
+  defp instantiate_template_with_graph(template, binding) do
+    # Try to find the graph variable value in the binding
+    # Graph variables are typically named "g", "graph", or contain "graph"
+    graph_term =
+      Enum.find_value(binding, fn
+        {"g", v} -> v
+        {"graph", v} -> v
+        {k, v} when is_binary(k) ->
+          if String.contains?(k, "graph"), do: v, else: nil
+        _ -> nil
+      end)
+
+    Enum.flat_map(template, fn {:triple, s, p, o} ->
+      with {:ok, s_val} <- substitute_term(s, binding),
+           {:ok, p_val} <- substitute_term(p, binding),
+           {:ok, o_val} <- substitute_term(o, binding) do
+        if graph_term do
+          # Include graph context
+          [{s_val, p_val, o_val, graph_term}]
+        else
+          # No graph context - return triple
+          [{s_val, p_val, o_val}]
+        end
+      else
+        :unbound -> []
+      end
+    end)
+  end
+
+  # Extract graph names from binding and instantiated quads
+  defp extract_graph_names(_binding, instantiated) do
+    # Collect all graph values from the instantiated quads
+    Enum.reduce(instantiated, MapSet.new(), fn
+      {_s, _p, _o, g}, acc -> MapSet.put(acc, g)
+      {_s, _p, _o}, acc -> acc
+    end)
   end
 
   # Convert internal term representation to RDF.ex terms
