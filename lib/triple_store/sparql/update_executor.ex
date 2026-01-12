@@ -629,11 +629,17 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
          length(insert_template) > @max_template_size do
       {:error, :template_too_large}
     else
-      do_execute_modify(ctx, delete_template, insert_template, pattern)
+      # Check if we're using a quad store
+      if ErlangAdapter.is_quad_store?(ctx.db) do
+        do_execute_modify_quad(ctx, delete_template, insert_template, pattern)
+      else
+        do_execute_modify_triples(ctx, delete_template, insert_template, pattern)
+      end
     end
   end
 
-  defp do_execute_modify(ctx, delete_template, insert_template, pattern) do
+  # Legacy MODIFY for triple stores
+  defp do_execute_modify_triples(ctx, delete_template, insert_template, pattern) do
     # Execute WHERE pattern to get bindings
     case execute_where_pattern(ctx, pattern) do
       {:ok, bindings} when length(bindings) > @max_pattern_matches ->
@@ -654,6 +660,39 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       {:error, _} = error ->
         error
     end
+  end
+
+  # MODIFY for quad stores - always use quad operations
+  defp do_execute_modify_quad(ctx, delete_template, insert_template, pattern) do
+    # Execute WHERE pattern to get bindings
+    case execute_where_pattern(ctx, pattern) do
+      {:ok, bindings} when length(bindings) > @max_pattern_matches ->
+        {:error, :too_many_matches}
+
+      {:ok, bindings} ->
+        # Instantiate templates with bindings (handles both quads and triples)
+        delete_patterns = instantiate_template(delete_template, bindings)
+        insert_patterns = instantiate_template(insert_template, bindings)
+
+        # Always use quad operations for quad stores
+        # (3-tuples from triple templates are converted to default graph quads)
+        with {:ok, delete_internal} <- quads_to_internal(ctx, delete_patterns, :lookup),
+             {:ok, insert_internal} <- quads_to_internal(ctx, insert_patterns, :create) do
+          execute_atomic_modify_quads(ctx, delete_internal, insert_internal)
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Check if a list contains quad patterns (4-element tuples or {:quad, ...})
+  defp has_quads?(list) when is_list(list) do
+    Enum.any?(list, fn
+      {:quad, _, _, _, _} -> true
+      {_, _, _, _} -> true
+      _ -> false
+    end)
   end
 
   # ===========================================================================
@@ -1009,6 +1048,104 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     lookup_triple_ids(ctx, triples)
   end
 
+  # Converts quads to internal representation
+  defp quads_to_internal(_ctx, [], _mode), do: {:ok, []}
+
+  defp quads_to_internal(ctx, quads, :create) do
+    # For INSERT, create IDs as needed
+    results =
+      Enum.map(quads, fn
+        # Handle 3-tuples (from triple templates) - treat as default graph quads
+        # Must come before 4-tuple patterns to match correctly
+        {s, p, o} ->
+          with {:ok, s_id} <- Adapter.term_to_id(ctx.dict_manager, s),
+               {:ok, p_id} <- Adapter.term_to_id(ctx.dict_manager, p),
+               {:ok, o_id} <- Adapter.term_to_id(ctx.dict_manager, o) do
+            {:ok, {s_id, p_id, o_id, 0}}
+          else
+            _ -> {:error, :conversion_failed}
+          end
+
+        {s, p, o, :default} ->
+          with {:ok, s_id} <- Adapter.term_to_id(ctx.dict_manager, s),
+               {:ok, p_id} <- Adapter.term_to_id(ctx.dict_manager, p),
+               {:ok, o_id} <- Adapter.term_to_id(ctx.dict_manager, o) do
+            {:ok, {s_id, p_id, o_id, 0}}
+          else
+            _ -> {:error, :conversion_failed}
+          end
+
+        {s, p, o, %RDF.IRI{} = g} ->
+          with {:ok, s_id} <- Adapter.term_to_id(ctx.dict_manager, s),
+               {:ok, p_id} <- Adapter.term_to_id(ctx.dict_manager, p),
+               {:ok, o_id} <- Adapter.term_to_id(ctx.dict_manager, o),
+               {:ok, g_id} <- Adapter.term_to_id(ctx.dict_manager, g) do
+            {:ok, {s_id, p_id, o_id, g_id}}
+          else
+            _ -> {:error, :conversion_failed}
+          end
+
+        _ ->
+          {:error, :invalid_quad}
+      end)
+
+    # Split into successes and failures
+    {successes, failures} = Enum.split_with(results, &match?({:ok, _}, &1))
+
+    if failures == [] do
+      {:ok, Enum.map(successes, fn {:ok, quad} -> quad end)}
+    else
+      {:error, {:partial_conversion, length(successes), length(failures)}}
+    end
+  end
+
+  defp quads_to_internal(ctx, quads, :lookup) do
+    # For DELETE, only look up existing IDs
+    results =
+      Enum.map(quads, fn
+        # Handle 3-tuples (from triple templates) - treat as default graph quads
+        # Must come before 4-tuple patterns to match correctly
+        {s, p, o} ->
+          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
+               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
+               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
+            {:ok, {s_id, p_id, o_id, 0}}
+          else
+            _ -> {:error, :not_found}
+          end
+
+        {s, p, o, :default} ->
+          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
+               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
+               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
+            {:ok, {s_id, p_id, o_id, 0}}
+          else
+            _ -> {:error, :not_found}
+          end
+
+        {s, p, o, %RDF.IRI{} = g} ->
+          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
+               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
+               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o),
+               {:ok, g_id} <- lookup_term_id_no_create(ctx.db, g) do
+            {:ok, {s_id, p_id, o_id, g_id}}
+          else
+            _ -> {:error, :not_found}
+          end
+
+        _ ->
+          {:error, :invalid_quad}
+      end)
+
+    # Filter out not_found quads (they don't exist, can't be deleted)
+    successes =
+      results
+      |> Enum.filter(&match?({:ok, _}, &1))
+      |> Enum.map(fn {:ok, quad} -> quad end)
+
+    {:ok, successes}
+  end
+
   # ===========================================================================
   # Private Helpers: Pattern Execution
   # ===========================================================================
@@ -1059,11 +1196,33 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     end
   end
 
+  defp instantiate_pattern({:quad, s, p, o, g}, binding) do
+    with {:ok, s_val} <- substitute(s, binding),
+         {:ok, p_val} <- substitute(p, binding),
+         {:ok, o_val} <- substitute(o, binding),
+         {:ok, g_val} <- substitute_graph(g, binding) do
+      [{ast_to_rdf(s_val), ast_to_rdf(p_val), ast_to_rdf(o_val), ast_graph_to_rdf(g_val)}]
+    else
+      :unbound -> []
+    end
+  end
+
   defp instantiate_pattern({:bgp, triples}, binding) do
     Enum.flat_map(triples, &instantiate_pattern(&1, binding))
   end
 
   defp instantiate_pattern(_, _binding), do: []
+
+  # Substitutes variables in a graph term
+  defp substitute_graph(:default_graph, _binding), do: {:ok, :default_graph}
+  defp substitute_graph(:default, _binding), do: {:ok, :default}
+  defp substitute_graph({:variable, name}, binding) do
+    case Map.get(binding, name) do
+      nil -> :unbound
+      value -> {:ok, value}
+    end
+  end
+  defp substitute_graph(graph, _binding), do: {:ok, graph}
 
   # Substitutes variables in a term with values from binding
   defp substitute({:variable, name}, binding) do
@@ -1109,6 +1268,43 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
         error
     end
   end
+
+  # Performs atomic delete + insert operation for quad stores
+  defp execute_atomic_modify_quads(ctx, delete_quads, insert_quads) do
+    # Filter to ensure we only have valid quads
+    valid_deletes = Enum.filter(delete_quads, &is_valid_quad/1)
+    valid_inserts = Enum.filter(insert_quads, &is_valid_quad/1)
+
+    # First delete, then insert
+    delete_count =
+      if valid_deletes == [] do
+        0
+      else
+        case QuadOperations.delete_quads(ctx.db, valid_deletes, []) do
+          :ok -> length(valid_deletes)
+          {:error, _} -> 0
+        end
+      end
+
+    insert_count =
+      if valid_inserts == [] do
+        0
+      else
+        # Insert each quad and count
+        Enum.reduce(valid_inserts, 0, fn {s_id, p_id, o_id, g_id}, count ->
+          case QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
+            :ok -> count + 1
+            {:error, _} -> count
+          end
+        end)
+      end
+
+    {:ok, delete_count + insert_count}
+  end
+
+  # Check if a quad is valid (4-element tuple with integers)
+  defp is_valid_quad({s, p, o, g}) when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g), do: true
+  defp is_valid_quad(_), do: false
 
   # Executes a batch of operations
   defp execute_batch(_db, []), do: :ok
