@@ -39,6 +39,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
+  alias TripleStore.QuadOperations
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Parser
@@ -195,15 +196,12 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     execute_clear(ctx, props)
   end
 
-  def execute_operation(_ctx, {:create, _props}) do
-    # CREATE GRAPH is a no-op for our single-graph store
-    {:ok, 0}
+  def execute_operation(ctx, {:create, props}) when is_list(props) do
+    execute_create_graph(ctx, props)
   end
 
-  def execute_operation(_ctx, {:drop, _props}) do
-    # DROP GRAPH - for now just return success
-    # Full implementation would track named graphs
-    {:ok, 0}
+  def execute_operation(ctx, {:drop, props}) when is_list(props) do
+    execute_drop_graph(ctx, props)
   end
 
   # Handle clear with atom target directly
@@ -478,8 +476,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes a CLEAR operation.
 
-  CLEAR removes all triples from the default graph or a named graph.
-  For our single-graph implementation, CLEAR DEFAULT/ALL removes all triples.
+  CLEAR removes all triples from the default graph, a named graph, or all graphs.
 
   ## Arguments
 
@@ -499,27 +496,182 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
     case target do
       :all ->
-        clear_all_triples(ctx)
+        clear_all_graphs(ctx)
 
       :default ->
-        clear_all_triples(ctx)
+        clear_default_graph(ctx)
 
       :named ->
-        # No named graphs in current implementation
-        if silent, do: {:ok, 0}, else: {:error, :no_named_graphs}
+        # Clear all named graphs (not default)
+        clear_all_named_graphs(ctx, silent)
 
-      {:graph, _iri} ->
-        # Named graph clear - not implemented
-        if silent, do: {:ok, 0}, else: {:error, :named_graphs_not_supported}
+      {:graph, iri} ->
+        clear_named_graph(ctx, iri, silent)
 
       _ ->
-        {:error, {:invalid_clear_target, target}}
+        if silent, do: {:ok, 0}, else: {:error, {:invalid_clear_target, target}}
     end
   end
+
+  # ===========================================================================
+  # CREATE
+  # ===========================================================================
+
+  @doc """
+  Executes a CREATE GRAPH operation.
+
+  CREATE GRAPH creates an empty named graph. In our implementation, this
+  reserves a graph ID in the dictionary.
+
+  ## Arguments
+
+  - `ctx` - Execution context
+  - `props` - Properties from the CREATE operation
+
+  ## Returns
+
+  - `{:ok, 0}` - Graph created (SPARQL CREATE returns no count)
+  - `{:error, reason}` - On failure
+
+  """
+  @spec execute_create_graph(context(), keyword()) :: update_result()
+  def execute_create_graph(ctx, props) do
+    graph_iri = get_prop(props, "graph")
+    silent = get_prop(props, "silent", false)
+
+    cond do
+      is_nil(graph_iri) ->
+        {:error, :missing_graph_iri}
+
+      graph_iri == :default or graph_iri == :default_graph ->
+        # Default graph always exists
+        if silent, do: {:ok, 0}, else: {:error, :default_graph_exists}
+
+      true ->
+        # Convert AST graph term to RDF term
+        rdf_graph = ast_term_to_rdf_graph(graph_iri)
+
+        case QuadOperations.create_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+          {:ok, :created} ->
+            {:ok, 0}
+
+          {:ok, :already_exists} ->
+            if silent, do: {:ok, 0}, else: {:error, :graph_already_exists}
+
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
+    end
+  end
+
+  # ===========================================================================
+  # DROP
+  # ===========================================================================
+
+  @doc """
+  Executes a DROP GRAPH operation.
+
+  DROP GRAPH removes all quads from a named graph.
+
+  ## Arguments
+
+  - `ctx` - Execution context
+  - `props` - Properties from the DROP operation
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads removed
+  - `{:error, reason}` - On failure
+
+  """
+  @spec execute_drop_graph(context(), keyword()) :: update_result()
+  def execute_drop_graph(ctx, props) do
+    graph_iri = get_prop(props, "graph")
+    silent = get_prop(props, "silent", false)
+
+    cond do
+      is_nil(graph_iri) ->
+        {:error, :missing_graph_iri}
+
+      graph_iri == :default or graph_iri == :default_graph ->
+        # Can't drop default graph
+        if silent, do: {:ok, 0}, else: {:error, :cannot_drop_default}
+
+      true ->
+        # Convert AST graph term to RDF term
+        rdf_graph = ast_term_to_rdf_graph(graph_iri)
+
+        case QuadOperations.delete_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+          {:ok, count} ->
+            {:ok, count}
+
+          {:error, :not_found} ->
+            if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
+
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
+    end
+  end
+
+  # ===========================================================================
+  # CLEAR Helpers
+  # ===========================================================================
 
   # Batch size for chunked clear operations to prevent OOM
   @clear_batch_size 10_000
 
+  # Clear all graphs (default + named)
+  defp clear_all_graphs(ctx) do
+    # Use quad operations to clear all graphs
+    case clear_all_triples(ctx) do
+      {:ok, count} -> {:ok, count}
+      {:error, _} = error -> error
+    end
+  end
+
+  # Clear default graph only
+  defp clear_default_graph(ctx) do
+    case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, :default) do
+      {:ok, count} -> {:ok, count}
+      {:error, _} = error -> error
+    end
+  end
+
+  # Clear all named graphs (not default)
+  defp clear_all_named_graphs(ctx, silent) do
+    case QuadOperations.list_graphs(ctx.db, include_default: false) do
+      {:ok, graphs} ->
+        # Clear each named graph and sum the counts
+        Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
+          case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
+            {:ok, count} -> {:cont, {:ok, total + count}}
+            {:error, _} -> {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
+          end
+        end)
+
+      {:error, _} ->
+        if silent, do: {:ok, 0}, else: {:error, :list_graphs_failed}
+    end
+  end
+
+  # Clear a specific named graph
+  defp clear_named_graph(ctx, graph_iri, silent) do
+    rdf_graph = ast_term_to_rdf_graph(graph_iri)
+
+    case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+      {:ok, count} ->
+        {:ok, count}
+
+      {:error, :not_found} ->
+        if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
+
+      {:error, reason} ->
+        if silent, do: {:ok, 0}, else: {:error, reason}
+    end
+  end
+
+  # Legacy: clear all triples from the default graph
   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp clear_all_triples(ctx) do
     # Stream triples and delete in batches to prevent OOM on large databases
@@ -571,6 +723,14 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   defp ast_to_rdf(term), do: term
+
+  # Converts AST graph term to RDF.IRI or :default atom
+  defp ast_term_to_rdf_graph(:default), do: :default
+  defp ast_term_to_rdf_graph(:default_graph), do: :default
+  defp ast_term_to_rdf_graph({:named_node, iri}), do: RDF.iri(iri)
+  defp ast_term_to_rdf_graph({:iri, iri}), do: RDF.iri(iri)
+  defp ast_term_to_rdf_graph(graph_iri) when is_binary(graph_iri), do: RDF.iri(graph_iri)
+  defp ast_term_to_rdf_graph(_other), do: {:error, :invalid_graph_term}
 
   # Looks up existing IDs for triples (for DELETE - doesn't create new IDs)
   defp lookup_triple_ids(ctx, rdf_triples) do
@@ -919,6 +1079,18 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp ast_term_to_rdf({:named_node, iri}), do: RDF.iri(iri)
   defp ast_term_to_rdf({:variable, _name}), do: nil
   defp ast_term_to_rdf(_), do: nil
+
+  # Get a property value from a list that may have string or atom keys
+  defp get_prop(props, key, default \\ nil) do
+    # Try string key first (from parser)
+    case List.keyfind(props, key, 0) do
+      {^key, value} -> value
+      nil ->
+        # Try atom key (for keyword lists)
+        atom_key = String.to_atom(key)
+        Keyword.get(props, atom_key, default)
+    end
+  end
 
   # Telemetry for cache invalidation
   defp emit_full_invalidation do

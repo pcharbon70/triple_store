@@ -55,6 +55,7 @@ defmodule TripleStore.QuadOperations do
   """
 
   alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadIndex
   alias TripleStore.Telemetry
 
@@ -672,6 +673,106 @@ defmodule TripleStore.QuadOperations do
   end
 
   @doc """
+  Creates an empty named graph.
+
+  In the quad store, graphs are implicitly created when quads are inserted.
+  This function ensures a graph ID is reserved for the given graph IRI by
+  calling `get_or_create_id`. The graph is considered "created" even if
+  it contains no quads.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `graph_term` - Graph term (RDF.IRI, RDF.BlankNode) to create
+
+  ## Returns
+
+  - `{:ok, :created}` - Graph was newly created
+  - `{:ok, :already_exists}` - Graph already existed
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      {:ok, :created} = QuadOperations.create_graph(db, manager, RDF.iri("http://example.org/new"))
+
+      {:ok, :already_exists} = QuadOperations.create_graph(db, manager, RDF.iri("http://example.org/existing"))
+
+  """
+  @spec create_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) ::
+          {:ok, :created | :already_exists} | {:error, term()}
+  def create_graph(_db, manager, graph_term) do
+    # First check if the graph already exists
+    case Manager.lookup_id(manager, graph_term) do
+      {:ok, _graph_id} ->
+        # Graph already exists
+        {:ok, :already_exists}
+
+      :not_found ->
+        # Graph doesn't exist, create it
+        case Manager.get_or_create_id(manager, graph_term) do
+          {:ok, _graph_id} -> {:ok, :created}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        # Other error from lookup
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Clears all quads from a graph.
+
+  Removes all quads from the specified graph but keeps the graph ID valid.
+  This is similar to `delete_graph/3` but semantically represents clearing
+  rather than removing the graph.
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `graph_term` - Graph term (RDF.IRI, RDF.BlankNode, or :default)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads cleared (0 if graph was empty)
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      {:ok, 100} = QuadOperations.clear_graph(db, manager, RDF.iri("http://example.org/g1"))
+
+      {:ok, 0} = QuadOperations.clear_graph(db, manager, RDF.iri("http://example.org/empty"))
+
+  """
+  @spec clear_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def clear_graph(db, manager, :default) do
+    Telemetry.span(:quad, :clear_graph, %{graph: :default}, fn ->
+      case delete_all_quads_in_graph(db, 0) do
+        {:ok, count} -> {{:ok, count}, %{count: count}}
+        {:error, reason} -> {{:error, reason}, %{count: 0}}
+      end
+    end)
+  end
+
+  def clear_graph(db, manager, graph_term) do
+    Telemetry.span(:quad, :clear_graph, %{graph: graph_term}, fn ->
+      case TripleStore.Adapter.term_to_id(manager, graph_term) do
+        {:ok, graph_id} ->
+          case delete_all_quads_in_graph(db, graph_id) do
+            {:ok, count} -> {{:ok, count}, %{count: count}}
+            {:error, reason} -> {{:error, reason}, %{count: 0}}
+          end
+
+        {:error, reason} ->
+          {{:error, reason}, %{count: 0}}
+      end
+    end)
+  end
+
+  @doc """
   Deletes all quads from a named graph.
 
   Removes all quads belonging to the specified graph from all four indices
@@ -958,14 +1059,17 @@ defmodule TripleStore.QuadOperations do
               throw({:halt, acc})
           end
         end)
-        |> Enum.reverse()
+
+      quads = Enum.reverse(quads)
 
       # Delete all quads atomically
       if quads == [] do
         {:ok, 0}
       else
-        delete_quads(db, quads, sync: true)
-        {:ok, length(quads)}
+        case delete_quads(db, quads, sync: true) do
+          {:ok, _} -> {:ok, length(quads)}
+          {:error, reason} -> {:error, reason}
+        end
       end
     catch
       {:halt, acc} ->
@@ -973,8 +1077,10 @@ defmodule TripleStore.QuadOperations do
         if acc == [] do
           {:ok, 0}
         else
-          delete_quads(db, Enum.reverse(acc), sync: true)
-          {:ok, length(acc)}
+          case delete_quads(db, Enum.reverse(acc), sync: true) do
+            {:ok, _} -> {:ok, length(acc)}
+            {:error, reason} -> {:error, reason}
+          end
         end
 
       {:exit, reason} ->
