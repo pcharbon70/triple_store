@@ -36,6 +36,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   """
 
   alias TripleStore.Adapter
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
@@ -253,7 +254,80 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_insert_data(ctx, quads) when is_list(quads) do
-    # Convert AST quads to RDF terms, then to internal IDs
+    # Check if we're using a quad store
+    if ErlangAdapter.is_quad_store?(ctx.db) do
+      # Use quad operations
+      insert_quads(ctx, quads)
+    else
+      # Use triple operations (existing behavior)
+      insert_triples(ctx, quads)
+    end
+  end
+
+  # ===========================================================================
+  # Quad Insertion (for quad stores)
+  # ===========================================================================
+
+  @doc """
+  Inserts quads into a quad store.
+
+  Converts AST quads to RDF quads (preserving graph component) and
+  inserts them using QuadOperations.insert_quad/4.
+
+  ## Arguments
+  - `ctx` - Execution context
+  - `quads` - List of quad AST from parser
+
+  ## Returns
+  - `{:ok, count}` - Number of quads inserted
+  - `{:error, reason}` - On failure
+  """
+  defp insert_quads(ctx, quads) do
+    with {:ok, rdf_quads} <- quads_to_rdf_quads(quads),
+         {:ok, count} <- do_insert_quads(ctx, rdf_quads) do
+      {:ok, count}
+    end
+  end
+
+  # Perform the actual quad insertion
+  defp do_insert_quads(ctx, rdf_quads) do
+    # Insert each quad and count total
+    total =
+      Enum.reduce(rdf_quads, 0, fn rdf_quad, count ->
+        {subject, predicate, object, graph} = rdf_quad
+
+        with {:ok, s_id} <- Adapter.term_to_id(ctx.dict_manager, subject),
+             {:ok, p_id} <- Adapter.term_to_id(ctx.dict_manager, predicate),
+             {:ok, o_id} <- Adapter.term_to_id(ctx.dict_manager, object),
+             {:ok, g_id} <- get_graph_id_for_insert(ctx, graph),
+             :ok <- QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
+          count + 1
+        else
+          _error -> count
+        end
+      end)
+
+    {:ok, total}
+  end
+
+  # Get graph ID for insertion (creates ID if needed)
+  defp get_graph_id_for_insert(ctx, :default), do: {:ok, 0}
+  defp get_graph_id_for_insert(ctx, %RDF.IRI{} = graph_iri) do
+    Adapter.term_to_id(ctx.dict_manager, graph_iri)
+  end
+  defp get_graph_id_for_insert(_ctx, _), do: {:ok, 0}
+
+  # ===========================================================================
+  # Triple Insertion (for triple stores)
+  # ===========================================================================
+
+  @doc """
+  Inserts triples into a triple store.
+
+  Legacy function for triple stores. Converts AST quads to RDF triples
+  and inserts using Index.insert_triples.
+  """
+  defp insert_triples(ctx, quads) do
     with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
          {:ok, internal_triples} <- Adapter.from_rdf_triples(ctx.dict_manager, rdf_triples) do
       case Index.insert_triples(ctx.db, internal_triples) do
@@ -705,6 +779,36 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     e -> {:error, {:conversion_error, e}}
   end
 
+  # Converts parser quads to RDF.ex quads (preserving graph component)
+  defp quads_to_rdf_quads(quads) do
+    rdf_quads =
+      Enum.map(quads, fn
+        {:quad, s, p, o, g} ->
+          {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), ast_graph_to_rdf(g)}
+
+        {:triple, s, p, o} ->
+          # Legacy triple format - default to default graph
+          {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), :default}
+
+        {s, p, o} ->
+          # Bare triple format - default to default graph
+          {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), :default}
+      end)
+
+    {:ok, rdf_quads}
+  rescue
+    e -> {:error, {:conversion_error, e}}
+  end
+
+  # Converts AST graph term to RDF.IRI or :default atom
+  defp ast_graph_to_rdf(:default), do: :default
+  defp ast_graph_to_rdf(:default_graph), do: :default
+  defp ast_graph_to_rdf({:named_node, iri}), do: RDF.iri(iri)
+  defp ast_graph_to_rdf({:named_graph, iri}), do: RDF.iri(iri)
+  defp ast_graph_to_rdf({:iri, iri}), do: RDF.iri(iri)
+  defp ast_graph_to_rdf(graph_iri) when is_binary(graph_iri), do: RDF.iri(graph_iri)
+  defp ast_graph_to_rdf(_other), do: :default
+
   # Converts parser AST term to RDF.ex term
   defp ast_to_rdf({:named_node, iri}), do: RDF.iri(iri)
   defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
@@ -728,6 +832,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp ast_term_to_rdf_graph(:default), do: :default
   defp ast_term_to_rdf_graph(:default_graph), do: :default
   defp ast_term_to_rdf_graph({:named_node, iri}), do: RDF.iri(iri)
+  defp ast_term_to_rdf_graph({:named_graph, iri}), do: RDF.iri(iri)
   defp ast_term_to_rdf_graph({:iri, iri}), do: RDF.iri(iri)
   defp ast_term_to_rdf_graph(graph_iri) when is_binary(graph_iri), do: RDF.iri(graph_iri)
   defp ast_term_to_rdf_graph(_other), do: {:error, :invalid_graph_term}
