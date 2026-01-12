@@ -378,7 +378,120 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_delete_data(ctx, quads) when is_list(quads) do
-    # Convert AST quads to RDF terms
+    # Check if we're using a quad store
+    if ErlangAdapter.is_quad_store?(ctx.db) do
+      # Use quad operations
+      delete_quads(ctx, quads)
+    else
+      # Use triple operations (existing behavior)
+      delete_triples_from_store(ctx, quads)
+    end
+  end
+
+  # ===========================================================================
+  # Quad Deletion (for quad stores)
+  # ===========================================================================
+
+  @doc """
+  Deletes quads from a quad store.
+
+  Converts AST quads to RDF quads (preserving graph component) and
+  deletes them using QuadOperations.delete_quads/2.
+
+  ## Arguments
+  - `ctx` - Execution context
+  - `quads` - List of quad AST from parser
+
+  ## Returns
+  - `{:ok, count}` - Number of quads deleted
+  - `{:error, reason}` - On failure
+  """
+  defp delete_quads(ctx, quads) do
+    with {:ok, rdf_quads} <- quads_to_rdf_quads(quads),
+         {:ok, count} <- do_delete_quads(ctx, rdf_quads) do
+      {:ok, count}
+    end
+  end
+
+  # Perform the actual quad deletion
+  defp do_delete_quads(ctx, rdf_quads) do
+    # Look up IDs for each quad and check if they exist
+    quads_to_delete =
+      Enum.reduce(rdf_quads, [], fn rdf_quad, acc ->
+        {subject, predicate, object, graph} = rdf_quad
+
+        with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, subject),
+             {:ok, p_id} <- lookup_term_id_no_create(ctx.db, predicate),
+             {:ok, o_id} <- lookup_term_id_no_create(ctx.db, object),
+             {:ok, g_id} <- get_graph_id_for_delete(ctx, graph) do
+          quad = {s_id, p_id, o_id, g_id}
+          # Only add to list if quad actually exists in the database
+          if QuadOperations.quad_exists?(ctx.db, quad) do
+            [quad | acc]
+          else
+            acc
+          end
+        else
+          _ -> acc
+        end
+      end)
+      |> Enum.reverse()
+
+    if quads_to_delete == [] do
+      {:ok, 0}
+    else
+      case QuadOperations.delete_quads(ctx.db, quads_to_delete, []) do
+        :ok -> {:ok, length(quads_to_delete)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  # Get graph ID for deletion (lookup only, don't create)
+  defp get_graph_id_for_delete(_ctx, :default), do: {:ok, 0}
+  defp get_graph_id_for_delete(ctx, %RDF.IRI{} = graph_iri) do
+    # For DELETE, only lookup - don't create if not found
+    case lookup_term_id_no_create(ctx.db, graph_iri) do
+      {:ok, _id} = result -> result
+      _ -> {:error, :not_found}
+    end
+  end
+  defp get_graph_id_for_delete(_ctx, _), do: {:error, :not_found}
+
+  # Lookup term ID without creating (for DELETE operations)
+  defp lookup_term_id_no_create(db, %RDF.Literal{} = literal) do
+    if Dictionary.inline_encodable?(literal) do
+      # Inline-encoded literals can be checked directly
+      case encode_inline_literal(literal) do
+        {:ok, id} -> {:ok, id}
+        {:error, _} -> {:error, :not_found}
+      end
+    else
+      case TripleStore.Dictionary.StringToId.lookup_id(db, literal) do
+        {:ok, _id} = result -> result
+        _ -> {:error, :not_found}
+      end
+    end
+  end
+
+  defp lookup_term_id_no_create(db, term) do
+    case TripleStore.Dictionary.StringToId.lookup_id(db, term) do
+      {:ok, _id} = result -> result
+      _ -> {:error, :not_found}
+    end
+  end
+
+  # ===========================================================================
+  # Triple Deletion (for triple stores)
+  # ===========================================================================
+
+  @doc """
+  Deletes triples from a triple store.
+
+  Legacy function for triple stores. Converts AST quads to RDF triples
+  and deletes using Index.delete_triples.
+  """
+  defp delete_triples_from_store(ctx, quads) do
     with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
          {:ok, internal_triples} <- lookup_triple_ids(ctx, rdf_triples) do
       # Only delete triples that exist (have valid IDs)
