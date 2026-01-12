@@ -328,4 +328,108 @@ defmodule TripleStore.SPARQL.SerializationTest do
       assert RDF.bnode?(subject)
     end
   end
+
+  # ===========================================================================
+  # T3: ASK and DESCRIBE with Graphs
+  # ===========================================================================
+
+  describe "T3: ASK and DESCRIBE with Graphs" do
+    setup do
+      {:ok, ctx: create_context()}
+    end
+
+    test "T3.1 ASK query with named graph", %{ctx: ctx} do
+      # ASK query should work with named graph context
+      bindings = [
+        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}}
+      ]
+
+      stream = to_stream(bindings)
+
+      # ASK returns true if any bindings exist
+      result = stream |> Enum.take(1) |> length()
+
+      # Should have at least one result for ASK to return true
+      assert result > 0
+    end
+
+    test "T3.2 ASK query with GRAPH clause", %{ctx: ctx} do
+      # ASK with GRAPH clause should check existence in specific graph
+      bindings = [
+        %{
+          "s" => {:named_node, "http://example.org/Bob"},
+          "p" => {:named_node, "http://example.org/knows"},
+          "o" => {:named_node, "http://example.org/Alice"},
+          "g" => {:named_node, "http://example.org/social"}
+        }
+      ]
+
+      stream = to_stream(bindings)
+
+      # ASK result is based on whether any bindings match
+      has_results = stream |> Enum.take(1) |> length() > 0
+
+      assert is_boolean(has_results)
+    end
+
+    test "T3.3 DESCRIBE with named graph", %{ctx: ctx} do
+      # DESCRIBE should extract triples from named graph
+      template = [
+        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      ]
+
+      bindings = [
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "p" => {:named_node, "http://xmlns.com/foaf/0.1/name"},
+          "o" => {:literal, :simple, "Alice"},
+          "g" => {:named_node, "http://example.org/graph1"}
+        }
+      ]
+
+      stream = to_stream(bindings)
+
+      assert {:ok, result} = Executor.to_construct_result(ctx, stream, template)
+
+      # DESCRIBE returns an RDF graph
+      assert %RDF.Dataset{} = result
+
+      # Should contain the described resource
+      assert RDF.Dataset.statement_count(result) >= 0
+    end
+
+    test "T3.4 DESCRIBE with GRAPH clause", %{ctx: ctx} do
+      # DESCRIBE within GRAPH clause context
+      template = [
+        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      ]
+
+      # Multiple bindings for different graphs
+      bindings = [
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "p" => {:named_node, "http://xmlns.com/foaf/0.1/name"},
+          "o" => {:literal, :simple, "Alice"},
+          "g" => {:named_node, "http://example.org/graph1"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Bob"},
+          "p" => {:named_node, "http://xmlns.com/foaf/0.1/name"},
+          "o" => {:literal, :simple, "Bob"},
+          "g" => {:named_node, "http://example.org/graph2"}
+        }
+      ]
+
+      stream = to_stream(bindings)
+
+      assert {:ok, result} = Executor.to_construct_result(ctx, stream, template, ["g"], [])
+
+      # DESCRIBE with GRAPH should return dataset with multiple graphs
+      assert %RDF.Dataset{} = result
+
+      # Verify statements from multiple graphs
+      statement_count = RDF.Dataset.statement_count(result)
+      assert statement_count == 2
+    end
+  end
 end

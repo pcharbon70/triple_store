@@ -148,7 +148,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @type adapter :: pid()
   @type db_ref :: reference()
-  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range | :gspo | :gpos | :spog | :posg
+  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range | :gspo | :gpos | :spog | :posg | :acl
   @type cf_handle :: reference()
   @type cf_name :: charlist()
   @type iterator_ref :: pid()
@@ -1624,8 +1624,9 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
          {:ok, spog_cf} <- :rocksdb.create_column_family(db, ~c"spog", []),
          {:ok, posg_cf} <- :rocksdb.create_column_family(db, ~c"posg", []),
          {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
-         {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []) do
-      {:ok, [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, numeric_cf]}
+         {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []),
+         {:ok, acl_cf} <- :rocksdb.create_column_family(db, ~c"acl", []) do
+      {:ok, [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, numeric_cf, acl_cf]}
     end
   end
 
@@ -1633,14 +1634,14 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   defp map_cf_handles(cf_handles, schema_type) do
     # The order of cf_handles matches the order we opened them
     # Triple: [default, id2str, str2id, spo, pos, osp, derived, numeric_range]
-    # Quad: [default, id2str, str2id, gspo, gpos, spog, posg, derived, numeric_range]
+    # Quad: [default, id2str, str2id, gspo, gpos, spog, posg, derived, numeric_range, acl]
     cf_names_in_order =
       case schema_type do
         :triple ->
           [:default, :id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range]
 
         :quad ->
-          [:default, :id2str, :str2id, :gspo, :gpos, :spog, :posg, :derived, :numeric_range]
+          [:default, :id2str, :str2id, :gspo, :gpos, :spog, :posg, :derived, :numeric_range, :acl]
       end
 
     Enum.zip(cf_names_in_order, cf_handles)

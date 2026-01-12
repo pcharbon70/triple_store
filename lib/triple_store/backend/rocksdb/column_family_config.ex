@@ -87,6 +87,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
           | :gpos
           | :spog
           | :posg
+          | :acl
   @type cf_descriptor :: {String.t(), keyword()}
   @type db_options :: keyword()
 
@@ -172,7 +173,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"spog", quad_index_cf_options()},
       {"posg", quad_index_cf_options()},
       {"derived", derived_cf_options()},
-      {"numeric_range", numeric_range_cf_options()}
+      {"numeric_range", numeric_range_cf_options()},
+      {"acl", acl_cf_options()}
     ]
   end
 
@@ -219,7 +221,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   end
 
   def column_family_names(:quad) do
-    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "numeric_range"]
+    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "numeric_range", "acl"]
   end
 
   @doc """
@@ -246,6 +248,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def get_cf_options(:posg), do: quad_index_cf_options()
   def get_cf_options(:derived), do: derived_cf_options()
   def get_cf_options(:numeric_range), do: numeric_range_cf_options()
+  def get_cf_options(:acl), do: acl_cf_options()
   def get_cf_options(_), do: nil
 
   @doc """
@@ -286,7 +289,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
              :gspo,
              :gpos,
              :spog,
-             :posg
+             :posg,
+             :acl
            ],
       do: :ok
 
@@ -539,6 +543,30 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     )
   end
 
+  # ACL CF options
+  # Optimized for point lookups of access control entries
+  defp acl_cf_options do
+    base_options()
+    |> Keyword.merge(dictionary_compaction_options())
+    |> Keyword.merge(
+      # High bloom filter for effective point lookup filtering
+      block_based_table_options: [
+        bloom_filter_policy: @bloom_dict_bits,
+        block_size: @block_size_dict,
+        # Cache index and filter blocks for faster lookups
+        cache_index_and_filter_blocks: true,
+        # Pin L0 filter/index blocks in cache (hot auth data)
+        pin_l0_filter_and_index_blocks_in_cache: true,
+        # Whole key filtering for ACL entries (exact match lookups)
+        whole_key_filtering: true
+      ],
+      # No prefix extractor needed (random access pattern)
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    )
+  end
+
   # Base options shared by all column families (minimal common settings)
   defp base_options do
     [
@@ -577,6 +605,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_name_to_string(:posg), do: "posg"
   def cf_name_to_string(:derived), do: "derived"
   def cf_name_to_string(:numeric_range), do: "numeric_range"
+  def cf_name_to_string(:acl), do: "acl"
 
   @doc """
   Converts a string column family name to its atom equivalent.
@@ -602,6 +631,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_string_to_name("posg"), do: :posg
   def cf_string_to_name("derived"), do: :derived
   def cf_string_to_name("numeric_range"), do: :numeric_range
+  def cf_string_to_name("acl"), do: :acl
   def cf_string_to_name(_), do: nil
 
   @doc """
@@ -628,6 +658,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def bloom_bits(:posg), do: @bloom_index_bits
   def bloom_bits(:derived), do: @bloom_derived_bits
   def bloom_bits(:numeric_range), do: @bloom_index_bits
+  def bloom_bits(:acl), do: @bloom_dict_bits
 
   @doc """
   Returns the block size for a column family in bytes.
@@ -653,6 +684,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def block_size(:posg), do: @block_size_index
   def block_size(:derived), do: @block_size_derived
   def block_size(:numeric_range), do: @block_size_index
+  def block_size(:acl), do: @block_size_dict
 
   @doc """
   Checks if a column family has a prefix extractor configured.
