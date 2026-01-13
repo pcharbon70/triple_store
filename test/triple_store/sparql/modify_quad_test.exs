@@ -203,13 +203,12 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
   # ===========================================================================
 
   describe "MODIFY via parser" do
-    @tag :skip_bgp_limitation
     test "parses and executes DELETE/INSERT for named graph", %{ctx: ctx} do
       graph_iri = "http://example.org/graph"
       insert_named_graph_data(ctx, graph_iri)
 
       # SPARQL MODIFY requires WHERE clause
-      # Note: WHERE clause execution with BGP is not yet supported for quad stores
+      # The WHERE clause matches the quad in the named graph
       query = """
       DELETE {
         GRAPH <#{graph_iri}> {
@@ -222,17 +221,22 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
         }
       }
       WHERE {
-        <http://example.org/s> <http://example.org/p> "old" .
+        GRAPH <#{graph_iri}> {
+          <http://example.org/s> <http://example.org/p> "old" .
+        }
       }
       """
 
       {:ok, ast} = Parser.parse_update(query)
       assert {:ok, count} = UpdateExecutor.execute(ctx, ast)
-      # Count may be 0 due to BGP executor limitation
-      assert count >= 0
+      # Should delete 1 and insert 1, so count is 2
+      assert count == 2
+
+      # Verify the named graph has the new value
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert count_after == 1
     end
 
-    @tag :skip_bgp_limitation
     test "parses and executes DELETE/INSERT for default graph", %{ctx: ctx} do
       insert_test_data(ctx)
 
@@ -250,8 +254,12 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
 
       {:ok, ast} = Parser.parse_update(query)
       assert {:ok, count} = UpdateExecutor.execute(ctx, ast)
-      # Count may be 0 due to BGP executor limitation
-      assert count >= 0
+      # Should delete 1 and insert 1, so count is 2
+      assert count == 2
+
+      # Verify default graph still has 2 quads (s1 with updated value, s2 unchanged)
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
+      assert count_after == 2
     end
 
     test "parses MODIFY with DELETE WHERE for default graph", %{ctx: ctx} do
@@ -268,13 +276,105 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       """
 
       {:ok, ast} = Parser.parse_update(query)
-      # Query parses and executes - results may vary due to BGP limitations
-      assert {:ok, _count} = UpdateExecutor.execute(ctx, ast)
+      assert {:ok, count} = UpdateExecutor.execute(ctx, ast)
+      # Should delete 1 matching quad
+      assert count == 1
+
+      # Verify only s2 remains
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
+      assert count_after == 1
     end
   end
 
   # ===========================================================================
-  # 4.4.4 Error Handling
+  # 4.4.4 MODIFY with WHERE Clause and Variables
+  # ===========================================================================
+
+  describe "MODIFY with WHERE clause and variables" do
+    test "DELETE/INSERT WHERE with variable substitution", %{ctx: ctx} do
+      insert_test_data(ctx)
+
+      delete_template = [
+        {:triple, {:variable, "s"},
+                 {:named_node, "http://example.org/p"},
+                 {:literal, :simple, "old"}}
+      ]
+
+      insert_template = [
+        {:triple, {:variable, "s"},
+                 {:named_node, "http://example.org/p"},
+                 {:literal, :simple, "updated"}}
+      ]
+
+      # WHERE pattern that matches s1 with "old" and binds s
+      pattern = {:bgp, [
+        {:triple, {:variable, "s"},
+                 {:named_node, "http://example.org/p"},
+                 {:literal, :simple, "old"}}
+      ]}
+
+      assert {:ok, count} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      # Should delete 1 and insert 1, so count is 2
+      assert count == 2
+
+      # Verify: s1 with "updated" + s2 unchanged = 2 total
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
+      assert count_after == 2
+    end
+
+    test "DELETE WHERE with variable substitution only", %{ctx: ctx} do
+      insert_test_data(ctx)
+
+      delete_template = [
+        {:triple, {:variable, "s"},
+                 {:variable, "p"},
+                 {:literal, :simple, "old"}}
+      ]
+
+      # WHERE pattern that matches s1 with "old" and binds both s and p
+      pattern = {:bgp, [
+        {:triple, {:variable, "s"},
+                 {:variable, "p"},
+                 {:literal, :simple, "old"}}
+      ]}
+
+      assert {:ok, count} = UpdateExecutor.execute_modify(ctx, delete_template, [], pattern)
+      # Should delete 1 (s1)
+      assert count == 1
+
+      # Verify: s1 deleted, s2 remains
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
+      assert count_after == 1
+    end
+
+    test "INSERT WHERE with variable substitution only", %{ctx: ctx} do
+      insert_test_data(ctx)
+
+      insert_template = [
+        {:triple, {:variable, "s"},
+                 {:named_node, "http://example.org/p"},
+                 {:literal, :simple, "new"}}
+      ]
+
+      # WHERE pattern that matches s1 and binds s
+      pattern = {:bgp, [
+        {:triple, {:variable, "s"},
+                 {:named_node, "http://example.org/p"},
+                 {:literal, :simple, "old"}}
+      ]}
+
+      assert {:ok, count} = UpdateExecutor.execute_modify(ctx, [], insert_template, pattern)
+      # Should insert 1 (s1 with new value)
+      assert count == 1
+
+      # Verify: original 2 + 1 new = 3 total
+      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
+      assert count_after == 3
+    end
+  end
+
+  # ===========================================================================
+  # 4.4.5 Error Handling
   # ===========================================================================
 
   describe "MODIFY error handling" do
@@ -330,7 +430,7 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
   end
 
   # ===========================================================================
-  # 4.4.5 Atomicity
+  # 4.4.6 Atomicity
   # ===========================================================================
 
   describe "MODIFY atomicity" do

@@ -20,11 +20,20 @@ Implemented SPARQL MODIFY (DELETE/INSERT WHERE) with named graph support for qua
    - Added `quads_to_internal/3` for quad conversion (both :create and :lookup modes)
    - Added `execute_atomic_modify_quads/4` for atomic quad operations
    - Added `is_valid_quad/1` helper for quad validation
+   - Fixed `execute_insert_data/2`, `execute_delete_data/2` to properly unwrap `{:ok, boolean}` from `is_quad_store?/1`
+   - Fixed `execute_clear/2` with schema-aware routing for both triple and quad stores
+   - Added GRAPH clause support in `execute_where_pattern/2` for graph-scoped WHERE execution
 
-2. **test/triple_store/sparql/modify_quad_test.exs** (NEW)
-   - Created comprehensive test suite with 14 tests
+2. **lib/triple_store/sparql/executor.ex**
+   - Modified `extend_bindings/3` to convert triple patterns to quad patterns for quad stores
+   - Added `execute_single_quad_pattern/6` for quad pattern execution in WHERE clauses
+   - Added pattern type and value extraction helpers for quad pattern matching
+   - Fixed schema detection to use `case` instead of `if` for proper pattern matching
+
+3. **test/triple_store/sparql/modify_quad_test.exs** (NEW)
+   - Created comprehensive test suite with 17 tests
    - Tests use quad schema: `NIF.open(test_path, schema: :quad)`
-   - Tests cover default graph, named graphs, parser-based MODIFY, error handling, atomicity
+   - Tests cover default graph, named graphs, parser-based MODIFY, WHERE with variables, GRAPH clauses, error handling, atomicity
 
 ## Key Technical Decisions
 
@@ -44,28 +53,53 @@ Implemented SPARQL MODIFY (DELETE/INSERT WHERE) with named graph support for qua
 
 5. **Graph Component Preservation**: The `ast_graph_to_rdf/1` function (existing) handles conversion of `:default_graph`, `{:named_graph, iri}`, and other graph representations to RDF.IRI or `:default` atom.
 
+6. **WHERE Clause with Variables**: Variable patterns in WHERE clauses now properly substitute bound values and generate bindings. The `execute_single_quad_pattern/6` function uses `QuadOperations.lookup_quads/3` for pattern matching and constructs bindings with `extend_binding_from_quad_match/10`.
+
+7. **GRAPH Clause Support**: WHERE clauses with GRAPH patterns convert triple patterns to quad patterns with the specified graph, enabling graph-scoped pattern matching.
+
+## Bug Fixes
+
+### Schema Detection Pattern Matching
+During implementation, discovered that `ErlangAdapter.is_quad_store?/1` returns `{:ok, boolean}` (tuple), not just `true` or `false`. Using the result directly in an `if` statement would treat `{:ok, false}` as truthy (non-nil values are truthy in Elixir).
+
+**Fix**: Changed all `if ErlangAdapter.is_quad_store?(ctx.db) do` checks to `case ErlangAdapter.is_quad_store?(ctx.db) do` with explicit pattern matching.
+
+**Files affected**:
+- `lib/triple_store/sparql/executor.ex` - `extend_bindings/3`
+- `lib/triple_store/sparql/update_executor.ex` - `execute_insert_data/2`, `execute_delete_data/2`, `execute_modify/4`, `execute_clear/2`
+
+### execute_clear Triple Store Support
+Added `execute_clear_triple/3` and `execute_clear_quad/3` routing functions to support CLEAR operations on both triple and quad stores. Previously, CLEAR only worked for quad stores.
+
+**Files affected**:
+- `lib/triple_store/sparql/update_executor.ex` - `execute_clear/2`, `execute_clear_triple/3`, `execute_clear_quad/3`
+
 ## Test Results
 
 ```
-14 tests, 0 failures
+17 tests, 0 failures
 ```
 
 All tests pass:
 - Ground quad patterns with named graphs (2 tests)
 - Ground quad patterns with default graph (2 tests)
 - Ground triple patterns treated as default graph (3 tests)
-- Parser-based MODIFY (3 tests, with BGP limitations noted)
-- Error handling (3 tests)
+- Variable patterns with WHERE clause binding substitution (3 tests)
+- Parser-based MODIFY (3 tests, with full WHERE clause support)
+- GRAPH clause execution in WHERE (2 tests)
+- Error handling (2 tests)
 - Atomicity (3 tests)
 
 ## Known Limitations
 
-1. **WHERE Clause Execution**: Full WHERE clause support with graph-scoped quad patterns requires significant updates to the BGP executor. The current implementation works with:
+1. **WHERE Clause Execution**: Full WHERE clause support with graph-scoped quad patterns is now implemented. The implementation works with:
    - Ground template patterns (no variables)
+   - Variable patterns with binding substitution
    - `nil` pattern (no WHERE clause)
-   - Parser-based queries parse correctly but WHERE clauses may not match data due to BGP executor using triple patterns instead of quad patterns
+   - Parser-based queries with WHERE clauses
+   - GRAPH clauses in WHERE for graph-scoped pattern matching
 
-2. **Cross-Graph WHERE**: WHERE clauses with GRAPH patterns to match across named graphs require additional executor support.
+2. **Cross-Graph WHERE**: WHERE clauses with GRAPH patterns to match across named graphs are supported via GRAPH clause execution.
 
 ## Breaking Changes
 

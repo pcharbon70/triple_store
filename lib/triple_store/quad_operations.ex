@@ -345,6 +345,7 @@ defmodule TripleStore.QuadOperations do
       prefix_len = byte_size(prefix)
 
       result = perform_prefix_scan(db, column_family, prefix, prefix_len, selection.index, pattern, values)
+
       {result, %{result_count: length(result)}}
     end)
   end
