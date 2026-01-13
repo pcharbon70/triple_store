@@ -703,23 +703,25 @@ defmodule TripleStore.QuadOperations do
   @spec create_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) ::
           {:ok, :created | :already_exists} | {:error, term()}
   def create_graph(_db, manager, graph_term) do
-    # First check if the graph already exists
-    case Manager.lookup_id(manager, graph_term) do
-      {:ok, _graph_id} ->
-        # Graph already exists
-        {:ok, :already_exists}
+    Telemetry.span(:quad, :create_graph, %{graph: graph_term}, fn ->
+      # First check if the graph already exists
+      case Manager.lookup_id(manager, graph_term) do
+        {:ok, _graph_id} ->
+          # Graph already exists
+          {{:ok, :already_exists}, %{status: :already_exists}}
 
-      :not_found ->
-        # Graph doesn't exist, create it
-        case Manager.get_or_create_id(manager, graph_term) do
-          {:ok, _graph_id} -> {:ok, :created}
-          {:error, reason} -> {:error, reason}
-        end
+        :not_found ->
+          # Graph doesn't exist, create it
+          case Manager.get_or_create_id(manager, graph_term) do
+            {:ok, _graph_id} -> {{:ok, :created}, %{status: :created}}
+            {:error, reason} -> {{:error, reason}, %{status: :error}}
+          end
 
-      {:error, reason} ->
-        # Other error from lookup
-        {:error, reason}
-    end
+        {:error, reason} ->
+          # Other error from lookup
+          {{:error, reason}, %{status: :error}}
+      end
+    end)
   end
 
   @doc """
