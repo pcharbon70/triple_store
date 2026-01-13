@@ -2,21 +2,39 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @moduledoc """
   SPARQL UPDATE operation executor.
 
-  This module executes SPARQL UPDATE operations against the triple store,
+  This module executes SPARQL UPDATE operations against the triple/quad store,
   providing support for all SPARQL 1.1 Update operations:
 
-  - **INSERT DATA**: Direct insertion of ground triples
-  - **DELETE DATA**: Direct deletion of ground triples
+  - **INSERT DATA**: Direct insertion of ground triples/quads
+  - **DELETE DATA**: Direct deletion of ground triples/quads
   - **DELETE WHERE**: Pattern-based deletion
   - **INSERT WHERE**: Pattern-based insertion (using templates)
   - **DELETE/INSERT WHERE**: Combined delete and insert in single operation
+  - **CREATE/DROP/CLEAR GRAPH**: Named graph management
+  - **COPY/MOVE/ADD**: Bulk graph operations
+
+  ## Quad Store Support
+
+  For quad stores (schema: :quad), all operations support named graphs:
+  - INSERT DATA can target specific named graphs
+  - DELETE DATA can target specific named graphs
+  - MODIFY operations can use GRAPH clauses in WHERE patterns
+  - CREATE/DROP/CLEAR GRAPH manage named graphs
+  - COPY/MOVE/ADD transfer quads between graphs
+
+  For triple stores, operations work on the default graph only.
 
   ## Execution Model
 
   All update operations are executed atomically using RocksDB's WriteBatch.
   Operations that involve WHERE clauses first query the database to find
   matching bindings, then apply those bindings to templates to generate
-  the actual triples to insert or delete.
+  the actual triples/quads to insert or delete.
+
+  ## Cache Invalidation
+
+  After successful graph modifications (CREATE, DROP, CLEAR, COPY, MOVE, ADD),
+  the query cache is automatically invalidated if running.
 
   ## Usage
 
@@ -27,6 +45,10 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       # Execute specific operations
       {:ok, count} = UpdateExecutor.execute_insert_data(ctx, quads)
       {:ok, count} = UpdateExecutor.execute_delete_where(ctx, pattern)
+
+      # Graph operations (quad stores only)
+      {:ok, 0} = UpdateExecutor.execute_create_graph(ctx, graph_iri)
+      {:ok, count} = UpdateExecutor.execute_copy(ctx, source_graph, target_graph)
 
   ## Security
 
@@ -231,8 +253,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes an INSERT DATA operation.
 
-  Inserts ground triples (no variables) directly into the database.
-  All triples are inserted atomically using a single WriteBatch.
+  Inserts ground quads (no variables) directly into the database.
+  All quads are inserted atomically using a single WriteBatch.
+
+  For quad stores, the graph component of each quad is respected.
+  For triple stores, all data is inserted into the default graph.
 
   ## Arguments
 
@@ -241,17 +266,27 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples inserted
+  - `{:ok, count}` - Number of quads inserted
   - `{:error, :too_many_triples}` - If quad count exceeds limit
   - `{:error, reason}` - On other failures
 
   ## Examples
 
+      # Insert into default graph
       quads = [
         {:quad, {:named_node, "http://example.org/s"},
                 {:named_node, "http://example.org/p"},
                 {:literal, :simple, "value"},
                 :default_graph}
+      ]
+      {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
+
+      # Insert into named graph (quad stores)
+      quads = [
+        {:quad, {:named_node, "http://example.org/s"},
+                {:named_node, "http://example.org/p"},
+                {:literal, :simple, "value"},
+                {:named_node, "http://example.org/named"}}
       ]
       {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
 
@@ -820,6 +855,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
         case QuadOperations.create_graph(ctx.db, ctx.dict_manager, rdf_graph) do
           {:ok, :created} ->
+            # Invalidate cache since graph structure changed
+            invalidate_cache_if_running()
             {:ok, 0}
 
           {:ok, :already_exists} ->
@@ -870,6 +907,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
         case QuadOperations.delete_graph(ctx.db, ctx.dict_manager, rdf_graph) do
           {:ok, count} ->
+            # Invalidate cache since graph structure changed
+            invalidate_cache_if_running()
             {:ok, count}
 
           {:error, :not_found} ->
@@ -892,7 +931,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp clear_all_graphs(ctx) do
     # Use quad operations to clear all graphs
     case clear_all_triples(ctx) do
-      {:ok, count} -> {:ok, count}
+      {:ok, count} ->
+        invalidate_cache_if_running()
+        {:ok, count}
       {:error, _} = error -> error
     end
   end
@@ -900,7 +941,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   # Clear default graph only
   defp clear_default_graph(ctx) do
     case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, :default) do
-      {:ok, count} -> {:ok, count}
+      {:ok, count} ->
+        invalidate_cache_if_running()
+        {:ok, count}
       {:error, _} = error -> error
     end
   end
@@ -910,12 +953,20 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     case QuadOperations.list_graphs(ctx.db, include_default: false) do
       {:ok, graphs} ->
         # Clear each named graph and sum the counts
-        Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
+        result = Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
           case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
             {:ok, count} -> {:cont, {:ok, total + count}}
             {:error, _} -> {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
           end
         end)
+
+        # Invalidate cache if we successfully cleared any graphs
+        case result do
+          {:ok, count} when count > 0 -> invalidate_cache_if_running()
+          _ -> :ok
+        end
+
+        result
 
       {:error, _} ->
         if silent, do: {:ok, 0}, else: {:error, :list_graphs_failed}
@@ -928,6 +979,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
     case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, rdf_graph) do
       {:ok, count} ->
+        invalidate_cache_if_running()
         {:ok, count}
 
       {:error, :not_found} ->
@@ -1096,6 +1148,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
              on_conflict: :replace
            ) do
         {:ok, count} ->
+          invalidate_cache_if_running()
           {:ok, count}
 
         {:error, reason} ->
@@ -1129,6 +1182,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
              ),
            {:ok, _} <-
              QuadOperations.clear_graph(ctx.db, ctx.dict_manager, source_rdf) do
+        # Invalidate cache after successful move
+        invalidate_cache_if_running()
+
         # Get final count from target graph
         case QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, target_rdf) do
           {:ok, count} -> {:ok, count}
@@ -1164,6 +1220,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
              on_conflict: :merge
            ) do
         {:ok, count} ->
+          invalidate_cache_if_running()
           {:ok, count}
 
         {:error, reason} ->
@@ -1647,6 +1704,15 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     case Process.whereis(TripleStore.Query.Cache) do
       nil -> false
       pid when is_pid(pid) -> Process.alive?(pid)
+    end
+  end
+
+  # Invalidates the query cache if it's running
+  defp invalidate_cache_if_running do
+    if cache_running?() do
+      QueryCache.invalidate()
+    else
+      :ok
     end
   end
 
