@@ -955,6 +955,233 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   # ===========================================================================
+  # COPY/MOVE/ADD Operations
+  # ===========================================================================
+
+  @doc """
+  Executes a COPY GRAPH operation.
+
+  Copies all triples from source graph to target graph, replacing target contents.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `target_graph` - Target graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `opts` - Options, including `:silent` to suppress errors
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples copied
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+  """
+  @spec execute_copy(context(), term(), term(), keyword()) :: update_result()
+  def execute_copy(ctx, source_graph, target_graph, opts \\ []) do
+    silent = Keyword.get(opts, :silent, false)
+
+    cond do
+      source_graph == target_graph ->
+        if silent, do: {:ok, 0}, else: {:error, :source_equals_target}
+
+      true ->
+        case ErlangAdapter.is_quad_store?(ctx.db) do
+          {:ok, true} ->
+            do_copy_quad(ctx, source_graph, target_graph, silent)
+
+          {:ok, false} ->
+            {:error, :copy_requires_quad_store}
+        end
+    end
+  end
+
+  @doc """
+  Executes a MOVE GRAPH operation.
+
+  Moves all triples from source graph to target graph, then clears source.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `target_graph` - Target graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `opts` - Options, including `:silent` to suppress errors
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples moved
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+  """
+  @spec execute_move(context(), term(), term(), keyword()) :: update_result()
+  def execute_move(ctx, source_graph, target_graph, opts \\ []) do
+    silent = Keyword.get(opts, :silent, false)
+
+    cond do
+      source_graph == target_graph ->
+        if silent, do: {:ok, 0}, else: {:error, :source_equals_target}
+
+      true ->
+        case ErlangAdapter.is_quad_store?(ctx.db) do
+          {:ok, true} ->
+            do_move_quad(ctx, source_graph, target_graph, silent)
+
+          {:ok, false} ->
+            {:error, :move_requires_quad_store}
+        end
+    end
+  end
+
+  @doc """
+  Executes an ADD GRAPH operation.
+
+  Adds all triples from source graph to target graph (merge, no replace).
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `target_graph` - Target graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `opts` - Options, including `:silent` to suppress errors
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples added
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+  """
+  @spec execute_add(context(), term(), term(), keyword()) :: update_result()
+  def execute_add(ctx, source_graph, target_graph, opts \\ []) do
+    silent = Keyword.get(opts, :silent, false)
+
+    cond do
+      source_graph == target_graph ->
+        if silent, do: {:ok, 0}, else: {:error, :source_equals_target}
+
+      true ->
+        case ErlangAdapter.is_quad_store?(ctx.db) do
+          {:ok, true} ->
+            do_add_quad(ctx, source_graph, target_graph, silent)
+
+          {:ok, false} ->
+            {:error, :add_requires_quad_store}
+        end
+    end
+  end
+
+  # ===========================================================================
+  # COPY/MOVE/ADD Internal Implementation
+  # ===========================================================================
+
+  defp do_copy_quad(ctx, source_graph, target_graph, silent) do
+    source_rdf = normalize_graph_term(source_graph)
+    target_rdf = normalize_graph_term(target_graph)
+
+    # Check if source graph exists (has quads)
+    source_exists? =
+      case source_rdf do
+        :default -> QuadOperations.default_graph_exists?(ctx.db)
+        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+      end
+
+    if !source_exists? do
+      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+    else
+      # Use copy_graph with :replace option (COPY replaces target)
+      case QuadOperations.copy_graph(
+             ctx.db,
+             ctx.dict_manager,
+             source_rdf,
+             target_rdf,
+             on_conflict: :replace
+           ) do
+        {:ok, count} ->
+          {:ok, count}
+
+        {:error, reason} ->
+          if silent, do: {:ok, 0}, else: {:error, reason}
+      end
+    end
+  end
+
+  defp do_move_quad(ctx, source_graph, target_graph, silent) do
+    source_rdf = normalize_graph_term(source_graph)
+    target_rdf = normalize_graph_term(target_graph)
+
+    # Check if source graph exists (has quads)
+    source_exists? =
+      case source_rdf do
+        :default -> QuadOperations.default_graph_exists?(ctx.db)
+        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+      end
+
+    if !source_exists? do
+      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+    else
+      # First copy with replace
+      with {:ok, _count} <-
+             QuadOperations.copy_graph(
+               ctx.db,
+               ctx.dict_manager,
+               source_rdf,
+               target_rdf,
+               on_conflict: :replace
+             ),
+           {:ok, _} <-
+             QuadOperations.clear_graph(ctx.db, ctx.dict_manager, source_rdf) do
+        # Get final count from target graph
+        case QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, target_rdf) do
+          {:ok, count} -> {:ok, count}
+          {:error, _} -> {:ok, :unknown}
+        end
+      else
+        {:error, reason} ->
+          if silent, do: {:ok, 0}, else: {:error, reason}
+      end
+    end
+  end
+
+  defp do_add_quad(ctx, source_graph, target_graph, silent) do
+    source_rdf = normalize_graph_term(source_graph)
+    target_rdf = normalize_graph_term(target_graph)
+
+    # Check if source graph exists (has quads)
+    source_exists? =
+      case source_rdf do
+        :default -> QuadOperations.default_graph_exists?(ctx.db)
+        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+      end
+
+    if !source_exists? do
+      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+    else
+      # Use copy_graph with :merge option (ADD merges with target)
+      case QuadOperations.copy_graph(
+             ctx.db,
+             ctx.dict_manager,
+             source_rdf,
+             target_rdf,
+             on_conflict: :merge
+           ) do
+        {:ok, count} ->
+          {:ok, count}
+
+        {:error, reason} ->
+          if silent, do: {:ok, 0}, else: {:error, reason}
+      end
+    end
+  end
+
+  # Normalize graph terms to a consistent format
+  defp normalize_graph_term(:default), do: :default
+  defp normalize_graph_term(:default_graph), do: :default
+  defp normalize_graph_term({:named_node, iri}), do: RDF.iri(iri)
+  defp normalize_graph_term({:named_graph, iri}), do: RDF.iri(iri)
+  defp normalize_graph_term(%RDF.IRI{} = iri), do: iri
+  defp normalize_graph_term(iri) when is_binary(iri), do: RDF.iri(iri)
+  defp normalize_graph_term(_other), do: :default
+
+  # ===========================================================================
   # Private Helpers: Quad/Triple Conversion
   # ===========================================================================
 

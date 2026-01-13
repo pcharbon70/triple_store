@@ -1068,7 +1068,7 @@ defmodule TripleStore.QuadOperations do
         {:ok, 0}
       else
         case delete_quads(db, quads, sync: true) do
-          {:ok, _} -> {:ok, length(quads)}
+          :ok -> {:ok, length(quads)}
           {:error, reason} -> {:error, reason}
         end
       end
@@ -1079,7 +1079,7 @@ defmodule TripleStore.QuadOperations do
           {:ok, 0}
         else
           case delete_quads(db, Enum.reverse(acc), sync: true) do
-            {:ok, _} -> {:ok, length(acc)}
+            :ok -> {:ok, length(acc)}
             {:error, reason} -> {:error, reason}
           end
         end
