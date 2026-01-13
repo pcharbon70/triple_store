@@ -180,12 +180,22 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_operation(ctx, {:delete_insert, props}) when is_list(props) do
-    delete_template = Keyword.get(props, :delete, [])
-    insert_template = Keyword.get(props, :insert, [])
-    pattern = Keyword.get(props, :pattern)
-    _using = Keyword.get(props, :using)
+    # Parser returns charlist keys like {"delete", ...}, not atoms
+    # We need to extract values by matching the key
+    delete_template = get_prop_value(props, "delete", [])
+    insert_template = get_prop_value(props, "insert", [])
+    pattern = get_prop_value(props, "pattern")
+    _using = get_prop_value(props, "using")
 
     execute_modify(ctx, delete_template, insert_template, pattern)
+  end
+
+  # Helper to get value from parser properties (which use charlist keys)
+  defp get_prop_value(props, key, default \\ nil) do
+    case List.keyfind(props, key, 0) do
+      {^key, value} -> value
+      _ -> default
+    end
   end
 
   def execute_operation(_ctx, {:load, _props}) do
@@ -255,12 +265,13 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   def execute_insert_data(ctx, quads) when is_list(quads) do
     # Check if we're using a quad store
-    if ErlangAdapter.is_quad_store?(ctx.db) do
-      # Use quad operations
-      insert_quads(ctx, quads)
-    else
-      # Use triple operations (existing behavior)
-      insert_triples(ctx, quads)
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        # Use quad operations
+        insert_quads(ctx, quads)
+      {:ok, false} ->
+        # Use triple operations (existing behavior)
+        insert_triples(ctx, quads)
     end
   end
 
@@ -379,12 +390,13 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   def execute_delete_data(ctx, quads) when is_list(quads) do
     # Check if we're using a quad store
-    if ErlangAdapter.is_quad_store?(ctx.db) do
-      # Use quad operations
-      delete_quads(ctx, quads)
-    else
-      # Use triple operations (existing behavior)
-      delete_triples_from_store(ctx, quads)
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        # Use quad operations
+        delete_quads(ctx, quads)
+      {:ok, false} ->
+        # Use triple operations (existing behavior)
+        delete_triples_from_store(ctx, quads)
     end
   end
 
@@ -630,10 +642,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       {:error, :template_too_large}
     else
       # Check if we're using a quad store
-      if ErlangAdapter.is_quad_store?(ctx.db) do
-        do_execute_modify_quad(ctx, delete_template, insert_template, pattern)
-      else
-        do_execute_modify_triples(ctx, delete_template, insert_template, pattern)
+      case ErlangAdapter.is_quad_store?(ctx.db) do
+        {:ok, true} ->
+          do_execute_modify_quad(ctx, delete_template, insert_template, pattern)
+        {:ok, false} ->
+          do_execute_modify_triples(ctx, delete_template, insert_template, pattern)
       end
     end
   end
@@ -720,6 +733,34 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     target = Keyword.get(props, :target, :all)
     silent = Keyword.get(props, :silent, false)
 
+    # Route to appropriate implementation based on schema
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        execute_clear_quad(ctx, target, silent)
+
+      {:ok, false} ->
+        execute_clear_triple(ctx, target, silent)
+    end
+  end
+
+  # Clear for triple stores
+  defp execute_clear_triple(ctx, :all, _silent) do
+    # Delete all triples from the store using existing helper
+    clear_all_triples(ctx)
+  end
+
+  defp execute_clear_triple(ctx, :default, _silent) do
+    # For triple stores, default is the same as all
+    clear_all_triples(ctx)
+  end
+
+  defp execute_clear_triple(_ctx, target, silent) do
+    # :named and {:graph, iri} not supported for triple stores
+    if silent, do: {:ok, 0}, else: {:error, {:invalid_clear_target, target}}
+  end
+
+  # Clear for quad stores
+  defp execute_clear_quad(ctx, target, silent) do
     case target do
       :all ->
         clear_all_graphs(ctx)
@@ -1166,8 +1207,21 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     {:ok, bindings}
   end
 
+  defp execute_where_pattern(ctx, {:graph, graph_irn, {:bgp, patterns}}) do
+    # For GRAPH clauses, we need to execute the BGP in the context of the specified graph
+    # The graph IRN should be added to the pattern as the graph component
+    # Convert triple patterns to quad patterns with the specified graph
+    quad_patterns = Enum.map(patterns, fn
+      {:triple, s, p, o} -> {:quad, s, p, o, graph_irn}
+      quad_pattern -> quad_pattern  # Already a quad pattern
+    end)
+
+    # Execute with quad patterns
+    execute_where_pattern(ctx, {:bgp, quad_patterns})
+  end
+
   defp execute_where_pattern(_ctx, pattern) do
-    # For now, only BGP patterns are supported
+    # For now, only BGP and GRAPH patterns are supported
     {:error, {:unsupported_pattern, pattern}}
   end
 

@@ -157,6 +157,7 @@ defmodule TripleStore.SPARQL.Executor do
 
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.Index.NumericRange
@@ -858,9 +859,16 @@ defmodule TripleStore.SPARQL.Executor do
   # Extends each binding in the stream by matching a triple pattern
   @doc false
   def extend_bindings(ctx, binding_stream, {:triple, s, p, o}) do
-    extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx, binding, {:triple, s, p, o} ->
-      execute_single_pattern(ctx, binding, s, p, o)
-    end)
+    # For quad stores, convert triple pattern to quad pattern with default graph
+    # This enables WHERE clauses in MODIFY operations to work with quad stores
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        extend_bindings(ctx, binding_stream, {:quad, s, p, o, :default_graph})
+      {:ok, false} ->
+        extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx, binding, {:triple, s, p, o} ->
+          execute_single_pattern(ctx, binding, s, p, o)
+        end)
+    end
   end
 
   # Property path pattern - delegates to PropertyPath module
@@ -898,6 +906,9 @@ defmodule TripleStore.SPARQL.Executor do
   @spec execute_single_quad_pattern(context(), binding(), term(), term(), term(), term()) ::
           {:ok, binding_stream()} | {:error, term()}
   defp execute_single_quad_pattern(ctx, binding, s, p, o, g) do
+    # This function should only be called for quad stores
+    {:ok, true} = ErlangAdapter.is_quad_store?(ctx.db)
+
     %{db: db, dict_manager: dict_manager} = ctx
 
     # Substitute bound variables and encode terms for all 4 positions
@@ -909,22 +920,36 @@ defmodule TripleStore.SPARQL.Executor do
       if has_not_found?([s_pattern, p_pattern, o_pattern, g_pattern]) do
         {:ok, empty_stream()}
       else
-        # Build quad index pattern
-        quad_pattern = {s_pattern, p_pattern, o_pattern, g_pattern}
+        # Build quad index pattern for QuadOperations
+        # Pattern tuple contains :bound or :var for each position
+        quad_pattern = {
+          pattern_type(s_pattern),
+          pattern_type(p_pattern),
+          pattern_type(o_pattern),
+          pattern_type(g_pattern)
+        }
+
+        # Extract values map (only for :bound positions)
+        values = %{
+          s: value_from_pattern(s_pattern),
+          p: value_from_pattern(p_pattern),
+          o: value_from_pattern(o_pattern),
+          g: value_from_pattern(g_pattern)
+        }
 
         # Use QuadOperations for quad lookup
-        # QuadOperations uses the internal index-level pattern format
-        # which maps SPARQL algebra terms to index operations
-        case QuadOperations.lookup_quads(db, quad_pattern, %{
-          s: elem(s_pattern, 1),
-          p: elem(p_pattern, 1),
-          o: elem(o_pattern, 1),
-          g: elem(g_pattern, 1)
-        }) do
-          {:ok, quad_stream} ->
+        # lookup_quads returns [quad()] (Telemetry.span unwraps the {result, metadata} tuple)
+        quads = QuadOperations.lookup_quads(db, quad_pattern, values)
+
+        case quads do
+          [] ->
+            # No matches
+            {:ok, empty_stream()}
+
+          quads when is_list(quads) ->
             # Convert matching quads to bindings
             binding_stream =
-              Stream.flat_map(quad_stream, fn {s_id, p_id, o_id, g_id} ->
+              Stream.flat_map(quads, fn {s_id, p_id, o_id, g_id} ->
                 case extend_binding_from_quad_match(
                        binding,
                        s,
@@ -943,13 +968,20 @@ defmodule TripleStore.SPARQL.Executor do
               end)
 
             {:ok, binding_stream}
-
-          {:error, _} = error ->
-            error
         end
       end
     end
   end
+
+  # Extract pattern type (:bound or :var) from term pattern
+  defp pattern_type({:bound, _id}), do: :bound
+  defp pattern_type({:var, _name}), do: :var
+  defp pattern_type(:var), do: :var
+
+  # Extract value from bound pattern, return nil for var
+  defp value_from_pattern({:bound, id}), do: id
+  defp value_from_pattern({:var, _name}), do: nil
+  defp value_from_pattern(:var), do: nil
 
   # Check if this pattern can use a range index
   # Returns {:use_range_index, predicate_id, var_name, min, max} or :use_regular_index
