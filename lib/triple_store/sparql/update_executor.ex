@@ -377,31 +377,90 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   # Perform the actual quad insertion
   defp do_insert_quads(ctx, rdf_quads) do
-    # Insert each quad and count total
-    total =
-      Enum.reduce(rdf_quads, 0, fn rdf_quad, count ->
-        {subject, predicate, object, graph} = rdf_quad
+    # Optimized batch insertion:
+    # 1. Convert all RDF terms to IDs
+    # 2. Build internal quad tuples
+    # 3. Insert all quads in a single batch
 
-        with {:ok, s_id} <- Adapter.term_to_id(ctx.dict_manager, subject),
-             {:ok, p_id} <- Adapter.term_to_id(ctx.dict_manager, predicate),
-             {:ok, o_id} <- Adapter.term_to_id(ctx.dict_manager, object),
-             {:ok, g_id} <- get_graph_id_for_insert(ctx, graph),
-             :ok <- QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
-          count + 1
-        else
-          _error -> count
-        end
+    with {:ok, internal_quads} <- convert_rdf_quads_to_internal(ctx, rdf_quads) do
+      # Use batch insert for all quads at once
+      case QuadOperations.insert_quads(ctx.db, internal_quads, sync: true) do
+        :ok -> {:ok, length(internal_quads)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  # Converts RDF quads to internal quad representation with IDs
+  defp convert_rdf_quads_to_internal(ctx, rdf_quads) do
+    # Collect all unique terms that need ID conversion
+    {subjects, predicates, objects, graphs} =
+      Enum.reduce(rdf_quads, {MapSet.new(), MapSet.new(), MapSet.new(), MapSet.new()}, fn
+        {s, p, o, g}, {s_acc, p_acc, o_acc, g_acc} ->
+          {MapSet.put(s_acc, s), MapSet.put(p_acc, p), MapSet.put(o_acc, o), MapSet.put(g_acc, g)}
       end)
 
-    {:ok, total}
+    # Convert terms to IDs (graph terms separately as they may be :default)
+    with {:ok, subject_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(subjects)),
+         {:ok, predicate_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(predicates)),
+         {:ok, object_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(objects)),
+         {:ok, graph_ids} <- convert_graph_terms_to_id_map(ctx, MapSet.to_list(graphs)) do
+      # Build all quad tuples with their IDs
+      all_maps = %{subject: subject_ids, predicate: predicate_ids, object: object_ids, graph: graph_ids}
+
+      internal_quads =
+        Enum.reduce(rdf_quads, [], fn {s, p, o, g}, acc ->
+          case get_quad_ids(all_maps, s, p, o, g) do
+            {:ok, quad} -> [quad | acc]
+            :error -> acc
+          end
+        end)
+
+      {:ok, Enum.reverse(internal_quads)}
+    else
+      {:error, _} = error -> error
+    end
   end
 
-  # Get graph ID for insertion (creates ID if needed)
-  defp get_graph_id_for_insert(ctx, :default), do: {:ok, 0}
-  defp get_graph_id_for_insert(ctx, %RDF.IRI{} = graph_iri) do
-    Adapter.term_to_id(ctx.dict_manager, graph_iri)
+  # Converts a list of RDF terms to a map of term => ID
+  defp convert_terms_to_id_map(manager, terms) do
+    Enum.reduce_while(terms, {:ok, %{}}, fn term, {:ok, acc} ->
+      case Adapter.term_to_id(manager, term) do
+        {:ok, id} -> {:cont, {:ok, Map.put(acc, term, id)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
   end
-  defp get_graph_id_for_insert(_ctx, _), do: {:ok, 0}
+
+  # Converts graph terms to IDs (handles :default specially)
+  defp convert_graph_terms_to_id_map(ctx, graphs) do
+    Enum.reduce_while(graphs, {:ok, %{}}, fn graph, {:ok, acc} ->
+      id =
+        case graph do
+          :default -> {:ok, 0}
+          :default_graph -> {:ok, 0}
+          %RDF.IRI{} = iri -> Adapter.term_to_id(ctx.dict_manager, iri)
+          term -> Adapter.term_to_id(ctx.dict_manager, term)
+        end
+
+      case id do
+        {:ok, graph_id} -> {:cont, {:ok, Map.put(acc, graph, graph_id)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  # Gets the quad tuple from the ID maps
+  defp get_quad_ids(maps, s, p, o, g) do
+    with {:ok, s_id} <- Map.fetch(maps.subject, s),
+         {:ok, p_id} <- Map.fetch(maps.predicate, p),
+         {:ok, o_id} <- Map.fetch(maps.object, o),
+         {:ok, g_id} <- Map.fetch(maps.graph, g) do
+      {:ok, {s_id, p_id, o_id, g_id}}
+    else
+      :error -> :error
+    end
+  end
 
   # ===========================================================================
   # Triple Insertion (for triple stores)
@@ -1332,26 +1391,19 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       if !source_exists? do
         if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
       else
-        # First copy with replace
-        with {:ok, _count} <-
-               QuadOperations.copy_graph(
-                 ctx.db,
-                 ctx.dict_manager,
-                 source_rdf,
-                 target_rdf,
-                 on_conflict: :replace
-               ),
-             {:ok, _} <-
-               QuadOperations.clear_graph(ctx.db, ctx.dict_manager, source_rdf) do
-          # Invalidate cache after successful move
-          invalidate_cache_if_running()
+        # Use atomic move_quads operation (deletes from source, inserts to target in single batch)
+        case QuadOperations.move_quads(
+               ctx.db,
+               ctx.dict_manager,
+               source_rdf,
+               target_rdf,
+               on_conflict: :replace
+             ) do
+          {:ok, count} ->
+            # Invalidate cache after successful move
+            invalidate_cache_if_running()
+            {:ok, count}
 
-          # Get final count from target graph
-          case QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, target_rdf) do
-            {:ok, count} -> {:ok, count}
-            {:error, _} -> {:ok, :unknown}
-          end
-        else
           {:error, reason} ->
             if silent, do: {:ok, 0}, else: {:error, reason}
         end
