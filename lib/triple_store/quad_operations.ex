@@ -638,12 +638,19 @@ defmodule TripleStore.QuadOperations do
   """
   @spec graph_exists?(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) :: boolean()
   def graph_exists?(db, manager, graph_term) do
-    # Convert graph term to ID
-    case TripleStore.Adapter.term_to_id(manager, graph_term) do
+    # Use lookup_id instead of term_to_id to avoid creating ID during existence check
+    # A graph exists if it has an ID in the dictionary AND contains at least one quad
+    case Manager.lookup_id(manager, graph_term) do
       {:ok, graph_id} ->
+        # ID exists, check if graph has any quads
         graph_id_exists?(db, graph_id)
 
-      _ ->
+      :not_found ->
+        # ID doesn't exist, so graph doesn't exist
+        false
+
+      {:error, _} ->
+        # Error during lookup, treat as not existing
         false
     end
   end

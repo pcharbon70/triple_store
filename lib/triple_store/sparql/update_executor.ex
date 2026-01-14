@@ -55,6 +55,34 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   - All operations validate input size to prevent DoS
   - Pattern-based operations have result limits
   - Templates are validated before execution
+  - **Authorization**: All UPDATE operations check permissions via the Authorization module
+
+  ### Authorization
+
+  UPDATE operations require the following permissions:
+
+  - **INSERT DATA**: `:write` permission on target graph(s)
+  - **DELETE DATA**: `:write` permission on target graph(s)
+  - **MODIFY (DELETE/INSERT WHERE)**: `:write` permission on affected graph(s)
+  - **CREATE GRAPH**: `:admin` permission on graph
+  - **DROP GRAPH**: `:admin` permission on graph
+  - **CLEAR GRAPH**: `:write` permission on graph
+  - **COPY**: `:read` permission on source, `:write` permission on target
+  - **MOVE**: `:admin` permission on both source and target
+  - **ADD**: `:read` permission on source, `:write` permission on target
+
+  To provide a user context, include `:user` in the execution context:
+
+      ctx = %{
+        db: db,
+        dict_manager: dict_manager,
+        user: %{id: "user123", roles: [:editor]}
+      }
+
+  For internal operations where authorization should be bypassed (e.g., maintenance),
+  omit the `:user` key from the context.
+
+  The default graph (`:default`) is always writable without explicit authorization.
   """
 
   alias TripleStore.Adapter
@@ -64,6 +92,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.Query.Cache, as: QueryCache
+  alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Parser
 
@@ -81,7 +110,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
           db: reference(),
-          dict_manager: GenServer.server()
+          dict_manager: GenServer.server(),
+          user: map() | nil
         }
 
   @typedoc "A quad (subject, predicate, object, optional graph)"
@@ -299,14 +329,24 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_insert_data(ctx, quads) when is_list(quads) do
-    # Check if we're using a quad store
-    case ErlangAdapter.is_quad_store?(ctx.db) do
-      {:ok, true} ->
-        # Use quad operations
-        insert_quads(ctx, quads)
-      {:ok, false} ->
-        # Use triple operations (existing behavior)
-        insert_triples(ctx, quads)
+    # Extract graphs from quads for authorization check
+    graph_terms = extract_graphs_from_quads(quads)
+
+    # Check write authorization on all target graphs
+    case check_multi_graph_authorization(ctx, graph_terms, :write) do
+      :ok ->
+        # Authorization passed, proceed with insertion
+        case ErlangAdapter.is_quad_store?(ctx.db) do
+          {:ok, true} ->
+            # Use quad operations
+            insert_quads(ctx, quads)
+          {:ok, false} ->
+            # Use triple operations (existing behavior)
+            insert_triples(ctx, quads)
+        end
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
     end
   end
 
@@ -424,14 +464,24 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_delete_data(ctx, quads) when is_list(quads) do
-    # Check if we're using a quad store
-    case ErlangAdapter.is_quad_store?(ctx.db) do
-      {:ok, true} ->
-        # Use quad operations
-        delete_quads(ctx, quads)
-      {:ok, false} ->
-        # Use triple operations (existing behavior)
-        delete_triples_from_store(ctx, quads)
+    # Extract graphs from quads for authorization check
+    graph_terms = extract_graphs_from_quads(quads)
+
+    # Check write authorization on all target graphs
+    case check_multi_graph_authorization(ctx, graph_terms, :write) do
+      :ok ->
+        # Authorization passed, proceed with deletion
+        case ErlangAdapter.is_quad_store?(ctx.db) do
+          {:ok, true} ->
+            # Use quad operations
+            delete_quads(ctx, quads)
+          {:ok, false} ->
+            # Use triple operations (existing behavior)
+            delete_triples_from_store(ctx, quads)
+        end
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
     end
   end
 
@@ -676,13 +726,41 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
          length(insert_template) > @max_template_size do
       {:error, :template_too_large}
     else
-      # Check if we're using a quad store
-      case ErlangAdapter.is_quad_store?(ctx.db) do
-        {:ok, true} ->
-          do_execute_modify_quad(ctx, delete_template, insert_template, pattern)
-        {:ok, false} ->
-          do_execute_modify_triples(ctx, delete_template, insert_template, pattern)
+      # Extract graphs from templates for authorization check
+      delete_graphs = extract_graphs_from_templates(delete_template)
+      insert_graphs = extract_graphs_from_templates(insert_template)
+      all_graphs = Enum.uniq(delete_graphs ++ insert_graphs)
+
+      # Check write authorization on all affected graphs
+      # If graphs can't be determined (variables in templates), skip check
+      # and rely on pattern execution authorization
+      case all_graphs do
+        [] ->
+          # Can't determine graphs statically - proceed with execution
+          # (authorization will be checked by pattern executor)
+          execute_modify_after_auth(ctx, delete_template, insert_template, pattern)
+
+        _ ->
+          # Check authorization on determined graphs
+          case check_multi_graph_authorization(ctx, all_graphs, :write) do
+            :ok ->
+              execute_modify_after_auth(ctx, delete_template, insert_template, pattern)
+
+            {:error, :unauthorized} ->
+              {:error, :unauthorized}
+          end
       end
+    end
+  end
+
+  # Execute MODIFY after authorization check
+  defp execute_modify_after_auth(ctx, delete_template, insert_template, pattern) do
+    # Check if we're using a quad store
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        do_execute_modify_quad(ctx, delete_template, insert_template, pattern)
+      {:ok, false} ->
+        do_execute_modify_triples(ctx, delete_template, insert_template, pattern)
     end
   end
 
@@ -850,20 +928,27 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
         if silent, do: {:ok, 0}, else: {:error, :default_graph_exists}
 
       true ->
-        # Convert AST graph term to RDF term
+        # Check admin authorization before creating graph
         rdf_graph = ast_term_to_rdf_graph(graph_iri)
 
-        case QuadOperations.create_graph(ctx.db, ctx.dict_manager, rdf_graph) do
-          {:ok, :created} ->
-            # Invalidate cache since graph structure changed
-            invalidate_cache_if_running()
-            {:ok, 0}
+        case check_admin_authorization(ctx, rdf_graph) do
+          :ok ->
+            # Authorization passed, proceed with creation
+            case QuadOperations.create_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+              {:ok, :created} ->
+                # Invalidate cache since graph structure changed
+                invalidate_cache_if_running()
+                {:ok, 0}
 
-          {:ok, :already_exists} ->
-            if silent, do: {:ok, 0}, else: {:error, :graph_already_exists}
+              {:ok, :already_exists} ->
+                if silent, do: {:ok, 0}, else: {:error, :graph_already_exists}
 
-          {:error, reason} ->
-            if silent, do: {:ok, 0}, else: {:error, reason}
+              {:error, reason} ->
+                if silent, do: {:ok, 0}, else: {:error, reason}
+            end
+
+          {:error, :unauthorized} ->
+            {:error, :unauthorized}
         end
     end
   end
@@ -905,17 +990,25 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
         # Convert AST graph term to RDF term
         rdf_graph = ast_term_to_rdf_graph(graph_iri)
 
-        case QuadOperations.delete_graph(ctx.db, ctx.dict_manager, rdf_graph) do
-          {:ok, count} ->
-            # Invalidate cache since graph structure changed
-            invalidate_cache_if_running()
-            {:ok, count}
+        # Check admin authorization before dropping graph
+        case check_admin_authorization(ctx, rdf_graph) do
+          :ok ->
+            # Authorization passed, proceed with deletion
+            case QuadOperations.delete_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+              {:ok, count} ->
+                # Invalidate cache since graph structure changed
+                invalidate_cache_if_running()
+                {:ok, count}
 
-          {:error, :not_found} ->
-            if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
+              {:error, :not_found} ->
+                if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
 
-          {:error, reason} ->
-            if silent, do: {:ok, 0}, else: {:error, reason}
+              {:error, reason} ->
+                if silent, do: {:ok, 0}, else: {:error, reason}
+            end
+
+          {:error, :unauthorized} ->
+            {:error, :unauthorized}
         end
     end
   end
@@ -929,17 +1022,61 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   # Clear all graphs (default + named)
   defp clear_all_graphs(ctx) do
-    # Use quad operations to clear all graphs
-    case clear_all_triples(ctx) do
-      {:ok, count} ->
-        invalidate_cache_if_running()
-        {:ok, count}
-      {:error, _} = error -> error
+    # Check if we're using a quad store
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        # For quad stores, clear all graphs by iterating and clearing each
+        clear_all_graphs_quad(ctx)
+
+      {:ok, false} ->
+        # For triple stores, use the legacy clear_all_triples
+        clear_all_triples(ctx)
+    end
+  end
+
+  # Clear all graphs for quad stores
+  defp clear_all_graphs_quad(ctx) do
+    # Get all graphs including default
+    case QuadOperations.list_graphs(ctx.db, include_default: true) do
+      {:ok, []} ->
+        # No graphs exist
+        {:ok, 0}
+
+      {:ok, graphs} ->
+        # Clear each graph and sum the counts
+        result =
+          Enum.reduce_while(graphs, {:ok, 0}, fn graph_term, {:ok, total} ->
+            case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_term) do
+              {:ok, count} -> {:cont, {:ok, total + count}}
+              {:error, _} -> {:halt, {:error, :clear_failed}}
+            end
+          end)
+
+        case result do
+          {:ok, count} ->
+            invalidate_cache_if_running()
+            {:ok, count}
+
+          {:error, _} = error ->
+            error
+        end
+
+      {:error, _} ->
+        # If we can't list graphs, fall back to trying to clear default
+        case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, :default) do
+          {:ok, count} ->
+            invalidate_cache_if_running()
+            {:ok, count}
+
+          {:error, _} = error ->
+            error
+        end
     end
   end
 
   # Clear default graph only
   defp clear_default_graph(ctx) do
+    # Default graph doesn't require authorization (always accessible)
     case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, :default) do
       {:ok, count} ->
         invalidate_cache_if_running()
@@ -952,21 +1089,29 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp clear_all_named_graphs(ctx, silent) do
     case QuadOperations.list_graphs(ctx.db, include_default: false) do
       {:ok, graphs} ->
-        # Clear each named graph and sum the counts
-        result = Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
-          case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
-            {:ok, count} -> {:cont, {:ok, total + count}}
-            {:error, _} -> {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
-          end
-        end)
+        # Check write authorization on all graphs first
+        case check_multi_graph_authorization(ctx, graphs, :write) do
+          :ok ->
+            # Authorization passed, proceed with clearing
+            # Clear each named graph and sum the counts
+            result = Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
+              case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
+                {:ok, count} -> {:cont, {:ok, total + count}}
+                {:error, _} -> {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
+              end
+            end)
 
-        # Invalidate cache if we successfully cleared any graphs
-        case result do
-          {:ok, count} when count > 0 -> invalidate_cache_if_running()
-          _ -> :ok
+            # Invalidate cache if we successfully cleared any graphs
+            case result do
+              {:ok, count} when count > 0 -> invalidate_cache_if_running()
+              _ -> :ok
+            end
+
+            result
+
+          {:error, :unauthorized} ->
+            {:error, :unauthorized}
         end
-
-        result
 
       {:error, _} ->
         if silent, do: {:ok, 0}, else: {:error, :list_graphs_failed}
@@ -977,16 +1122,23 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp clear_named_graph(ctx, graph_iri, silent) do
     rdf_graph = ast_term_to_rdf_graph(graph_iri)
 
-    case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, rdf_graph) do
-      {:ok, count} ->
-        invalidate_cache_if_running()
-        {:ok, count}
+    # Check write authorization before clearing graph
+    case check_write_authorization(ctx, rdf_graph) do
+      :ok ->
+        case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, rdf_graph) do
+          {:ok, count} ->
+            invalidate_cache_if_running()
+            {:ok, count}
 
-      {:error, :not_found} ->
-        if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
+          {:error, :not_found} ->
+            if silent, do: {:ok, 0}, else: {:error, :graph_not_found}
 
-      {:error, reason} ->
-        if silent, do: {:ok, 0}, else: {:error, reason}
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized}
     end
   end
 
@@ -1129,31 +1281,37 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     source_rdf = normalize_graph_term(source_graph)
     target_rdf = normalize_graph_term(target_graph)
 
-    # Check if source graph exists (has quads)
-    source_exists? =
-      case source_rdf do
-        :default -> QuadOperations.default_graph_exists?(ctx.db)
-        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
-      end
+    # Check authorization: need read on source, write on target
+    with :ok <- check_read_authorization(ctx, source_rdf),
+         :ok <- check_write_authorization(ctx, target_rdf) do
+      # Check if source graph exists (has quads)
+      source_exists? =
+        case source_rdf do
+          :default -> QuadOperations.default_graph_exists?(ctx.db)
+          graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+        end
 
-    if !source_exists? do
-      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+      if !source_exists? do
+        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+      else
+        # Use copy_graph with :replace option (COPY replaces target)
+        case QuadOperations.copy_graph(
+               ctx.db,
+               ctx.dict_manager,
+               source_rdf,
+               target_rdf,
+               on_conflict: :replace
+             ) do
+          {:ok, count} ->
+            invalidate_cache_if_running()
+            {:ok, count}
+
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
+      end
     else
-      # Use copy_graph with :replace option (COPY replaces target)
-      case QuadOperations.copy_graph(
-             ctx.db,
-             ctx.dict_manager,
-             source_rdf,
-             target_rdf,
-             on_conflict: :replace
-           ) do
-        {:ok, count} ->
-          invalidate_cache_if_running()
-          {:ok, count}
-
-        {:error, reason} ->
-          if silent, do: {:ok, 0}, else: {:error, reason}
-      end
+      {:error, :unauthorized} -> {:error, :unauthorized}
     end
   end
 
@@ -1161,39 +1319,45 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     source_rdf = normalize_graph_term(source_graph)
     target_rdf = normalize_graph_term(target_graph)
 
-    # Check if source graph exists (has quads)
-    source_exists? =
-      case source_rdf do
-        :default -> QuadOperations.default_graph_exists?(ctx.db)
-        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
-      end
-
-    if !source_exists? do
-      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
-    else
-      # First copy with replace
-      with {:ok, _count} <-
-             QuadOperations.copy_graph(
-               ctx.db,
-               ctx.dict_manager,
-               source_rdf,
-               target_rdf,
-               on_conflict: :replace
-             ),
-           {:ok, _} <-
-             QuadOperations.clear_graph(ctx.db, ctx.dict_manager, source_rdf) do
-        # Invalidate cache after successful move
-        invalidate_cache_if_running()
-
-        # Get final count from target graph
-        case QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, target_rdf) do
-          {:ok, count} -> {:ok, count}
-          {:error, _} -> {:ok, :unknown}
+    # Check authorization: need admin on both source and target (MOVE is like DELETE + CREATE)
+    with :ok <- check_admin_authorization(ctx, source_rdf),
+         :ok <- check_admin_authorization(ctx, target_rdf) do
+      # Check if source graph exists (has quads)
+      source_exists? =
+        case source_rdf do
+          :default -> QuadOperations.default_graph_exists?(ctx.db)
+          graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
         end
+
+      if !source_exists? do
+        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
       else
-        {:error, reason} ->
-          if silent, do: {:ok, 0}, else: {:error, reason}
+        # First copy with replace
+        with {:ok, _count} <-
+               QuadOperations.copy_graph(
+                 ctx.db,
+                 ctx.dict_manager,
+                 source_rdf,
+                 target_rdf,
+                 on_conflict: :replace
+               ),
+             {:ok, _} <-
+               QuadOperations.clear_graph(ctx.db, ctx.dict_manager, source_rdf) do
+          # Invalidate cache after successful move
+          invalidate_cache_if_running()
+
+          # Get final count from target graph
+          case QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, target_rdf) do
+            {:ok, count} -> {:ok, count}
+            {:error, _} -> {:ok, :unknown}
+          end
+        else
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
       end
+    else
+      {:error, :unauthorized} -> {:error, :unauthorized}
     end
   end
 
@@ -1201,31 +1365,37 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     source_rdf = normalize_graph_term(source_graph)
     target_rdf = normalize_graph_term(target_graph)
 
-    # Check if source graph exists (has quads)
-    source_exists? =
-      case source_rdf do
-        :default -> QuadOperations.default_graph_exists?(ctx.db)
-        graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
-      end
+    # Check authorization: need read on source, write on target
+    with :ok <- check_read_authorization(ctx, source_rdf),
+         :ok <- check_write_authorization(ctx, target_rdf) do
+      # Check if source graph exists (has quads)
+      source_exists? =
+        case source_rdf do
+          :default -> QuadOperations.default_graph_exists?(ctx.db)
+          graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+        end
 
-    if !source_exists? do
-      if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+      if !source_exists? do
+        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+      else
+        # Use copy_graph with :merge option (ADD merges with target)
+        case QuadOperations.copy_graph(
+               ctx.db,
+               ctx.dict_manager,
+               source_rdf,
+               target_rdf,
+               on_conflict: :merge
+             ) do
+          {:ok, count} ->
+            invalidate_cache_if_running()
+            {:ok, count}
+
+          {:error, reason} ->
+            if silent, do: {:ok, 0}, else: {:error, reason}
+        end
+      end
     else
-      # Use copy_graph with :merge option (ADD merges with target)
-      case QuadOperations.copy_graph(
-             ctx.db,
-             ctx.dict_manager,
-             source_rdf,
-             target_rdf,
-             on_conflict: :merge
-           ) do
-        {:ok, count} ->
-          invalidate_cache_if_running()
-          {:ok, count}
-
-        {:error, reason} ->
-          if silent, do: {:ok, 0}, else: {:error, reason}
-      end
+      {:error, :unauthorized} -> {:error, :unauthorized}
     end
   end
 
@@ -1868,5 +2038,164 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       %{count: 1, predicate_count: MapSet.size(predicates)},
       %{type: :predicate}
     )
+  end
+
+  # ===========================================================================
+  # Authorization Helpers
+  # ===========================================================================
+
+  @doc false
+  @spec get_user(context()) :: map() | :public
+  defp get_user(ctx) do
+    Map.get(ctx, :user, :public)
+  end
+
+  @doc false
+  @spec check_write_authorization(context(), term()) :: :ok | {:error, :unauthorized}
+  defp check_write_authorization(ctx, graph_term) do
+    user = get_user(ctx)
+
+    # Skip authorization for internal operations (no user provided)
+    if user == :public do
+      # No user context - allow operation (for internal/maintenance use)
+      :ok
+    else
+      graph_iri = graph_term_to_iri_string(graph_term)
+
+      case Authorization.can_write?(ctx, graph_iri, user) do
+        {:ok, true} -> :ok
+        {:ok, false} -> {:error, :unauthorized}
+        {:error, _} -> {:error, :unauthorized}
+      end
+    end
+  end
+
+  @doc false
+  @spec check_admin_authorization(context(), term()) :: :ok | {:error, :unauthorized}
+  defp check_admin_authorization(ctx, graph_term) do
+    user = get_user(ctx)
+
+    # Skip authorization for internal operations (no user provided)
+    if user == :public do
+      # No user context - allow operation (for internal/maintenance use)
+      :ok
+    else
+      graph_iri = graph_term_to_iri_string(graph_term)
+
+      case Authorization.can_admin?(ctx, graph_iri, user) do
+        {:ok, true} -> :ok
+        {:ok, false} -> {:error, :unauthorized}
+        {:error, _} -> {:error, :unauthorized}
+      end
+    end
+  end
+
+  @doc false
+  @spec check_read_authorization(context(), term()) :: :ok | {:error, :unauthorized}
+  defp check_read_authorization(ctx, graph_term) do
+    user = get_user(ctx)
+
+    # Skip authorization for internal operations (no user provided)
+    if user == :public do
+      # No user context - allow operation (for internal/maintenance use)
+      :ok
+    else
+      graph_iri = graph_term_to_iri_string(graph_term)
+
+      case Authorization.can_read?(ctx, graph_iri, user) do
+        {:ok, true} -> :ok
+        {:ok, false} -> {:error, :unauthorized}
+        {:error, _} -> {:error, :unauthorized}
+      end
+    end
+  end
+
+  # Convert graph term to IRI string for authorization checks
+  defp graph_term_to_iri_string(:default), do: nil
+  defp graph_term_to_iri_string(:default_graph), do: nil
+  defp graph_term_to_iri_string(%RDF.IRI{value: value}), do: value
+  defp graph_term_to_iri_string({:named_node, iri}), do: iri
+  defp graph_term_to_iri_string({:named_graph, iri}), do: iri
+  defp graph_term_to_iri_string(iri) when is_binary(iri), do: iri
+  defp graph_term_to_iri_string(_), do: nil
+
+  @doc false
+  @spec check_multi_graph_authorization(context(), [term()], atom()) :: :ok | {:error, :unauthorized}
+  defp check_multi_graph_authorization(ctx, graph_terms, permission_type) do
+    user = get_user(ctx)
+
+    # Skip authorization for internal operations (no user provided)
+    if user == :public do
+      :ok
+    else
+      # Check each graph term
+      results =
+        Enum.map(graph_terms, fn graph_term ->
+          graph_iri = graph_term_to_iri_string(graph_term)
+
+          # Skip nil graph IRIs (default graph - always allowed)
+          if is_nil(graph_iri) or graph_iri == "" do
+            :ok
+          else
+            case permission_type do
+              :write ->
+                case Authorization.can_write?(ctx, graph_iri, user) do
+                  {:ok, true} -> :ok
+                  _ -> {:error, :unauthorized}
+                end
+
+              :admin ->
+                case Authorization.can_admin?(ctx, graph_iri, user) do
+                  {:ok, true} -> :ok
+                  _ -> {:error, :unauthorized}
+                end
+
+              :read ->
+                case Authorization.can_read?(ctx, graph_iri, user) do
+                  {:ok, true} -> :ok
+                  _ -> {:error, :unauthorized}
+                end
+            end
+          end
+        end)
+
+      # Return :ok if all checks pass, otherwise return error
+      if Enum.all?(results, &(&1 == :ok)) do
+        :ok
+      else
+        {:error, :unauthorized}
+      end
+    end
+  end
+
+  @doc false
+  @spec extract_graphs_from_quads([term()]) :: [term()]
+  defp extract_graphs_from_quads(quads) do
+    quads
+    |> Enum.map(fn
+      {:quad, _s, _p, _o, g} -> g
+      {:triple, _s, _p, _o} -> :default
+      {_s, _p, _o} -> :default
+      {_s, _p, _o, g} -> g
+      _ -> :default
+    end)
+    |> Enum.uniq()
+  end
+
+  @doc false
+  @spec extract_graphs_from_templates([term()]) :: [term()]
+  defp extract_graphs_from_templates(templates) do
+    templates
+    |> Enum.flat_map(fn
+      {:quad, _s, _p, _o, g} when not is_tuple(g) or elem(g, 0) != :variable -> [g]
+      {:triple, _s, _p, _o} -> [:default]
+      {s, p, o} when is_tuple(s) or is_tuple(p) or is_tuple(o) -> []  # Has variables
+      {_s, _p, _o} -> [:default]
+      {_s, _p, _o, :default_graph} -> [:default]
+      {_s, _p, _o, :default} -> [:default]
+      {_s, _p, _o, g} when not is_tuple(g) -> [g]
+      _ -> []  # Variables present, can't determine statically
+    end)
+    |> Enum.uniq()
   end
 end
