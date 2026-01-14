@@ -1137,7 +1137,7 @@ defmodule TripleStore.QuadOperations do
 
     try do
       quads =
-        NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+        case NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
           case key do
             <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
               {g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1146,7 +1146,12 @@ defmodule TripleStore.QuadOperations do
             _ ->
               throw({:halt, acc})
           end
-        end)
+        end) do
+          {:error, reason} ->
+            throw({:exit, reason})
+          result ->
+            result
+        end
 
       quads = Enum.reverse(quads)
 
