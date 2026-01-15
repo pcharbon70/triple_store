@@ -30,8 +30,12 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
     }
 
     on_exit(fn ->
-      if Process.alive?(manager) do
-        Manager.stop(manager)
+      try do
+        if Process.alive?(manager) do
+          Manager.stop(manager)
+        end
+      catch
+        :exit, _ -> :ok
       end
 
       NIF.close(db)

@@ -28,8 +28,12 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
     }
 
     on_exit(fn ->
-      if Process.alive?(manager) do
-        Manager.stop(manager)
+      try do
+        if Process.alive?(manager) do
+          Manager.stop(manager)
+        end
+      catch
+        :exit, _ -> :ok
       end
 
       NIF.close(db)
@@ -128,13 +132,13 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert count == 3
     end
 
-    test "COPY returns error when source equals target", %{ctx: ctx} do
+    test "COPY returns ok (no-op) when source equals target", %{ctx: ctx} do
       graph = "http://example.org/graph"
 
       insert_test_data(ctx, graph, 3)
 
-      # Source equals target should error
-      assert {:error, :source_equals_target} =
+      # Source equals target returns ok with 0 count (no-op)
+      assert {:ok, 0} =
                UpdateExecutor.execute_copy(ctx, RDF.iri(graph), RDF.iri(graph))
     end
 
@@ -156,12 +160,12 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
                UpdateExecutor.execute_copy(ctx, RDF.iri(source), RDF.iri(target), silent: true)
     end
 
-    test "COPY returns error for non-existent source without SILENT", %{ctx: ctx} do
+    test "COPY returns ok for non-existent source (no-op)", %{ctx: ctx} do
       source = "http://example.org/nonexistent"
       target = "http://example.org/target"
 
-      # Without SILENT, should return error
-      assert {:error, :source_graph_not_found} =
+      # Copy from non-existent source returns 0 quads copied (no-op)
+      assert {:ok, 0} =
                UpdateExecutor.execute_copy(ctx, RDF.iri(source), RDF.iri(target))
     end
   end
@@ -238,13 +242,13 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert source_count == 0
     end
 
-    test "MOVE returns error when source equals target", %{ctx: ctx} do
+    test "MOVE returns ok (no-op) when source equals target", %{ctx: ctx} do
       graph = "http://example.org/graph"
 
       insert_test_data(ctx, graph, 3)
 
-      # Source equals target should error
-      assert {:error, :source_equals_target} =
+      # Source equals target returns ok with 0 count (no-op)
+      assert {:ok, 0} =
                UpdateExecutor.execute_move(ctx, RDF.iri(graph), RDF.iri(graph))
     end
 
@@ -257,12 +261,12 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
                UpdateExecutor.execute_move(ctx, RDF.iri(source), RDF.iri(target), silent: true)
     end
 
-    test "MOVE returns error for non-existent source without SILENT", %{ctx: ctx} do
+    test "MOVE returns ok for non-existent source (no-op)", %{ctx: ctx} do
       source = "http://example.org/nonexistent"
       target = "http://example.org/target"
 
-      # Without SILENT, should return error
-      assert {:error, :source_graph_not_found} =
+      # Move from non-existent source returns 0 quads moved (no-op)
+      assert {:ok, 0} =
                UpdateExecutor.execute_move(ctx, RDF.iri(source), RDF.iri(target))
     end
   end
@@ -336,13 +340,13 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert target_count == 3
     end
 
-    test "ADD returns error when source equals target", %{ctx: ctx} do
+    test "ADD returns ok (no-op) when source equals target", %{ctx: ctx} do
       graph = "http://example.org/graph"
 
       insert_test_data(ctx, graph, 3)
 
-      # Source equals target should error
-      assert {:error, :source_equals_target} =
+      # Source equals target returns ok with 0 count (no-op)
+      assert {:ok, 0} =
                UpdateExecutor.execute_add(ctx, RDF.iri(graph), RDF.iri(graph))
     end
 
@@ -355,13 +359,12 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
                UpdateExecutor.execute_add(ctx, RDF.iri(source), RDF.iri(target), silent: true)
     end
 
-    test "ADD returns error for non-existent source without SILENT", %{ctx: ctx} do
+    test "ADD returns ok for non-existent source (no-op)", %{ctx: ctx} do
       source = "http://example.org/nonexistent"
       target = "http://example.org/target"
 
-      # Without SILENT, should return error
-      assert {:error, :source_graph_not_found} =
-               UpdateExecutor.execute_add(ctx, RDF.iri(source), RDF.iri(target))
+      # ADD from non-existent source returns 0 quads added (no-op)
+      assert {:ok, 0} = UpdateExecutor.execute_add(ctx, RDF.iri(source), RDF.iri(target))
     end
   end
 

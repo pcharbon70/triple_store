@@ -76,9 +76,24 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
       if internal_quads == [] do
         {:ok, 0}
       else
-        case QuadOperations.delete_quads(ctx.db, internal_quads, []) do
-          :ok -> {:ok, length(internal_quads)}
-          {:error, _} = error -> error
+        # Filter out quads that don't actually exist in the store (for idempotence)
+        existing_quads =
+          Enum.filter(internal_quads, fn quad ->
+            case quad do
+              {s, p, o, g} when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g) ->
+                QuadOperations.quad_exists?(ctx.db, {s, p, o, g})
+              _ ->
+                false
+            end
+          end)
+
+        if existing_quads == [] do
+          {:ok, 0}
+        else
+          case QuadOperations.delete_quads(ctx.db, existing_quads, []) do
+            :ok -> {:ok, length(existing_quads)}
+            {:error, _} = error -> error
+          end
         end
       end
     end
@@ -236,15 +251,15 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}}) do
-    {:ok, TripleStore.Dictionary.encode_integer(value)}
+    TripleStore.Dictionary.encode_integer(value)
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Decimal{value: %Decimal{} = value}}) do
-    {:ok, TripleStore.Dictionary.encode_decimal(value)}
+    TripleStore.Dictionary.encode_decimal(value)
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.DateTime{value: %DateTime{} = value}}) do
-    {:ok, TripleStore.Dictionary.encode_datetime(value)}
+    TripleStore.Dictionary.encode_datetime(value)
   end
 
   defp encode_inline_literal(_literal) do

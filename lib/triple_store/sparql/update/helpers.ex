@@ -48,6 +48,9 @@ defmodule TripleStore.SPARQL.Update.Helpers do
 
   @doc """
   Checks admin authorization on a graph term.
+
+  Users with :admin role have global admin access to all graphs.
+  Other users must have graph-level admin permission.
   """
   @spec check_admin_authorization(map(), term()) :: :ok | {:error, :unauthorized}
   def check_admin_authorization(ctx, graph_term) do
@@ -56,12 +59,19 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     if user == :public do
       :ok
     else
-      graph_iri = graph_term_to_iri_string(graph_term)
+      # First, check if user has admin role (global admin access)
+      user_roles = Map.get(user, :roles, [])
+      if :admin in user_roles do
+        :ok
+      else
+        # If not global admin, check graph-level admin permission
+        graph_iri = graph_term_to_iri_string(graph_term)
 
-      case Authorization.can_admin?(ctx, graph_iri, user) do
-        {:ok, true} -> :ok
-        {:ok, false} -> {:error, :unauthorized}
-        {:error, _} -> {:error, :unauthorized}
+        case Authorization.can_admin?(ctx, graph_iri, user) do
+          {:ok, true} -> :ok
+          {:ok, false} -> {:error, :unauthorized}
+          {:error, _} -> {:error, :unauthorized}
+        end
       end
     end
   end
@@ -88,6 +98,8 @@ defmodule TripleStore.SPARQL.Update.Helpers do
 
   @doc """
   Checks authorization on multiple graph terms.
+
+  Users with :admin role have global access for all permission types.
   """
   @spec check_multi_graph_authorization(map(), [term()], atom()) :: :ok | {:error, :unauthorized}
   def check_multi_graph_authorization(ctx, graph_terms, permission_type) do
@@ -96,39 +108,45 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     if user == :public do
       :ok
     else
-      results =
-        Enum.map(graph_terms, fn graph_term ->
-          graph_iri = graph_term_to_iri_string(graph_term)
-
-          if is_nil(graph_iri) or graph_iri == "" do
-            :ok
-          else
-            case permission_type do
-              :write ->
-                case Authorization.can_write?(ctx, graph_iri, user) do
-                  {:ok, true} -> :ok
-                  _ -> {:error, :unauthorized}
-                end
-
-              :admin ->
-                case Authorization.can_admin?(ctx, graph_iri, user) do
-                  {:ok, true} -> :ok
-                  _ -> {:error, :unauthorized}
-                end
-
-              :read ->
-                case Authorization.can_read?(ctx, graph_iri, user) do
-                  {:ok, true} -> :ok
-                  _ -> {:error, :unauthorized}
-                end
-            end
-          end
-        end)
-
-      if Enum.all?(results, &(&1 == :ok)) do
+      # Check if user has admin role (global access)
+      user_roles = Map.get(user, :roles, [])
+      if :admin in user_roles do
         :ok
       else
-        {:error, :unauthorized}
+        results =
+          Enum.map(graph_terms, fn graph_term ->
+            graph_iri = graph_term_to_iri_string(graph_term)
+
+            if is_nil(graph_iri) or graph_iri == "" do
+              :ok
+            else
+              case permission_type do
+                :write ->
+                  case Authorization.can_write?(ctx, graph_iri, user) do
+                    {:ok, true} -> :ok
+                    _ -> {:error, :unauthorized}
+                  end
+
+                :admin ->
+                  case Authorization.can_admin?(ctx, graph_iri, user) do
+                    {:ok, true} -> :ok
+                    _ -> {:error, :unauthorized}
+                  end
+
+                :read ->
+                  case Authorization.can_read?(ctx, graph_iri, user) do
+                    {:ok, true} -> :ok
+                    _ -> {:error, :unauthorized}
+                  end
+              end
+            end
+          end)
+
+        if Enum.all?(results, &(&1 == :ok)) do
+          :ok
+        else
+          {:error, :unauthorized}
+        end
       end
     end
   end

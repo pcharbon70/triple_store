@@ -1192,8 +1192,9 @@ defmodule TripleStore.QuadOperations do
 
       try do
         # Build batch operations: delete old, insert new
-        {puts, deletes} =
-          NIF.fold_keys(db, :gspo, prefix, {[], []}, fn key, {puts_acc, deletes_acc} ->
+        # Track count directly to avoid calculation errors
+        {puts, deletes, quad_count} =
+          NIF.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key, {puts_acc, deletes_acc, count_acc} ->
             case key do
               <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
                 {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1204,10 +1205,10 @@ defmodule TripleStore.QuadOperations do
                 # Generate insert operations for all 4 indices with target graph ID
                 new_puts = put_ops_for_quad(s, p, o, tgt_id) ++ puts_acc
 
-                {new_puts, new_deletes}
+                {new_puts, new_deletes, count_acc + 1}
 
               _ ->
-                throw({:halt, {puts_acc, deletes_acc}})
+                throw({:halt, {puts_acc, deletes_acc, count_acc}})
             end
           end)
 
@@ -1224,13 +1225,13 @@ defmodule TripleStore.QuadOperations do
                  if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
                :ok <-
                  if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
-            {:ok, div(length(deletes), 4)}  # Each quad has 4 indices
+            {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}
           end
         end
       catch
-        {:halt, {puts, deletes}} ->
+        {:halt, {puts, deletes, quad_count}} ->
           # End of prefix reached, execute batch with what we collected
           delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
           put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
@@ -1238,7 +1239,7 @@ defmodule TripleStore.QuadOperations do
           with :ok <-
                  if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
                :ok <- if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
-            {:ok, div(length(deletes), 4)}
+            {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}
           end
@@ -1251,21 +1252,23 @@ defmodule TripleStore.QuadOperations do
 
   # Generates delete operations for a quad in all 4 indices
   defp delete_ops_for_quad(s, p, o, g) do
+    keys = QuadIndex.encode_quad_keys(s, p, o, g)
     [
-      {:gspo, QuadIndex.encode_gspo_key(g, s, p, o)},
-      {:gpos, QuadIndex.encode_gpos_key(g, p, o, s)},
-      {:spog, QuadIndex.encode_spog_key(s, p, o, g)},
-      {:posg, QuadIndex.encode_posg_key(p, o, s, g)}
+      {:gspo, keys.gspo},
+      {:gpos, keys.gpos},
+      {:spog, keys.spog},
+      {:posg, keys.posg}
     ]
   end
 
   # Generates put operations for a quad in all 4 indices
   defp put_ops_for_quad(s, p, o, g) do
+    keys = QuadIndex.encode_quad_keys(s, p, o, g)
     [
-      {:gspo, QuadIndex.encode_gspo_key(g, s, p, o), @empty_value},
-      {:gpos, QuadIndex.encode_gpos_key(g, p, o, s), @empty_value},
-      {:spog, QuadIndex.encode_spog_key(s, p, o, g), @empty_value},
-      {:posg, QuadIndex.encode_posg_key(p, o, s, g), @empty_value}
+      {:gspo, keys.gspo, @empty_value},
+      {:gpos, keys.gpos, @empty_value},
+      {:spog, keys.spog, @empty_value},
+      {:posg, keys.posg, @empty_value}
     ]
   end
 

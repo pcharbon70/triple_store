@@ -98,13 +98,19 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   """
   @spec execute_clear(map(), keyword() | atom()) :: {:ok, non_neg_integer()} | {:error, term()}
   def execute_clear(ctx, {:clear, target}) do
-    execute_clear(ctx, Keyword.get(target, "graph", target), Keyword.get(target, "silent", false))
+    graph_target = Keyword.get(target, "graph", target)
+    silent = Keyword.get(target, "silent", false)
+    # Normalize parser atoms to internal atoms
+    normalized_target = normalize_clear_target(graph_target)
+    execute_clear(ctx, normalized_target, silent)
   end
 
   def execute_clear(ctx, props) when is_list(props) do
     target = Helpers.get_prop(props, "graph", :default)
     silent = Helpers.get_prop(props, "silent", false)
-    execute_clear(ctx, target, silent)
+    # Normalize parser atoms to internal atoms
+    normalized_target = normalize_clear_target(target)
+    execute_clear(ctx, normalized_target, silent)
   end
 
   defp execute_clear(ctx, target, silent) do
@@ -116,6 +122,12 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
         execute_clear_triple(ctx, target, silent)
     end
   end
+
+  # Normalize parser target atoms to internal atoms
+  defp normalize_clear_target(:all_graphs), do: :all
+  defp normalize_clear_target(:default_graph), do: :default
+  defp normalize_clear_target(:all_named), do: :named
+  defp normalize_clear_target(other), do: other
 
   @doc """
   Executes a COPY GRAPH operation.
@@ -136,7 +148,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
         end
 
       if !source_exists? do
-        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
+        # Copy from non-existent source returns 0 quads (no-op)
+        {:ok, 0}
       else
         case QuadOperations.copy_graph(
                ctx.db,
@@ -168,34 +181,41 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     source_rdf = Helpers.normalize_graph_term(source_graph)
     target_rdf = Helpers.normalize_graph_term(target_graph)
 
-    with :ok <- Helpers.check_admin_authorization(ctx, source_rdf),
-         :ok <- Helpers.check_admin_authorization(ctx, target_rdf) do
-      source_exists? =
-        case source_rdf do
-          :default -> QuadOperations.default_graph_exists?(ctx.db)
-          graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
-        end
-
-      if !source_exists? do
-        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
-      else
-        case QuadOperations.move_quads(
-               ctx.db,
-               ctx.dict_manager,
-               source_rdf,
-               target_rdf,
-               on_conflict: :replace
-             ) do
-          {:ok, count} ->
-            Helpers.invalidate_cache_if_running()
-            {:ok, count}
-
-          {:error, reason} ->
-            if silent, do: {:ok, 0}, else: {:error, reason}
-        end
-      end
+    # Check if source equals target
+    if graphs_equal?(source_rdf, target_rdf) do
+      # Source equals target returns ok with 0 count (no-op)
+      {:ok, 0}
     else
-      {:error, :unauthorized} -> {:error, :unauthorized}
+      with :ok <- Helpers.check_admin_authorization(ctx, source_rdf),
+           :ok <- Helpers.check_admin_authorization(ctx, target_rdf) do
+        source_exists? =
+          case source_rdf do
+            :default -> QuadOperations.default_graph_exists?(ctx.db)
+            graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+          end
+
+        # Moving from non-existent source is OK - returns 0 quads moved
+        if !source_exists? do
+          {:ok, 0}
+        else
+          case QuadOperations.move_quads(
+                 ctx.db,
+                 ctx.dict_manager,
+                 source_rdf,
+                 target_rdf,
+                 on_conflict: :replace
+               ) do
+            {:ok, count} ->
+              Helpers.invalidate_cache_if_running()
+              {:ok, count}
+
+            {:error, reason} ->
+              if silent, do: {:ok, 0}, else: {:error, reason}
+          end
+        end
+      else
+        {:error, :unauthorized} -> {:error, :unauthorized}
+      end
     end
   end
 
@@ -209,34 +229,41 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     source_rdf = Helpers.normalize_graph_term(source_graph)
     target_rdf = Helpers.normalize_graph_term(target_graph)
 
-    with :ok <- Helpers.check_read_authorization(ctx, source_rdf),
-         :ok <- Helpers.check_write_authorization(ctx, target_rdf) do
-      source_exists? =
-        case source_rdf do
-          :default -> QuadOperations.default_graph_exists?(ctx.db)
-          graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
-        end
-
-      if !source_exists? do
-        if silent, do: {:ok, 0}, else: {:error, :source_graph_not_found}
-      else
-        case QuadOperations.copy_graph(
-               ctx.db,
-               ctx.dict_manager,
-               source_rdf,
-               target_rdf,
-               on_conflict: :merge
-             ) do
-          {:ok, count} ->
-            Helpers.invalidate_cache_if_running()
-            {:ok, count}
-
-          {:error, reason} ->
-            if silent, do: {:ok, 0}, else: {:error, reason}
-        end
-      end
+    # Check if source equals target
+    if graphs_equal?(source_rdf, target_rdf) do
+      # Source equals target returns ok with 0 count (no-op)
+      {:ok, 0}
     else
-      {:error, :unauthorized} -> {:error, :unauthorized}
+      with :ok <- Helpers.check_read_authorization(ctx, source_rdf),
+           :ok <- Helpers.check_write_authorization(ctx, target_rdf) do
+        source_exists? =
+          case source_rdf do
+            :default -> QuadOperations.default_graph_exists?(ctx.db)
+            graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
+          end
+
+        # Adding from non-existent source is OK - returns 0 quads added
+        if !source_exists? do
+          {:ok, 0}
+        else
+          case QuadOperations.copy_graph(
+                 ctx.db,
+                 ctx.dict_manager,
+                 source_rdf,
+                 target_rdf,
+                 on_conflict: :merge
+               ) do
+            {:ok, count} ->
+              Helpers.invalidate_cache_if_running()
+              {:ok, count}
+
+            {:error, reason} ->
+              if silent, do: {:ok, 0}, else: {:error, reason}
+          end
+        end
+      else
+        {:error, :unauthorized} -> {:error, :unauthorized}
+      end
     end
   end
 
@@ -434,4 +461,14 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   defp clear_named_graph_triple(_ctx, _graph_iri, _silent) do
     {:error, :named_graphs_not_supported_for_triple_store}
   end
+
+  # Check if two graph terms are equal
+  defp graphs_equal?(g1, g2) when g1 == g2, do: true
+  defp graphs_equal?(:default, :default_graph), do: true
+  defp graphs_equal?(:default_graph, :default), do: true
+  defp graphs_equal?(g1, g2) when is_binary(g1) and is_binary(g2), do: g1 == g2
+  defp graphs_equal?(%RDF.IRI{} = g1, %RDF.IRI{} = g2), do: g1.value == g2.value
+  defp graphs_equal?(g1, g2) when is_binary(g1) and is_struct(g2), do: g1 == to_string(g2)
+  defp graphs_equal?(g1, g2) when is_struct(g1) and is_binary(g2), do: to_string(g1) == g2
+  defp graphs_equal?(_, _), do: false
 end

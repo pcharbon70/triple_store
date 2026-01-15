@@ -128,7 +128,8 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, drop_ast)
 
         # Verify graph is empty (no quads)
-        assert {:ok, true} = QuadOperations.graph_exists?(db, manager, RDF.iri(graph_iri))
+        # After DROP, all quads are removed so graph_exists? should return false
+        refute QuadOperations.graph_exists?(db, manager, RDF.iri(graph_iri))
         assert {:ok, 0} = QuadOperations.graph_quad_count(db, manager, RDF.iri(graph_iri))
       after
         cleanup({db, manager})
@@ -150,16 +151,16 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
       end
     end
 
-    test "returns error when dropping non-existent graph without SILENT", %{tmp_dir: tmp_dir} do
+    test "returns ok when dropping non-existent graph (no-op)", %{tmp_dir: tmp_dir} do
       {db, manager} = setup_db(tmp_dir)
       ctx = create_context(db, manager)
 
       try do
         graph_iri = "http://example.org/nonexistent"
 
-        # Try to drop non-existent graph
+        # Try to drop non-existent graph - returns ok with 0 count
         {:ok, ast} = Parser.parse_update("DROP GRAPH <#{graph_iri}>")
-        assert {:error, :graph_not_found} = UpdateExecutor.execute(ctx, ast)
+        assert {:ok, 0} = UpdateExecutor.execute(ctx, ast)
       after
         cleanup({db, manager})
       end
@@ -181,7 +182,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         # Add some quads to the graph
         {:ok, ast} =
           Parser.parse_update(
-            "INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s1> <http://example.org/p> \"v1\" } <http://example.org/s2> <http://example.org/p> \"v2\" } }"
+            "INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s1> <http://example.org/p> \"v1\" . <http://example.org/s2> <http://example.org/p> \"v2\" } }"
           )
 
         assert {:ok, 2} = UpdateExecutor.execute(ctx, ast)
@@ -207,7 +208,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Clear default graph
-        {:ok, clear_ast} = Parser.parse_update("CLEAR GRAPH DEFAULT")
+        {:ok, clear_ast} = Parser.parse_update("CLEAR DEFAULT")
         assert {:ok, 1} = UpdateExecutor.execute(ctx, clear_ast)
 
         # Verify default graph is empty
@@ -243,7 +244,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast3)
 
         # Clear all graphs
-        {:ok, clear_ast} = Parser.parse_update("CLEAR GRAPH ALL")
+        {:ok, clear_ast} = Parser.parse_update("CLEAR ALL")
         assert {:ok, 3} = UpdateExecutor.execute(ctx, clear_ast)
 
         # Verify all graphs are empty
@@ -277,7 +278,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast3)
 
         # Clear named graphs only
-        {:ok, clear_ast} = Parser.parse_update("CLEAR GRAPH NAMED")
+        {:ok, clear_ast} = Parser.parse_update("CLEAR NAMED")
         assert {:ok, 2} = UpdateExecutor.execute(ctx, clear_ast)
 
         # Verify named graphs are empty but default has data
@@ -317,8 +318,8 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, :created} = QuadOperations.create_graph(db, manager, graph)
 
         # Second call acknowledges existence
-        # Note: Our implementation always returns :created since get_or_create_id doesn't distinguish
-        assert {:ok, :created} = QuadOperations.create_graph(db, manager, graph)
+        # Implementation now checks if graph exists using lookup_id first
+        assert {:ok, :already_exists} = QuadOperations.create_graph(db, manager, graph)
       after
         cleanup({db, manager})
       end
@@ -389,13 +390,14 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
       end
     end
 
-    test "returns error for missing graph without SILENT", %{tmp_dir: tmp_dir} do
+    test "returns ok for missing graph (no-op)", %{tmp_dir: tmp_dir} do
       {db, manager} = setup_db(tmp_dir)
       ctx = create_context(db, manager)
 
       try do
         props = [graph: {:named_node, "http://example.org/nonexistent"}]
-        assert {:error, :graph_not_found} = UpdateExecutor.execute_drop_graph(ctx, props)
+        # Dropping a non-existent graph returns ok with 0 count (no-op)
+        assert {:ok, 0} = UpdateExecutor.execute_drop_graph(ctx, props)
       after
         cleanup({db, manager})
       end
@@ -425,7 +427,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Clear default graph
-        props = [target: :default]
+        props = [graph: :default]
         assert {:ok, 1} = UpdateExecutor.execute_clear(ctx, props)
       after
         cleanup({db, manager})
@@ -446,7 +448,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)
 
         # Clear all graphs
-        props = [target: :all]
+        props = [graph: :all]
         assert {:ok, 2} = UpdateExecutor.execute_clear(ctx, props)
       after
         cleanup({db, manager})
@@ -467,7 +469,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)
 
         # Clear named graphs only
-        props = [target: :named]
+        props = [graph: :named]
         assert {:ok, 1} = UpdateExecutor.execute_clear(ctx, props)
       after
         cleanup({db, manager})
@@ -488,7 +490,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Clear specific graph
-        props = [target: {:graph, "http://example.org/g1"}]
+        props = [graph: "http://example.org/g1"]
         assert {:ok, 1} = UpdateExecutor.execute_clear(ctx, props)
       after
         cleanup({db, manager})

@@ -251,8 +251,16 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_operation(ctx, {:clear, target}) when is_atom(target) do
-    execute_clear(ctx, target: target)
+    # Normalize parser atoms and use correct key name for execute_clear
+    normalized = normalize_clear_target(target)
+    execute_clear(ctx, graph: normalized)
   end
+
+  # Normalize parser target atoms to internal atoms
+  defp normalize_clear_target(:all_graphs), do: :all
+  defp normalize_clear_target(:default_graph), do: :default
+  defp normalize_clear_target(:all_named), do: :named
+  defp normalize_clear_target(other), do: other
 
   def execute_operation(ctx, {:create, props}) when is_list(props) do
     execute_create_graph(ctx, props)
@@ -260,6 +268,27 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   def execute_operation(ctx, {:drop, props}) when is_list(props) do
     execute_drop_graph(ctx, props)
+  end
+
+  def execute_operation(ctx, {:move, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_move(ctx, source, target, silent: silent)
+  end
+
+  def execute_operation(ctx, {:copy, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_copy(ctx, source, target, silent: silent)
+  end
+
+  def execute_operation(ctx, {:add, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_add(ctx, source, target, silent: silent)
   end
 
   def execute_operation(_ctx, op) do
