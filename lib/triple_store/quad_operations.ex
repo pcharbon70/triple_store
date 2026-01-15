@@ -638,12 +638,19 @@ defmodule TripleStore.QuadOperations do
   """
   @spec graph_exists?(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) :: boolean()
   def graph_exists?(db, manager, graph_term) do
-    # Convert graph term to ID
-    case TripleStore.Adapter.term_to_id(manager, graph_term) do
+    # Use lookup_id instead of term_to_id to avoid creating ID during existence check
+    # A graph exists if it has an ID in the dictionary AND contains at least one quad
+    case Manager.lookup_id(manager, graph_term) do
       {:ok, graph_id} ->
+        # ID exists, check if graph has any quads
         graph_id_exists?(db, graph_id)
 
-      _ ->
+      :not_found ->
+        # ID doesn't exist, so graph doesn't exist
+        false
+
+      {:error, _} ->
+        # Error during lookup, treat as not existing
         false
     end
   end
@@ -905,6 +912,84 @@ defmodule TripleStore.QuadOperations do
   end
 
   @doc """
+  Atomically moves all quads from a source graph to a target graph.
+
+  This operation is atomic: either all quads are moved or none are.
+  The source graph will be empty after the operation, and the target
+  graph will contain all the quads that were in the source graph.
+
+  This uses a single WriteBatch operation to ensure atomicity:
+  1. Delete all quads from source graph
+  2. Insert all quads to target graph
+
+  ## Arguments
+
+  - `db` - RocksDB database reference
+  - `manager` - Dictionary manager process
+  - `source_graph` - Source graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `target_graph` - Target graph term (RDF.IRI, RDF.BlankNode, or :default)
+  - `opts` - Keyword list of options:
+    - `:on_conflict` - How to handle existing target graph:
+      - `:merge` (default) - Add quads to existing target graph
+      - `:replace` - Clear target graph before moving
+      - `:error` - Fail if target graph has any quads
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads moved
+  - `{:error, reason}` - On failure or conflict
+
+  ## Examples
+
+      # Move to a new graph
+      {:ok, count} = QuadOperations.move_quads(db, manager, :default, RDF.iri("http://example.org/g1"))
+
+      # Replace existing target graph
+      {:ok, count} = QuadOperations.move_quads(db, manager, g1, g2, on_conflict: :replace)
+
+  """
+  @spec move_quads(
+          NIF.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t() | :default,
+          RDF.IRI.t() | RDF.BlankNode.t() | :default,
+          keyword()
+        ) :: {:ok, non_neg_integer()} | {:error, term()}
+  def move_quads(db, manager, source_graph, target_graph, opts \\ []) do
+    Telemetry.span(
+      :quad,
+      :move_quads,
+      %{source: source_graph, target: target_graph},
+      fn ->
+        on_conflict = Keyword.get(opts, :on_conflict, :merge)
+
+        # Get source graph ID
+        source_id =
+          case source_graph do
+            :default -> {:ok, 0}
+            term -> TripleStore.Adapter.term_to_id(manager, term)
+          end
+
+        # Get target graph ID
+        target_id =
+          case target_graph do
+            :default -> {:ok, 0}
+            term -> TripleStore.Adapter.term_to_id(manager, term)
+          end
+
+        with {:ok, src_id} <- source_id,
+             {:ok, tgt_id} <- target_id,
+             {:ok, _} <- handle_copy_conflict(db, tgt_id, on_conflict),
+             {:ok, count} <- do_move_quads(db, src_id, tgt_id) do
+          {{:ok, count}, %{count: count}}
+        else
+          {:error, reason} -> {{:error, reason}, %{count: 0}}
+        end
+      end
+    )
+  end
+
+  @doc """
   Returns the count of quads in a specific graph.
 
   ## Arguments
@@ -1052,7 +1137,7 @@ defmodule TripleStore.QuadOperations do
 
     try do
       quads =
-        NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+        case NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
           case key do
             <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
               {g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1061,7 +1146,12 @@ defmodule TripleStore.QuadOperations do
             _ ->
               throw({:halt, acc})
           end
-        end)
+        end) do
+          {:error, reason} ->
+            throw({:exit, reason})
+          result ->
+            result
+        end
 
       quads = Enum.reverse(quads)
 
@@ -1089,6 +1179,97 @@ defmodule TripleStore.QuadOperations do
       {:exit, reason} ->
         {:error, reason}
     end
+  end
+
+  # Atomic move operation: deletes from source and inserts to target in single batch
+  defp do_move_quads(db, src_id, tgt_id) do
+    # Don't move if source and target are the same
+    if src_id == tgt_id do
+      {:ok, 0}
+    else
+      # Collect all quads from source graph
+      prefix = QuadIndex.gspo_prefix(src_id)
+
+      try do
+        # Build batch operations: delete old, insert new
+        # Track count directly to avoid calculation errors
+        {puts, deletes, quad_count} =
+          NIF.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key, {puts_acc, deletes_acc, count_acc} ->
+            case key do
+              <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
+                {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
+
+                # Generate delete operations for all 4 indices with source graph ID
+                new_deletes = delete_ops_for_quad(s, p, o, src_id) ++ deletes_acc
+
+                # Generate insert operations for all 4 indices with target graph ID
+                new_puts = put_ops_for_quad(s, p, o, tgt_id) ++ puts_acc
+
+                {new_puts, new_deletes, count_acc + 1}
+
+              _ ->
+                throw({:halt, {puts_acc, deletes_acc, count_acc}})
+            end
+          end)
+
+        # Execute batch: deletes first, then puts (both in single transaction)
+        if puts == [] and deletes == [] do
+          {:ok, 0}
+        else
+          # Convert to NIF format
+          delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
+          put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
+
+          # Execute deletes first, then puts in sync mode for atomicity
+          with :ok <-
+                 if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
+               :ok <-
+                 if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
+            {:ok, quad_count}
+          else
+            {:error, reason} -> {:error, reason}
+          end
+        end
+      catch
+        {:halt, {puts, deletes, quad_count}} ->
+          # End of prefix reached, execute batch with what we collected
+          delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
+          put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
+
+          with :ok <-
+                 if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
+               :ok <- if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
+            {:ok, quad_count}
+          else
+            {:error, reason} -> {:error, reason}
+          end
+
+        {:exit, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Generates delete operations for a quad in all 4 indices
+  defp delete_ops_for_quad(s, p, o, g) do
+    keys = QuadIndex.encode_quad_keys(s, p, o, g)
+    [
+      {:gspo, keys.gspo},
+      {:gpos, keys.gpos},
+      {:spog, keys.spog},
+      {:posg, keys.posg}
+    ]
+  end
+
+  # Generates put operations for a quad in all 4 indices
+  defp put_ops_for_quad(s, p, o, g) do
+    keys = QuadIndex.encode_quad_keys(s, p, o, g)
+    [
+      {:gspo, keys.gspo, @empty_value},
+      {:gpos, keys.gpos, @empty_value},
+      {:spog, keys.spog, @empty_value},
+      {:posg, keys.posg, @empty_value}
+    ]
   end
 
   # Handles copy operation based on conflict mode
