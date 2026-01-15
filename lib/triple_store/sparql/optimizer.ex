@@ -1536,6 +1536,8 @@ defmodule TripleStore.SPARQL.Optimizer do
   @dialyzer {:nowarn_function, estimate_selectivity: 3}
   @dialyzer {:nowarn_function, position_score: 4}
   @dialyzer {:nowarn_function, pattern_variables: 1}
+  @dialyzer {:nowarn_function, group_patterns_by_graph: 1}
+  @dialyzer {:nowarn_function, extract_graph_key: 1}
 
   # Reorder patterns considering selectivity and variable binding propagation
   @spec reorder_patterns(list(), map()) :: list()
@@ -1543,10 +1545,159 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp reorder_patterns([single], _stats), do: [single]
 
   defp reorder_patterns(patterns, stats) do
-    # Use greedy algorithm: repeatedly select the most selective pattern
-    # given the variables already bound by previous patterns
-    greedy_reorder(patterns, MapSet.new(), stats, [])
+    # Check if we have any quad patterns - if so, use graph-aware reordering
+    has_quads? = Enum.any?(patterns, &is_quad_pattern?/1)
+
+    if has_quads? do
+      reorder_patterns_with_graph_grouping(patterns, stats)
+    else
+      # Use greedy algorithm for triple-only patterns
+      greedy_reorder(patterns, MapSet.new(), stats, [])
+    end
   end
+
+  # ===========================================================================
+  # Graph-Aware Pattern Reordering
+  # ===========================================================================
+
+  @doc """
+  Checks if a pattern is a quad pattern.
+
+  ## Returns
+
+  `true` for quad patterns, `false` for triple patterns or other.
+
+  """
+  @spec is_quad_pattern?(term()) :: boolean()
+  def is_quad_pattern?({:quad, _, _, _, _}), do: true
+  def is_quad_pattern?(_), do: false
+
+  @doc """
+  Groups patterns by their graph binding for optimized execution.
+
+  Patterns are grouped by:
+  - `:default_graph` - Patterns in the default graph
+  - `{:named_graph, iri}` - Patterns in a specific named graph
+  - `{:variable, name}` - Patterns with a shared graph variable
+  - `:cross_graph` - Patterns that span multiple graphs (unbound graph)
+
+  This allows the optimizer to:
+  1. Execute graph-scoped patterns together (avoiding graph switches)
+  2. Prefer patterns that share graph variables (early binding)
+  3. Delay cross-graph patterns until necessary
+
+  ## Arguments
+
+  - `patterns` - List of triple or quad patterns
+
+  ## Returns
+
+  Map of graph key to list of patterns.
+
+  ## Examples
+
+      iex> patterns = [
+      ...>   {:quad, {:variable, "s"}, 42, {:variable, "o"}, 0},
+      ...>   {:quad, {:variable, "s"}, 43, {:variable, "o"}, {:variable, "g"}}
+      ...> ]
+      iex> Optimizer.group_patterns_by_graph(patterns)
+      %{0 => [{:quad, ...}], {:variable, "g"} => [{:quad, ...}]}
+
+  """
+  @spec group_patterns_by_graph([term()]) :: map()
+  def group_patterns_by_graph(patterns) do
+    Enum.reduce(patterns, %{}, fn pattern, acc ->
+      graph_key = extract_graph_key(pattern)
+      Map.update(acc, graph_key, [pattern], &[pattern | &1])
+    end)
+  end
+
+  @doc """
+  Extracts the graph key from a pattern.
+
+  For triple patterns, returns `:default_graph`.
+  For quad patterns:
+  - Returns `:default_graph` for `:default_graph`
+  - Returns `{:named_graph, iri}` for `{:named_node, iri}`
+  - Returns `{:variable, name}` for graph variables
+  - Returns `:cross_graph` for unbound graph (nil or other)
+
+  ## Arguments
+
+  - `pattern` - A triple or quad pattern
+
+  ## Returns
+
+  The graph key for grouping.
+
+  """
+  @spec extract_graph_key(term()) :: term()
+  def extract_graph_key({:quad, _, _, _, graph}) do
+    case graph do
+      :default_graph -> :default_graph
+      {:named_node, iri} -> {:named_graph, iri}
+      {:variable, name} -> {:variable, name}
+      _ -> :cross_graph
+    end
+  end
+
+  def extract_graph_key({:triple, _, _, _}), do: :default_graph
+  def extract_graph_key(_), do: :cross_graph
+
+  @doc """
+  Reorders patterns with graph-aware grouping.
+
+  This function implements graph grouping for quad patterns:
+  1. Group patterns by their graph binding
+  2. Order groups: bound graphs first, then shared graph variables, then cross-graph
+  3. Within each group, apply greedy selectivity-based reordering
+  4. Combine groups while preserving the optimal order
+
+  ## Arguments
+
+  - `patterns` - List of triple or quad patterns
+  - `stats` - Statistics map for selectivity estimation
+
+  ## Returns
+
+  Reordered list of patterns optimized for graph grouping.
+
+  """
+  @spec reorder_patterns_with_graph_grouping([term()], map()) :: [term()]
+  def reorder_patterns_with_graph_grouping(patterns, stats) do
+    # Group patterns by their graph binding
+    graph_groups = group_patterns_by_graph(patterns)
+
+    # Sort groups by priority:
+    # 1. Bound graphs (default or named) - most selective
+    # 2. Shared graph variables - can bind early
+    # 3. Cross-graph patterns - least selective, deferred
+    sorted_groups =
+      graph_groups
+      |> Enum.sort_by(fn {key, _group} -> group_priority(key) end)
+
+    # Reorder patterns within each group using greedy selectivity
+    reordered_groups =
+      Enum.map(sorted_groups, fn {_key, group_patterns} ->
+        # Reverse since group_patterns was built with [pattern | acc]
+        patterns_to_reorder = Enum.reverse(group_patterns)
+        greedy_reorder(patterns_to_reorder, MapSet.new(), stats, [])
+      end)
+
+    # Flatten the reordered groups
+    List.flatten(reordered_groups)
+  end
+
+  # Calculate priority for graph group ordering (lower = execute first)
+  defp group_priority(:default_graph), do: 1
+  defp group_priority({:named_graph, _iri}), do: 1
+  defp group_priority({:variable, _name}), do: 2
+  defp group_priority(:cross_graph), do: 3
+  defp group_priority(_), do: 4
+
+  # ===========================================================================
+  # Legacy Pattern Reordering (for triple-only patterns)
+  # ===========================================================================
 
   # Greedy reordering: pick most selective pattern at each step
   @spec greedy_reorder(list(), MapSet.t(), map(), list()) :: list()
