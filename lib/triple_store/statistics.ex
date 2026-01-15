@@ -2,16 +2,18 @@ defmodule TripleStore.Statistics do
   @moduledoc """
   Statistics collection for cost-based query optimization.
 
-  Provides functions to compute and cache statistics about the stored triples,
-  enabling the query optimizer to accurately estimate result sizes and select
-  efficient query plans.
+  Provides functions to compute and cache statistics about the stored triples
+  and quads, enabling the query optimizer to accurately estimate result sizes
+  and select efficient query plans.
 
   ## Features
 
   - **Triple counts**: Total count and per-predicate counts
+  - **Quad counts**: Per-graph quad counts for named graph support
   - **Distinct counts**: Counts of distinct subjects, predicates, objects
   - **Predicate histogram**: Per-predicate triple counts for selectivity estimation
   - **Numeric histograms**: Equi-width histograms for range selectivity estimation
+  - **Per-graph caching**: ETS-based cache for graph-specific statistics
   - **Persistence**: Statistics stored in RocksDB for fast reload
   - **Telemetry**: Collection timing and metrics
 
@@ -26,11 +28,21 @@ defmodule TripleStore.Statistics do
       # Refresh statistics
       :ok = Statistics.refresh(db)
 
+      # Get graph-specific statistics with caching
+      {:ok, stats} = Statistics.graph_statistics(db, 0)
+
+      # Warm cache for a specific graph
+      :ok = Statistics.warm_graph_cache(db, 0)
+
+      # Invalidate cache for a specific graph
+      :ok = Statistics.invalidate_quad_cache(db, 0)
+
       # Estimate range selectivity
       selectivity = Statistics.estimate_range_selectivity(stats, pred_id, 10.0, 100.0)
 
   ## Statistics Structure
 
+      # Triple store statistics
       %{
         triple_count: 10000,
         distinct_subjects: 1000,
@@ -43,6 +55,16 @@ defmodule TripleStore.Statistics do
         collected_at: ~U[2026-01-02 12:00:00Z],
         version: 1
       }
+
+      # Quad store per-graph statistics (cached)
+      %{
+        graph_id: 0,
+        quad_count: 5000,
+        distinct_subjects: 500,
+        distinct_predicates: 20,
+        distinct_objects: 800,
+        predicate_counts: %{42 => 1000, 43 => 500}
+      }
   """
 
   alias TripleStore.Backend.RocksDB.NIF
@@ -53,6 +75,26 @@ defmodule TripleStore.Statistics do
 
   # Inline hot path functions for performance
   @compile {:inline, extract_first_id: 1, extract_second_id: 1, is_numeric_id?: 1}
+
+  use GenServer
+
+  # ===========================================================================
+  # Client API
+  # ===========================================================================
+
+  @doc """
+  Starts the statistics cache server.
+  """
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @doc """
+  Stops the statistics cache server.
+  """
+  def stop do
+    GenServer.stop(__MODULE__)
+  end
 
   # ===========================================================================
   # Types
@@ -86,6 +128,17 @@ defmodule TripleStore.Statistics do
           version: pos_integer()
         }
 
+  @typedoc "Graph-specific statistics map (cached)"
+  @type graph_stats :: %{
+          graph_id: term_id(),
+          quad_count: non_neg_integer(),
+          distinct_subjects: non_neg_integer(),
+          distinct_predicates: non_neg_integer(),
+          distinct_objects: non_neg_integer() | :not_computed,
+          predicate_counts: %{term_id() => non_neg_integer()},
+          accuracy: :exact | :approximate
+        }
+
   # ===========================================================================
   # Constants
   # ===========================================================================
@@ -111,6 +164,313 @@ defmodule TripleStore.Statistics do
     :collected_at,
     :version
   ]
+
+  # Quad cache key prefixes (distinct from triple stats)
+  @quad_stats_prefix <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02>>
+
+  # ETS table name for in-memory quad statistics cache
+  @quad_cache_table :triple_store_quad_stats_cache
+
+  # Default max concurrency for parallel cache warming
+  @default_max_concurrency 4
+
+  # ===========================================================================
+  # GenServer Callbacks
+  # ===========================================================================
+
+  @doc false
+  def init(_opts) do
+    # Create ETS table for in-memory caching
+    table =
+      :ets.new(@quad_cache_table, [
+        :set,
+        :public,
+        :named_table,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
+
+    {:ok, %{table: table}}
+  end
+
+  @doc false
+  def handle_continue(:warm_cache_on_startup, state) do
+    # Optionally warm cache on startup if configured
+    {:noreply, state}
+  end
+
+  @doc false
+  def handle_info({:invalidate_graph, graph_id}, state) do
+    # Invalidate cache for specific graph
+    graph_key = quad_cache_key(graph_id)
+    :ets.delete(@quad_cache_table, graph_key)
+
+    # Also invalidate all-graphs summary
+    all_key = all_graphs_cache_key()
+    :ets.delete(@quad_cache_table, all_key)
+
+    {:noreply, state}
+  end
+
+  @doc false
+  def handle_info(:invalidate_all, state) do
+    # Invalidate all quad statistics
+    :ets.delete_all_objects(@quad_cache_table)
+    {:noreply, state}
+  end
+
+  # ===========================================================================
+  # Public API - Quad Cache Management
+  # ===========================================================================
+
+  @doc """
+  Gets cached graph statistics, computing and caching if necessary.
+
+  First checks the in-memory ETS cache. If not found, computes fresh
+  statistics and stores them in the cache.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default, or named graph ID)
+
+  ## Returns
+
+  - `{:ok, stats}` - Graph statistics map
+  - `{:error, reason}` - On failure
+
+  """
+  @spec get_cached_graph_stats(db_ref(), term_id()) :: {:ok, graph_stats()} | {:error, term()}
+  def get_cached_graph_stats(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    cache_key = quad_cache_key(graph_id)
+
+    case :ets.lookup(@quad_cache_table, cache_key) do
+      [{^cache_key, stats}] ->
+        {:ok, stats}
+
+      [] ->
+        # Cache miss - compute and cache
+        case compute_and_cache_graph_stats(db, graph_id) do
+          {:ok, _stats} = result ->
+            # Emit telemetry for cache miss
+            :telemetry.execute(
+              [:triple_store, :statistics, :quad_cache, :miss],
+              %{graph_id: graph_id},
+              %{}
+            )
+
+            result
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Gets cached all-graphs summary, computing and caching if necessary.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `opts` - Options passed to `all_graphs_summary/2`
+
+  ## Returns
+
+  - `{:ok, summary}` - All graphs summary map
+  - `{:error, reason}` - On failure
+  """
+  @spec get_cached_all_graphs_summary(db_ref(), keyword()) :: {:ok, map()} | {:error, term()}
+  def get_cached_all_graphs_summary(db, opts \\ []) do
+    cache_key = all_graphs_cache_key()
+
+    case :ets.lookup(@quad_cache_table, cache_key) do
+      [{^cache_key, summary}] ->
+        {:ok, summary}
+
+      [] ->
+        # Cache miss - compute and cache
+        case all_graphs_summary(db, opts) do
+          {:ok, summary} = result ->
+            # Cache the result
+            :ets.insert(@quad_cache_table, {cache_key, summary})
+
+            result
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Invalidates cached statistics for a specific graph.
+
+  Removes the graph's statistics from the in-memory cache.
+  Also invalidates the all-graphs summary since it depends on
+  individual graph statistics.
+
+  ## Arguments
+
+  - `db` - Database reference (unused, for API consistency)
+  - `graph_id` - The graph ID to invalidate
+
+  ## Returns
+
+  - `:ok` - Always succeeds
+
+  """
+  @spec invalidate_quad_cache(db_ref(), term_id()) :: :ok
+  def invalidate_quad_cache(_db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    graph_key = quad_cache_key(graph_id)
+    :ets.delete(@quad_cache_table, graph_key)
+
+    # Invalidate all-graphs summary
+    all_key = all_graphs_cache_key()
+    :ets.delete(@quad_cache_table, all_key)
+
+    # Emit telemetry
+    :telemetry.execute(
+      [:triple_store, :statistics, :quad_cache, :invalidate],
+      %{graph_id: graph_id},
+      %{}
+    )
+
+    :ok
+  end
+
+  @doc """
+  Invalidates all cached quad statistics.
+
+  Clears all graph-specific statistics and the all-graphs summary
+  from the in-memory cache.
+
+  ## Arguments
+
+  - `db` - Database reference (unused, for API consistency)
+
+  ## Returns
+
+  - `:ok` - Always succeeds
+
+  """
+  @spec invalidate_all_quad_cache(db_ref()) :: :ok
+  def invalidate_all_quad_cache(_db) do
+    :ets.delete_all_objects(@quad_cache_table)
+
+    # Emit telemetry
+    :telemetry.execute(
+      [:triple_store, :statistics, :quad_cache, :invalidate_all],
+      %{},
+      %{}
+    )
+
+    :ok
+  end
+
+  @doc """
+  Warms the cache for a specific graph by computing and storing statistics.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID to warm cache for
+  - `opts` - Options (none currently)
+
+  ## Returns
+
+  - `:ok` - Cache warmed successfully
+  - `{:error, reason}` - On failure
+
+  """
+  @spec warm_graph_cache(db_ref(), term_id(), keyword()) :: :ok | {:error, term()}
+  def warm_graph_cache(db, graph_id, opts \\ []) when is_integer(graph_id) and graph_id >= 0 do
+    start_time = System.monotonic_time()
+
+    case graph_summary(db, graph_id, opts) do
+      {:ok, summary} ->
+        cache_key = quad_cache_key(graph_id)
+        :ets.insert(@quad_cache_table, {cache_key, summary})
+
+        duration = System.monotonic_time() - start_time
+
+        :telemetry.execute(
+          [:triple_store, :statistics, :quad_cache, :warm],
+          %{graph_id: graph_id, duration: duration},
+          %{}
+        )
+
+        :ok
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Warms the cache for all graphs in the store.
+
+  Computes and caches statistics for all graphs. Can use parallel
+  processing for multiple graphs.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `opts` - Options:
+    - `:max_concurrency` - Maximum parallel warming tasks (default: 4)
+    - `:include_default` - Include default graph (default: true)
+
+  ## Returns
+
+  - `:ok` - All caches warmed successfully
+  - `{:error, reason}` - On failure
+
+  """
+  @spec warm_all_graphs_cache(db_ref(), keyword()) :: :ok | {:error, term()}
+  def warm_all_graphs_cache(db, opts \\ []) do
+    start_time = System.monotonic_time()
+    max_concurrency = Keyword.get(opts, :max_concurrency, @default_max_concurrency)
+    include_default = Keyword.get(opts, :include_default, true)
+
+    # Get all graph IDs
+    case build_per_graph_histograms(db, include_default: include_default) do
+      {:ok, histograms} ->
+        graph_ids = Map.keys(histograms)
+
+        # Warm cache for each graph (with parallel processing)
+        graph_ids
+        |> Task.async_stream(
+          fn graph_id -> warm_graph_cache(db, graph_id, opts) end,
+          max_concurrency: max_concurrency,
+          ordered: false,
+          timeout: :infinity
+        )
+        |> Stream.run()
+
+        # Warm all-graphs summary
+        cache_key = all_graphs_cache_key()
+        case all_graphs_summary(db, opts) do
+          {:ok, summary} ->
+            :ets.insert(@quad_cache_table, {cache_key, summary})
+
+          {:error, _} ->
+            :ok
+        end
+
+        duration = System.monotonic_time() - start_time
+
+        :telemetry.execute(
+          [:triple_store, :statistics, :quad_cache, :warm_all],
+          %{graph_count: length(graph_ids), duration: duration},
+          %{}
+        )
+
+        :ok
+
+      {:error, _} = error ->
+        error
+    end
+  end
 
   # ===========================================================================
   # Public API - Collection
@@ -1267,4 +1627,72 @@ defmodule TripleStore.Statistics do
   end
 
   defp maybe_add_bucket_width(histogram), do: histogram
+
+  # ===========================================================================
+  # Private Helpers - Quad Cache Keys
+  # ===========================================================================
+
+  @doc """
+  Generates a cache key for graph-specific quad statistics.
+
+  Uses the quad stats prefix combined with graph_id to create
+  a unique cache key that won't collide with triple statistics.
+
+  ## Examples
+
+      iex> Statistics.quad_cache_key(0)
+      {<<0, 0, 0, 0, 0, 0, 0, 2>>, 0}
+
+      iex> Statistics.quad_cache_key(123)
+      {<<0, 0, 0, 0, 0, 0, 0, 2>>, 123}
+  """
+  @spec quad_cache_key(term_id()) :: {binary(), term_id()}
+  def quad_cache_key(graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    {@quad_stats_prefix, graph_id}
+  end
+
+  @doc """
+  Generates a cache key for the all-graphs summary.
+
+  Uses a special marker to distinguish from graph-specific keys.
+
+  ## Examples
+
+      iex> Statistics.all_graphs_cache_key()
+      {<<0, 0, 0, 0, 0, 0, 0, 2>>, :all_graphs}
+  """
+  @spec all_graphs_cache_key() :: {binary(), :all_graphs}
+  def all_graphs_cache_key do
+    {@quad_stats_prefix, :all_graphs}
+  end
+
+  @doc """
+  Computes and caches graph statistics.
+
+  Computes fresh statistics for the given graph and stores them
+  in the ETS cache.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID
+
+  ## Returns
+
+  - `{:ok, stats}` - Computed statistics map
+  - `{:error, reason}` - On failure
+  """
+  @spec compute_and_cache_graph_stats(db_ref(), term_id()) :: {:ok, graph_stats()} | {:error, term()}
+  def compute_and_cache_graph_stats(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    case graph_summary(db, graph_id) do
+      {:ok, summary} = result ->
+        # Cache the result
+        cache_key = quad_cache_key(graph_id)
+        :ets.insert(@quad_cache_table, {cache_key, summary})
+        result
+
+      error ->
+        error
+    end
+  end
 end
