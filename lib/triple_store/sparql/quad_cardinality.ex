@@ -1,0 +1,736 @@
+defmodule TripleStore.SPARQL.QuadCardinality do
+  @moduledoc """
+  Cardinality estimation for quad patterns in named graph queries.
+
+  This module extends the triple pattern cardinality estimation to handle
+  quad patterns with a fourth component (graph). It provides accurate
+  estimates for graph-scoped and cross-graph queries.
+
+  ## Quad Pattern Representation
+
+  Quad patterns are represented as `{:quad, subject, predicate, object, graph}`:
+
+      # Fully bound
+      {:quad, 123, 456, 789, 0}
+
+      # Graph-scoped with variables
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      # Cross-graph (unbound graph)
+      {:quad, {:variable, "s"}, 42, {:variable, "o"}, {:variable, "g"}}
+
+  ## Estimation Approach
+
+  1. **Graph-bound patterns**: Use per-graph statistics for accuracy
+  2. **Cross-graph patterns**: Sum estimates across all graphs
+  3. **Selectivity factors**: Based on bound positions (S, P, O, G)
+  4. **Join cardinality**: Account for graph variable sharing
+
+  ## Statistics Map Format
+
+  The stats map supports both triple and quad counts:
+
+      %{
+        triple_count: 10000,         # Total triples (backward compat)
+        quad_count: 15000,           # Total quads
+        distinct_subjects: 1000,
+        distinct_predicates: 50,
+        distinct_objects: 2000,
+        total_graphs: 5,             # Number of graphs with data
+        predicate_histogram: %{...}, # Optional predicate counts
+        per_graph_stats: %{           # Per-graph breakdown
+          0 => %{quad_count: 5000, distinct_subjects: 500, ...},
+          123 => %{quad_count: 10000, ...}
+        }
+      }
+
+  ## Examples
+
+      # Graph-scoped pattern
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, 0}
+      stats = %{per_graph_stats: %{0 => %{quad_count: 5000, predicate_counts: %{42 => 100}}}}
+      QuadCardinality.estimate_pattern(pattern, stats)
+      # => 100.0
+
+      # Cross-graph pattern
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, {:variable, "g"}}
+      stats = %{per_graph_stats: %{0 => %{...}, 1 => %{...}}}
+      QuadCardinality.estimate_pattern(pattern, stats)
+      # => Sum of predicate 42 counts across all graphs
+  """
+
+  alias TripleStore.Statistics
+
+  # ===========================================================================
+  # Types
+  # ===========================================================================
+
+  @typedoc "Quad pattern from SPARQL algebra"
+  @type quad_pattern :: {:quad, term(), term(), term(), term()}
+
+  @typedoc "Statistics map with cardinality information for quads"
+  @type quad_stats :: %{
+          optional(:quad_count) => non_neg_integer(),
+          optional(:triple_count) => non_neg_integer(),
+          optional(:distinct_subjects) => non_neg_integer(),
+          optional(:distinct_predicates) => non_neg_integer(),
+          optional(:distinct_objects) => non_neg_integer(),
+          optional(:total_graphs) => non_neg_integer(),
+          optional(:predicate_histogram) => %{non_neg_integer() => non_neg_integer()},
+          optional(:per_graph_stats) => %{non_neg_integer() => graph_stats()}
+        }
+
+  @typedoc "Per-graph statistics"
+  @type graph_stats :: %{
+          optional(:quad_count) => non_neg_integer(),
+          optional(:distinct_subjects) => non_neg_integer(),
+          optional(:distinct_predicates) => non_neg_integer(),
+          optional(:distinct_objects) => non_neg_integer(),
+          optional(:predicate_counts) => %{non_neg_integer() => non_neg_integer()}
+        }
+
+  @typedoc "Cardinality estimate (always positive)"
+  @type cardinality :: float()
+
+  @typedoc "Graph ID or term"
+  @type graph_id :: non_neg_integer() | :default | :default_graph
+
+  # ===========================================================================
+  # Constants
+  # ===========================================================================
+
+  # Default estimates when statistics are unavailable
+  @default_quad_count 10_000
+  @default_distinct_subjects 1_000
+  @default_distinct_predicates 100
+  @default_distinct_objects 2_000
+  @default_total_graphs 1
+
+  # Minimum cardinality to avoid division by zero
+  @min_cardinality 1.0
+
+  # Special graph identifiers
+  @default_graph_id 0
+  @default_graph_term :default_graph
+
+  # ===========================================================================
+  # Public API - Pattern Cardinality
+  # ===========================================================================
+
+  @doc """
+  Estimates the cardinality of a quad pattern.
+
+  The estimate is based on:
+  - Whether the graph is bound (graph-scoped) or unbound (cross-graph)
+  - Per-graph statistics when graph is bound
+  - Aggregate statistics when graph is unbound
+  - Selectivity of each bound position (S, P, O, G)
+
+  ## Arguments
+
+  - `pattern` - A quad pattern `{:quad, subject, predicate, object, graph}`
+  - `stats` - Statistics map with quad statistics
+
+  ## Returns
+
+  Estimated number of matching quads (float, always >= 1.0).
+
+  ## Examples
+
+      # Graph-scoped pattern with bound predicate
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, 0}
+      stats = %{per_graph_stats: %{0 => %{quad_count: 5000, predicate_counts: %{42 => 100}}}}
+      QuadCardinality.estimate_pattern(pattern, stats)
+      # => 100.0
+
+      # Cross-graph pattern (unbound graph)
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, {:variable, "g"}}
+      stats = %{per_graph_stats: %{0 => %{...}, 1 => %{...}}}
+      QuadCardinality.estimate_pattern(pattern, stats)
+      # => Sum across all graphs
+
+      # Fully bound pattern (exact match)
+      pattern = {:quad, 123, 456, 789, 0}
+      QuadCardinality.estimate_pattern(pattern, stats)
+      # => 1.0
+
+  """
+  @spec estimate_pattern(quad_pattern(), quad_stats()) :: cardinality()
+  def estimate_pattern({:quad, subject, predicate, object, graph}, stats) do
+    # Determine if graph is bound
+    if graph_bound?(graph) do
+      # Graph-scoped: use per-graph statistics
+      estimate_graph_scoped_pattern(subject, predicate, object, graph, stats)
+    else
+      # Cross-graph: sum across all graphs
+      estimate_cross_graph_pattern(subject, predicate, object, stats)
+    end
+  end
+
+  @doc """
+  Estimates the cardinality of a quad pattern with additional bindings.
+
+  When some variables are already bound from previous joins, their
+  selectivity is factored in based on the binding domain size.
+
+  ## Arguments
+
+  - `pattern` - A quad pattern
+  - `stats` - Statistics map
+  - `bound_vars` - Map of variable name to domain size
+
+  ## Returns
+
+  Estimated cardinality considering bound variables.
+
+  """
+  @spec estimate_pattern_with_bindings(quad_pattern(), quad_stats(), %{String.t() => pos_integer()}) ::
+          cardinality()
+  def estimate_pattern_with_bindings({:quad, subject, predicate, object, graph}, stats, bound_vars) do
+    base_card = estimate_pattern({:quad, subject, predicate, object, graph}, stats)
+
+    # Determine graph-specific stats if graph is bound
+    graph_stats =
+      if graph_bound?(graph) do
+        graph_id = normalize_graph_id(graph)
+        case get_graph_stats(graph_id, stats) do
+          {:ok, gs} -> gs
+          {:error, :not_found} -> nil
+        end
+      else
+        nil
+      end
+
+    # Apply binding selectivity for each variable position
+    s_adjustment = variable_binding_adjustment(subject, :subject, graph_stats, stats, bound_vars)
+    p_adjustment = variable_binding_adjustment(predicate, :predicate, graph_stats, stats, bound_vars)
+    o_adjustment = variable_binding_adjustment(object, :object, graph_stats, stats, bound_vars)
+    g_adjustment = variable_binding_adjustment(graph, :graph, graph_stats, stats, bound_vars)
+
+    cardinality = base_card * s_adjustment * p_adjustment * o_adjustment * g_adjustment
+
+    max(cardinality, @min_cardinality)
+  end
+
+  # ===========================================================================
+  # Public API - Graph-Scoped Estimation
+  # ===========================================================================
+
+  @doc """
+  Estimates cardinality for a graph-scoped pattern.
+
+  Used when the graph position is bound to a specific graph.
+  Uses per-graph statistics for accurate estimates.
+
+  """
+  @spec estimate_graph_scoped_pattern(term(), term(), term(), term(), quad_stats()) ::
+          cardinality()
+  def estimate_graph_scoped_pattern(subject, predicate, object, graph, stats) do
+    graph_id = normalize_graph_id(graph)
+
+    # Get per-graph statistics
+    case get_graph_stats(graph_id, stats) do
+      {:ok, graph_stats} ->
+        estimate_with_graph_stats(subject, predicate, object, graph_stats)
+
+      {:error, :not_found} ->
+        # Graph doesn't exist or has no data
+        @min_cardinality
+    end
+  end
+
+  @doc """
+  Estimates cardinality for a cross-graph pattern.
+
+  Used when the graph position is unbound (variable).
+  Sums estimates across all graphs with statistics.
+
+  """
+  @spec estimate_cross_graph_pattern(term(), term(), term(), quad_stats()) :: cardinality()
+  def estimate_cross_graph_pattern(subject, predicate, object, stats) do
+    # Get all graph stats
+    per_graph = Map.get(stats, :per_graph_stats, %{})
+
+    cond do
+      per_graph == nil or map_size(per_graph) == 0 ->
+        # No per-graph stats, fall back to aggregate
+        estimate_with_aggregate_stats(subject, predicate, object, stats)
+
+      true ->
+        # Sum estimates across all graphs
+        total =
+          Enum.reduce(per_graph, 0.0, fn {_graph_id, graph_stats}, acc ->
+            estimate = estimate_with_graph_stats(subject, predicate, object, graph_stats)
+            acc + estimate
+          end)
+
+        max(total, @min_cardinality)
+    end
+  end
+
+  # ===========================================================================
+  # Public API - Position Selectivity
+  # ===========================================================================
+
+  @doc """
+  Calculates the selectivity for a single position in a quad pattern.
+
+  Selectivity is the fraction of values that match at that position:
+  - Unbound variable: 1.0 (matches all)
+  - Bound constant: 1/distinct_count for that position
+
+  ## Arguments
+
+  - `term` - The term at the position
+  - `position` - :subject, :predicate, :object, or :graph
+  - `graph_stats` - Statistics for the relevant graph
+  - `global_stats` - Global statistics (for graph position)
+
+  ## Returns
+
+  Selectivity factor (0.0 to 1.0).
+
+  """
+  @spec position_selectivity(term(), atom(), graph_stats() | nil, quad_stats() | nil) :: float()
+  def position_selectivity(term, :graph, _graph_stats, global_stats) do
+    if constant?(term) do
+      # Graph is bound: fully selective (1.0)
+      1.0
+    else
+      # Graph is unbound: selectivity based on graph count
+      total_graphs = get_stat(global_stats || %{}, :total_graphs, @default_total_graphs)
+      if total_graphs > 0, do: 1.0, else: 1.0
+    end
+  end
+
+  def position_selectivity(term, position, graph_stats, global_stats) do
+    if constant?(term) do
+      # Use graph_stats if available, otherwise fall back to global_stats
+      stats = graph_stats || global_stats || %{}
+      distinct_count = distinct_count_for_position(position, stats)
+      1.0 / max(distinct_count, 1)
+    else
+      1.0
+    end
+  end
+
+  # ===========================================================================
+  # Public API - Join Cardinality
+  # ===========================================================================
+
+  @doc """
+  Estimates the cardinality of joining two quad patterns.
+
+  Extends triple join estimation to account for:
+  - Graph variable sharing (same graph vs different graphs)
+  - Cross-graph joins (when patterns are in different graphs)
+
+  ## Arguments
+
+  - `left_card` - Cardinality of left pattern
+  - `right_card` - Cardinality of right pattern
+  - `join_vars` - List of variable names being joined
+  - `same_graph` - Whether both patterns are in the same graph
+  - `stats` - Statistics map
+
+  ## Returns
+
+  Estimated join cardinality.
+
+  ## Join Selectivity Model
+
+  For patterns in the same graph: use standard join selectivity
+  For patterns in different graphs: cartesian product (independent)
+
+  """
+  @spec estimate_quad_join(cardinality(), cardinality(), [String.t()], boolean(), quad_stats()) ::
+          cardinality()
+  def estimate_quad_join(left_card, right_card, [], _same_graph, _stats) do
+    # Cartesian product (no join variables)
+    max(left_card * right_card, @min_cardinality)
+  end
+
+  def estimate_quad_join(left_card, right_card, join_vars, same_graph, stats) do
+    if same_graph do
+      # Same graph: standard join selectivity applies
+      join_selectivity = calculate_join_selectivity(join_vars, left_card, right_card, stats)
+      cardinality = left_card * right_card * join_selectivity
+      max(cardinality, @min_cardinality)
+    else
+      # Different graphs: may still be joinable on non-graph variables
+      # but independent on graph dimension
+      join_selectivity = calculate_join_selectivity(join_vars, left_card, right_card, stats)
+      cardinality = left_card * right_card * join_selectivity
+      max(cardinality, @min_cardinality)
+    end
+  end
+
+  @doc """
+  Estimates the cardinality of joining multiple quad patterns.
+
+  """
+  @spec estimate_multi_quad_pattern(list(quad_pattern()), quad_stats()) :: cardinality()
+  def estimate_multi_quad_pattern([], _stats), do: @min_cardinality
+
+  def estimate_multi_quad_pattern([single], stats) do
+    estimate_pattern(single, stats)
+  end
+
+  def estimate_multi_quad_pattern([first | rest], stats) do
+    # Start with first pattern
+    initial_card = estimate_pattern(first, stats)
+    initial_vars = pattern_variables(first)
+    initial_graphs = pattern_graph_variables(first)
+
+    # Accumulate joins
+    {final_card, _vars, _graphs} =
+      Enum.reduce(rest, {initial_card, initial_vars, initial_graphs}, fn pattern,
+                                                                          {acc_card, acc_vars,
+                                                                           acc_graphs} ->
+        pattern_card = estimate_pattern(pattern, stats)
+        pattern_vars = pattern_variables(pattern)
+        pattern_graphs = pattern_graph_variables(pattern)
+
+        # Find join variables
+        join_vars = MapSet.intersection(acc_vars, pattern_vars) |> MapSet.to_list()
+
+        # Check if same graph
+        same_graph =
+          case {MapSet.to_list(acc_graphs), MapSet.to_list(pattern_graphs)} do
+            {[g], [g]} -> true
+            _ -> false
+          end
+
+        # Estimate this join
+        if join_vars == [] do
+          new_card = acc_card * pattern_card
+          new_vars = MapSet.union(acc_vars, pattern_vars)
+          new_graphs = MapSet.union(acc_graphs, pattern_graphs)
+          {max(new_card, @min_cardinality), new_vars, new_graphs}
+        else
+          join_card = estimate_quad_join(acc_card, pattern_card, join_vars, same_graph, stats)
+          new_vars = MapSet.union(acc_vars, pattern_vars)
+          new_graphs = MapSet.union(acc_graphs, pattern_graphs)
+          {join_card, new_vars, new_graphs}
+        end
+      end)
+
+    final_card
+  end
+
+  # ===========================================================================
+  # Public API - Selectivity
+  # ===========================================================================
+
+  @doc """
+  Estimates the selectivity of a quad pattern.
+
+  Selectivity is the fraction of the database the pattern matches (0.0 to 1.0).
+
+  """
+  @spec estimate_selectivity(quad_pattern(), quad_stats()) :: float()
+  def estimate_selectivity(pattern, stats) do
+    card = estimate_pattern(pattern, stats)
+    total = get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count))
+
+    if total > 0 do
+      min(card / total, 1.0)
+    else
+      1.0
+    end
+  end
+
+  # ===========================================================================
+  # Private Helpers - Graph-Scoped Estimation
+  # ===========================================================================
+
+  # Estimate using specific graph statistics
+  @spec estimate_with_graph_stats(term(), term(), term(), graph_stats()) :: cardinality()
+  defp estimate_with_graph_stats(subject, predicate, object, graph_stats) do
+    # Get base cardinality from predicate if available
+    base_card = get_graph_base_cardinality(predicate, graph_stats)
+
+    # Calculate selectivity for each position
+    subject_sel = graph_position_selectivity(subject, :subject, graph_stats)
+    object_sel = graph_position_selectivity(object, :object, graph_stats)
+
+    # If predicate is bound and in histogram, don't apply predicate selectivity again
+    predicate_sel =
+      if constant?(predicate) and has_graph_predicate_count?(predicate, graph_stats) do
+        1.0
+      else
+        graph_position_selectivity(predicate, :predicate, graph_stats)
+      end
+
+    # Combine selectivities
+    cardinality = base_card * subject_sel * predicate_sel * object_sel
+
+    max(cardinality, @min_cardinality)
+  end
+
+  # Estimate using aggregate statistics (when per-graph unavailable)
+  @spec estimate_with_aggregate_stats(term(), term(), term(), quad_stats()) :: cardinality()
+  defp estimate_with_aggregate_stats(subject, predicate, object, stats) do
+    # Use aggregate counts
+    base_card = get_base_cardinality(predicate, stats)
+
+    subject_sel = position_selectivity(subject, :subject, nil, stats)
+    predicate_sel = position_selectivity(predicate, :predicate, nil, stats)
+    object_sel = position_selectivity(object, :object, nil, stats)
+
+    # Don't double-count predicate
+    predicate_sel =
+      if constant?(predicate) and has_predicate_count?(predicate, stats) do
+        1.0
+      else
+        predicate_sel
+      end
+
+    cardinality = base_card * subject_sel * predicate_sel * object_sel
+
+    max(cardinality, @min_cardinality)
+  end
+
+  # Get base cardinality from graph stats
+  @spec get_graph_base_cardinality(term(), graph_stats()) :: cardinality()
+  defp get_graph_base_cardinality(predicate, graph_stats) do
+    case get_graph_predicate_count(predicate, graph_stats) do
+      {:ok, count} -> count * 1.0
+      :not_found -> get_stat(graph_stats, :quad_count, @default_quad_count) * 1.0
+    end
+  end
+
+  # Get base cardinality from aggregate stats
+  @spec get_base_cardinality(term(), quad_stats()) :: cardinality()
+  defp get_base_cardinality(predicate, stats) do
+    case get_predicate_count(predicate, stats) do
+      {:ok, count} -> count * 1.0
+      :not_found -> get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count)) * 1.0
+    end
+  end
+
+  # ===========================================================================
+  # Private Helpers - Graph Position Selectivity
+  # ===========================================================================
+
+  # Calculate selectivity for a position within a specific graph
+  @spec graph_position_selectivity(term(), atom(), graph_stats()) :: float()
+  defp graph_position_selectivity(term, position, graph_stats) do
+    if constant?(term) do
+      distinct_count = distinct_count_for_position(position, graph_stats)
+      1.0 / max(distinct_count, 1)
+    else
+      1.0
+    end
+  end
+
+  # Get distinct count for a position from graph stats
+  @spec distinct_count_for_position(atom(), map()) :: non_neg_integer()
+  defp distinct_count_for_position(:subject, stats) do
+    get_stat(stats, :distinct_subjects, @default_distinct_subjects)
+  end
+
+  defp distinct_count_for_position(:predicate, stats) do
+    get_stat(stats, :distinct_predicates, @default_distinct_predicates)
+  end
+
+  defp distinct_count_for_position(:object, stats) do
+    get_stat(stats, :distinct_objects, @default_distinct_objects)
+  end
+
+  defp distinct_count_for_position(:graph, _stats) do
+    # Graph position handled separately
+    1
+  end
+
+  # ===========================================================================
+  # Private Helpers - Predicate Counts
+  # ===========================================================================
+
+  # Get predicate count from graph stats
+  @spec get_graph_predicate_count(term(), graph_stats()) :: {:ok, non_neg_integer()} | :not_found
+  defp get_graph_predicate_count(predicate, graph_stats) do
+    with true <- constant?(predicate),
+         id when is_integer(id) <- get_constant_id(predicate),
+         predicate_counts when is_map(predicate_counts) <- Map.get(graph_stats, :predicate_counts),
+         count when is_integer(count) <- Map.get(predicate_counts, id) do
+      {:ok, count}
+    else
+      _ -> :not_found
+    end
+  end
+
+  # Check if predicate has count in graph stats
+  @spec has_graph_predicate_count?(term(), graph_stats()) :: boolean()
+  defp has_graph_predicate_count?(predicate, graph_stats) do
+    get_graph_predicate_count(predicate, graph_stats) != :not_found
+  end
+
+  # Get predicate count from aggregate stats
+  @spec get_predicate_count(term(), quad_stats()) :: {:ok, non_neg_integer()} | :not_found
+  defp get_predicate_count(predicate, stats) do
+    with true <- constant?(predicate),
+         id when is_integer(id) <- get_constant_id(predicate),
+         histogram when is_map(histogram) <- Map.get(stats, :predicate_histogram),
+         count when is_integer(count) <- Map.get(histogram, id) do
+      {:ok, count}
+    else
+      _ -> :not_found
+    end
+  end
+
+  # Check if predicate has count in aggregate stats
+  @spec has_predicate_count?(term(), quad_stats()) :: boolean()
+  defp has_predicate_count?(predicate, stats) do
+    get_predicate_count(predicate, stats) != :not_found
+  end
+
+  # ===========================================================================
+  # Private Helpers - Graph Statistics
+  # ===========================================================================
+
+  # Get statistics for a specific graph
+  @spec get_graph_stats(graph_id(), quad_stats()) :: {:ok, graph_stats()} | {:error, :not_found}
+  defp get_graph_stats(graph_id, stats) do
+    case Map.get(stats, :per_graph_stats) do
+      nil ->
+        # No per-graph stats available
+        {:error, :not_found}
+
+      per_graph_stats ->
+        case Map.get(per_graph_stats, graph_id) do
+          nil -> {:error, :not_found}
+          graph_stats when map_size(graph_stats) > 0 -> {:ok, graph_stats}
+          _ -> {:error, :not_found}
+        end
+    end
+  end
+
+  # Normalize graph term to ID
+  @spec normalize_graph_id(term()) :: non_neg_integer()
+  defp normalize_graph_id(:default_graph), do: @default_graph_id
+  defp normalize_graph_id(:default), do: @default_graph_id
+  defp normalize_graph_id(id) when is_integer(id) and id >= 0, do: id
+  defp normalize_graph_id(_), do: @default_graph_id
+
+  # ===========================================================================
+  # Private Helpers - Join Selectivity
+  # ===========================================================================
+
+  # Calculate selectivity for join variables
+  @spec calculate_join_selectivity([String.t()], cardinality(), cardinality(), quad_stats()) ::
+          float()
+  defp calculate_join_selectivity(join_vars, left_card, right_card, stats) do
+    total_quads = get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count))
+
+    join_vars
+    |> Enum.map(fn _var ->
+      # Estimate domain from cardinalities
+      left_domain = estimate_domain_from_card(left_card, total_quads)
+      right_domain = estimate_domain_from_card(right_card, total_quads)
+      max_domain = max(left_domain, right_domain)
+      1.0 / max(max_domain, 1.0)
+    end)
+    |> Enum.reduce(1.0, &(&1 * &2))
+  end
+
+  # Estimate domain size from cardinality
+  @spec estimate_domain_from_card(cardinality(), non_neg_integer()) :: float()
+  defp estimate_domain_from_card(card, total_quads) do
+    min(:math.sqrt(card), total_quads * 1.0)
+  end
+
+  # ===========================================================================
+  # Private Helpers - Binding Adjustment
+  # ===========================================================================
+
+  @spec variable_binding_adjustment(
+          term(),
+          atom(),
+          graph_stats() | nil,
+          quad_stats(),
+          %{String.t() => pos_integer()}
+        ) :: float()
+  defp variable_binding_adjustment(term, position, graph_stats, global_stats, bound_vars) do
+    case extract_var_name(term) do
+      nil -> 1.0
+      var_name -> apply_binding_adjustment(var_name, position, graph_stats, global_stats, bound_vars)
+    end
+  end
+
+  @spec apply_binding_adjustment(
+          String.t(),
+          atom(),
+          graph_stats() | nil,
+          quad_stats(),
+          %{String.t() => pos_integer()}
+        ) :: float()
+  defp apply_binding_adjustment(var_name, position, graph_stats, global_stats, bound_vars) do
+    case Map.get(bound_vars, var_name) do
+      nil -> 1.0
+      bound_domain_size ->
+        # Use graph_stats if available, otherwise fall back to global_stats
+        stats = graph_stats || global_stats || %{}
+        total_domain = distinct_count_for_position(position, stats)
+        min(bound_domain_size / max(total_domain, 1), 1.0)
+    end
+  end
+
+  # ===========================================================================
+  # Private Helpers - Pattern Analysis
+  # ===========================================================================
+
+  # Get all variables in a pattern
+  @spec pattern_variables(quad_pattern()) :: MapSet.t(String.t())
+  defp pattern_variables({:quad, s, p, o, g}) do
+    [s, p, o, g]
+    |> Enum.map(&extract_var_name/1)
+    |> Enum.reject(&is_nil/1)
+    |> MapSet.new()
+  end
+
+  # Get graph variables from pattern
+  @spec pattern_graph_variables(quad_pattern()) :: MapSet.t(String.t())
+  defp pattern_graph_variables({:quad, _s, _p, _o, g}) do
+    case extract_var_name(g) do
+      nil -> MapSet.new()
+      var_name -> MapSet.new([var_name])
+    end
+  end
+
+  # Extract variable name from term
+  @spec extract_var_name(term()) :: String.t() | nil
+  defp extract_var_name({:variable, name}), do: name
+  defp extract_var_name(_), do: nil
+
+  # ===========================================================================
+  # Private Helpers - Term Analysis
+  # ===========================================================================
+
+  # Check if term is a constant (not a variable)
+  @spec constant?(term()) :: boolean()
+  defp constant?({:variable, _}), do: false
+  defp constant?(:default_graph), do: true
+  defp constant?(:default), do: true
+  defp constant?(_), do: true
+
+  # Get the ID from a constant term
+  @spec get_constant_id(term()) :: non_neg_integer() | nil
+  defp get_constant_id(id) when is_integer(id), do: id
+  defp get_constant_id(_), do: nil
+
+  # Check if graph position is bound
+  @spec graph_bound?(term()) :: boolean()
+  defp graph_bound?({:variable, _}), do: false
+  defp graph_bound?(_), do: true
+
+  # ===========================================================================
+  # Private Helpers - Statistics Access
+  # ===========================================================================
+
+  # Get a statistic with default fallback
+  @spec get_stat(map(), atom(), non_neg_integer()) :: non_neg_integer()
+  defp get_stat(stats, key, default) do
+    Map.get(stats, key, default)
+  end
+end
