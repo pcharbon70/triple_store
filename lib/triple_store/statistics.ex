@@ -812,6 +812,193 @@ defmodule TripleStore.Statistics do
     {:ok, histograms}
   end
 
+  @doc """
+  Returns the count of distinct objects in a specific graph.
+
+  Scans the GSPO index for the specified graph and counts unique object IDs.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of distinct objects in this graph
+  - `{:error, reason}` - On failure
+  """
+  @spec graph_object_count(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def graph_object_count(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    prefix = <<graph_id::64-big>>
+    stream = NIF.prefix_stream(db, :gspo, prefix)
+
+    count =
+      stream
+      |> Stream.map(fn {key, _value} ->
+        # GSPO key: graph_id | subject_id | predicate_id | object_id
+        # Extract object_id (bytes 25-32, 0-indexed as 24-31)
+        <<_graph::64, _subject::64, _predicate::64, object_id::64-big>> = key
+        object_id
+      end)
+      |> Stream.dedup()
+      |> Enum.count()
+
+    {:ok, count}
+  end
+
+  @doc """
+  Returns a complete summary for a specific graph.
+
+  Aggregates all available statistics for a single graph including
+  quad count, distinct values, and predicate distribution.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - The graph ID (0 for default graph, or encoded named graph ID)
+  - `opts` - Options:
+    - `:sampling_threshold` - Use sampling for graphs above this size (default: 10000)
+    - `:include_object_count` - Include distinct object count (default: true)
+
+  ## Returns
+
+  - `{:ok, summary}` - Map with complete graph statistics
+  - `{:error, :not_found}` - If graph doesn't exist
+  - `{:error, reason}` - On other failures
+
+  ## Examples
+
+      iex> {:ok, summary} = Statistics.graph_summary(db, 0)
+      iex> summary
+      %{
+        graph_id: 0,
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_counts: %{42 => 500, 43 => 1500},
+        accuracy: :exact
+      }
+  """
+  @spec graph_summary(db_ref(), term_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  def graph_summary(db, graph_id, opts \\ []) when is_integer(graph_id) and graph_id >= 0 do
+    sampling_threshold = Keyword.get(opts, :sampling_threshold, 10_000)
+    include_object_count = Keyword.get(opts, :include_object_count, true)
+
+    with {:ok, quad_count} <- graph_quad_count(db, graph_id),
+         :ok <- maybe_check_graph_exists(quad_count, graph_id) do
+      # Determine if we should use sampling
+      accuracy = if quad_count > sampling_threshold, do: :approximate, else: :exact
+
+      {:ok, distinct_subjects} = graph_distinct_subjects(db, graph_id)
+
+      {:ok, predicate_counts} = graph_predicate_histogram(db, graph_id)
+      distinct_predicates = map_size(predicate_counts)
+
+      distinct_objects =
+        if include_object_count do
+          {:ok, count} = graph_object_count(db, graph_id)
+          count
+        else
+          :not_computed
+        end
+
+      summary = %{
+        graph_id: graph_id,
+        quad_count: quad_count,
+        distinct_subjects: distinct_subjects,
+        distinct_predicates: distinct_predicates,
+        distinct_objects: distinct_objects,
+        predicate_counts: predicate_counts,
+        accuracy: accuracy
+      }
+
+      {:ok, summary}
+    end
+  end
+
+  @doc """
+  Returns a summary across all graphs in the store.
+
+  Aggregates statistics across all graphs including total quad count,
+  graph count, largest graph, and per-graph breakdown.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `opts` - Options:
+    - `:include_default` - Include default graph (ID 0) in results (default: true)
+    - `:include_per_graph` - Include per-graph breakdown (default: true)
+    - `:sampling_threshold` - Use sampling for graphs above this size (default: 10000)
+
+  ## Returns
+
+  - `{:ok, summary}` - Map with aggregate statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> {:ok, summary} = Statistics.all_graphs_summary(db)
+      iex> summary
+      %{
+        total_quads: 5000,
+        graph_count: 3,
+        largest_graph_id: 123,
+        largest_graph_count: 3000,
+        per_graph: %{
+          0 => %{quad_count: 1000, ...},
+          123 => %{quad_count: 3000, ...},
+          456 => %{quad_count: 1000, ...}
+        }
+      }
+  """
+  @spec all_graphs_summary(db_ref(), keyword()) :: {:ok, map()} | {:error, term()}
+  def all_graphs_summary(db, opts \\ []) do
+    include_default = Keyword.get(opts, :include_default, true)
+    include_per_graph = Keyword.get(opts, :include_per_graph, true)
+    sampling_threshold = Keyword.get(opts, :sampling_threshold, 10_000)
+
+    # Get all graph IDs
+    {:ok, histograms} = build_per_graph_histograms(db, include_default: include_default)
+    graph_ids = Map.keys(histograms)
+
+    # Compute statistics for each graph
+    graph_stats =
+      Enum.reduce(graph_ids, %{}, fn graph_id, acc ->
+        case graph_summary(db, graph_id, sampling_threshold: sampling_threshold) do
+          {:ok, summary} ->
+            Map.put(acc, graph_id, summary)
+
+          {:error, _} ->
+            acc
+        end
+      end)
+
+    # Find largest graph
+    {largest_graph_id, largest_stats} =
+      if map_size(graph_stats) > 0 do
+        Enum.max_by(graph_stats, fn {_id, stats} -> stats.quad_count end)
+      else
+        {nil, %{quad_count: 0}}
+      end
+
+    largest_graph_count = largest_stats.quad_count
+
+    # Compute aggregates
+    total_quads = Enum.reduce(graph_stats, 0, fn {_id, stats}, acc -> acc + stats.quad_count end)
+    graph_count = map_size(graph_stats)
+
+    summary = %{
+      total_quads: total_quads,
+      graph_count: graph_count,
+      largest_graph_id: largest_graph_id,
+      largest_graph_count: largest_graph_count,
+      per_graph: if(include_per_graph, do: graph_stats, else: nil)
+    }
+
+    {:ok, summary}
+  end
+
   # ===========================================================================
   # Private Helpers - Distinct Counting
   # ===========================================================================
@@ -842,6 +1029,24 @@ defmodule TripleStore.Statistics do
   defp extract_second_id(<<_first::64, second_id::64-big, _rest::binary>>) do
     second_id
   end
+
+  # ===========================================================================
+  # Private Helpers - Graph Existence
+  # ===========================================================================
+
+  @doc """
+  Checks if a graph exists based on quad count and whether it's the default graph.
+
+  Returns `:ok` if the graph exists or is the default graph (which always exists).
+  Returns `{:error, :not_found}` if a named graph has no quads.
+
+  For the default graph (ID 0), we allow empty graphs as valid since it
+  represents the default unnamed graph.
+  """
+  @spec maybe_check_graph_exists(non_neg_integer(), term_id()) :: :ok | {:error, :not_found}
+  defp maybe_check_graph_exists(_count, 0), do: :ok  # Default graph always exists
+  defp maybe_check_graph_exists(count, _graph_id) when count > 0, do: :ok
+  defp maybe_check_graph_exists(0, _graph_id), do: {:error, :not_found}
 
   # ===========================================================================
   # Private Helpers - Numeric Histograms
