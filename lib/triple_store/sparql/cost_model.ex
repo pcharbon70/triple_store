@@ -87,6 +87,20 @@ defmodule TripleStore.SPARQL.CostModel do
   @typedoc "Index scan type"
   @type scan_type :: :point_lookup | :prefix_scan | :full_scan
 
+  @typedoc "Quad pattern for quad stores"
+  @type quad_pattern :: {:quad, pattern_term(), pattern_term(), pattern_term(), pattern_term()}
+
+  @typedoc "Term in a pattern (bound value or variable)"
+  @type pattern_term ::
+          {:variable, String.t()}
+          | {:named_node, String.t()}
+          | {:literal, :plain, String.t(), String.t() | nil}
+          | {:literal, :typed, String.t(), String.t()}
+          | {:literal, :language, String.t(), String.t()}
+          | {:blank_node, String.t()}
+          | :default_graph
+          | integer()
+
   # ===========================================================================
   # Constants - Cost Weights (3.3.1)
   # ===========================================================================
@@ -653,6 +667,279 @@ defmodule TripleStore.SPARQL.CostModel do
   @spec total_plan_cost([cost()]) :: cost()
   def total_plan_cost(costs) when is_list(costs) do
     Enum.reduce(costs, build_cost(0.0, 0.0, 0.0), &add_costs/2)
+  end
+
+  # ===========================================================================
+  # Public API - Graph-Aware Costs for Quad Patterns
+  # ===========================================================================
+
+  @doc """
+  Estimates the cost of switching between graphs during query execution.
+
+  Graph switching occurs when a query transitions from processing patterns
+  in one graph to processing patterns in another graph. This has a cost
+  due to:
+  - Changing the column family prefix in RocksDB
+  - Potential cache misses when accessing a different graph's data
+  - Context switching in the query executor
+
+  ## Returns
+
+  Cost estimate for a single graph switch operation.
+
+  ## Examples
+
+      iex> CostModel.graph_switch_cost()
+      %{cpu: 5.0, io: 20.0, memory: 0.0, total: 25.0}
+
+  """
+  @spec graph_switch_cost() :: cost()
+  def graph_switch_cost do
+    # CPU: Minimal overhead for changing graph context
+    cpu = 5.0
+
+    # I/O: Column family prefix change has small I/O cost
+    io = 20.0
+
+    # Memory: No additional memory required
+    memory = 0.0
+
+    build_cost(cpu, io, memory)
+  end
+
+  @doc """
+  Estimates the cost of a cross-graph join between two quad patterns.
+
+  Cross-graph joins are more expensive than single-graph joins because:
+  - May require iterating over multiple graphs
+  - Cannot use graph-scoped index optimizations
+  - Higher cardinality due to independent graph domains
+
+  ## Arguments
+
+  - `left_card` - Cardinality of the left (build) input
+  - `right_card` - Cardinality of the right (probe) input
+  - `num_graphs` - Number of graphs to iterate over (if cross-graph)
+
+  ## Returns
+
+  Cost estimate with component breakdown.
+
+  ## Examples
+
+      # Same-graph join (num_graphs = 1)
+      iex> CostModel.cross_graph_join_cost(1000, 500, 1)
+      # Similar to regular hash join
+
+      # Cross-graph join (num_graphs = 5)
+      iex> CostModel.cross_graph_join_cost(1000, 500, 5)
+      # Higher cost due to graph iteration
+
+  """
+  @spec cross_graph_join_cost(number(), number(), pos_integer()) :: cost()
+  def cross_graph_join_cost(left_card, right_card, num_graphs \\ 1) do
+    # Base hash join cost
+    base_cost = hash_join_cost(left_card, right_card)
+
+    if num_graphs <= 1 do
+      # Single graph - same as regular hash join
+      base_cost
+    else
+      # Cross-graph: multiply by graph iteration factor
+      # Use logarithmic scaling to avoid over-penalizing many small graphs
+      graph_multiplier = :math.log(num_graphs + 1)
+
+      %{
+        cpu: base_cost.cpu * graph_multiplier,
+        io: base_cost.io * graph_multiplier,
+        memory: base_cost.memory,
+        total: 0.0
+      }
+      |> update_total()
+    end
+  end
+
+  @doc """
+  Estimates the cost of an index scan for a quad pattern.
+
+  Similar to triple index scan but accounts for the graph position.
+  Quad patterns have four possible scan types:
+  - Point lookup: All four positions bound (S, P, O, G)
+  - Prefix scan: Some prefix positions bound
+  - Full scan: No bound positions
+
+  ## Arguments
+
+  - `scan_type` - Type of scan (:point_lookup, :prefix_scan, :full_scan)
+  - `estimated_results` - Expected number of results
+  - `stats` - Database statistics (optional)
+
+  ## Returns
+
+  Cost estimate with component breakdown.
+
+  ## Examples
+
+      # Point lookup for fully bound quad pattern
+      iex> CostModel.quad_index_scan_cost(:point_lookup, 1, stats)
+
+      # Graph-scoped prefix scan (most common)
+      iex> CostModel.quad_index_scan_cost(:prefix_scan, 500, stats)
+
+      # Cross-graph full scan (most expensive)
+      iex> CostModel.quad_index_scan_cost(:full_scan, 100_000, stats)
+
+  """
+  @spec quad_index_scan_cost(scan_type(), number(), stats()) :: cost()
+  def quad_index_scan_cost(:point_lookup, _estimated_results, _stats) do
+    # Single key lookup: one seek, one read
+    cpu = @comparison_cost
+    io = @index_seek_cost
+    memory = @memory_weight
+
+    build_cost(cpu, io, memory)
+  end
+
+  def quad_index_scan_cost(:prefix_scan, estimated_results, _stats) do
+    # Prefix scan: one seek, then sequential reads
+    cpu = estimated_results * @comparison_cost
+    io = @index_seek_cost + estimated_results * @sequential_read_cost
+    memory = @memory_weight
+
+    build_cost(cpu, io, memory)
+  end
+
+  def quad_index_scan_cost(:full_scan, estimated_results, stats) do
+    # Full scan: no seek advantage, read everything
+    # Use quad_count if available, otherwise fall back to triple_count
+    quad_count = Map.get(stats, :quad_count) || Map.get(stats, :triple_count, estimated_results)
+
+    cpu = quad_count * @comparison_cost
+    io = quad_count * @sequential_read_cost
+    memory = @memory_weight
+
+    build_cost(cpu, io, memory)
+  end
+
+  @doc """
+  Determines the scan type for a quad pattern based on bound positions.
+
+  ## Arguments
+
+  - `pattern` - Quad pattern {:quad, s, p, o, g}
+
+  ## Returns
+
+  The appropriate scan type.
+
+  ## Examples
+
+      # Fully bound quad pattern
+      iex> CostModel.quad_pattern_scan_type({:quad, 1, 2, 3, 0})
+      :point_lookup
+
+      # Graph-scoped pattern (graph bound, some SPO bound)
+      iex> CostModel.quad_pattern_scan_type({:quad, 1, {:variable, "p"}, {:variable, "o"}, 0})
+      :prefix_scan
+
+      # Cross-graph pattern (graph unbound)
+      iex> CostModel.quad_pattern_scan_type({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      :full_scan
+
+  """
+  @spec quad_pattern_scan_type(quad_pattern()) :: scan_type()
+  def quad_pattern_scan_type({:quad, s, p, o, g}) do
+    bound_count = count_bound_quad_positions(s, p, o, g)
+
+    cond do
+      bound_count == 4 -> :point_lookup
+      bound_count == 0 -> :full_scan
+      true -> :prefix_scan
+    end
+  end
+
+  @doc """
+  Estimates the cost of a quad pattern scan including index access and result processing.
+
+  This is the quad-specific equivalent of `pattern_cost/2` for triple patterns.
+
+  ## Arguments
+
+  - `pattern` - Quad pattern {:quad, s, p, o, g}
+  - `stats` - Database statistics
+
+  ## Returns
+
+  Cost estimate with component breakdown.
+
+  """
+  @spec quad_pattern_cost(quad_pattern(), stats()) :: cost()
+  def quad_pattern_cost(pattern, stats) do
+    scan_type = quad_pattern_scan_type(pattern)
+
+    # Use QuadCardinality for accurate estimation when available
+    estimated_results =
+      if Code.ensure_loaded?(TripleStore.SPARQL.QuadCardinality) do
+        case TripleStore.SPARQL.QuadCardinality.estimate_pattern(pattern, stats) do
+          {:ok, card} -> card
+          _ -> fallback_quad_estimate(pattern, stats)
+        end
+      else
+        fallback_quad_estimate(pattern, stats)
+      end
+
+    # Base scan cost
+    scan_cost = quad_index_scan_cost(scan_type, estimated_results, stats)
+
+    # Add post-filter cost for patterns that need additional filtering
+    post_filter_cost = quad_needs_post_filter?(pattern, scan_cost, estimated_results)
+
+    add_costs(scan_cost, post_filter_cost)
+  end
+
+  # ===========================================================================
+  # Private Helpers - Quad Pattern Support
+  # ===========================================================================
+
+  # Count bound positions in a quad pattern
+  defp count_bound_quad_positions(s, p, o, g) do
+    [s, p, o, g]
+    |> Enum.count(&bound?/1)
+  end
+
+  # Fallback estimation when QuadCardinality is not available
+  defp fallback_quad_estimate({:quad, s, p, o, g}, stats) do
+    base_count = Map.get(stats, :quad_count, 10_000)
+
+    # Estimate based on bound positions
+    s_mult = if bound?(s), do: 0.01, else: 1.0
+    p_mult = if bound?(p), do: 0.1, else: 1.0
+    o_mult = if bound?(o), do: 0.1, else: 1.0
+    g_mult = if bound?(g), do: 0.01, else: 1.0
+
+    max(1.0, base_count * s_mult * p_mult * o_mult * g_mult)
+  end
+
+  # Check if quad pattern needs post-filtering
+  defp quad_needs_post_filter?({:quad, s, p, o, g}, _scan_cost, estimated_results) do
+    # Similar to triple patterns, some quad patterns require additional filtering
+    # when the bound positions don't align perfectly with the index structure
+    needs_filter =
+      bound?(s) and not bound?(p) and bound?(o) and not bound?(g)
+
+    if needs_filter do
+      # Must read more tuples and filter
+      filter_ratio = 2.0
+      filter_cpu = estimated_results * filter_ratio * @comparison_cost
+      build_cost(filter_cpu, 0.0, 0.0)
+    else
+      build_cost(0.0, 0.0, 0.0)
+    end
+  end
+
+  # Update the total cost field after modifications
+  defp update_total(cost) do
+    %{cost | total: cost.cpu + cost.io + cost.memory}
   end
 
   @doc """
