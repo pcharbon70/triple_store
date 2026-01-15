@@ -391,7 +391,17 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   # Private Helpers
   # ===========================================================================
 
-  # Advances to the first entry and extracts the value
+  @doc """
+  Advances the iterator to the first entry and extracts the value.
+
+  ## Returns
+
+  - `{:ok, iterator}` if positioned at a valid entry
+  - `{:exhausted, iterator}` if no entries exist
+  - `{:error, reason}` on failure
+
+  """
+  @spec advance_to_first(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   defp advance_to_first(iter) do
     case NIF.iterator_next(iter.iter_ref) do
       {:ok, key, _value} ->
@@ -410,7 +420,14 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
     end
   end
 
-  # Builds a seek key by extending the prefix with the target at the given level
+  @doc """
+  Builds a seek key by extending the prefix with the target at the given level.
+
+  The seek key is used to position the iterator at the first entry where
+  the value at the specified level is >= target.
+
+  """
+  @spec build_seek_key(binary(), 0 | 1 | 2 | 3, non_neg_integer()) :: binary()
   defp build_seek_key(prefix, level, target) do
     # The prefix length tells us how many complete IDs are already bound
     prefix_ids = div(byte_size(prefix), @id_size)
@@ -431,4 +448,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
         prefix <> <<target::64-big>>
     end
   end
+end
+
+# Protocol implementation for polymorphic Leapfrog support
+defimpl TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol, for: TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
+  def current(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current(iter)
+  def seek(iter, target), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.seek(iter, target)
+  def next(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.next(iter)
+  def exhausted?(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.exhausted?(iter)
 end

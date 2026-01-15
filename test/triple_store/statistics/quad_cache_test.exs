@@ -376,6 +376,62 @@ defmodule TripleStore.Statistics.QuadCacheTest do
 
       :telemetry.detach("test-invalidate-all-handler")
     end
+
+    test "emits cache hit telemetry when graph stats are cached" do
+      stats = %{graph_id: 0, quad_count: 1000, distinct_subjects: 50, distinct_predicates: 10, distinct_objects: 200, predicate_counts: %{}, accuracy: :exact}
+      key = Statistics.quad_cache_key(0)
+      :ets.insert(@cache_table, {key, stats})
+
+      # Attach telemetry handler
+      handler_id = "test-cache-hit-handler"
+      parent_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :statistics, :quad_cache, :hit],
+        fn event, measurements, metadata, _config ->
+          send(parent_pid, {:telemetry_event, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      # Trigger cache lookup
+      {:ok, _stats} = Statistics.get_cached_graph_stats(nil, 0)
+
+      # Should receive telemetry event
+      assert_receive {:telemetry_event, [:triple_store, :statistics, :quad_cache, :hit], measurements, _metadata}
+
+      assert measurements.graph_id == 0
+
+      :telemetry.detach(handler_id)
+    end
+
+    test "emits all_graphs_hit telemetry when summary is cached" do
+      summary = %{total_graphs: 5, total_quads: 10_000, graph_stats: %{}}
+      key = Statistics.all_graphs_cache_key()
+      :ets.insert(@cache_table, {key, summary})
+
+      # Attach telemetry handler
+      handler_id = "test-all-graphs-hit-handler"
+      parent_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :statistics, :quad_cache, :all_graphs_hit],
+        fn event, measurements, metadata, _config ->
+          send(parent_pid, {:telemetry_event, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      # Trigger cache lookup
+      {:ok, _summary} = Statistics.get_cached_all_graphs_summary(nil)
+
+      # Should receive telemetry event
+      assert_receive {:telemetry_event, [:triple_store, :statistics, :quad_cache, :all_graphs_hit], _measurements, _metadata}
+
+      :telemetry.detach(handler_id)
+    end
   end
 
   # ===========================================================================

@@ -550,4 +550,126 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
       assert card >= 1.0
     end
   end
+
+  # ===========================================================================
+  # Stats Validation (C21)
+  # ===========================================================================
+
+  describe "validate_stats/1" do
+    test "accepts valid stats with quad_count" do
+      stats = %{quad_count: 1000}
+      assert QuadCardinality.validate_stats(stats) == :ok
+    end
+
+    test "accepts valid stats with triple_count" do
+      stats = %{triple_count: 1000}
+      assert QuadCardinality.validate_stats(stats) == :ok
+    end
+
+    test "accepts valid stats with all fields" do
+      stats = %{
+        quad_count: 1000,
+        distinct_subjects: 100,
+        distinct_predicates: 50,
+        distinct_objects: 200,
+        total_graphs: 3,
+        predicate_histogram: %{42 => 100},
+        per_graph_stats: %{0 => %{quad_count: 500}}
+      }
+      assert QuadCardinality.validate_stats(stats) == :ok
+    end
+
+    test "rejects empty stats map" do
+      assert QuadCardinality.validate_stats(%{}) == {:error, :missing_required_keys}
+    end
+
+    test "rejects non-map stats" do
+      assert QuadCardinality.validate_stats("not a map") == {:error, :invalid_stats}
+      assert QuadCardinality.validate_stats(nil) == {:error, :invalid_stats}
+      assert QuadCardinality.validate_stats(123) == {:error, :invalid_stats}
+    end
+
+    test "rejects negative quad_count" do
+      stats = %{quad_count: -1}
+      assert QuadCardinality.validate_stats(stats) == {:error, :invalid_stat_value}
+    end
+
+    test "rejects invalid per_graph_stats" do
+      stats = %{
+        quad_count: 1000,
+        per_graph_stats: %{0 => "not a map"}
+      }
+      assert QuadCardinality.validate_stats(stats) == {:error, :invalid_graph_stats}
+    end
+  end
+
+  describe "ensure_stats_defaults/1" do
+    test "fills in missing quad_count" do
+      stats = %{}
+      result = QuadCardinality.ensure_stats_defaults(stats)
+
+      assert Map.has_key?(result, :quad_count)
+      assert result.quad_count == 10_000
+    end
+
+    test "preserves existing quad_count" do
+      stats = %{quad_count: 5000}
+      result = QuadCardinality.ensure_stats_defaults(stats)
+
+      assert result.quad_count == 5000
+    end
+
+    test "fills in all missing fields" do
+      stats = %{}
+      result = QuadCardinality.ensure_stats_defaults(stats)
+
+      assert Map.has_key?(result, :quad_count)
+      assert Map.has_key?(result, :distinct_subjects)
+      assert Map.has_key?(result, :distinct_predicates)
+      assert Map.has_key?(result, :distinct_objects)
+      assert Map.has_key?(result, :total_graphs)
+      assert Map.has_key?(result, :predicate_histogram)
+      assert Map.has_key?(result, :per_graph_stats)
+    end
+
+    test "handles non-map input" do
+      result = QuadCardinality.ensure_stats_defaults(nil)
+
+      assert is_map(result)
+      assert Map.has_key?(result, :quad_count)
+    end
+
+    test "preserves existing per_graph_stats" do
+      stats = %{per_graph_stats: %{0 => %{quad_count: 100}}}
+      result = QuadCardinality.ensure_stats_defaults(stats)
+
+      assert result.per_graph_stats == %{0 => %{quad_count: 100}}
+    end
+  end
+
+  describe "estimate_pattern/2 with invalid stats" do
+    test "uses defaults when stats is empty map" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+      card = QuadCardinality.estimate_pattern(pattern, %{})
+
+      # Should use default quad_count of 10000
+      assert card >= 1.0
+    end
+
+    test "uses defaults when stats is nil" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+      card = QuadCardinality.estimate_pattern(pattern, nil)
+
+      # Should use default stats
+      assert card >= 1.0
+    end
+
+    test "uses defaults when stats is invalid type" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+      card = QuadCardinality.estimate_pattern(pattern, "invalid")
+
+      # Should use default stats
+      assert card >= 1.0
+    end
+  end
 end

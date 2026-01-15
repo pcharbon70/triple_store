@@ -476,5 +476,26 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIteratorTest do
       assert result_iter.exhausted == true
       assert result_iter.current_value == nil
     end
+
+    test "next handles nil current_value gracefully" do
+      # Create a fake iterator struct with nil current_value
+      # This can happen in edge cases where iterator is created but not yet positioned
+      iter = %QuadTrieIterator{
+        db: nil,
+        cf: :gspo,
+        prefix: <<>>,
+        level: 0,
+        iter_ref: nil,
+        current_key: nil,
+        current_value: nil,
+        exhausted: false
+      }
+
+      # Should return exhausted without crashing
+      {:exhausted, result_iter} = QuadTrieIterator.next(iter)
+      assert result_iter.exhausted == true
+      assert result_iter.current_value == nil
+      assert result_iter.current_key == nil
+    end
   end
 end

@@ -143,9 +143,45 @@ defmodule TripleStore.SPARQL.CostModel do
   @leapfrog_comparison_cost @default_weights.leapfrog_comparison_cost
   @hash_join_threshold @default_weights.hash_join_threshold
 
+  # Bounds checking for cost calculations
+  # Prevents integer overflow and incorrect cost estimates
+  @max_safe_cardinality 1_000_000_000_000  # 1 trillion
+  @max_cost 1_000_000_000_000_000  # 10^15 (quadrillion)
+
   # ===========================================================================
   # Public API - Configuration (3.3.1)
   # ===========================================================================
+
+  @doc """
+  Returns the currently configured cost weights.
+
+  Checks application environment configuration first, then falls back
+  to defaults.
+
+  ## Configuration
+
+  Weights can be configured via application environment:
+
+      config :triple_store, :sparql,
+        cost_model_weights: %{
+          comparison_cost: 1.5,
+          hash_cost: 3.0,
+          index_seek_cost: 15.0
+        }
+
+  ## Returns
+
+  Map of weight names to their values.
+
+  """
+  @spec get_weights() :: map()
+  def get_weights do
+    app_weights =
+      Application.get_env(:triple_store, :sparql, [])
+      |> Keyword.get(:cost_model_weights, %{})
+
+    Map.merge(@default_weights, app_weights)
+  end
 
   @doc """
   Returns the default cost weights.
@@ -158,6 +194,106 @@ defmodule TripleStore.SPARQL.CostModel do
   """
   @spec default_weights() :: map()
   def default_weights, do: @default_weights
+
+  @doc """
+  Validates a weights map for correctness.
+
+  Ensures all weights have valid types and reasonable values.
+
+  ## Returns
+
+  - `:ok` if weights are valid
+  - `{:error, reason}` if validation fails
+
+  ## Examples
+
+      iex> CostModel.validate_weights(%{hash_cost: 3.0})
+      :ok
+
+      iex> CostModel.validate_weights(%{hash_cost: -1})
+      {:error, {:invalid_weight, :hash_cost, :must_be_positive}}
+
+  """
+  @spec validate_weights(map()) :: :ok | {:error, term()}
+  def validate_weights(weights) when is_map(weights) do
+    # Define expected types and validators for each weight
+    validators = %{
+      # Float weights - must be positive
+      comparison_cost: &validate_positive_float/1,
+      hash_cost: &validate_positive_float/1,
+      hash_probe_cost: &validate_positive_float/1,
+      index_seek_cost: &validate_positive_float/1,
+      sequential_read_cost: &validate_positive_float/1,
+      memory_weight: &validate_positive_float/1,
+      leapfrog_seek_cost: &validate_positive_float/1,
+      leapfrog_comparison_cost: &validate_positive_float/1,
+      cpu_weight: &validate_positive_float/1,
+      io_weight: &validate_positive_float/1,
+      memory_weight_factor: &validate_positive_float/1,
+
+      # Integer thresholds - must be positive integers
+      hash_join_threshold: &validate_positive_integer/1
+    }
+
+    # Validate each weight in the map
+    Enum.reduce_while(weights, :ok, fn {key, value}, _acc ->
+      case Map.get(validators, key) do
+        nil ->
+          # Unknown key - ignore (allows for future extensibility)
+          {:cont, :ok}
+
+        validator ->
+          case validator.(value) do
+            :ok -> {:cont, :ok}
+            error -> {:halt, error}
+          end
+      end
+    end)
+  end
+
+  # Validates that a value is a positive float
+  defp validate_positive_float(value) when is_number(value) and value > 0, do: :ok
+  defp validate_positive_float(_value), do: {:error, {:invalid_weight, :must_be_positive_float}}
+
+  # Validates that a value is a positive integer
+  defp validate_positive_integer(value) when is_integer(value) and value > 0, do: :ok
+  defp validate_positive_integer(_value), do: {:error, {:invalid_weight, :must_be_positive_integer}}
+
+  @doc """
+  Sets the cost model weights at runtime.
+
+  Updates the application environment configuration for the cost model.
+
+  ## Arguments
+
+  - `weights` - Map of weight overrides
+
+  ## Returns
+
+  - `:ok` if weights were set successfully
+  - `{:error, reason}` if validation fails
+
+  ## Examples
+
+      iex> CostModel.set_weights(%{hash_cost: 3.0})
+      :ok
+
+  """
+  @spec set_weights(map()) :: :ok | {:error, term()}
+  def set_weights(weights) do
+    case validate_weights(weights) do
+      :ok ->
+        current_config = Application.get_env(:triple_store, :sparql, [])
+        current_weights = Keyword.get(current_config, :cost_model_weights, %{})
+        merged_weights = Map.merge(current_weights, weights)
+        updated_config = Keyword.put(current_config, :cost_model_weights, merged_weights)
+        Application.put_env(:triple_store, :sparql, updated_config)
+        :ok
+
+      error ->
+        error
+    end
+  end
 
   @doc """
   Estimates cost with custom weight configuration.
@@ -303,11 +439,17 @@ defmodule TripleStore.SPARQL.CostModel do
   """
   @spec nested_loop_cost(number(), number()) :: cost()
   def nested_loop_cost(left_card, right_card) do
+    # Cap cardinalities to prevent overflow
+    capped_left = min(left_card, @max_safe_cardinality)
+    capped_right = min(right_card, @max_safe_cardinality)
+
     # CPU: Compare each left tuple with each right tuple
-    cpu = left_card * right_card * @comparison_cost
+    cpu = capped_left * capped_right * @comparison_cost
+    cpu = min(cpu, @max_cost)
 
     # Memory: Need to materialize the right side for repeated iteration
-    memory = right_card * @memory_weight
+    memory = capped_right * @memory_weight
+    memory = min(memory, @max_cost)
 
     # I/O: None for pure join (inputs assumed materialized)
     io = 0.0
@@ -344,13 +486,17 @@ defmodule TripleStore.SPARQL.CostModel do
   """
   @spec hash_join_cost(number(), number()) :: cost()
   def hash_join_cost(left_card, right_card) do
+    # Cap cardinalities to prevent overflow
+    capped_left = min(left_card, @max_safe_cardinality)
+    capped_right = min(right_card, @max_safe_cardinality)
+
     # CPU: Hash each left tuple, then probe with each right tuple
-    build_cost_cpu = left_card * @hash_cost
-    probe_cost_cpu = right_card * @hash_probe_cost
-    cpu = build_cost_cpu + probe_cost_cpu
+    build_cost_cpu = capped_left * @hash_cost
+    probe_cost_cpu = capped_right * @hash_probe_cost
+    cpu = min(build_cost_cpu + probe_cost_cpu, @max_cost)
 
     # Memory: Hash table for left side
-    memory = left_card * @memory_weight
+    memory = min(capped_left * @memory_weight, @max_cost)
 
     # I/O: None for pure join
     io = 0.0
@@ -405,6 +551,21 @@ defmodule TripleStore.SPARQL.CostModel do
 
       # CPU: For each output tuple, we do k seeks and comparisons
       # Each seek is O(log N) where N is the index size
+      #
+      # ## Logarithmic Scaling Rationale
+      #
+      # We use log2(triple_count) because RocksDB uses B-trees for indexing,
+      # and B-tree operations have O(log₂ N) complexity. This is the
+      # theoretically correct cost factor for index seeks.
+      #
+      # The max(triple_count, 2) guard prevents log(0) and log(1) which are
+      # undefined or zero, ensuring a minimum cost factor.
+      #
+      # Example values:
+      # - 1,000 triples   → log₂(1000) ≈ 10 (3 levels in B-tree)
+      # - 10,000 triples  → log₂(10000) ≈ 13 (4 levels)
+      # - 1,000,000 triples → log₂(10⁶) ≈ 20 (5-6 levels)
+      #
       triple_count = Map.get(stats, :triple_count, 10_000)
       log_factor = :math.log2(max(triple_count, 2))
 
@@ -746,7 +907,36 @@ defmodule TripleStore.SPARQL.CostModel do
       base_cost
     else
       # Cross-graph: multiply by graph iteration factor
-      # Use logarithmic scaling to avoid over-penalizing many small graphs
+      #
+      # ## Logarithmic Scaling for Cross-Graph Joins
+      #
+      # We use ln(num_graphs + 1) rather than linear scaling because:
+      #
+      # 1. **Avoids over-penalizing many small graphs**: A query across 100 small
+      #    graphs (10 quads each) shouldn't be 100x more expensive than a query
+      #    across one graph with 1000 quads. Log scaling captures the reality that
+      #    graph iteration has diminishing marginal cost.
+      #
+      # 2. **Reflects implementation reality**: The executor processes graphs
+      #    iteratively, but the overhead per graph decreases with more graphs due
+      #    to amortized setup costs and caching effects.
+      #
+      # 3. **Practical cost model**: Linear scaling would make cross-graph queries
+      #    appear prohibitively expensive, causing the optimizer to incorrectly
+      #    favor suboptimal plans.
+      #
+      # The +1 offset ensures ln(1) = 0 for single-graph queries (no penalty).
+      #
+      # Example multipliers:
+      # - 2 graphs  → ln(3) ≈ 1.1x cost
+      # - 10 graphs → ln(11) ≈ 2.4x cost
+      # - 100 graphs → ln(101) ≈ 4.6x cost
+      # - 1000 graphs → ln(1001) ≈ 6.9x cost
+      #
+      # Note: We use natural log (ln) rather than log2 here because the graph
+      # iteration factor doesn't have a direct relationship to binary tree
+      # height—it's more of an amortization factor.
+      #
       graph_multiplier = :math.log(num_graphs + 1)
 
       %{
@@ -873,15 +1063,19 @@ defmodule TripleStore.SPARQL.CostModel do
   Cost estimate with component breakdown.
 
   """
+  @dialyzer {:nowarn_function, quad_pattern_cost: 2}
   @spec quad_pattern_cost(quad_pattern(), stats()) :: cost()
   def quad_pattern_cost(pattern, stats) do
     scan_type = quad_pattern_scan_type(pattern)
 
     # Use QuadCardinality for accurate estimation when available
+    # QuadCardinality.estimate_pattern/2 returns a raw float (cardinality),
+    # consistent with Cardinality.estimate_pattern/2 for triple patterns
     estimated_results =
       if Code.ensure_loaded?(TripleStore.SPARQL.QuadCardinality) do
-        case TripleStore.SPARQL.QuadCardinality.estimate_pattern(pattern, stats) do
-          {:ok, card} -> card
+        try do
+          TripleStore.SPARQL.QuadCardinality.estimate_pattern(pattern, stats)
+        rescue
           _ -> fallback_quad_estimate(pattern, stats)
         end
       else

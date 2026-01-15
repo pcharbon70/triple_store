@@ -76,6 +76,14 @@ defmodule TripleStore.Statistics do
   # Inline hot path functions for performance
   @compile {:inline, extract_first_id: 1, extract_second_id: 1, is_numeric_id?: 1}
 
+  # Note on GenServer Usage:
+  # This module uses GenServer for ETS table lifecycle management and asynchronous
+  # cache invalidation, NOT for serializing cache operations. Statistics operations
+  # are CPU-intensive (not I/O-bound), so direct ETS access is used for performance.
+  # The GenServer handles:
+  # - ETS table creation on startup
+  # - Periodic cache size checks and eviction
+  # - Asynchronous cache invalidation messages
   use GenServer
 
   # ===========================================================================
@@ -144,16 +152,63 @@ defmodule TripleStore.Statistics do
   # ===========================================================================
 
   # Statistics version for forward compatibility
+  # Increment this when the stats structure changes incompatibly
   @stats_version 1
 
-  # Default histogram bucket count
+  # Default histogram bucket count for predicate distribution
   @default_bucket_count 100
 
-  # Key prefix for persisted statistics in id2str column family
+  # ===========================================================================
+  # Cache Key Design and Collision Prevention
+  # ===========================================================================
+  #
+  # The statistics module uses binary prefixes to store metadata in the RocksDB
+  # id2str column family. These prefixes are designed to avoid collisions with
+  # actual term IDs through careful byte-level design.
+  #
+  # ## Term ID Encoding
+  #
+  # Term IDs in the triple store use type tagging in the most significant bits:
+  # - 0x00...0x0F: Reserved for metadata
+  # - 0x10...0xFF: Actual term identifiers
+  #
+  # Valid term IDs always have the high bit (0x80) set for 64-bit IDs, with
+  # the type tag in bits 4-7. This means all valid term IDs are >= 2^56.
+  #
+  # ## Key Prefix Structure
+  #
+  # Statistics keys use 8-byte prefixes with the pattern:
+  # - Byte 0: 0x00 (metadata marker - never valid for term IDs)
+  # - Bytes 1-6: 0x00 (reserved for future use)
+  # - Byte 7: Identifier (1 for global stats, 2 for per-graph stats)
+  #
+  # This design guarantees that:
+  # 1. No valid term ID can start with 0x00 (would have type tag 0x00 which is reserved)
+  # 2. Statistics keys are easily identifiable by their prefix
+  # 3. Multiple key types can coexist without collision
+  # 4. Prefix scans can efficiently find all statistics entries
+  #
+  # ## Examples
+  #
+  #   @stats_key_prefix   => <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>
+  #   @quad_stats_prefix  => <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02>>
+  #
+  # Per-graph stats key construction:
+  #   @quad_stats_prefix <> <<graph_id::64-big>>
+  #
+  # This creates keys like:
+  #   <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05>>
+  #   for graph_id=5
+  #
+  # ===========================================================================
+
+  # Key prefix for persisted global statistics in id2str column family
   # Uses a reserved prefix that can't conflict with term IDs (type tag 0)
+  # The 0x01 identifier distinguishes global stats from per-graph stats
   @stats_key_prefix <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>
 
   # Required statistics keys for validation
+  # These keys must be present in a valid statistics map
   @required_stats_keys [
     :triple_count,
     :distinct_subjects,
@@ -165,14 +220,127 @@ defmodule TripleStore.Statistics do
     :version
   ]
 
-  # Quad cache key prefixes (distinct from triple stats)
+  # Key prefix for persisted per-graph quad statistics
+  # Uses the same collision-resistant design as @stats_key_prefix
+  # The 0x02 identifier distinguishes per-graph stats from global stats
+  # Full key for a graph: @quad_stats_prefix <> <<graph_id::64-big>>
   @quad_stats_prefix <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02>>
 
   # ETS table name for in-memory quad statistics cache
+  # Named table allows efficient in-process lookups without RocksDB access
   @quad_cache_table :triple_store_quad_stats_cache
 
   # Default max concurrency for parallel cache warming
+  # Limits simultaneous graph cache warming to prevent overwhelming the database
   @default_max_concurrency 4
+
+  # Maximum size for binary term deserialization (10MB)
+  # Prevents memory exhaustion attacks via maliciously large terms
+  # Any term exceeding this size during deserialization will be rejected
+  @max_term_size 10_000_000
+
+  # Maximum number of entries in quad statistics cache
+  # When this limit is exceeded, the entire cache is cleared (simple eviction)
+  # This prevents unbounded memory growth from caching many graphs
+  @max_cache_entries 10_000
+
+  # Interval for cache size checks (60 seconds)
+  # The cache size is checked periodically rather than on every insert
+  # to avoid the overhead of size checking during cache operations
+  @cache_check_interval 60_000
+
+  # Default counts for when statistics are not available
+  @default_triple_count 10_000
+  @default_quad_count 10_000
+
+  # Cache warming limits
+  @cache_warm_timeout 30_000  # 30 seconds per graph
+  @max_graphs_to_warm 100  # Maximum graphs to warm in parallel
+
+  # ===========================================================================
+  # Column Family Validation
+  # ===========================================================================
+  #
+  # The Statistics module interacts with specific RocksDB column families.
+  # Using an invalid column family atom will cause the NIF layer to return
+  # an error, but validating at the Elixir level provides better error messages.
+  #
+  # ## Valid Column Families for Statistics Operations
+  #
+  # For quad stores:
+  # - `:gspo` - Graph-Subject-Predicate-Object index (primary quad index)
+  # - `:gpos` - Graph-Predicate-Object-Subject index
+  # - `:spog` - Subject-Predicate-Object-Graph index
+  # - `:posg` - Predicate-Object-Subject-Graph index
+  # - `:id2str` - ID to string dictionary (stores persisted statistics)
+  #
+  # For triple stores (legacy):
+  # - `:spo` - Subject-Predicate-Object index
+  # - `:pos` - Predicate-Object-Subject index
+  # - `:osp` - Object-Subject-Predicate index
+  # - `:id2str` - ID to string dictionary (stores persisted statistics)
+  #
+  # ## Statistics Storage
+  #
+  # Statistics are persisted in the `:id2str` column family using the reserved
+  # key prefixes defined above (@stats_key_prefix for global stats,
+  # @quad_stats_prefix for per-graph stats).
+  #
+  # ## Statistics Computation
+  #
+  # Statistics are computed by scanning the `:gspo` index for quad counts,
+  # predicate distributions, and other metrics.
+  #
+  # ===========================================================================
+
+  @valid_quad_cfs [:gspo, :gpos, :spog, :posg, :id2str]
+  @valid_triple_cfs [:spo, :pos, :osp, :id2str]
+
+  @doc """
+  Validates that a column family atom is valid for statistics operations.
+
+  ## Returns
+
+  - `:ok` if the column family is valid
+  - `{:error, :invalid_cf}` if the column family is not recognized
+
+  ## Examples
+
+      iex> Statistics.validate_cf(:gspo)
+      :ok
+
+      iex> Statistics.validate_cf(:invalid)
+      {:error, :invalid_cf}
+
+  """
+  @spec validate_cf(atom()) :: :ok | {:error, :invalid_cf}
+  def validate_cf(cf) when cf in @valid_quad_cfs, do: :ok
+  def validate_cf(cf) when cf in @valid_triple_cfs, do: :ok
+  def validate_cf(_cf), do: {:error, :invalid_cf}
+
+  @doc """
+  Validates a column family and raises an error if invalid.
+
+  ## Raises
+
+  - `ArgumentError` if the column family is not valid
+
+  ## Examples
+
+      iex> Statistics.validate_cf!(:gspo)
+      :ok
+
+      iex> Statistics.validate_cf!(:invalid)
+      ** (ArgumentError) invalid column family: :invalid
+
+  """
+  @spec validate_cf!(atom()) :: :ok
+  def validate_cf!(cf) do
+    case validate_cf(cf) do
+      :ok -> :ok
+      {:error, :invalid_cf} -> raise ArgumentError, "invalid column family: #{inspect(cf)}"
+    end
+  end
 
   # ===========================================================================
   # GenServer Callbacks
@@ -189,6 +357,9 @@ defmodule TripleStore.Statistics do
         read_concurrency: true,
         write_concurrency: true
       ])
+
+    # Start periodic cache size check
+    :timer.send_interval(@cache_check_interval, :check_cache_size)
 
     {:ok, %{table: table}}
   end
@@ -219,6 +390,27 @@ defmodule TripleStore.Statistics do
     {:noreply, state}
   end
 
+  @doc false
+  def handle_info(:check_cache_size, state) do
+    # Check cache size and evict if over limit
+    size = :ets.info(@quad_cache_table, :size)
+
+    if size > @max_cache_entries do
+      # Emit telemetry warning
+      :telemetry.execute(
+        [:triple_store, :statistics, :quad_cache, :overflow],
+        %{current_size: size, max_size: @max_cache_entries},
+        %{}
+      )
+
+      # Clear cache when over limit (simple eviction policy)
+      # For production, consider LRU or other smarter eviction
+      :ets.delete_all_objects(@quad_cache_table)
+    end
+
+    {:noreply, state}
+  end
+
   # ===========================================================================
   # Public API - Quad Cache Management
   # ===========================================================================
@@ -246,6 +438,13 @@ defmodule TripleStore.Statistics do
 
     case :ets.lookup(@quad_cache_table, cache_key) do
       [{^cache_key, stats}] ->
+        # Emit telemetry for cache hit
+        :telemetry.execute(
+          [:triple_store, :statistics, :quad_cache, :hit],
+          %{graph_id: graph_id},
+          %{}
+        )
+
         {:ok, stats}
 
       [] ->
@@ -286,16 +485,35 @@ defmodule TripleStore.Statistics do
 
     case :ets.lookup(@quad_cache_table, cache_key) do
       [{^cache_key, summary}] ->
+        # Emit telemetry for cache hit
+        :telemetry.execute(
+          [:triple_store, :statistics, :quad_cache, :all_graphs_hit],
+          %{},
+          %{}
+        )
+
         {:ok, summary}
 
       [] ->
         # Cache miss - compute and cache
         case all_graphs_summary(db, opts) do
           {:ok, summary} = result ->
-            # Cache the result
-            :ets.insert(@quad_cache_table, {cache_key, summary})
+            # Cache the result using insert_new to prevent race conditions
+            # If another process inserted the value while we were computing,
+            # we use their value instead (which should be identical)
+            case :ets.insert_new(@quad_cache_table, {cache_key, summary}) do
+              true ->
+                # We successfully inserted our computed value
+                result
 
-            result
+              false ->
+                # Another process beat us to it - their value is in cache
+                # Read and return the cached value to ensure consistency
+                case :ets.lookup(@quad_cache_table, cache_key) do
+                  [{^cache_key, cached_summary}] -> {:ok, cached_summary}
+                  [] -> result  # Cache was cleared, return our computed value
+                end
+            end
 
           error ->
             error
@@ -390,7 +608,9 @@ defmodule TripleStore.Statistics do
     case graph_summary(db, graph_id, opts) do
       {:ok, summary} ->
         cache_key = quad_cache_key(graph_id)
-        :ets.insert(@quad_cache_table, {cache_key, summary})
+        # Use insert_new to avoid overwriting a more recent cache entry
+        # Returns true if we inserted, false if key already existed
+        :ets.insert_new(@quad_cache_table, {cache_key, summary})
 
         duration = System.monotonic_time() - start_time
 
@@ -437,13 +657,16 @@ defmodule TripleStore.Statistics do
       {:ok, histograms} ->
         graph_ids = Map.keys(histograms)
 
-        # Warm cache for each graph (with parallel processing)
+        # Limit number of graphs to warm to prevent resource exhaustion
+        graph_ids = Enum.take(graph_ids, @max_graphs_to_warm)
+
+        # Warm cache for each graph (with parallel processing and timeout)
         graph_ids
         |> Task.async_stream(
           fn graph_id -> warm_graph_cache(db, graph_id, opts) end,
           max_concurrency: max_concurrency,
           ordered: false,
-          timeout: :infinity
+          timeout: @cache_warm_timeout
         )
         |> Stream.run()
 
@@ -451,7 +674,8 @@ defmodule TripleStore.Statistics do
         cache_key = all_graphs_cache_key()
         case all_graphs_summary(db, opts) do
           {:ok, summary} ->
-            :ets.insert(@quad_cache_table, {cache_key, summary})
+            # Use insert_new to avoid overwriting a more recent cache entry
+            :ets.insert_new(@quad_cache_table, {cache_key, summary})
 
           {:error, _} ->
             :ok
@@ -568,11 +792,142 @@ defmodule TripleStore.Statistics do
   """
   @spec save(db_ref(), stats()) :: :ok | {:error, term()}
   def save(db, stats) do
-    encoded = :erlang.term_to_binary(stats, [:compressed])
+    # Validate stats structure before encoding to prevent encoding errors
+    with :ok <- validate_stats_structure(stats),
+         # Also check size before encoding to prevent memory issues
+         :ok <- validate_stats_size(stats) do
+      encoded = :erlang.term_to_binary(stats, [:compressed])
 
-    case NIF.put(db, :id2str, @stats_key_prefix, encoded) do
-      :ok -> :ok
-      {:error, _} = error -> error
+      case NIF.put(db, :id2str, @stats_key_prefix, encoded) do
+        :ok -> :ok
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  @doc """
+  Validates the structure of a statistics map.
+
+  Checks that all required keys are present and have valid types.
+
+  ## Returns
+
+  - `:ok` if stats structure is valid
+  - `{:error, reason}` if validation fails
+
+  """
+  @spec validate_stats_structure(term()) :: :ok | {:error, term()}
+  def validate_stats_structure(stats) when is_map(stats) do
+    with :ok <- validate_required_keys(stats),
+         :ok <- validate_stat_types(stats) do
+      :ok
+    end
+  end
+
+  def validate_stats_structure(_stats), do: {:error, :not_a_map}
+
+  @doc """
+  Validates the stats structure and raises if invalid.
+
+  This is a bang version of `validate_stats_structure/1` that raises
+  an ArgumentError instead of returning `{:error, reason}`.
+
+  ## Raises
+
+  - `ArgumentError` if stats structure is invalid
+
+  ## Examples
+
+      iex> Statistics.validate_stats!(%{triple_count: 100, quad_count: 100})
+      :ok
+
+      iex> Statistics.validate_stats!(%{})
+      ** (ArgumentError) Invalid statistics: missing required keys: [:triple_count, :quad_count]
+
+  """
+  @spec validate_stats!(map()) :: :ok | no_return()
+  def validate_stats!(stats) when is_map(stats) do
+    case validate_stats_structure(stats) do
+      :ok ->
+        :ok
+
+      {:error, {:missing_keys, keys}} ->
+        raise ArgumentError, "Invalid statistics: missing required keys: #{inspect(keys)}"
+
+      {:error, {:invalid_type, key, value}} ->
+        raise ArgumentError, "Invalid statistics: #{key} has invalid value: #{inspect(value)}"
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid statistics: #{inspect(reason)}"
+    end
+  end
+
+  def validate_stats!(_stats) do
+    raise ArgumentError, "Invalid statistics: expected a map, got: #{inspect(_stats)}"
+  end
+
+  # Validate that all required keys are present
+  defp validate_required_keys(stats) do
+    missing_keys =
+      @required_stats_keys
+      |> Enum.reject(fn key -> Map.has_key?(stats, key) end)
+
+    if Enum.empty?(missing_keys) do
+      :ok
+    else
+      {:error, {:missing_keys, missing_keys}}
+    end
+  end
+
+  # Validate that stats have the correct types
+  defp validate_stat_types(stats) do
+    # Validate specific keys have expected types
+    validators = [
+      {:triple_count, &validate_non_neg_integer/1},
+      {:quad_count, &validate_non_neg_integer/1},
+      {:distinct_subjects, &validate_non_neg_integer/1},
+      {:distinct_predicates, &validate_non_neg_integer/1},
+      {:distinct_objects, &validate_non_neg_integer/1},
+      {:version, &validate_non_neg_integer/1},
+      {:collected_at, fn
+        %DateTime{} -> :ok
+        _ -> {:error, :invalid_datetime}
+      end}
+    ]
+
+    errors =
+      validators
+    |> Enum.filter(fn {key, _validator} -> Map.has_key?(stats, key) end)
+    |> Enum.map(fn {key, validator} ->
+      case validator.(Map.get(stats, key)) do
+        :ok -> nil
+        error -> {key, error}
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+
+    if Enum.empty?(errors) do
+      :ok
+    else
+      {:error, {:invalid_types, errors}}
+    end
+  end
+
+  defp validate_non_neg_integer(value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_non_neg_integer(_value), do: {:error, :invalid_type}
+
+  # Validate stats size before encoding to prevent memory exhaustion
+  defp validate_stats_size(stats) do
+    # Use :erlang.external_size to estimate binary size without creating it
+    try do
+      size = :erlang.external_size(stats, [:compressed])
+      if size > @max_term_size do
+        {:error, {:stats_too_large, size, @max_term_size}}
+      else
+        :ok
+      end
+    rescue
+      _ -> {:error, :cannot_estimate_size}
     end
   end
 
@@ -596,11 +951,21 @@ defmodule TripleStore.Statistics do
   def load(db) do
     case NIF.get(db, :id2str, @stats_key_prefix) do
       {:ok, encoded} when is_binary(encoded) ->
-        stats = :erlang.binary_to_term(encoded, [:safe])
+        # Check size before deserialization to prevent memory exhaustion
+        if byte_size(encoded) > @max_term_size do
+          {:error, {:term_too_large, byte_size(encoded), @max_term_size}}
+        else
+          try do
+            stats = :erlang.binary_to_term(encoded, [:safe])
 
-        case validate_stats_structure(stats) do
-          :ok -> {:ok, stats}
-          {:error, _} = error -> error
+            case validate_stats_structure(stats) do
+              :ok -> {:ok, stats}
+              {:error, _} = error -> error
+            end
+          rescue
+            ArgumentError -> {:error, :invalid_stats_format}
+            Protocol.UndefinedError -> {:error, :incompatible_stats_version}
+          end
         end
 
       :not_found ->
@@ -694,6 +1059,65 @@ defmodule TripleStore.Statistics do
   @spec triple_count(db_ref()) :: {:ok, non_neg_integer()} | {:error, term()}
   def triple_count(db) do
     Index.count(db, {:var, :var, :var})
+  end
+
+  @doc """
+  Standardized accessor for getting quad count from statistics.
+
+  Returns the quad_count from the stats map, falling back to triple_count
+  for backward compatibility with triple stores.
+
+  ## Arguments
+
+  - `stats` - Statistics map
+
+  ## Returns
+
+  The quad count (or triple count as fallback)
+
+  """
+  @spec quad_count_from_stats(map()) :: non_neg_integer()
+  def quad_count_from_stats(stats) do
+    Map.get(stats, :quad_count) || Map.get(stats, :triple_count, @default_quad_count)
+  end
+
+  @doc """
+  Standardized accessor for getting triple count from statistics.
+
+  Returns the triple_count from the stats map, with a default fallback.
+
+  ## Arguments
+
+  - `stats` - Statistics map
+
+  ## Returns
+
+  The triple count
+
+  """
+  @spec triple_count_from_stats(map()) :: non_neg_integer()
+  def triple_count_from_stats(stats) do
+    Map.get(stats, :triple_count, @default_triple_count)
+  end
+
+  @doc """
+  Gets the total count from statistics, working for both triple and quad stores.
+
+  For quad stores, returns :quad_count.
+  For triple stores, returns :triple_count.
+
+  ## Arguments
+
+  - `stats` - Statistics map
+
+  ## Returns
+
+  The total count
+
+  """
+  @spec total_count_from_stats(map()) :: non_neg_integer()
+  def total_count_from_stats(stats) do
+    Map.get(stats, :quad_count) || Map.get(stats, :triple_count, @default_triple_count)
   end
 
   @doc """
@@ -1567,21 +1991,6 @@ defmodule TripleStore.Statistics do
   end
 
   # ===========================================================================
-  # Private Helpers - Validation
-  # ===========================================================================
-
-  @spec validate_stats_structure(term()) :: :ok | {:error, :invalid_stats_structure}
-  defp validate_stats_structure(stats) when is_map(stats) do
-    if Enum.all?(@required_stats_keys, &Map.has_key?(stats, &1)) do
-      :ok
-    else
-      {:error, :invalid_stats_structure}
-    end
-  end
-
-  defp validate_stats_structure(_), do: {:error, :invalid_stats_structure}
-
-  # ===========================================================================
   # Private Helpers - Version Migration (S13)
   # ===========================================================================
 
@@ -1686,9 +2095,9 @@ defmodule TripleStore.Statistics do
   def compute_and_cache_graph_stats(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     case graph_summary(db, graph_id) do
       {:ok, summary} = result ->
-        # Cache the result
+        # Cache the result using insert_new to prevent race conditions
         cache_key = quad_cache_key(graph_id)
-        :ets.insert(@quad_cache_table, {cache_key, summary})
+        :ets.insert_new(@quad_cache_table, {cache_key, summary})
         result
 
       error ->

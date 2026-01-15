@@ -113,6 +113,136 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @default_graph_id 0
   @default_graph_term :default_graph
 
+  # Required statistics keys for validation
+  @required_stats_keys [:quad_count]
+  @optional_stats_keys [:triple_count, :distinct_subjects, :distinct_predicates, :distinct_objects, :total_graphs, :predicate_histogram, :per_graph_stats]
+
+  # ===========================================================================
+  # Stats Validation
+  # ===========================================================================
+
+  @doc """
+  Validates the stats map structure.
+
+  Returns `:ok` if valid, or `{:error, reason}` if invalid.
+
+  ## Examples
+
+      iex> QuadCardinality.validate_stats(%{quad_count: 1000})
+      :ok
+
+      iex> QuadCardinality.validate_stats(%{})
+      {:error, :missing_required_keys}
+
+      iex> QuadCardinality.validate_stats("not a map")
+      {:error, :invalid_stats}
+
+  """
+  @spec validate_stats(term()) :: :ok | {:error, atom()}
+  def validate_stats(stats) when not is_map(stats), do: {:error, :invalid_stats}
+
+  def validate_stats(stats) do
+    with :ok <- validate_required_stats_keys(stats),
+         :ok <- validate_stats_types(stats) do
+      :ok
+    end
+  end
+
+  # Validates that at least one required key exists
+  defp validate_required_stats_keys(stats) do
+    has_quad_count = Map.has_key?(stats, :quad_count)
+    has_triple_count = Map.has_key?(stats, :triple_count)
+
+    if has_quad_count or has_triple_count do
+      :ok
+    else
+      {:error, :missing_required_keys}
+    end
+  end
+
+  # Validates that stats values have correct types
+  defp validate_stats_types(stats) do
+    stats
+    |> Enum.reduce_while(:ok, fn {key, value}, _acc ->
+      case validate_stat_value_type(key, value) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  # Validates individual stat value types
+  defp validate_stat_value_type(:quad_count, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:quad_count, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:triple_count, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:triple_count, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:distinct_subjects, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:distinct_subjects, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:distinct_predicates, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:distinct_predicates, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:distinct_objects, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:distinct_objects, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:total_graphs, value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_stat_value_type(:total_graphs, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:predicate_histogram, value) when is_map(value), do: :ok
+  defp validate_stat_value_type(:predicate_histogram, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(:per_graph_stats, value) when is_map(value), do: validate_per_graph_stats(value)
+  defp validate_stat_value_type(:per_graph_stats, _value), do: {:error, :invalid_stat_value}
+  defp validate_stat_value_type(_key, _value), do: :ok  # Unknown keys are okay
+
+  # Validates per-graph stats structure
+  defp validate_per_graph_stats(per_graph_stats) do
+    per_graph_stats
+    |> Enum.reduce_while(:ok, fn {_graph_id, graph_stats}, _acc ->
+      if is_map(graph_stats) do
+        {:cont, :ok}
+      else
+        {:halt, {:error, :invalid_graph_stats}}
+      end
+    end)
+  end
+
+  @doc """
+  Ensures stats map has all default values filled in.
+
+  Returns a new stats map with missing values set to defaults.
+
+  ## Examples
+
+      iex> stats = QuadCardinality.ensure_stats_defaults(%{})
+      iex> Map.has_key?(stats, :quad_count)
+      true
+
+  """
+  @spec ensure_stats_defaults(map()) :: map()
+  def ensure_stats_defaults(stats) when is_map(stats) do
+    %{
+      quad_count: Map.get(stats, :quad_count, @default_quad_count),
+      triple_count: Map.get(stats, :triple_count, @default_quad_count),  # Use quad count as fallback
+      distinct_subjects: Map.get(stats, :distinct_subjects, @default_distinct_subjects),
+      distinct_predicates: Map.get(stats, :distinct_predicates, @default_distinct_predicates),
+      distinct_objects: Map.get(stats, :distinct_objects, @default_distinct_objects),
+      total_graphs: Map.get(stats, :total_graphs, @default_total_graphs),
+      predicate_histogram: Map.get(stats, :predicate_histogram, %{}),
+      per_graph_stats: Map.get(stats, :per_graph_stats, %{})
+    }
+  end
+
+  def ensure_stats_defaults(_stats), do: default_stats()
+
+  # Returns a default stats map
+  defp default_stats do
+    %{
+      quad_count: @default_quad_count,
+      distinct_subjects: @default_distinct_subjects,
+      distinct_predicates: @default_distinct_predicates,
+      distinct_objects: @default_distinct_objects,
+      total_graphs: @default_total_graphs,
+      predicate_histogram: %{},
+      per_graph_stats: %{}
+    }
+  end
+
   # ===========================================================================
   # Public API - Pattern Cardinality
   # ===========================================================================
@@ -157,13 +287,20 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   """
   @spec estimate_pattern(quad_pattern(), quad_stats()) :: cardinality()
   def estimate_pattern({:quad, subject, predicate, object, graph}, stats) do
+    # Validate and fill in defaults for stats
+    validated_stats =
+      case validate_stats(stats) do
+        :ok -> stats
+        {:error, _reason} -> ensure_stats_defaults(stats)
+      end
+
     # Determine if graph is bound
     if graph_bound?(graph) do
       # Graph-scoped: use per-graph statistics
-      estimate_graph_scoped_pattern(subject, predicate, object, graph, stats)
+      estimate_graph_scoped_pattern(subject, predicate, object, graph, validated_stats)
     else
       # Cross-graph: sum across all graphs
-      estimate_cross_graph_pattern(subject, predicate, object, stats)
+      estimate_cross_graph_pattern(subject, predicate, object, validated_stats)
     end
   end
 
@@ -341,6 +478,32 @@ defmodule TripleStore.SPARQL.QuadCardinality do
 
   For patterns in the same graph: use standard join selectivity
   For patterns in different graphs: cartesian product (independent)
+
+  ## API Difference from Triple Version
+
+  This function has a `same_graph` boolean parameter that doesn't exist
+  in `TripleStore.SPARQL.Cardinality.estimate_join/4`. The reason is
+  architectural:
+
+  - **Triple stores**: All triples exist in a single (default) graph, so
+    all joins are inherently within the same graph context.
+
+  - **Quad stores**: Quads have a graph component, so joins can be within
+    the same named graph (more selective) or across different graphs
+    (less selective, approaching cartesian product).
+
+  The `same_graph` parameter allows the cost model to account for this
+  difference when estimating quad join cardinalities. When `true`, standard
+  join selectivity applies. When `false`, the join is still selective on
+  shared non-graph variables but independent on the graph dimension.
+
+  ## Examples
+
+      # Join within same graph (more selective)
+      QuadCardinality.estimate_quad_join(1000, 500, ["s"], true, stats)
+
+      # Join across different graphs (less selective)
+      QuadCardinality.estimate_quad_join(1000, 500, ["s"], false, stats)
 
   """
   @spec estimate_quad_join(cardinality(), cardinality(), [String.t()], boolean(), quad_stats()) ::
@@ -637,7 +800,9 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   # Estimate domain size from cardinality
   @spec estimate_domain_from_card(cardinality(), non_neg_integer()) :: float()
   defp estimate_domain_from_card(card, total_quads) do
-    min(:math.sqrt(card), total_quads * 1.0)
+    # Protect against division by zero - ensure total_quads is at least 1
+    max_quads = max(total_quads, 1)
+    min(:math.sqrt(card), max_quads * 1.0)
   end
 
   # ===========================================================================

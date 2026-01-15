@@ -55,6 +55,16 @@ defmodule TripleStore.SPARQL.Optimizer do
   # Maximum recursion depth to prevent stack overflow from deeply nested queries
   @max_depth 100
 
+  # Maximum branch width to prevent stack overflow from wide trees
+  # Wide trees (many branches at same level) can also cause stack issues
+  @max_branch_width 100
+
+  # Query complexity limits to prevent resource exhaustion
+  @max_nodes 10_000
+  @max_bgp_patterns 100
+  @max_joins 50
+  @max_filters 100
+
   @typedoc "Optimization options"
   @type opt ::
           {:push_filters, boolean()}
@@ -108,8 +118,428 @@ defmodule TripleStore.SPARQL.Optimizer do
     if explain? do
       explain(algebra, opts)
     else
-      run_pipeline(algebra, opts)
+      # Validate query depth first (prevents stack overflow from deep nesting)
+      case validate_query_depth(algebra) do
+        :ok ->
+          # Then validate branch width (prevents stack overflow from wide trees)
+          case validate_branch_width(algebra) do
+            :ok ->
+              # Finally validate query complexity (prevents resource exhaustion)
+              case validate_query_complexity(algebra) do
+                :ok ->
+                  run_pipeline(algebra, opts)
+
+                {:error, reason} ->
+                  # Emit telemetry for rejected query
+                  :telemetry.execute(
+                    [:triple_store, :sparql, :optimizer, :complexity_rejected],
+                    %{node_count: count_nodes(algebra)},
+                    %{reason: reason}
+                  )
+
+                  raise ArgumentError, """
+                  Query complexity exceeds limits: #{inspect(reason)}
+
+                  Limits:
+                  - Max nodes: #{@max_nodes}
+                  - Max BGP patterns: #{@max_bgp_patterns}
+                  - Max joins: #{@max_joins}
+                  - Max filters: #{@max_filters}
+
+                  This may indicate a malformed query or an attack.
+                  """
+              end
+
+            {:error, :too_wide} ->
+              # Emit telemetry for width rejection
+              :telemetry.execute(
+                [:triple_store, :sparql, :optimizer, :width_rejected],
+                %{max_width: analyze_branch_width(algebra)},
+                %{max_width: @max_branch_width}
+              )
+
+              raise ArgumentError,
+                    "Query tree too wide (max branch width: #{@max_branch_width}). " <>
+                      "This may indicate a malformed query or an attack."
+          end
+
+        {:error, :too_deep} ->
+          # Emit telemetry for depth rejection
+          :telemetry.execute(
+            [:triple_store, :sparql, :optimizer, :depth_rejected],
+            %{node_count: count_nodes(algebra)},
+            %{max_depth: @max_depth}
+          )
+
+          raise ArgumentError,
+                "Query too deeply nested (max depth: #{@max_depth}). " <>
+                  "This may indicate a malformed query or an attack."
+      end
     end
+  end
+
+  # ===========================================================================
+  # Query Depth Validation
+  # ===========================================================================
+
+  @doc """
+  Validates that a query does not exceed the maximum depth.
+
+  This is checked before complexity validation to prevent stack overflow
+  attacks which are more immediately dangerous than resource exhaustion.
+
+  ## Returns
+
+  - `:ok` if depth is within limits
+  - `{:error, :too_deep}` if depth exceeds @max_depth
+
+  """
+  @spec validate_query_depth(algebra()) :: :ok | {:error, :too_deep}
+  def validate_query_depth(algebra) do
+    {_metrics, max_depth} = analyze_depth_recursive(algebra, {%{}, 0})
+
+    if max_depth > @max_depth do
+      {:error, :too_deep}
+    else
+      :ok
+    end
+  end
+
+  # Analyze depth of algebra tree
+  # Returns {metrics, depth} where depth is the maximum nesting level
+  defp analyze_depth_recursive(algebra, acc) do
+    case algebra do
+      {:bgp, _patterns} ->
+        {acc, 0}
+
+      {:filter, _expr, pattern} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:join, left, right} ->
+        {acc, left_depth} = analyze_depth_recursive(left, acc)
+        {acc, right_depth} = analyze_depth_recursive(right, acc)
+        {acc, 1 + max(left_depth, right_depth)}
+
+      {:left_join, left, right, _filter} ->
+        {acc, left_depth} = analyze_depth_recursive(left, acc)
+        {acc, right_depth} = analyze_depth_recursive(right, acc)
+        {acc, 1 + max(left_depth, right_depth)}
+
+      {:union, left, right} ->
+        {acc, left_depth} = analyze_depth_recursive(left, acc)
+        {acc, right_depth} = analyze_depth_recursive(right, acc)
+        {acc, 1 + max(left_depth, right_depth)}
+
+      {:minus, left, right} ->
+        {acc, left_depth} = analyze_depth_recursive(left, acc)
+        {acc, right_depth} = analyze_depth_recursive(right, acc)
+        {acc, 1 + max(left_depth, right_depth)}
+
+      {:extend, pattern, _var, _expr} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:group, pattern, _vars, _aggs} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:project, pattern, _vars} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:distinct, pattern} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:reduced, pattern} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:order_by, pattern, _conditions} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:slice, pattern, _offset, _limit} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:graph, _term, pattern} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      {:service, _endpoint, pattern, _silent} ->
+        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+        {acc, child_depth + 1}
+
+      _ ->
+        {acc, 0}
+    end
+  end
+
+  # ===========================================================================
+  # Query Branch Width Validation
+  # ===========================================================================
+
+  @doc """
+  Validates that a query does not exceed the maximum branch width.
+
+  Wide trees (many branches at the same nesting level) can cause stack overflow
+  similar to deeply nested trees. This validation prevents attacks that create
+  queries with hundreds of UNION or JOIN operations at the same level.
+
+  Branch width is measured as the maximum number of algebra operations at any
+  single depth level in the query tree.
+
+  ## Returns
+
+  - `:ok` if branch width is within limits
+  - `{:error, :too_wide}` if width exceeds @max_branch_width
+
+  ## Examples
+
+      iex> Optimizer.validate_branch_width({:bgp, []})
+      :ok
+
+  """
+  @spec validate_branch_width(algebra()) :: :ok | {:error, :too_wide}
+  def validate_branch_width(algebra) do
+    max_width = analyze_branch_width(algebra)
+
+    if max_width > @max_branch_width do
+      {:error, :too_wide}
+    else
+      :ok
+    end
+  end
+
+  @doc """
+  Analyzes the maximum branch width of a query tree.
+
+  Branch width is the maximum number of algebra operations at any single depth
+  level. Wide trees can cause stack overflow during recursive processing,
+  similar to how deep trees can.
+
+  This function counts how many operations exist at each depth level and returns
+  the maximum count found.
+
+  ## Examples
+
+      iex> Optimizer.analyze_branch_width({:bgp, []})
+      1
+
+  """
+  @spec analyze_branch_width(algebra()) :: non_neg_integer()
+  def analyze_branch_width(algebra) do
+    depth_counts = analyze_branch_width_by_depth(algebra)
+    depth_counts |> Map.values() |> Enum.max(fn -> 0 end)
+  end
+
+  # Analyzes the tree and returns a map of depth -> operation count
+  defp analyze_branch_width_by_depth(algebra) do
+    {depth_counts, _max_depth} = do_analyze_width(algebra, 0, %{}, 0)
+    depth_counts
+  end
+
+  # Returns {depth_counts_map, max_depth}
+  defp do_analyze_width(algebra, depth, depth_counts, max_depth) do
+    new_max_depth = max(max_depth, depth)
+    new_counts = Map.update(depth_counts, depth, 1, &(&1 + 1))
+
+    case algebra do
+      {:bgp, _patterns} ->
+        {new_counts, new_max_depth}
+
+      {:filter, _expr, pattern} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:join, left, right} ->
+        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
+        do_analyze_width(right, depth + 1, counts, max1)
+
+      {:left_join, left, right, _filter} ->
+        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
+        do_analyze_width(right, depth + 1, counts, max1)
+
+      {:union, left, right} ->
+        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
+        do_analyze_width(right, depth + 1, counts, max1)
+
+      {:minus, left, right} ->
+        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
+        do_analyze_width(right, depth + 1, counts, max1)
+
+      {:extend, pattern, _var, _expr} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:group, pattern, _vars, _aggs} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:project, pattern, _vars} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:distinct, pattern} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:reduced, pattern} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:order_by, pattern, _conditions} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:slice, pattern, _offset, _limit} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:graph, _term, pattern} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      {:service, _endpoint, pattern, _silent} ->
+        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+
+      _ ->
+        {new_counts, new_max_depth}
+    end
+  end
+
+  # ===========================================================================
+  # Query Complexity Validation
+  # ===========================================================================
+
+  @doc """
+  Validates that a query does not exceed complexity limits.
+
+  This function checks multiple complexity metrics to prevent resource
+  exhaustion attacks and ensure query execution remains tractable:
+
+  - **Node count**: Total number of algebra nodes (prevents OOM)
+  - **BGP patterns**: Number of triple/quad patterns in BGPs (prevents huge joins)
+  - **Joins**: Total number of JOIN operations (prevents exponential blowup)
+  - **Filters**: Total number of FILTER expressions (prevents excessive filtering)
+
+  ## Returns
+
+  - `:ok` if query is within limits
+  - `{:error, metric}` where metric is the limit that was exceeded
+
+  ## Examples
+
+      iex> Optimizer.validate_query_complexity({:bgp, [{:triple, {:variable, "x"}, {:variable, "p"}, {:variable, "o"}}]})
+      :ok
+
+  """
+  @spec validate_query_complexity(algebra()) :: :ok | {:error, atom()}
+  def validate_query_complexity(algebra) do
+    metrics = analyze_complexity(algebra)
+
+    cond do
+      metrics.node_count > @max_nodes ->
+        {:error, :too_many_nodes}
+
+      metrics.bgp_patterns > @max_bgp_patterns ->
+        {:error, :too_many_bgp_patterns}
+
+      metrics.joins > @max_joins ->
+        {:error, :too_many_joins}
+
+      metrics.filters > @max_filters ->
+        {:error, :too_many_filters}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  Analyzes query complexity metrics.
+
+  Returns a map with:
+  - `:node_count` - Total algebra nodes
+  - `:bgp_patterns` - Total patterns in all BGPs
+  - `:joins` - Number of JOIN operations
+  - `:filters` - Number of FILTER expressions
+  - `:max_depth` - Maximum nesting depth
+
+  """
+  @spec analyze_complexity(algebra()) :: %{
+          node_count: non_neg_integer(),
+          bgp_patterns: non_neg_integer(),
+          joins: non_neg_integer(),
+          filters: non_neg_integer(),
+          max_depth: non_neg_integer()
+        }
+  def analyze_complexity(algebra) do
+    analyze_complexity_recursive(algebra, %{
+      node_count: 0,
+      bgp_patterns: 0,
+      joins: 0,
+      filters: 0,
+      max_depth: 0
+    }, 0)
+  end
+
+  # Recursive complexity analysis
+  defp analyze_complexity_recursive({:bgp, patterns}, acc, depth) do
+    %{
+      acc
+      | node_count: acc.node_count + 1,
+        bgp_patterns: acc.bgp_patterns + length(patterns),
+        max_depth: max(acc.max_depth, depth)
+    }
+  end
+
+  defp analyze_complexity_recursive({:filter, _expr, pattern}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1, filters: acc.filters + 1}
+    analyze_complexity_recursive(pattern, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:join, left, right}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1, joins: acc.joins + 1}
+    acc = analyze_complexity_recursive(left, acc, depth + 1)
+    analyze_complexity_recursive(right, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:left_join, left, right, _filter}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1, joins: acc.joins + 1}
+    acc = analyze_complexity_recursive(left, acc, depth + 1)
+    analyze_complexity_recursive(right, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:union, left, right}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1}
+    acc = analyze_complexity_recursive(left, acc, depth + 1)
+    analyze_complexity_recursive(right, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:minus, left, right}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1}
+    acc = analyze_complexity_recursive(left, acc, depth + 1)
+    analyze_complexity_recursive(right, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({tag, pattern, _}, acc, depth)
+       when tag in [:project, :graph, :order_by, :slice] do
+    acc = %{acc | node_count: acc.node_count + 1}
+    analyze_complexity_recursive(pattern, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({tag, pattern}, acc, depth)
+       when tag in [:distinct, :reduced] do
+    acc = %{acc | node_count: acc.node_count + 1}
+    analyze_complexity_recursive(pattern, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:extend, pattern, _var, _expr}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1}
+    analyze_complexity_recursive(pattern, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive({:group, pattern, _vars, _aggs}, acc, depth) do
+    acc = %{acc | node_count: acc.node_count + 1}
+    analyze_complexity_recursive(pattern, acc, depth + 1)
+  end
+
+  defp analyze_complexity_recursive(node, acc, depth) do
+    %{acc | node_count: acc.node_count + 1, max_depth: max(acc.max_depth, depth)}
   end
 
   # Run the full optimization pipeline
@@ -1648,10 +2078,15 @@ defmodule TripleStore.SPARQL.Optimizer do
   Reorders patterns with graph-aware grouping.
 
   This function implements graph grouping for quad patterns:
-  1. Group patterns by their graph binding
-  2. Order groups: bound graphs first, then shared graph variables, then cross-graph
-  3. Within each group, apply greedy selectivity-based reordering
-  4. Combine groups while preserving the optimal order
+  1. First, group patterns by variable dependencies to preserve join ordering
+  2. Then, within variable groups, apply graph grouping
+  3. Order groups: bound graphs first, then shared graph variables, then cross-graph
+  4. Within each group, apply greedy selectivity-based reordering
+  5. Combine groups while preserving the optimal order
+
+  The variable dependency grouping ensures that patterns sharing variables
+  are kept together, preventing incorrect execution where a pattern needs
+  a variable value that hasn't been bound yet.
 
   ## Arguments
 
@@ -1660,13 +2095,113 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   ## Returns
 
-  Reordered list of patterns optimized for graph grouping.
+  Reordered list of patterns optimized for graph grouping and variable dependencies.
 
   """
   @spec reorder_patterns_with_graph_grouping([term()], map()) :: [term()]
   def reorder_patterns_with_graph_grouping(patterns, stats) do
+    # First, group patterns by variable dependencies (shared variables)
+    # This ensures patterns that share variables stay together
+    variable_groups = group_patterns_by_variables(patterns)
+
+    # For each variable group, apply graph-aware reordering
+    # Sort groups by size (smallest first - more selective)
+    sorted_variable_groups =
+      variable_groups
+      |> Enum.sort_by(fn {_vars, group_patterns} -> length(group_patterns) end)
+
+    # Process each variable group independently
+    final_patterns =
+      Enum.flat_map(sorted_variable_groups, fn {_vars, group_patterns} ->
+        # Within this variable group, apply graph grouping
+        reorder_group_with_graph_awareness(group_patterns, stats)
+      end)
+
+    final_patterns
+  end
+
+  # Groups patterns by the variables they share
+  # Patterns that share any variable should be in the same group
+  defp group_patterns_by_variables(patterns) do
+    # Build a map of variable -> list of patterns containing it
+    var_to_patterns =
+      Enum.reduce(patterns, %{}, fn pattern, acc ->
+        vars = pattern_variables(pattern)
+        Enum.reduce(vars, acc, fn var, inner_acc ->
+          Map.update(inner_acc, var, [pattern], &[pattern | &1])
+        end)
+      end)
+
+    # Now group patterns that share any variable
+    # Use connected components algorithm on the variable->patterns graph
+    do_group_patterns_by_variables(patterns, var_to_patterns, [], MapSet.new())
+  end
+
+  defp do_group_patterns_by_variables([], _var_to_patterns, acc, _seen) do
+    Enum.reverse(acc)
+  end
+
+  defp do_group_patterns_by_variables([pattern | rest], var_to_patterns, acc, seen) do
+    if MapSet.member?(seen, pattern) do
+      do_group_patterns_by_variables(rest, var_to_patterns, acc, seen)
+    else
+      # Find all patterns connected to this pattern via shared variables
+      {connected_group, new_seen} = find_connected_component(pattern, var_to_patterns, seen)
+
+      # Continue with remaining patterns that haven't been seen
+      do_group_patterns_by_variables(rest, var_to_patterns, [connected_group | acc], new_seen)
+    end
+  end
+
+  # Find all patterns connected to the given pattern via shared variables
+  defp find_connected_component(start_pattern, var_to_patterns, seen) do
+    vars = pattern_variables(start_pattern)
+
+    # BFS to find all connected patterns
+    {connected, _} =
+      bfs_find_connected(
+        [start_pattern],
+        var_to_patterns,
+        MapSet.put(seen, start_pattern),
+        MapSet.new()
+      )
+
+    # Return the group and the updated seen set
+    new_seen = Enum.reduce(connected, seen, fn p, s -> MapSet.put(s, p) end)
+    {connected, new_seen}
+  end
+
+  defp bfs_find_connected([], _var_to_patterns, seen, connected) do
+    {MapSet.to_list(connected), seen}
+  end
+
+  defp bfs_find_connected([pattern | queue], var_to_patterns, seen, connected) do
+    vars = pattern_variables(pattern)
+
+    # Find all patterns that share any variable with this pattern
+    related_patterns =
+      vars
+      |> Enum.flat_map(fn var -> Map.get(var_to_patterns, var, []) end)
+      |> Enum.uniq()
+      |> Enum.filter(fn p -> not MapSet.member?(seen, p) end)
+
+    # Add to connected set and mark as seen
+    new_connected = Enum.reduce(related_patterns, connected, fn p, c -> MapSet.put(c, p) end)
+    new_seen = Enum.reduce(related_patterns, seen, fn p, s -> MapSet.put(s, p) end)
+
+    # Continue BFS
+    bfs_find_connected(
+      queue ++ related_patterns,
+      var_to_patterns,
+      new_seen,
+      new_connected
+    )
+  end
+
+  # Reorder a group of related patterns with graph awareness
+  defp reorder_group_with_graph_awareness(group_patterns, stats) do
     # Group patterns by their graph binding
-    graph_groups = group_patterns_by_graph(patterns)
+    graph_groups = group_patterns_by_graph(group_patterns)
 
     # Sort groups by priority:
     # 1. Bound graphs (default or named) - most selective
@@ -1677,9 +2212,10 @@ defmodule TripleStore.SPARQL.Optimizer do
       |> Enum.sort_by(fn {key, _group} -> group_priority(key) end)
 
     # Reorder patterns within each group using greedy selectivity
+    # Note: bound_vars is carried across groups since we're within a variable-connected group
     reordered_groups =
-      Enum.map(sorted_groups, fn {_key, group_patterns} ->
-        # Reverse since group_patterns was built with [pattern | acc]
+      sorted_groups
+      |> Enum.map(fn {_key, group_patterns} ->
         patterns_to_reorder = Enum.reverse(group_patterns)
         greedy_reorder(patterns_to_reorder, MapSet.new(), stats, [])
       end)
