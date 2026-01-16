@@ -10,6 +10,7 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
+  alias TripleStore.Statistics
 
   @max_data_triples 10_000
 
@@ -59,12 +60,22 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   # Perform the actual quad insertion
   defp do_insert_quads(ctx, rdf_quads) do
     # Optimized batch insertion
-    with {:ok, internal_quads} <- convert_rdf_quads_to_internal(ctx, rdf_quads) do
-      case QuadOperations.insert_quads(ctx.db, internal_quads, sync: true) do
-        :ok -> {:ok, length(internal_quads)}
-        {:error, _} = error -> error
-      end
+    with {:ok, internal_quads} <- convert_rdf_quads_to_internal(ctx, rdf_quads),
+         :ok <- QuadOperations.insert_quads(ctx.db, internal_quads, sync: true) do
+      # Invalidate statistics cache for affected graphs
+      invalidate_graphs_cache(ctx.db, internal_quads)
+      {:ok, length(internal_quads)}
+    else
+      {:error, _} = error -> error
     end
+  end
+
+  # Invalidate statistics cache for graphs affected by the operation
+  defp invalidate_graphs_cache(db, quads) do
+    quads
+    |> Enum.map(fn {_s, _p, _o, g_id} -> g_id end)
+    |> Enum.uniq()
+    |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
   end
 
   # Converts RDF quads to internal quad representation with IDs

@@ -9,6 +9,7 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
+  alias TripleStore.Statistics
 
   @max_data_triples 10_000
 
@@ -91,12 +92,26 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
           {:ok, 0}
         else
           case QuadOperations.delete_quads(ctx.db, existing_quads, []) do
-            :ok -> {:ok, length(existing_quads)}
+            :ok ->
+              # Invalidate statistics cache for affected graphs
+              invalidate_graphs_cache(ctx.db, existing_quads)
+              {:ok, length(existing_quads)}
             {:error, _} = error -> error
           end
         end
       end
     end
+  end
+
+  # Invalidate statistics cache for graphs affected by the operation
+  defp invalidate_graphs_cache(db, quads) do
+    quads
+    |> Enum.map(fn
+      {s, _p, _o, g} when is_integer(s) -> g
+      {_s, _p, _o, g} -> g
+    end)
+    |> Enum.uniq()
+    |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
   end
 
   # ===========================================================================

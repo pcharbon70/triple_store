@@ -1544,9 +1544,10 @@ defmodule TripleStore.Statistics do
   end
 
   @doc """
-  Builds predicate histograms for all graphs.
+  Builds predicate histograms for all graphs in a single pass.
 
-  Returns a map of graph_id to predicate histograms.
+  This is an optimized version that builds histograms for all graphs
+  in one scan of the GSPO index, rather than scanning once per graph.
 
   ## Arguments
 
@@ -1567,33 +1568,92 @@ defmodule TripleStore.Statistics do
         0 => %{42 => 500, 43 => 100},
         123 => %{42 => 200, 44 => 50}
       }
+
+  ## Performance
+
+  This function uses a single-pass algorithm that builds all histograms
+  in O(total_quads) time instead of O(num_graphs * avg_quads_per_graph).
+
+  ## Sampling
+
+  For large datasets, you can use sampling to build approximate histograms more efficiently:
+
+  - `sample_rate` - Fraction of quads to sample (0.0 to 1.0). E.g., 0.01 samples 1% of quads
+  - `seed` - Random seed for reproducible sampling (default: random)
+
+  When sampling, histogram counts are scaled up to estimate the full dataset.
+
+  ## Examples
+
+      # Sample 1% of quads for fast approximate histogram
+      {:ok, histogram} = Statistics.build_per_graph_histograms(db, sample_rate: 0.01)
+
+      # Sample with reproducible seed
+      {:ok, histogram} = Statistics.build_per_graph_histograms(db, sample_rate: 0.1, seed: 42)
+
   """
   @spec build_per_graph_histograms(db_ref(), keyword()) ::
           {:ok, %{term_id() => %{term_id() => non_neg_integer()}}} | {:error, term()}
   def build_per_graph_histograms(db, opts \\ []) do
     include_default = Keyword.get(opts, :include_default, true)
+    sample_rate = Keyword.get(opts, :sample_rate, 1.0)
+    seed = Keyword.get(opts, :seed, :os.system_time(:millisecond))
 
-    # Scan GSPO index and extract all graph IDs
-    stream = NIF.prefix_stream(db, :gspo, <<>>)
+    use_sampling = sample_rate < 1.0
 
-    # Extract unique graph IDs
-    graph_ids =
-      stream
-      |> Stream.map(fn {key, _value} ->
+    # Initialize random generator with seed for reproducibility
+    if use_sampling do
+      :rand.seed(:exsss, {seed, seed, seed})
+    end
+
+    # Stream GSPO index and build histogram
+    histogram =
+      db
+      |> NIF.prefix_stream(:gspo, <<>>)
+      |> Stream.filter(fn {key, _value} ->
+        # GSPO key: graph_id | subject_id | predicate_id | object_id
         <<graph_id::64-big, _rest::binary>> = key
-        graph_id
-      end)
-      |> Stream.uniq()
-      |> Enum.filter(fn graph_id -> include_default or graph_id > 0 end)
 
-    # Build histogram for each graph
-    histograms =
-      Enum.reduce(graph_ids, %{}, fn graph_id, acc ->
-        {:ok, histogram} = graph_predicate_histogram(db, graph_id)
-        Map.put(acc, graph_id, histogram)
+        # Skip default graph if not requested
+        if not include_default and graph_id == 0 do
+          false
+        else
+          # Apply sampling if enabled
+          not use_sampling or :rand.uniform() <= sample_rate
+        end
+      end)
+      |> Enum.reduce(%{}, fn {key, _value}, acc ->
+        <<graph_id::64-big, _subject::64, predicate_id::64-big, _object::64>> = key
+
+        # Increment count for this (graph_id, predicate_id) pair
+        Map.update(acc, graph_id, %{predicate_id => 1}, fn graph_hist ->
+          Map.update(graph_hist, predicate_id, 1, &(&1 + 1))
+        end)
       end)
 
-    {:ok, histograms}
+    # Scale up histogram counts if sampling was used
+    final_histogram =
+      if use_sampling and sample_rate > 0 do
+        scale_factor = 1.0 / sample_rate
+
+        histogram
+        |> Enum.map(fn {graph_id, predicates} ->
+          scaled_predicates =
+            Enum.map(predicates, fn {pred_id, count} ->
+              # Scale count and ensure at least 1
+              scaled_count = max(trunc(count * scale_factor), 1)
+              {pred_id, scaled_count}
+            end)
+          |> Map.new()
+
+          {graph_id, scaled_predicates}
+        end)
+        |> Map.new()
+      else
+        histogram
+      end
+
+    {:ok, final_histogram}
   end
 
   @doc """

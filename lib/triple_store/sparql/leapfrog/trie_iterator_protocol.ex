@@ -78,4 +78,15 @@ defprotocol TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol do
   """
   @spec exhausted?(t()) :: boolean()
   def exhausted?(iterator)
+
+  @doc """
+  Closes the iterator and releases resources.
+
+  ## Returns
+
+  - `:ok`
+
+  """
+  @spec close(t()) :: :ok
+  def close(iterator)
 end

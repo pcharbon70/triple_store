@@ -456,4 +456,5 @@ defimpl TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol, for: TripleStore.SPARQ
   def seek(iter, target), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.seek(iter, target)
   def next(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.next(iter)
   def exhausted?(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.exhausted?(iter)
+  def close(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.close(iter)
 end

@@ -59,8 +59,6 @@ defmodule TripleStore.SPARQL.QuadCardinality do
       # => Sum of predicate 42 counts across all graphs
   """
 
-  alias TripleStore.Statistics
-
   # ===========================================================================
   # Types
   # ===========================================================================
@@ -111,11 +109,6 @@ defmodule TripleStore.SPARQL.QuadCardinality do
 
   # Special graph identifiers
   @default_graph_id 0
-  @default_graph_term :default_graph
-
-  # Required statistics keys for validation
-  @required_stats_keys [:quad_count]
-  @optional_stats_keys [:triple_count, :distinct_subjects, :distinct_predicates, :distinct_objects, :total_graphs, :predicate_histogram, :per_graph_stats]
 
   # ===========================================================================
   # Stats Validation
@@ -513,19 +506,11 @@ defmodule TripleStore.SPARQL.QuadCardinality do
     max(left_card * right_card, @min_cardinality)
   end
 
-  def estimate_quad_join(left_card, right_card, join_vars, same_graph, stats) do
-    if same_graph do
-      # Same graph: standard join selectivity applies
-      join_selectivity = calculate_join_selectivity(join_vars, left_card, right_card, stats)
-      cardinality = left_card * right_card * join_selectivity
-      max(cardinality, @min_cardinality)
-    else
-      # Different graphs: may still be joinable on non-graph variables
-      # but independent on graph dimension
-      join_selectivity = calculate_join_selectivity(join_vars, left_card, right_card, stats)
-      cardinality = left_card * right_card * join_selectivity
-      max(cardinality, @min_cardinality)
-    end
+  def estimate_quad_join(left_card, right_card, join_vars, _same_graph, stats) do
+    # Calculate join selectivity (same_graph parameter reserved for future enhancements)
+    join_selectivity = calculate_join_selectivity(join_vars, left_card, right_card, stats)
+    cardinality = left_card * right_card * join_selectivity
+    max(cardinality, @min_cardinality)
   end
 
   @doc """
