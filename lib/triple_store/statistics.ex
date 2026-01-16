@@ -65,6 +65,82 @@ defmodule TripleStore.Statistics do
         distinct_objects: 800,
         predicate_counts: %{42 => 1000, 43 => 500}
       }
+
+  ## Stream Performance and Memory Characteristics
+
+  This module uses RocksDB prefix iterators via `NIF.prefix_stream/3` to efficiently
+  scan large datasets without loading everything into memory. Understanding the
+  performance characteristics is important for optimal usage.
+
+  ### Memory Usage
+
+  - **Constant memory per stream**: Each stream maintains a RocksDB iterator that
+    holds a single key-value pair in memory at a time (~100 bytes per iterator)
+  - **Pipeline memory**: `Stream.transform` operations accumulate results in
+    their buffers before emitting (controlled by `:max_items` option)
+  - **Map accumulation**: Operations like `Enum.reduce/3` build the result map
+    in memory - ensure adequate heap space for large histograms
+
+  ### Performance Estimates
+
+  For a database with N triples:
+
+  - **Full index scan**: ~O(N) time, ~1ms per 1000 entries (SSD)
+  - **Predicate histogram**: ~O(N) time, ~N * 8 bytes for result map
+  - **Numeric histogram**: ~O(N) time, two full passes (min/max + bucket population)
+  - **Per-graph scan**: ~O(G) where G is quads in that graph
+
+  ### Stream Best Practices
+
+  1. **Use Stream operations, not Enum**: Stream operations are lazy and process
+     one element at a time. Enum operations load the entire collection into memory.
+
+  ```elixir
+  # GOOD - Lazy, constant memory
+  stream
+  |> Stream.map(fn {k, v} -> process(k, v) end)
+  |> Stream.filter(fn result -> keep?(result) end)
+  |> Enum.reduce(%{}, fn val, acc -> Map.update(acc, val, 1, &(&1 + 1)) end)
+
+  # BAD - Loads all intermediate results into memory
+  stream
+  |> Enum.map(fn {k, v} -> process(k, v) end)
+  |> Enum.filter(fn result -> keep?(result) end)
+  ```
+
+  2. **Close streams promptly**: RocksDB iterators hold resources. Always consume
+     or close streams:
+
+  ```elixir
+  # Stream is consumed and resources released
+  count = stream |> Enum.count()
+
+  # For partial consumption, ensure stream is fully consumed
+  stream |> Stream.take(100) |> Enum.into([])
+  ```
+
+  3. **Two-pass algorithms**: For operations requiring global bounds (e.g., histograms),
+     two separate scans are more memory-efficient than materializing all values:
+
+  ```elixir
+  # Pass 1: Find min/max (constant memory)
+  {min_val, max_val} = stream |> Enum.reduce({nil, nil}, fn val, {min, max} -> ... end)
+
+  # Pass 2: Populate buckets (constant memory)
+  histogram = stream |> build_buckets(min_val, max_val)
+  ```
+
+  4. **Batch size for async operations**: When using `Task.async_stream/5`,
+     the `max_concurrency` option controls parallelism. Higher values increase
+     throughput but also memory usage (one iterator per concurrent task).
+
+  ### Monitoring
+
+  Use telemetry events to monitor stream operations:
+
+  - `[:triple_store, :statistics, :collect]` - Duration and record count
+  - `[:triple_store, :statistics, :histogram]` - Histogram build duration
+  - `[:triple_store, :statistics, :cache_miss]` - Cache misses requiring recomputation
   """
 
   alias TripleStore.Backend.RocksDB.NIF
@@ -1439,9 +1515,7 @@ defmodule TripleStore.Statistics do
     histogram =
       stream
       |> Stream.map(fn {key, _value} -> extract_first_id(key) end)
-      |> Enum.reduce(%{}, fn predicate_id, acc ->
-        Map.update(acc, predicate_id, 1, &(&1 + 1))
-      end)
+      |> Enum.frequencies()
 
     {:ok, histogram}
   end
@@ -1736,9 +1810,7 @@ defmodule TripleStore.Statistics do
         <<_graph::64, _subject::64, predicate_id::64-big, _object::64>> = key
         predicate_id
       end)
-      |> Enum.reduce(%{}, fn predicate_id, acc ->
-        Map.update(acc, predicate_id, 1, &(&1 + 1))
-      end)
+      |> Enum.frequencies()
 
     {:ok, histogram}
   end

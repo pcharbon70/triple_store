@@ -623,9 +623,17 @@ defmodule TripleStore.SPARQL.CostModel do
       # Full scan for unbound pattern
       cost = CostModel.index_scan_cost(:full_scan, 100_000, stats)
 
+      # For quad patterns, specify pattern type
+      cost = CostModel.index_scan_cost(:full_scan, 100_000, stats, :quad)
+
   """
   @spec index_scan_cost(scan_type(), number(), stats()) :: cost()
-  def index_scan_cost(:point_lookup, _estimated_results, _stats) do
+  def index_scan_cost(scan_type, estimated_results, stats) do
+    index_scan_cost(scan_type, estimated_results, stats, :triple)
+  end
+
+  @spec index_scan_cost(scan_type(), number(), stats(), :triple | :quad) :: cost()
+  def index_scan_cost(:point_lookup, _estimated_results, _stats, _pattern_type) do
     # Single key lookup: one seek, one read
     cpu = @comparison_cost
     io = @index_seek_cost
@@ -634,7 +642,7 @@ defmodule TripleStore.SPARQL.CostModel do
     build_cost(cpu, io, memory)
   end
 
-  def index_scan_cost(:prefix_scan, estimated_results, _stats) do
+  def index_scan_cost(:prefix_scan, estimated_results, _stats, _pattern_type) do
     # Prefix scan: one seek, then sequential reads
     cpu = estimated_results * @comparison_cost
     io = @index_seek_cost + estimated_results * @sequential_read_cost
@@ -643,12 +651,24 @@ defmodule TripleStore.SPARQL.CostModel do
     build_cost(cpu, io, memory)
   end
 
-  def index_scan_cost(:full_scan, estimated_results, stats) do
+  def index_scan_cost(:full_scan, estimated_results, stats, pattern_type) do
     # Full scan: no seek advantage, read everything
-    triple_count = Map.get(stats, :triple_count, estimated_results)
+    # Use pattern-appropriate count key
+    count_key =
+      case pattern_type do
+        :quad -> :quad_count
+        :triple -> :triple_count
+      end
 
-    cpu = triple_count * @comparison_cost
-    io = triple_count * @sequential_read_cost
+    # For quad, fall back to triple_count if quad_count not available
+    total_count =
+      case pattern_type do
+        :quad -> Map.get(stats, :quad_count) || Map.get(stats, :triple_count, estimated_results)
+        :triple -> Map.get(stats, :triple_count, estimated_results)
+      end
+
+    cpu = total_count * @comparison_cost
+    io = total_count * @sequential_read_cost
     memory = @memory_weight
 
     build_cost(cpu, io, memory)
@@ -981,34 +1001,8 @@ defmodule TripleStore.SPARQL.CostModel do
 
   """
   @spec quad_index_scan_cost(scan_type(), number(), stats()) :: cost()
-  def quad_index_scan_cost(:point_lookup, _estimated_results, _stats) do
-    # Single key lookup: one seek, one read
-    cpu = @comparison_cost
-    io = @index_seek_cost
-    memory = @memory_weight
-
-    build_cost(cpu, io, memory)
-  end
-
-  def quad_index_scan_cost(:prefix_scan, estimated_results, _stats) do
-    # Prefix scan: one seek, then sequential reads
-    cpu = estimated_results * @comparison_cost
-    io = @index_seek_cost + estimated_results * @sequential_read_cost
-    memory = @memory_weight
-
-    build_cost(cpu, io, memory)
-  end
-
-  def quad_index_scan_cost(:full_scan, estimated_results, stats) do
-    # Full scan: no seek advantage, read everything
-    # Use quad_count if available, otherwise fall back to triple_count
-    quad_count = Map.get(stats, :quad_count) || Map.get(stats, :triple_count, estimated_results)
-
-    cpu = quad_count * @comparison_cost
-    io = quad_count * @sequential_read_cost
-    memory = @memory_weight
-
-    build_cost(cpu, io, memory)
+  def quad_index_scan_cost(scan_type, estimated_results, stats) do
+    index_scan_cost(scan_type, estimated_results, stats, :quad)
   end
 
   @doc """

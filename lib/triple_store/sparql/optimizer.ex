@@ -2549,6 +2549,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   """
   @spec reorder_patterns_with_graph_grouping([term()], map()) :: [term()]
+  def reorder_patterns_with_graph_grouping([], _stats), do: []
   def reorder_patterns_with_graph_grouping(patterns, stats) do
     # First, group patterns by variable dependencies (shared variables)
     # This ensures patterns that share variables stay together
@@ -2558,11 +2559,11 @@ defmodule TripleStore.SPARQL.Optimizer do
     # Sort groups by size (smallest first - more selective)
     sorted_variable_groups =
       variable_groups
-      |> Enum.sort_by(fn {_vars, group_patterns} -> length(group_patterns) end)
+      |> Enum.sort_by(fn group_patterns -> length(group_patterns) end)
 
     # Process each variable group independently
     final_patterns =
-      Enum.flat_map(sorted_variable_groups, fn {_vars, group_patterns} ->
+      Enum.flat_map(sorted_variable_groups, fn group_patterns ->
         # Within this variable group, apply graph grouping
         reorder_group_with_graph_awareness(group_patterns, stats)
       end)
@@ -2743,47 +2744,45 @@ defmodule TripleStore.SPARQL.Optimizer do
   @spec estimate_selectivity(tuple(), MapSet.t(), map()) :: float()
   def estimate_selectivity(pattern, bound_vars \\ MapSet.new(), stats \\ %{})
 
-  def estimate_selectivity({:triple, subject, predicate, object} = triple, bound_vars, stats) do
+  def estimate_selectivity({:triple, subject, predicate, object} = pattern, bound_vars, stats) do
+    estimate_pattern_selectivity(pattern, subject, predicate, object, nil, bound_vars, stats)
+  end
+
+  def estimate_selectivity({:quad, subject, predicate, object, graph}, bound_vars, stats) do
+    estimate_pattern_selectivity({:quad, subject, predicate, object, graph}, subject, predicate, object, graph, bound_vars, stats)
+  end
+
+  # Fallback for non-triple/non-quad patterns
+  def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
+
+  # Consolidated selectivity estimation for both triple and quad patterns
+  defp estimate_pattern_selectivity(pattern, subject, predicate, object, graph, bound_vars, stats) do
     # Score each position
     s_score = position_score(subject, bound_vars, :subject, stats)
     p_score = position_score(predicate, bound_vars, :predicate, stats)
     o_score = position_score(object, bound_vars, :object, stats)
 
     # Base score - multiplicative model
-    base_score = s_score * p_score * o_score
+    # For quads, include graph position score
+    base_score =
+      if graph do
+        g_score = graph_position_score(graph, bound_vars, stats)
+        s_score * p_score * o_score * g_score
+      else
+        s_score * p_score * o_score
+      end
 
     # Check if this pattern can benefit from a range filter
     filter_context = Map.get(stats, :filter_context, %{})
     range_indexed = Map.get(stats, :range_indexed, MapSet.new())
 
-    # Apply range filter boost if applicable
-    apply_range_filter_boost(triple, base_score, filter_context, range_indexed, predicate)
+    # Apply range filter boost if applicable (unified for triple and quad)
+    apply_range_filter_boost(pattern, base_score, filter_context, range_indexed, predicate)
   end
-
-  def estimate_selectivity({:quad, subject, predicate, object, graph}, bound_vars, stats) do
-    # Score each position - quad patterns have an additional graph position
-    s_score = position_score(subject, bound_vars, :subject, stats)
-    p_score = position_score(predicate, bound_vars, :predicate, stats)
-    o_score = position_score(object, bound_vars, :object, stats)
-    g_score = graph_position_score(graph, bound_vars, stats)
-
-    # Base score - multiplicative model with graph position
-    # Bound graph significantly reduces search space (graph-first optimization)
-    base_score = s_score * p_score * o_score * g_score
-
-    # Check if this pattern can benefit from a range filter
-    filter_context = Map.get(stats, :filter_context, %{})
-    range_indexed = Map.get(stats, :range_indexed, MapSet.new())
-
-    # Apply range filter boost if applicable (quad version)
-    apply_range_filter_boost_quad({:quad, subject, predicate, object, graph}, base_score, filter_context, range_indexed, predicate)
-  end
-
-  # Fallback for non-triple/non-quad patterns
-  def estimate_selectivity(_pattern, _bound_vars, _stats), do: 1_000_000.0
 
   # Apply selectivity boost for patterns that bind range-filtered variables
-  # with predicates that have range indices
+  # with predicates that have range indices (unified for triple and quad patterns)
+  # For triple patterns (4 elements)
   defp apply_range_filter_boost(
          {:triple, _subj, predicate, {:variable, var}},
          base_score,
@@ -2812,10 +2811,8 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp apply_range_filter_boost(_, base_score, _, _, _), do: base_score
-
-  # Apply range filter boost for quad patterns (same logic as triple but with graph)
-  defp apply_range_filter_boost_quad(
+  # For quad patterns (5 elements)
+  defp apply_range_filter_boost(
          {:quad, _subj, predicate, {:variable, var}, _graph},
          base_score,
          filter_context,
@@ -2831,6 +2828,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
       if predicate_uri && predicate_has_range_index?(predicate_uri, range_indexed) do
         # Strong boost - range index can be used
+        # Divide by 100 to make this pattern very selective
         base_score / 100.0
       else
         # Variable has range filter but predicate doesn't have range index
@@ -2842,7 +2840,8 @@ defmodule TripleStore.SPARQL.Optimizer do
     end
   end
 
-  defp apply_range_filter_boost_quad(_, base_score, _, _, _), do: base_score
+  # Fallback for non-matching patterns
+  defp apply_range_filter_boost(_, base_score, _, _, _), do: base_score
 
   # Extract the URI from a predicate term
   defp extract_predicate_uri({:named_node, uri}), do: uri
