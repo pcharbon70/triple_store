@@ -90,6 +90,9 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @typedoc "Cardinality estimate (always positive)"
   @type cardinality :: float()
 
+  @typedoc "Term ID (dictionary-encoded integer)"
+  @type term_id :: non_neg_integer()
+
   @typedoc "Graph ID or term"
   @type graph_id :: non_neg_integer() | :default | :default_graph
 
@@ -882,5 +885,151 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @spec get_stat(map(), atom(), non_neg_integer()) :: non_neg_integer()
   defp get_stat(stats, key, default) do
     Map.get(stats, key, default)
+  end
+
+  # ===========================================================================
+  # Public API - Histogram-Based Estimation
+  # ===========================================================================
+
+  @doc """
+  Estimates cardinality using per-graph predicate histograms.
+
+  This is the most accurate estimation method for quad patterns when
+  histograms are available. It uses actual predicate counts from each
+  graph instead of relying on statistical approximations.
+
+  ## Arguments
+
+  - `pattern` - A quad pattern
+  - `histograms` - Per-graph predicate histograms from Statistics.build_per_graph_histograms/1
+    Format: `%{graph_id => %{predicate_id => count}}`
+
+  ## Returns
+
+  Estimated cardinality based on histogram data.
+
+  ## Examples
+
+      # Build histograms first
+      {:ok, histograms} = Statistics.build_per_graph_histograms(db)
+
+      # Estimate pattern with histogram
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, 0}
+      estimate = QuadCardinality.estimate_with_histogram(pattern, histograms)
+      # => Actual count of quads with predicate 42 in graph 0
+
+      # Cross-graph pattern sums across all graphs
+      pattern = {:quad, {:variable, "s"}, 42, {:variable, "o"}, {:variable, "g"}}
+      estimate = QuadCardinality.estimate_with_histogram(pattern, histograms)
+      # => Sum of predicate 42 counts across all graphs
+  """
+  @spec estimate_with_histogram(quad_pattern(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
+          cardinality()
+  def estimate_with_histogram({:quad, subject, predicate, object, graph}, histograms) do
+    cond do
+      # Fully bound pattern - exact lookup
+      constant?(subject) and constant?(predicate) and constant?(object) and constant?(graph) ->
+        # Check if this exact quad exists in histograms
+        graph_id = get_constant_id(graph)
+        pred_id = get_constant_id(predicate)
+        case get_in(histograms, [graph_id, pred_id]) do
+          nil -> @min_cardinality
+          count when count > 0 -> min(count, 1.0)  # Exact match, return at most 1
+        end
+
+      # Graph-scoped with bound predicate - use histogram directly
+      constant?(graph) and constant?(predicate) ->
+        graph_id = get_constant_id(graph)
+        pred_id = get_constant_id(predicate)
+        case get_in(histograms, [graph_id, pred_id]) do
+          nil -> @min_cardinality
+          count when count > 0 -> count * 1.0
+        end
+
+      # Graph-scoped with variable predicate - estimate from total graph quads
+      constant?(graph) ->
+        graph_id = get_constant_id(graph)
+        case Map.get(histograms, graph_id) do
+          nil -> @min_cardinality
+          graph_histogram ->
+            # Sum all predicates in this graph
+            total_quads = graph_histogram |> Map.values() |> Enum.sum()
+            total_quads * 1.0
+        end
+
+      # Cross-graph with bound predicate - sum across all graphs
+      constant?(predicate) ->
+        pred_id = get_constant_id(predicate)
+        histograms
+        |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
+          case Map.get(graph_histogram, pred_id) do
+            nil -> acc
+            count -> acc + count
+          end
+        end)
+
+      # Cross-graph with variable predicate - sum all quads across all graphs
+      true ->
+        histograms
+        |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
+          total_in_graph = graph_histogram |> Map.values() |> Enum.sum()
+          acc + total_in_graph
+        end)
+    end
+  end
+
+  @doc """
+  Estimates cardinality combining histogram data with statistics.
+
+  This is a hybrid approach that uses histogram data when available
+  and falls back to statistical estimates when histogram data is missing.
+
+  ## Arguments
+
+  - `pattern` - A quad pattern
+  - `histograms` - Per-graph predicate histograms (optional, can be %{})
+  - `stats` - Statistics map for fallback
+
+  ## Returns
+
+  Estimated cardinality with histogram data preferred over statistical estimates.
+  """
+  @spec estimate_with_hybrid(
+          quad_pattern(),
+          %{term_id() => %{term_id() => non_neg_integer()}},
+          quad_stats()
+        ) :: cardinality()
+  def estimate_with_hybrid({:quad, subject, predicate, object, graph}, histograms, stats) do
+    # Try histogram-based estimation first
+    histogram_estimate = estimate_with_histogram({:quad, subject, predicate, object, graph}, histograms)
+
+    # If histogram has no data, fall back to statistical estimation
+    if histogram_estimate <= @min_cardinality do
+      estimate_pattern({:quad, subject, predicate, object, graph}, stats)
+    else
+      histogram_estimate
+    end
+  end
+
+  @doc """
+  Gets predicate counts from histograms for a specific graph.
+
+  Returns a map of predicate_id => count for the given graph.
+  """
+  @spec get_predicate_counts_for_graph(term_id(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
+          %{term_id() => non_neg_integer()}
+  def get_predicate_counts_for_graph(graph_id, histograms) do
+    Map.get(histograms, graph_id, %{})
+  end
+
+  @doc """
+  Gets the count of a specific predicate in a specific graph from histograms.
+
+  Returns nil if the predicate or graph doesn't exist in the histogram data.
+  """
+  @spec get_predicate_count(term_id(), term_id(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
+          non_neg_integer() | nil
+  def get_predicate_count(graph_id, predicate_id, histograms) do
+    get_in(histograms, [graph_id, predicate_id])
   end
 end

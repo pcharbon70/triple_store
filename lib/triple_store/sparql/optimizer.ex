@@ -663,6 +663,456 @@ defmodule TripleStore.SPARQL.Optimizer do
      }}
   end
 
+  @doc """
+  Provides a detailed explanation with cost breakdown and transformation tracking.
+
+  This enhanced explain output includes:
+  - Cost breakdown for each operation pattern
+  - Estimated cardinalities
+  - Transformation steps that would be applied
+  - Recommended execution plan
+
+  ## Options
+
+  - `:stats` - Statistics map for cardinality estimation
+  - `:format` - Output format: `:map` (default) or `:string`
+
+  ## Examples
+
+      {:explain, details} = Optimizer.explain_detailed(algebra, stats: stats)
+  """
+  @spec explain_detailed(algebra(), keyword()) :: {:explain, map()}
+  def explain_detailed(algebra, opts \\ []) do
+    stats = Keyword.get(opts, :stats, %{})
+    format = Keyword.get(opts, :format, :map)
+
+    # Get base explain data
+    {:explain, base_explain} = explain(algebra, opts)
+
+    # Calculate cost breakdown
+    cost_breakdown = calculate_cost_breakdown(algebra, stats)
+
+    # Track transformation steps
+    transformations = track_transformations(algebra, stats)
+
+    # Generate recommended plan
+    recommended_plan = generate_recommended_plan(algebra, stats, cost_breakdown)
+
+    detailed = %{
+      original: algebra,
+      cost_breakdown: cost_breakdown,
+      transformations: transformations,
+      recommended_plan: recommended_plan,
+      optimizations: base_explain.optimizations,
+      statistics: base_explain.statistics,
+      estimated_improvement: base_explain.estimated_improvement
+    }
+
+    case format do
+      :string -> {:explain, format_explain_output(detailed)}
+      :map -> {:explain, detailed}
+    end
+  end
+
+  # Calculate cost breakdown for each operation in the algebra tree
+  defp calculate_cost_breakdown(algebra, stats) do
+    {total_cost, breakdown} = walk_and_cost(algebra, stats, %{})
+
+    %{
+      total_cost: total_cost,
+      operations: breakdown,
+      most_expensive: most_expensive_operation(breakdown)
+    }
+  end
+
+  # Walk the algebra tree and calculate costs
+  defp walk_and_cost(algebra, stats, acc) do
+    {cost, op_info} = cost_operation(algebra, stats)
+
+    new_acc = Map.put(acc, make_ref(), %{
+      operation: op_info.type,
+      cost: cost,
+      cardinality: op_info.cardinality,
+      details: op_info.details
+    })
+
+    # Recursively process child operations
+    {child_costs, final_acc} = process_children(algebra, stats, new_acc)
+
+    {cost + child_costs, final_acc}
+  end
+
+  # Calculate cost for a single operation
+  defp cost_operation(algebra, stats) do
+    case algebra do
+      {:bgp, patterns} ->
+        # BGP cost is sum of pattern costs
+        pattern_costs = Enum.map(patterns, &cost_pattern(&1, stats))
+        total = Enum.sum(pattern_costs)
+
+        {total, %{
+          type: :bgp,
+          cardinality: total,
+          details: %{
+            pattern_count: length(patterns),
+            patterns: Enum.map(patterns, &summarize_pattern(&1, stats))
+          }
+        }}
+
+      {:filter, _expr, child} ->
+        # Filter cost depends on child cardinality
+        {child_cost, _} = cost_operation(child, stats)
+        # Filter is typically 10% of input cost
+        cost = child_cost * 0.1
+
+        {cost, %{
+          type: :filter,
+          cardinality: child_cost * 0.5,
+          details: %{selectivity: 0.5}
+        }}
+
+      {:join, left, right} ->
+        {left_cost, _} = cost_operation(left, stats)
+        {right_cost, _} = cost_operation(right, stats)
+        # Join cost is product of inputs
+        cost = left_cost * right_cost
+
+        {cost, %{
+          type: :join,
+          cardinality: cost,
+          details: %{
+            left_cardinality: left_cost,
+            right_cardinality: right_cost
+          }
+        }}
+
+      {:union, left, right} ->
+        {left_cost, _} = cost_operation(left, stats)
+        {right_cost, _} = cost_operation(right, stats)
+        cost = left_cost + right_cost
+
+        {cost, %{
+          type: :union,
+          cardinality: cost,
+          details: %{}
+        }}
+
+      {:project, vars, child} ->
+        {child_cost, _} = cost_operation(child, stats)
+        # Projection is relatively cheap
+        cost = child_cost * 1.01
+
+        {cost, %{
+          type: :project,
+          cardinality: child_cost,
+          details: %{variable_count: length(vars)}
+        }}
+
+      _ ->
+        {1.0, %{type: :unknown, cardinality: 1.0, details: %{}}}
+    end
+  end
+
+  # Calculate cost for a single triple/quad pattern
+  defp cost_pattern(pattern, stats) do
+    # Use statistics if available, otherwise default
+    case stats do
+      %{quad_count: total} when total > 0 ->
+        total / 100  # Simplified: assume 100 predicates
+      %{triple_count: total} when total > 0 ->
+        total / 100
+      _ ->
+        100.0  # Default estimate
+    end
+  end
+
+  # Summarize a pattern for output
+  defp summarize_pattern(pattern, _stats) do
+    case pattern do
+      {:triple, s, p, o} -> %{
+        type: :triple,
+        bound_positions: count_bound([s, p, o])
+      }
+      {:quad, s, p, o, g} -> %{
+        type: :quad,
+        bound_positions: count_bound([s, p, o, g])
+      }
+      _ -> %{type: :unknown}
+    end
+  end
+
+  defp count_bound(terms) do
+    Enum.count(terms, fn
+      {:variable, _} -> false
+      _ -> true
+    end)
+  end
+
+  # Process children of algebra operations
+  defp process_children(algebra, stats, acc) do
+    children = case algebra do
+      {:join, left, right} -> [left, right]
+      {:union, left, right} -> [left, right]
+      {:left_join, left, _right, _condition} -> [left]
+      {:filter, _expr, child} -> [child]
+      {:project, _vars, child} -> [child]
+      _ -> []
+    end
+
+    Enum.reduce(children, {0, acc}, fn child, {total_cost, current_acc} ->
+      {cost, new_acc} = walk_and_cost(child, stats, current_acc)
+      {total_cost + cost, new_acc}
+    end)
+  end
+
+  # Find the most expensive operation
+  defp most_expensive_operation(breakdown) do
+    breakdown
+    |> Enum.max_by(fn {_ref, op} -> op.cost end)
+    |> elem(1)
+  end
+
+  # Track transformation steps that would be applied
+  defp track_transformations(algebra, stats) do
+    transformations = []
+
+    # Check for filter push-down
+    transformations = if has_pushable_filters?(algebra) do
+      [%{
+        type: :filter_push_down,
+        description: "Push filters down to reduce intermediate results",
+        impact: :high
+      } | transformations]
+    else
+      transformations
+    end
+
+    # Check for BGP reordering (multi-pattern BGP)
+    transformations = if has_multi_pattern_bgp?(algebra) do
+      [%{
+        type: :bgp_reordering,
+        description: "Reorder BGP patterns by selectivity",
+        impact: :moderate
+      } | transformations]
+    else
+      transformations
+    end
+
+    # Check for constant folding
+    transformations = if has_constant_expressions?(algebra) do
+      [%{
+        type: :constant_folding,
+        description: "Evaluate constant expressions at compile time",
+        impact: :low
+      } | transformations]
+    else
+      transformations
+    end
+
+    Enum.reverse(transformations)
+  end
+
+  # Check if algebra has a BGP with multiple patterns
+  defp has_multi_pattern_bgp?(algebra) do
+    case algebra do
+      {:bgp, patterns} when length(patterns) > 1 -> true
+      {:join, left, right} -> has_multi_pattern_bgp?(left) or has_multi_pattern_bgp?(right)
+      {:filter, _expr, child} -> has_multi_pattern_bgp?(child)
+      {:project, _vars, child} -> has_multi_pattern_bgp?(child)
+      _ -> false
+    end
+  end
+
+  # Check if algebra has pushable filters
+  defp has_pushable_filters?(algebra) do
+    case algebra do
+      {:filter, _expr, child} ->
+        not filter_must_stay?(child)
+      {:join, left, right} ->
+        has_pushable_filters?(left) or has_pushable_filters?(right)
+      _ -> false
+    end
+  end
+
+  defp filter_must_stay?(algebra) do
+    case algebra do
+      {:union, _, _} -> true
+      {:left_join, _, _, _} -> true
+      _ -> false
+    end
+  end
+
+  # Count BGP patterns in algebra
+  defp count_bgps(algebra) do
+    count_bgps(algebra, 0)
+  end
+
+  defp count_bgps(algebra, acc) do
+    case algebra do
+      {:bgp, _patterns} -> {acc + 1, acc + 1}
+      {:join, left, right} ->
+        {left_count, _} = count_bgps(left, 0)
+        {right_count, _} = count_bgps(right, 0)
+        {acc + left_count + right_count, acc + left_count + right_count}
+      _ -> {acc, acc}
+    end
+  end
+
+  # Check for constant expressions
+  defp has_constant_expressions?(algebra) do
+    case algebra do
+      {:filter, expr, _child} ->
+        has_constants?(expr)
+      {:join, left, right} ->
+        has_constant_expressions?(left) or has_constant_expressions?(right)
+      _ -> false
+    end
+  end
+
+  defp has_constants?(expr) do
+    case expr do
+      {:binary_op, _op, left, right} ->
+        is_constant?(left) and is_constant?(right)
+      {:unary_op, _op, arg} ->
+        is_constant?(arg)
+      _ -> false
+    end
+  end
+
+  defp is_constant?({:literal, _val}), do: true
+  defp is_constant?(_), do: false
+
+  # Generate recommended execution plan
+  defp generate_recommended_plan(algebra, stats, cost_breakdown) do
+    {steps, _} = generate_execution_steps(algebra, 1, [])
+
+    %{
+      strategy: recommend_strategy(algebra, stats),
+      estimated_cost: cost_breakdown.total_cost,
+      bottleneck: Map.take(cost_breakdown.most_expensive, [:type, :cost, :cardinality]),
+      steps: Enum.sort_by(steps, & &1.step)
+    }
+  end
+
+  # Recommend execution strategy
+  defp recommend_strategy(algebra, stats) do
+    has_stats = map_size(stats) > 0
+    pattern_count = count_total_patterns(algebra)
+
+    cond do
+      not has_stats and pattern_count > 3 ->
+        %{name: :sequential_join, reason: "No statistics available, use safe sequential joins"}
+      has_stats and pattern_count > 4 ->
+        %{name: :leapfrog_join, reason: "Complex multi-pattern query benefits from leapfrog triejoin"}
+      true ->
+        %{name: :standard_join, reason: "Standard execution is sufficient"}
+    end
+  end
+
+  # Count total patterns across all BGPs
+  defp count_total_patterns(algebra) do
+    case algebra do
+      {:bgp, patterns} -> length(patterns)
+      {:join, left, right} -> count_total_patterns(left) + count_total_patterns(right)
+      {:filter, _expr, child} -> count_total_patterns(child)
+      {:project, _vars, child} -> count_total_patterns(child)
+      _ -> 0
+    end
+  end
+
+  # Generate execution steps
+  defp generate_execution_steps(algebra) do
+    {steps, _} = generate_execution_steps(algebra, 1, [])
+    Enum.sort_by(steps, & &1.step)
+  end
+
+  defp generate_execution_steps(algebra, index, acc) do
+    step = case algebra do
+      {:bgp, patterns} ->
+        %{step: index, type: :scan_bgp, detail: "Scan #{length(patterns)} pattern(s)"}
+      {:filter, _expr, _child} ->
+        %{step: index, type: :filter, detail: "Apply filter expression"}
+      {:join, _left, _right} ->
+        %{step: index, type: :join, detail: "Join two sub-results"}
+      {:project, _vars, _child} ->
+        %{step: index, type: :project, detail: "Project variables"}
+      {:union, _left, _right} ->
+        %{step: index, type: :union, detail: "Combine results with UNION"}
+      _ ->
+        %{step: index, type: :other, detail: "Other operation"}
+    end
+
+    # Get child operations
+    children = case algebra do
+      {:join, left, right} -> [left, right]
+      {:filter, _expr, child} -> [child]
+      {:project, _vars, child} -> [child]
+      _ -> []
+    end
+
+    # Process children and build steps list
+    {child_steps, _} = Enum.reduce(children, {[], index + 1}, fn child, {steps_acc, next_index} ->
+      {new_steps, final_index} = generate_execution_steps(child, next_index, steps_acc)
+      {new_steps, final_index}
+    end)
+
+    {[step | child_steps ++ acc], index}
+  end
+
+  # Format explain output as readable string
+  defp format_explain_output(explain) do
+    bottleneck_type = Map.get(explain.cost_breakdown.most_expensive, :type, :unknown)
+
+    """
+    Query Execution Plan
+    ====================
+
+    Recommended Strategy: #{explain.recommended_plan.strategy.name |> Atom.to_string() |> String.upcase()}
+    Reason: #{explain.recommended_plan.strategy.reason}
+
+    Total Estimated Cost: #{Float.round(explain.cost_breakdown.total_cost, 2)}
+    Most Expensive Operation: #{format_op_type(bottleneck_type)}
+
+    Transformations to Apply:
+    #{format_transformations(explain.transformations)}
+
+    Execution Steps:
+    #{format_execution_steps(explain.recommended_plan.steps)}
+
+    Statistics Available: #{if explain.statistics.predicate_stats_available, do: "Yes", else: "No"}
+    Estimated Improvement: #{explain.estimated_improvement |> Atom.to_string() |> String.upcase()}
+    """
+    |> String.trim()
+  end
+
+  defp format_transformations(transformations) do
+    if Enum.empty?(transformations) do
+      "  None"
+    else
+      transformations
+      |> Enum.map(fn t ->
+        "  - #{t.type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase()}: #{t.description} (Impact: #{t.impact})"
+      end)
+      |> Enum.join("\n")
+    end
+  end
+
+  defp format_execution_steps(steps) do
+    steps
+    |> Enum.sort_by(& &1.step)
+    |> Enum.map(fn step ->
+      "  #{step.step}. #{String.upcase(to_string(step.type))}: #{step.detail}"
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp format_op_type(:bgp), do: "Basic Graph Pattern"
+  defp format_op_type(:filter), do: "Filter"
+  defp format_op_type(:join), do: "Join"
+  defp format_op_type(:union), do: "Union"
+  defp format_op_type(:project), do: "Projection"
+  defp format_op_type(:unknown), do: "Unknown"
+
   # Determine which optimizations would actually change the algebra
   defp determine_applicable_optimizations(algebra, filter_stats, bgp_stats, opts) do
     push_filters? = Keyword.get(opts, :push_filters, true)

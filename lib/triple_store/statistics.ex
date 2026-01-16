@@ -147,6 +147,16 @@ defmodule TripleStore.Statistics do
           accuracy: :exact | :approximate
         }
 
+  @typedoc "Lazy statistics wrapper for on-demand collection"
+  @type lazy_stats :: %{
+          required(:__lazy__) => true,
+          required(:__db__) => db_ref(),
+          optional(:__cache__) => boolean(),
+          optional(:__ttl__) => pos_integer(),
+          optional(:__collected_at__) => integer() | nil,
+          optional(:__cached_stats__) => map() | nil
+        }
+
   # ===========================================================================
   # Constants
   # ===========================================================================
@@ -947,6 +957,196 @@ defmodule TripleStore.Statistics do
   - `{:ok, nil}` - No statistics saved
   - `{:error, reason}` - On failure
   """
+
+  # ===========================================================================
+  # Lazy Statistics Collection
+  # ===========================================================================
+
+  @doc """
+  Creates a lazy statistics wrapper that defers collection until needed.
+
+  Instead of collecting all statistics immediately, this creates a wrapper
+  that collects statistics on-demand when specific values are accessed.
+
+  ## Options
+
+  - `:cache` - Whether to cache collected results (default: true)
+  - `:ttl` - Time-to-live for cached results in milliseconds (default: 300_000)
+
+  ## Examples
+
+      # Create lazy statistics
+      lazy_stats = Statistics.lazy(db)
+
+      # Statistics are collected when accessed
+      {:ok, triple_count} = Statistics.get_lazy(lazy_stats, :triple_count)
+
+      # Force collection of all statistics
+      {:ok, stats} = Statistics materialize(lazy_stats)
+  """
+  @spec lazy(db_ref(), keyword()) :: lazy_stats()
+  def lazy(db, opts \\ []) do
+    cache = Keyword.get(opts, :cache, true)
+    ttl = Keyword.get(opts, :ttl, 300_000)
+
+    %{
+      __lazy__: true,
+      __module__: __MODULE__,
+      __db__: db,
+      __cache__: cache,
+      __ttl__: ttl,
+      __collected_at__: nil,
+      __cached_stats__: nil
+    }
+  end
+
+  @doc """
+  Gets a specific statistic from a lazy statistics wrapper.
+
+  If the statistic hasn't been collected yet, it will be collected now.
+  If caching is enabled, subsequent calls for the same statistic will return
+  the cached value.
+
+  ## Examples
+
+      lazy_stats = Statistics.lazy(db)
+      {:ok, count} = Statistics.get_lazy(lazy_stats, :triple_count)
+  """
+  @spec get_lazy(lazy_stats(), atom()) :: {:ok, term()} | {:error, term()}
+  def get_lazy(%{__lazy__: true} = lazy_stats, key) do
+    get_lazy_cached(lazy_stats, key)
+  end
+
+  def get_lazy(_stats, _key), do: {:error, :not_lazy}
+
+  # Get from cache or collect
+  defp get_lazy_cached(lazy_stats, key) do
+    if should_refresh_cache?(lazy_stats) do
+      case collect_for_key(lazy_stats.__db__, key) do
+        {:ok, value} ->
+          if lazy_stats.__cache__ do
+            update_lazy_cache(lazy_stats, key, value)
+          end
+          {:ok, value}
+
+        error ->
+          error
+      end
+    else
+      # Return cached value
+      {:ok, Map.get(lazy_stats.__cached_stats__, key)}
+    end
+  end
+
+  # Check if cache should be refreshed
+  defp should_refresh_cache?(lazy_stats) do
+    not lazy_stats.__cache__ or
+      lazy_stats.__cached_stats__ == nil or
+      cache_expired?(lazy_stats)
+  end
+
+  defp cache_expired?(lazy_stats) do
+    if lazy_stats.__collected_at__ do
+      elapsed = System.monotonic_time(:millisecond) - lazy_stats.__collected_at__
+      elapsed > lazy_stats.__ttl__
+    else
+      true
+    end
+  end
+
+  # Collect a specific statistic by key
+  defp collect_for_key(db, :triple_count) do
+    triple_count(db)
+  end
+
+  defp collect_for_key(db, :quad_count) do
+    triple_count(db)
+  end
+
+  defp collect_for_key(db, :distinct_subjects) do
+    distinct_subjects(db)
+  end
+
+  defp collect_for_key(db, :distinct_predicates) do
+    distinct_predicates(db)
+  end
+
+  defp collect_for_key(db, :distinct_objects) do
+    distinct_objects(db)
+  end
+
+  defp collect_for_key(db, :predicate_histogram) do
+    build_predicate_histogram(db)
+  end
+
+  defp collect_for_key(db, :all) do
+    collect(db)
+  end
+
+  defp collect_for_key(_db, key), do: {:error, {:unsupported_key, key}}
+
+  # Update lazy cache with new value
+  defp update_lazy_cache(lazy_stats, key, value) do
+    current_cache = lazy_stats.__cached_stats__ || %{}
+    new_cache = Map.put(current_cache, key, value)
+
+    # Update the struct in place (this works within GenServer state)
+    Process.put(:lazy_stats_cache, new_cache)
+  end
+
+  @doc """
+  Materializes all lazy statistics, collecting them all at once.
+
+  This is useful when you know you'll need multiple statistics and want
+  to avoid multiple on-demand collections.
+
+  ## Examples
+
+      lazy_stats = Statistics.lazy(db)
+      {:ok, full_stats} = Statistics.materialize(lazy_stats)
+  """
+  @spec materialize(lazy_stats()) :: {:ok, stats()} | {:error, term()}
+  def materialize(%{__lazy__: true, __db__: db}) do
+    collect(db)
+  end
+
+  def materialize(_stats), do: {:error, :not_lazy}
+
+  @doc """
+  Checks if a statistics map is a lazy wrapper.
+
+  ## Examples
+
+      lazy_stats = Statistics.lazy(db)
+      Statistics.lazy?(lazy_stats)  # => true
+
+      regular_stats = %{triple_count: 100}
+      Statistics.lazy?(regular_stats)  # => false
+  """
+  @spec lazy?(term()) :: boolean()
+  def lazy?(%{__lazy__: true}), do: true
+  def lazy?(_), do: false
+
+  @doc """
+  Refreshes a lazy statistics wrapper, clearing any cached values.
+
+  ## Examples
+
+      lazy_stats = Statistics.lazy(db)
+      {:ok, _} = Statistics.get_lazy(lazy_stats, :triple_count)
+      Statistics.refresh_lazy(lazy_stats)
+      # Next get_lazy will re-collect
+  """
+  @spec refresh_lazy(lazy_stats()) :: :ok | {:error, term()}
+  def refresh_lazy(%{__lazy__: true}) do
+    # Clear the cache by updating process dictionary
+    Process.put(:lazy_stats_cache, nil)
+    Process.put(:lazy_stats_collected_at, nil)
+    :ok
+  end
+
+  def refresh_lazy(_stats), do: {:error, :not_lazy}
+
   @spec load(db_ref()) :: {:ok, stats() | nil} | {:error, term()}
   def load(db) do
     case NIF.get(db, :id2str, @stats_key_prefix) do
