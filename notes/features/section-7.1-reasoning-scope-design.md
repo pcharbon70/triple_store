@@ -465,40 +465,40 @@ The design should allow for:
 - [x] 7.1.2.4 Added quad unification functions for rule evaluation
 - [x] 7.1.2.5 Added graph variable binding support
 
-### Task 7.1.3: Implement Graph-Local Reasoning - PENDING
-- [ ] 7.1.3.1 Create `GraphScopedReasoner.materialize_graph/4`
-- [ ] 7.1.3.2 Implement graph-specific fact loading
-- [ ] 7.1.3.3 Implement graph-specific derived quad storage
-- [ ] 7.1.3.4 Add per-graph statistics tracking
+### Task 7.1.3: Implement Graph-Local Reasoning - COMPLETE ✅
+- [x] 7.1.3.1 Create `GraphScopedReasoner.materialize_graph/4`
+- [x] 7.1.3.2 Implement graph-specific fact loading
+- [x] 7.1.3.3 Implement graph-specific derived quad storage
+- [x] 7.1.3.4 Add per-graph statistics tracking
 
-### Task 7.1.4: Implement Global Reasoning - PENDING
-- [ ] 7.1.4.1 Create `GraphScopedReasoner.materialize_all/3`
-- [ ] 7.1.4.2 Implement cross-graph pattern matching
-- [ ] 7.1.4.3 Add TBox sharing logic
-- [ ] 7.1.4.4 Implement designated inference graph storage
+### Task 7.1.4: Implement Global Reasoning - COMPLETE ✅
+- [x] 7.1.4.1 Create `GraphScopedReasoner.materialize_all/3`
+- [x] 7.1.4.2 Implement cross-graph pattern matching
+- [x] 7.1.4.3 Add TBox sharing logic
+- [x] 7.1.4.4 Implement designated inference graph storage
 
-### Task 7.1.5: Implement Hybrid Reasoning - PENDING
-- [ ] 7.1.5.1 Create `GraphScopedReasoner.materialize_hybrid/3`
-- [ ] 7.1.5.2 Implement per-graph configuration resolution
-- [ ] 7.1.5.3 Add graph exclusion/inclusion logic
-- [ ] 7.1.5.4 Support mixed graph-local and global graphs
+### Task 7.1.5: Implement Hybrid Reasoning - COMPLETE ✅
+- [x] 7.1.5.1 Create `GraphScopedReasoner.materialize_hybrid/3`
+- [x] 7.1.5.2 Implement per-graph configuration resolution
+- [x] 7.1.5.3 Add graph exclusion/inclusion logic
+- [x] 7.1.5.4 Support mixed graph-local and global graphs
 
-### Task 7.1.6: Extend DerivedStore for Quads - PENDING
-- [ ] 7.1.6.1 Add quad key encoding functions
-- [ ] 7.1.6.2 Add quad pattern lookup functions
-- [ ] 7.1.6.3 Support graph-scoped derived fact storage
+### Task 7.1.6: Extend DerivedStore for Quads - COMPLETE ✅
+- [x] 7.1.6.1 Add quad key encoding functions
+- [x] 7.1.6.2 Add quad pattern lookup functions
+- [x] 7.1.6.3 Support graph-scoped derived fact storage
 
-### Task 7.1.7: Extend SemiNaive for Quads - PENDING
-- [ ] 7.1.7.1 Add graph-aware lookup function factory
-- [ ] 7.1.7.2 Add graph-aware store function factory
-- [ ] 7.1.7.3 Support graph variable in rule evaluation
-- [ ] 7.1.7.4 Ensure delta computation works with quads
+### Task 7.1.7: Extend SemiNaive for Quads - COMPLETE ✅
+- [x] 7.1.7.1 Add graph-aware lookup function factory (DerivedStore)
+- [x] 7.1.7.2 Add graph-aware store function factory (DerivedStore)
+- [x] 7.1.7.3 Support graph variable in rule evaluation (DeltaComputation)
+- [x] 7.1.7.4 Ensure delta computation works with quads
 
-### Task 7.1.8: Public API Integration - PENDING
-- [ ] 7.1.8.1 Extend `TripleStore.materialize/2` with graph options
-- [ ] 7.1.8.2 Add `TripleStore.materialize_graph/3` API
-- [ ] 7.1.8.3 Add `TripleStore.reasoning_status/2` with graph filtering
-- [ ] 7.1.8.4 Update documentation
+### Task 7.1.8: Public API Integration - COMPLETE ✅
+- [x] 7.1.8.1 Extend `TripleStore.materialize/2` with graph options
+- [x] 7.1.8.2 Add `TripleStore.materialize_graph/3` API
+- [x] 7.1.8.3 Add `TripleStore.reasoning_status/2` with graph filtering
+- [x] 7.1.8.4 Update documentation
 
 ### Task 7.1.9: Unit Tests - PENDING
 - [ ] 7.1.9.1 Test `ReasoningConfig` with scope options
