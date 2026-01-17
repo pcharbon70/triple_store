@@ -615,6 +615,7 @@ defmodule TripleStore.SPARQL.Executor do
           # Filter graphs by authorization first
           # This is O(n) but n is typically the number of graphs (not quads)
           # Also convert RDF.IRI terms to internal format {:named_node, iri}
+          # Special case: default graph IRI should be converted to :default_graph
           authorized_graphs =
             graph_terms
             |> Enum.filter(fn graph_term ->
@@ -624,55 +625,45 @@ defmodule TripleStore.SPARQL.Executor do
               end
             end)
             |> Enum.map(fn graph_term ->
-              # Convert RDF.IRI to internal format {:named_node, iri}
+              # Convert RDF.IRI to internal format
               case graph_term do
+                %RDF.IRI{value: "http://www.w3.org/ns/graphs/default"} -> :default_graph
                 %RDF.IRI{value: value} -> {:named_node, value}
                 %RDF.BlankNode{value: value} -> {:blank_node, value}
                 _ -> graph_term
               end
             end)
 
-          # Create a lazy stream using Stream.resource
-          # This ensures we only execute one graph query at a time
-          graph_stream =
-            Stream.resource(
-              fn -> {:start, authorized_graphs} end,
-              fn
-                {:start, []} ->
-                  # No more graphs to process
-                  {:halt, :done}
+          # Simplified approach: iterate over graphs and collect all results
+          # This is less memory-efficient but more reliable
+          results =
+            Enum.flat_map(authorized_graphs, fn graph ->
+              # Debug: log graph iteration
+              # IO.inspect({:graph, graph}, label: "ITERATING GRAPH")
+              # Normalize graph term - convert :default to :default_graph
+              normalized_graph = case graph do
+                :default -> :default_graph
+                other -> other
+              end
 
-                {:start, [graph | remaining_graphs]} ->
-                  # Start processing this graph
-                  case execute_in_named_graph(ctx, pattern, graph, initial_binding) do
-                    {:ok, stream} ->
-                      # Return the first batch from this graph's stream
-                      # and store the rest for next continuation
-                      {batch, rest} = take_batch(stream, @graph_variable_batch_size)
-                      bound_batch = Enum.map(batch, fn binding -> Map.put(binding, var_name, graph) end)
-                      {:cont, bound_batch, {:streaming, rest, remaining_graphs, graph, var_name}}
+              # Bind graph variable in initial binding BEFORE executing pattern
+              # Use internal format for expression evaluation to work correctly
+              graph_binding = Map.put(initial_binding, var_name, normalized_graph)
 
-                    {:error, _} ->
-                      # Skip graphs with errors, move to next
-                      {:cont, [], {:start, remaining_graphs}}
-                  end
+              case execute_in_named_graph(ctx, pattern, normalized_graph, graph_binding) do
+                {:ok, stream} ->
+                  # Convert graph term to RDF format for result bindings
+                  graph_value = convert_graph_term_to_rdf(normalized_graph)
+                  # Replace graph variable with RDF format in final results
+                  stream
+                  |> Enum.map(fn binding -> Map.put(binding, var_name, graph_value) end)
 
-                {:streaming, current_stream, remaining_graphs, graph, var_name} ->
-                  # Continue processing current graph's stream
-                  {batch, rest} = take_batch(current_stream, @graph_variable_batch_size)
-                  bound_batch = Enum.map(batch, fn binding -> Map.put(binding, var_name, graph) end)
+                {:error, _} ->
+                  []
+              end
+            end)
 
-                  if batch == [] do
-                    # Current graph exhausted, move to next graph
-                    {:cont, [], {:start, remaining_graphs}}
-                  else
-                    {:cont, bound_batch, {:streaming, rest, remaining_graphs, graph, var_name}}
-                  end
-              end,
-              fn _state -> :ok end
-            )
-
-          {:ok, graph_stream}
+          {:ok, results}
         end
 
       {:error, reason} ->
@@ -684,33 +675,17 @@ defmodule TripleStore.SPARQL.Executor do
   # This is used to implement lazy graph iteration without materializing
   # entire result sets
   defp take_batch(stream, count) do
-    enumerable = Stream.with_index(stream)
+    # Collect all elements from the stream into a list
+    # This is necessary because streams can't be properly "continued"
+    # after taking elements - both Stream.take and Stream.drop would
+    # start from the beginning
+    all_items = Enum.to_list(stream)
 
-    # Use Stream.chunk_while to lazily take chunks
-    chunked_stream =
-      Stream.chunk_while(
-        enumerable,
-        [],
-        fn
-          {val, idx}, acc when idx >= count - 1 ->
-            {:cont, Enum.reverse([val | acc]), []}  # Emit chunk, reset accumulator
-
-          {val, _idx}, acc ->
-            {:cont, [val | acc]}  # Accumulate
-        end,
-        fn
-          [] -> {:cont, []}
-          acc -> {:cont, Enum.reverse(acc), []}
-        end
-      )
-
-    # Get the first chunk and remaining stream
-    chunked_list = Enum.to_list(Stream.take(chunked_stream, 2))
-
-    case chunked_list do
-      [] -> {[], Stream.reject(enumerable, fn _ -> true end)}
-      [batch] -> {batch, Stream.reject(enumerable, fn _ -> true end)}
-      [batch | _more] -> {batch, enumerable}
+    # Split into batch and remaining
+    if length(all_items) > count do
+      {Enum.take(all_items, count), Enum.drop(all_items, count)}
+    else
+      {all_items, []}
     end
   end
 
@@ -730,8 +705,39 @@ defmodule TripleStore.SPARQL.Executor do
     {:ok, {:bgp, quad_patterns}}
   end
 
+  # Recursively convert patterns in FILTER
+  defp convert_patterns_to_quads({:filter, expr, inner_pattern}, graph_term) do
+    with {:ok, converted_inner} <- convert_patterns_to_quads(inner_pattern, graph_term) do
+      {:ok, {:filter, expr, converted_inner}}
+    end
+  end
+
+  # Recursively convert patterns in UNION
+  defp convert_patterns_to_quads({:union, left, right}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:union, converted_left, converted_right}}
+    end
+  end
+
+  # Recursively convert patterns in LEFT_JOIN
+  defp convert_patterns_to_quads({:left_join, left, right, expr}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:left_join, converted_left, converted_right, expr}}
+    end
+  end
+
+  # Recursively convert patterns in JOIN
+  defp convert_patterns_to_quads({:join, left, right}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:join, converted_left, converted_right}}
+    end
+  end
+
   defp convert_patterns_to_quads(other_pattern, _graph_term) do
-    # For non-BGP patterns, return as-is (they will be handled by recursion)
+    # For other patterns, return as-is
     {:ok, other_pattern}
   end
 
@@ -761,6 +767,39 @@ defmodule TripleStore.SPARQL.Executor do
       end)
 
     result
+  end
+
+  # Handle FILTER pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:filter, expr, inner_pattern}, initial_binding) do
+    with {:ok, stream} <- execute_quad_pattern(ctx, inner_pattern, initial_binding) do
+      {:ok, filter(stream, expr)}
+    end
+  end
+
+  # Handle UNION pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:union, left, right}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      # UNION should return distinct results
+      {:ok, left_stream |> Stream.concat(right_stream) |> distinct()}
+    end
+  end
+
+  # Handle LEFT_JOIN (OPTIONAL) pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:left_join, left, right, expr}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      opts = if expr, do: [filter: fn binding -> evaluate_filter(expr, binding) end], else: []
+      {:ok, left_join(left_stream, right_stream, opts)}
+    end
+  end
+
+  # Handle JOIN pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:join, left, right}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      {:ok, hash_join(left_stream, right_stream)}
+    end
   end
 
   def execute_quad_pattern(_ctx, other, _initial_binding) do
@@ -3580,6 +3619,16 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp internal_to_rdf(_), do: :error
+
+  # Convert internal graph term to RDF format for result bindings
+  # This is used when binding graph variables in GRAPH ?g patterns
+  defp convert_graph_term_to_rdf(:default_graph), do: RDF.iri("http://www.w3.org/ns/graphs/default")
+  defp convert_graph_term_to_rdf(:default), do: RDF.iri("http://www.w3.org/ns/graphs/default")
+  defp convert_graph_term_to_rdf({:named_node, uri}), do: RDF.iri(uri)
+  defp convert_graph_term_to_rdf({:blank_node, id}), do: RDF.bnode(id)
+  defp convert_graph_term_to_rdf(%RDF.IRI{} = iri), do: iri
+  defp convert_graph_term_to_rdf(%RDF.BlankNode{} = bnode), do: bnode
+  defp convert_graph_term_to_rdf(other), do: other
 
   # Describe resources by fetching their CBD from the database
   defp describe_resources(ctx, resources, follow_bnodes, opts) do

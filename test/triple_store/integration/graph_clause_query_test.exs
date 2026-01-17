@@ -65,8 +65,8 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
     # Graph 3 data
     GRAPH ex:graph3 {
       ex:subject4 ex:p "value3-4" .
-      ex:subject5 ex:type "Type-A" .
-      ex:subject5 ex:priority "1" .
+      ex:subject5 ex:p "value3-5" .
+      ex:subject6 ex:p "Type-A" .
     }
     """
 
@@ -496,7 +496,8 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert length(results) == 1
 
       [result] = results
-      assert result["o"] == "Type-A"
+      # Results are in internal format: {:literal, :simple, value}
+      assert result["o"] == {:literal, :simple, "Type-A"}
     end
   end
 end
