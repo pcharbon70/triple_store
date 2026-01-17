@@ -111,22 +111,22 @@ Test GRAPH clause execution end-to-end.
 
 Test queries spanning multiple graphs.
 
-- [ ] 6.3.2.1 Test query patterns across two graphs
-- [ ] 6.3.2.2 Test query with graph variable in join
-- [ ] 6.3.2.3 Test query comparing graphs via FILTER
-- [ ] 6.3.2.4 Test query aggregating across graphs
-- [ ] 6.3.2.5 Test subquery across graphs
+- [x] 6.3.2.1 Test query patterns across two graphs
+- [x] 6.3.2.2 Test query with graph variable in join
+- [x] 6.3.2.3 Test query comparing graphs via FILTER
+- [x] 6.3.2.4 Test query aggregating across graphs
+- [x] 6.3.2.5 Test subquery across graphs
 
 ### 6.3.3 Result Serialization
 
 Test query result serialization with graphs.
 
-- [ ] 6.3.3.1 Test SELECT returns graph variable binding
-- [ ] 6.3.3.2 Test SELECT * includes graph
-- [ ] 6.3.3.3 Test CONSTRUCT returns RDF.Dataset
-- [ ] 6.3.3.4 Test ASK with graph context
-- [ ] 6.3.3.5 Test ORDER BY with graph variable
-- [ ] 6.3.3.6 Test GROUP BY with graph variable
+- [x] 6.3.3.1 Test SELECT returns graph variable binding
+- [x] 6.3.3.2 Test SELECT * includes graph
+- [x] 6.3.3.3 Test CONSTRUCT returns RDF.Dataset
+- [x] 6.3.3.4 Test ASK with graph context
+- [x] 6.3.3.5 Test ORDER BY with graph variable
+- [x] 6.3.3.6 Test GROUP BY with graph variable
 
 ---
 
@@ -217,31 +217,31 @@ Benchmark quad operations for performance validation.
 
 Test handling of invalid quad data.
 
-- [ ] 6.6.1.1 Test load N-Quads with syntax errors
-- [ ] 6.6.1.2 Test load TriG with syntax errors
-- [ ] 6.6.1.3 Test load with invalid IRIs
-- [ ] 6.6.1.4 Test load with invalid literals
-- [ ] 6.6.1.5 Test load with malformed quads
+- [x] 6.6.1.1 Test load N-Quads with syntax errors
+- [x] 6.6.1.2 Test load TriG with syntax errors
+- [x] 6.6.1.3 Test load with invalid IRIs
+- [x] 6.6.1.4 Test load with invalid literals
+- [x] 6.6.1.5 Test load with malformed quads
 
 ### 6.6.2 Constraint Violations
 
 Test handling of constraint violations.
 
-- [ ] 6.6.2.1 Test INSERT duplicate quad (idempotent)
-- [ ] 6.6.2.2 Test DELETE non-existent quad (no-op)
-- [ ] 6.6.2.3 Test operation on non-existent graph
-- [ ] 6.6.2.4 Test DROP non-existent graph with SILENT
-- [ ] 6.6.2.5 Test CREATE existing graph (fails)
+- [x] 6.6.2.1 Test INSERT duplicate quad (idempotent)
+- [x] 6.6.2.2 Test DELETE non-existent quad (no-op)
+- [x] 6.6.2.3 Test operation on non-existent graph
+- [x] 6.6.2.4 Test DROP non-existent graph with SILENT
+- [x] 6.6.2.5 Test CREATE existing graph (fails)
 
 ### 6.6.3 Query Errors
 
 Test handling of query errors with graphs.
 
-- [ ] 6.6.3.1 Test GRAPH with non-existent graph (empty result)
-- [ ] 6.6.3.2 Test invalid graph IRI in query
-- [ ] 6.6.3.3 Test malformed GRAPH clause
-- [ ] 6.6.3.4 Test query timeout with cross-graph scan
-- [ ] 6.6.3.5 Test memory limit with large graph scan
+- [x] 6.6.3.1 Test GRAPH with non-existent graph (empty result)
+- [x] 6.6.3.2 Test invalid graph IRI in query
+- [x] 6.6.3.3 Test malformed GRAPH clause
+- [x] 6.6.3.4 Test query timeout with cross-graph scan
+- [x] 6.6.3.5 Test memory limit with large graph scan
 
 ---
 

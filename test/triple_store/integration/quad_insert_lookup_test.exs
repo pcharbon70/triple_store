@@ -21,15 +21,15 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
   @test_db_base "/tmp/quad_insert_lookup_test"
 
   # ===========================================================================
-  # Helper Functions
+  # Helper Functions (using shared helpers from TripleStore.Integration.Helpers)
   # ===========================================================================
 
   defp unique_path do
-    "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
+    TripleStore.Integration.Helpers.unique_path("quad_insert_lookup_test")
   end
 
   defp cleanup_path(path) do
-    File.rm_rf(path)
+    TripleStore.Integration.Helpers.cleanup_path(path)
   end
 
   # ===========================================================================

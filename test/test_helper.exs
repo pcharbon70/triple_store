@@ -15,3 +15,20 @@ end)
 
 # Give the pool a moment to start (or fail)
 Process.sleep(100)
+
+# Start the integration test helpers for cleanup automation
+spawn(fn ->
+  TripleStore.Integration.Helpers.start_link()
+
+  # Clean up orphaned test databases from previous runs (older than 24 hours)
+  case TripleStore.Integration.Helpers.cleanup_orphaned_databases(24) do
+    {:ok, 0} ->
+      :ok
+
+    {:ok, count} ->
+      IO.puts("Cleaned up #{count} orphaned test database(s) from previous runs")
+
+    {:error, reason} ->
+      IO.warn("Failed to cleanup orphaned databases: #{inspect(reason)}")
+  end
+end)
