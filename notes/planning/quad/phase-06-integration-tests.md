@@ -251,31 +251,31 @@ Test handling of query errors with graphs.
 
 Test concurrent read operations.
 
-- [ ] 6.7.1.1 Test concurrent queries on different graphs
-- [ ] 6.7.1.2 Test concurrent queries on same graph
-- [ ] 6.7.1.3 Test concurrent reads during load
-- [ ] 6.7.1.4 Test concurrent graph enumeration
-- [ ] 6.7.1.5 Test concurrent statistics access
+- [x] 6.7.1.1 Test concurrent queries on different graphs
+- [x] 6.7.1.2 Test concurrent queries on same graph
+- [x] 6.7.1.3 Test concurrent reads during load
+- [x] 6.7.1.4 Test concurrent graph enumeration
+- [x] 6.7.1.5 Test concurrent statistics access
 
 ### 6.7.2 Concurrent Writes
 
 Test concurrent write operations.
 
-- [ ] 6.7.2.1 Test concurrent inserts to different graphs
-- [ ] 6.7.2.2 Test concurrent inserts to same graph
-- [ ] 6.7.2.3 Test concurrent updates on different graphs
-- [ ] 6.7.2.4 Test concurrent CREATE GRAPH
-- [ ] 6.7.2.5 Test concurrent DELETE on same graph
+- [x] 6.7.2.1 Test concurrent inserts to different graphs
+- [x] 6.7.2.2 Test concurrent inserts to same graph
+- [x] 6.7.2.3 Test concurrent updates on different graphs
+- [x] 6.7.2.4 Test concurrent CREATE GRAPH
+- [x] 6.7.2.5 Test concurrent DELETE on same graph
 
 ### 6.7.3 Mixed Read/Write
 
 Test concurrent read and write operations.
 
-- [ ] 6.7.3.1 Test read during INSERT to different graph
-- [ ] 6.7.3.2 Test read during INSERT to same graph (snapshot isolation)
-- [ ] 6.7.3.3 Test read during DELETE
-- [ ] 6.7.3.4 Test read during CLEAR GRAPH
-- [ ] 6.7.3.5 Test query during DROP GRAPH
+- [x] 6.7.3.1 Test read during INSERT to different graph
+- [x] 6.7.3.2 Test read during INSERT to same graph (snapshot isolation)
+- [x] 6.7.3.3 Test read during DELETE
+- [x] 6.7.3.4 Test read during CLEAR GRAPH
+- [x] 6.7.3.5 Test query during DROP GRAPH
 
 ---
 
