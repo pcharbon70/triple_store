@@ -13,6 +13,7 @@ defmodule TripleStore.Loader do
   - **Sequential fallback**: Uses `Enum.reduce_while` when parallel mode disabled
   - **Progress reporting**: Emits Telemetry events for monitoring
   - **Format support**: Turtle, N-Triples, N-Quads, RDF/XML, TriG, JSON-LD
+  - **Named graphs**: Full quad support for loading data into specific graphs
   - **Path validation**: File paths are validated to prevent path traversal attacks
   - **File size limits**: Configurable maximum file size (default 100MB)
 
@@ -29,6 +30,33 @@ defmodule TripleStore.Loader do
   | Bulk import | 100,000 | ~7.2 MB |
 
   Memory usage estimate: batch_size × 3 indices × 24 bytes per key ≈ 72 bytes/triple
+
+  ## Quad and Graph Support
+
+  The loader supports both triple and quad formats. For quad-capable stores:
+
+  - **N-Quads (`.nq`)**: Loads all quads including named graphs
+  - **TriG (`.trig`)**: Loads all quads including named graphs
+  - **Turtle/N-Triples**: Can be loaded to specific named graphs using `:graph` option
+
+  ### Loading to Named Graphs
+
+  For formats without native graph support (Turtle, N-Triples), use the `:graph` option:
+
+      # Load Turtle file to named graph
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: RDF.iri("http://example.org/mygraph"))
+
+      # Load to default graph explicitly
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: :default)
+
+  ### Graph-Scoped Loading Functions
+
+  For more advanced graph-scoped loading, see:
+
+  - `load_to_graph/5` - Load a file to a specific named graph
+  - `load_files_to_graphs/3` - Load multiple files to multiple graphs
 
   ### Memory Budget Options
 
@@ -148,14 +176,10 @@ defmodule TripleStore.Loader do
 
   ## Important Limitations
 
-  ### Named Graphs Not Supported
+  ### Triple Store Mode
 
-  When loading N-Quads (`.nq`) or TriG (`.trig`) files, **only the default graph
-  is loaded**. Named graphs are discarded. This is a current architectural
-  limitation of the triple store which stores triples, not quads.
-
-  If you need named graph support for provenance tracking or SPARQL named graph
-  queries, this will be addressed in Phase 2 (SPARQL Engine) with quad storage.
+  When using the triple store schema (default), only the default graph is supported.
+  Named graphs require the quad store schema (`schema: :quad` option when opening the database).
 
   ## Telemetry Events
 
@@ -177,11 +201,15 @@ defmodule TripleStore.Loader do
 
   ## Usage
 
-      # Load from an RDF.Graph
+      # Load from an RDF.Graph (to default graph)
       {:ok, count} = Loader.load_graph(db, manager, graph)
 
       # Load from a file (format auto-detected)
       {:ok, count} = Loader.load_file(db, manager, "data.ttl")
+
+      # Load to named graph
+      {:ok, count} = Loader.load_file(db, manager, "data.ttl",
+        graph: RDF.iri("http://example.org/mygraph"))
 
       # With custom options
       {:ok, count} = Loader.load_graph(db, manager, graph,
@@ -246,7 +274,8 @@ defmodule TripleStore.Loader do
           progress_interval: pos_integer(),
           format: atom() | nil,
           base_iri: String.t() | nil,
-          max_file_size: pos_integer() | nil
+          max_file_size: pos_integer() | nil,
+          graph: RDF.IRI.t() | RDF.BlankNode.t() | :default | nil
         ]
 
   @typedoc """
@@ -298,6 +327,15 @@ defmodule TripleStore.Loader do
   @memory_threshold_low 4 * 1024 * 1024 * 1024
   @memory_threshold_high 16 * 1024 * 1024 * 1024
 
+  # Resource limits to prevent DoS
+  # Maximum number of triples/quads that can be loaded in a single operation
+  @max_triples 1_000_000_000
+  # Maximum concurrent batches for parallel loading (reserved for future use)
+  # The unused warning is expected - this constant is reserved for future use
+  @max_concurrent_batches 1000
+  # Progress callback timeout in milliseconds (5 seconds)
+  @progress_callback_timeout 5000
+
   # Supported RDF file formats
   @supported_formats %{
     ".ttl" => :turtle,
@@ -318,24 +356,27 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @doc """
-  Loads an RDF.Graph into the triple store.
+  Loads an RDF.Graph or RDF.Dataset into the store.
 
-  Converts all triples in the graph to internal representation and
+  Converts all triples in the graph/dataset to internal representation and
   inserts them in batches for efficient storage.
 
   ## Arguments
 
   - `db` - Database reference
   - `manager` - Dictionary manager process
-  - `graph` - RDF.Graph to load
+  - `graph_or_dataset` - RDF.Graph or RDF.Dataset to load
 
   ## Options
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). When loading
+    an RDF.Graph, all triples are loaded to the specified graph. When loading an
+    RDF.Dataset, this option is ignored and graphs in the dataset are preserved.
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples loaded
+  - `{:ok, count}` - Number of triples/quads loaded
   - `{:halted, count}` - Loading was cancelled by progress callback returning `:halt`
   - `{:error, reason}` - On failure
   - `{:error, {:flush_failed, count, reason}}` - Bulk mode sync failed after successful load
@@ -345,26 +386,84 @@ defmodule TripleStore.Loader do
       iex> graph = RDF.Graph.new([{~I<http://ex.org/s>, ~I<http://ex.org/p>, "o"}])
       iex> {:ok, 1} = Loader.load_graph(db, manager, graph)
 
+      iex> # Load to named graph
+      iex> Loader.load_graph(db, manager, graph, graph: RDF.iri("http://example.org/g"))
+
   ## Telemetry
 
   Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
   and `[:triple_store, :loader, :stop]` events.
   """
-  @spec load_graph(db_ref(), manager(), RDF.Graph.t(), load_opts()) ::
+  @spec load_graph(db_ref(), manager(), RDF.Graph.t() | RDF.Dataset.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
-  def load_graph(db, manager, %RDF.Graph{} = graph, opts \\ []) do
+
+  def load_graph(db, manager, graph_or_dataset, opts \\ [])
+  def load_graph(db, manager, %RDF.Dataset{} = dataset, opts) do
     batch_size = resolve_batch_size(opts)
 
     start_metadata = %{
-      source: :graph,
+      source: :dataset,
       path: nil,
-      triple_count: RDF.Graph.triple_count(graph)
+      graph_count: RDF.Dataset.graph_count(dataset)
     }
 
     with_telemetry(start_metadata, fn ->
-      triples = RDF.Graph.triples(graph)
-      load_triples(db, manager, triples, batch_size, opts)
+      quads = RDF.Dataset.quads(dataset)
+      load_quads(db, manager, quads, batch_size, opts)
     end)
+  end
+
+  def load_graph(db, manager, %RDF.Graph{} = graph, opts) do
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
+
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+
+    batch_size = resolve_batch_size(opts)
+
+    cond do
+      # Named graph specified - load to specified named graph
+      graph_opt && graph_opt != :default ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          quads = triples_to_quads(triples, graph_opt)
+          load_quads(db, manager, quads, batch_size, opts)
+        end)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          quads = triples_to_quads(triples, :default)
+          load_quads(db, manager, quads, batch_size, opts)
+        end)
+
+      # Triple store - use original triple loading logic
+      true ->
+        start_metadata = %{
+          source: :graph,
+          path: nil,
+          triple_count: RDF.Graph.triple_count(graph)
+        }
+
+        with_telemetry(start_metadata, fn ->
+          triples = RDF.Graph.triples(graph)
+          load_triples(db, manager, triples, batch_size, opts)
+        end)
+    end
   end
 
   # ===========================================================================
@@ -388,6 +487,9 @@ defmodule TripleStore.Loader do
   - `:format` - Force specific format (`:turtle`, `:ntriples`, `:rdfxml`, etc.)
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
   - `:max_file_size` - Maximum file size in bytes (default: 100MB)
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). For Turtle/N-Triples,
+    all triples are loaded to the specified graph. For N-Quads/TriG with native graphs, this option
+    is ignored and graphs in the file are preserved.
 
   ## Supported Formats
 
@@ -423,20 +525,52 @@ defmodule TripleStore.Loader do
   @spec load_file(db_ref(), manager(), Path.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_file(db, manager, path, opts \\ []) do
-    batch_size = resolve_batch_size(opts)
-    max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
 
-    start_metadata = %{source: :file, path: Path.basename(path)}
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
 
-    with_telemetry(start_metadata, fn ->
-      with {:ok, validated_path} <- validate_file_path(path),
-           {:ok, format} <- detect_format(validated_path, opts),
-           :ok <- check_file_size(validated_path, max_file_size),
-           {:ok, graph} <- parse_file(validated_path, format) do
-        triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size, opts)
-      end
-    end)
+    cond do
+      # Named graph specified - delegate to load_to_graph
+      graph_opt && graph_opt != :default ->
+        load_to_graph(db, manager, path, graph_opt, opts)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        batch_size = resolve_batch_size(opts)
+        max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+
+        start_metadata = %{source: :file, path: Path.basename(path)}
+
+        with_telemetry(start_metadata, fn ->
+          with {:ok, validated_path} <- validate_file_path(path),
+               {:ok, format} <- detect_format(validated_path, opts),
+               :ok <- check_file_size(validated_path, max_file_size),
+               {:ok, graph} <- parse_file(validated_path, format) do
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, :default)
+            load_quads(db, manager, quads, batch_size, opts)
+          end
+        end)
+
+      # Triple store - use original triple loading logic
+      true ->
+        batch_size = resolve_batch_size(opts)
+        max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+
+        start_metadata = %{source: :file, path: Path.basename(path)}
+
+        with_telemetry(start_metadata, fn ->
+          with {:ok, validated_path} <- validate_file_path(path),
+               {:ok, format} <- detect_format(validated_path, opts),
+               :ok <- check_file_size(validated_path, max_file_size),
+               {:ok, graph} <- parse_file(validated_path, format) do
+            triples = RDF.Graph.triples(graph)
+            load_triples(db, manager, triples, batch_size, opts)
+          end
+        end)
+    end
   end
 
   @doc """
@@ -455,6 +589,8 @@ defmodule TripleStore.Loader do
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
   - `:base_iri` - Base IRI for relative URI resolution
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). For Turtle/N-Triples,
+    all triples are loaded to the specified graph.
 
   ## Returns
 
@@ -474,18 +610,56 @@ defmodule TripleStore.Loader do
   @spec load_string(db_ref(), manager(), String.t(), atom(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_string(db, manager, content, format, opts \\ []) do
-    batch_size = resolve_batch_size(opts)
-    base_iri = Keyword.get(opts, :base_iri)
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
 
-    parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
 
-    case parse_string(content, format, parse_opts) do
-      {:ok, graph} ->
-        triples = RDF.Graph.triples(graph)
-        load_triples(db, manager, triples, batch_size, opts)
+    cond do
+      # Named graph specified - load as quads
+      graph_opt && graph_opt != :default ->
+        case parse_string(content, format, Keyword.take(opts, [:base_iri])) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, graph_opt)
+            batch_size = resolve_batch_size(opts)
+            load_quads(db, manager, quads, batch_size, opts)
 
-      {:error, _} = error ->
-        error
+          {:error, _} = error ->
+            error
+        end
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        base_iri = Keyword.get(opts, :base_iri)
+        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+
+        case parse_string(content, format, parse_opts) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            quads = triples_to_quads(triples, :default)
+            batch_size = resolve_batch_size(opts)
+            load_quads(db, manager, quads, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
+
+      # Triple store - use original triple loading logic
+      true ->
+        batch_size = resolve_batch_size(opts)
+        base_iri = Keyword.get(opts, :base_iri)
+        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
+
+        case parse_string(content, format, parse_opts) do
+          {:ok, graph} ->
+            triples = RDF.Graph.triples(graph)
+            load_triples(db, manager, triples, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
     end
   end
 
@@ -508,6 +682,8 @@ defmodule TripleStore.Loader do
   ## Options
 
   - `:batch_size` - Number of triples per batch (default: #{@default_batch_size})
+  - `:graph` - Target graph for quads (RDF.IRI, RDF.BlankNode, or :default). All triples
+    are loaded to the specified graph.
 
   ## Returns
 
@@ -527,8 +703,29 @@ defmodule TripleStore.Loader do
   @spec load_stream(db_ref(), manager(), Enumerable.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_stream(db, manager, triple_stream, opts \\ []) do
+    # Check if :graph option is provided
+    graph_opt = Keyword.get(opts, :graph)
+
+    # Check if this is a quad store
+    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+
     batch_size = resolve_batch_size(opts)
-    load_triples(db, manager, triple_stream, batch_size, opts)
+
+    cond do
+      # Named graph specified - load as quads
+      graph_opt && graph_opt != :default ->
+        quads = triples_to_quads(triple_stream, graph_opt)
+        load_quads(db, manager, quads, batch_size, opts)
+
+      # Quad store with default graph - load as quads with graph_id 0
+      is_quad ->
+        quads = triples_to_quads(triple_stream, :default)
+        load_quads(db, manager, quads, batch_size, opts)
+
+      # Triple store - use original triple loading logic
+      true ->
+        load_triples(db, manager, triple_stream, batch_size, opts)
+    end
   end
 
   # ===========================================================================
@@ -648,6 +845,629 @@ defmodule TripleStore.Loader do
   end
 
   # ===========================================================================
+  # Public API - Quad Loading (N-Quads Format)
+  # ===========================================================================
+
+  @doc """
+  Loads an N-Quads file into the quad store.
+
+  Parses the N-Quads file and loads all quads (including named graphs)
+  into the store. Unlike `load_file/3`, this function preserves all
+  named graphs instead of discarding them.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to the N-Quads file
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:progress_callback` - Function called periodically with progress info
+  - `:progress_interval` - Call callback every N batches (default: 10)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Quads with named graphs are loaded with their graph ID > 0
+  - Quads without a graph name (default graph) are loaded with graph ID 0
+  - All named graphs in the file are preserved
+
+  ## Examples
+
+      {:ok, 1000} = Loader.load_nquads_file(db, manager, "data.nq")
+
+      # With bulk mode for large files
+      {:ok, count} = Loader.load_nquads_file(db, manager, "large.nq",
+        batch_size: 50_000,
+        bulk_mode: true
+      )
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :nquads` metadata.
+  """
+  @spec load_nquads_file(db_ref(), manager(), Path.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_nquads_file(db, manager, path, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :file,
+      path: path,
+      format: :nquads
+    }
+
+    with_telemetry(start_metadata, fn ->
+      case parse_nquads_file_full(path) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Loads N-Quads data from a string into the quad store.
+
+  Parses the N-Quads string and loads all quads (including named graphs)
+  into the store.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `content` - N-Quads formatted string
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      nquads = \"\"\"
+      <http://example.org/s> <http://example.org/p> "o" <http://example.org/g> .
+      \"\"\"
+      {:ok, 1} = Loader.load_nquads_string(db, manager, nquads)
+  """
+  @spec load_nquads_string(db_ref(), manager(), String.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_nquads_string(db, manager, content, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :string,
+      path: nil,
+      format: :nquads
+    }
+
+    with_telemetry(start_metadata, fn ->
+      parse_opts = [base_iri: Keyword.get(opts, :base_iri)]
+
+      case parse_nquads_string_full(content, parse_opts) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  # ===========================================================================
+  # Public API - TriG Loading
+  # ===========================================================================
+
+  @doc """
+  Loads TriG format file into the quad store.
+
+  TriG is a Turtle-like RDF syntax that supports named graphs using
+  the GRAPH keyword. This function loads all quads from the TriG file,
+  including both named graphs and the default graph.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to TriG file
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+  - `:progress_callback` - Callback function for progress updates
+  - `:progress_interval` - Report progress every N batches (default: #{@default_progress_interval})
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Graph Handling
+
+  - Triples inside `GRAPH <iri> { ... }` blocks are loaded into that named graph
+  - Triples outside any GRAPH block are loaded into the default graph (ID 0)
+  - Named graph IRIs are automatically registered in the dictionary
+
+  ## Examples
+
+      {:ok, 42} = Loader.load_trig_file(db, manager, "data.trig")
+
+      # With progress callback
+      {:ok, count} = Loader.load_trig_file(db, manager, "large.trig",
+        progress_callback: fn info -> IO.inspect(info) :continue end
+      )
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :trig` metadata.
+  """
+  @spec load_trig_file(db_ref(), manager(), Path.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_trig_file(db, manager, path, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :file,
+      path: path,
+      format: :trig
+    }
+
+    with_telemetry(start_metadata, fn ->
+      case parse_trig_file_full(path) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  @doc """
+  Loads TriG format data from a string into the quad store.
+
+  Parses the TriG string and loads all quads (including named graphs)
+  into the store.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `content` - TriG formatted string
+
+  ## Options
+
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:base_iri` - Base IRI for resolving relative IRIs
+  - `:progress_callback` - Callback function for progress updates
+  - `:progress_interval` - Report progress every N batches (default: #{@default_progress_interval})
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      trig = \"\"\"
+      @prefix ex: <http://example.org/>.
+
+      GRAPH <http://example.org/g1> {
+        ex:s1 ex:p "o1" .
+      }
+
+      ex:s2 ex:p "o2" .
+      \"\"\"
+
+      {:ok, 2} = Loader.load_trig_string(db, manager, trig)
+  """
+  @spec load_trig_string(db_ref(), manager(), String.t(), load_opts()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_trig_string(db, manager, content, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+
+    start_metadata = %{
+      source: :string,
+      path: nil,
+      format: :trig
+    }
+
+    with_telemetry(start_metadata, fn ->
+      parse_opts = [base_iri: Keyword.get(opts, :base_iri)]
+
+      case parse_trig_string_full(content, parse_opts) do
+        {:ok, dataset} ->
+          quads = RDF.Dataset.quads(dataset)
+          load_quads(db, manager, quads, batch_size, opts)
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  # ===========================================================================
+  # Public API - Graph-Scoped Loading
+  # ===========================================================================
+
+  @doc """
+  Loads an RDF file into a specific named graph.
+
+  This function loads RDF data (Turtle, N-Triples, etc.) into a specific
+  named graph in the quad store. Unlike standard loading which puts data
+  in the default graph, this function forces all triples into the specified
+  graph.
+
+  This is useful for:
+  - Loading Turtle/N-Triples files into named graphs
+  - Organizing data from different sources into separate graphs
+  - Building multi-dataset stores from single-format files
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `path` - Path to the RDF file
+  - `graph` - Target graph (RDF.IRI or RDF.BlankNode)
+
+  ## Options
+
+  - `:format` - Force specific format (`:turtle`, `:ntriples`, etc.)
+  - `:batch_size` - Number of quads per batch (default: #{@default_batch_size})
+  - `:bulk_mode` - Enable bulk loading optimizations (default: false)
+  - `:parallel` - Enable parallel encoding (default: true)
+  - `:clear_graph` - Clear target graph before loading (default: false)
+  - `:progress_callback` - Callback function for progress updates
+  - `:max_file_size` - Maximum file size in bytes (default: 100MB)
+
+  ## Returns
+
+  - `{:ok, count}` - Number of quads loaded
+  - `{:halted, count}` - Loading was cancelled by progress callback
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Load Turtle file to named graph
+      {:ok, 42} = Loader.load_to_graph(db, manager, "data.ttl",
+        RDF.iri("http://example.org/graph1"))
+
+      # Load with graph clearing
+      {:ok, count} = Loader.load_to_graph(db, manager, "update.nt",
+        RDF.iri("http://example.org/graph1"), clear_graph: true)
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :start]`, `[:triple_store, :loader, :batch]`,
+  and `[:triple_store, :loader, :stop]` events with `format: :graph_scoped` metadata.
+  """
+  @spec load_to_graph(
+          db_ref(),
+          manager(),
+          Path.t(),
+          RDF.IRI.t() | RDF.BlankNode.t(),
+          load_opts()
+        ) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  def load_to_graph(db, manager, path, graph, opts \\ []) do
+    batch_size = resolve_batch_size(opts)
+    max_file_size = Keyword.get(opts, :max_file_size, @default_max_file_size)
+    clear_graph? = Keyword.get(opts, :clear_graph, false)
+
+    start_metadata = %{
+      source: :file,
+      path: Path.basename(path),
+      format: :graph_scoped,
+      graph: graph
+    }
+
+    with_telemetry(start_metadata, fn ->
+      with {:ok, validated_path} <- validate_file_path(path),
+           {:ok, format} <- detect_format(validated_path, opts),
+           :ok <- check_file_size(validated_path, max_file_size) do
+        # Clear graph if requested
+        if clear_graph? do
+          alias TripleStore.QuadOperations
+          QuadOperations.delete_graph(db, manager, graph)
+        else
+          :ok
+        end
+
+        # Parse file and convert to quads with target graph
+        case parse_file(validated_path, format) do
+          {:ok, %RDF.Graph{} = rdf_graph} ->
+            triples = RDF.Graph.triples(rdf_graph)
+            quads = triples_to_quads(triples, graph)
+            load_quads(db, manager, quads, batch_size, opts)
+
+          {:error, _} = error ->
+            error
+        end
+      end
+    end)
+  end
+
+  @doc """
+  Loads multiple RDF files into separate named graphs.
+
+  This function accepts a map where keys are graph terms and values are
+  file paths. Each file is loaded into its corresponding graph.
+
+  ## Arguments
+
+  - `db` - Database reference (must be a quad store)
+  - `manager` - Dictionary manager process
+  - `graph_files` - Map of `%{graph_term => file_path}`
+
+  ## Options
+
+  - `:parallel` - Enable parallel loading (default: false)
+  - `:on_conflict` - Behavior on error: `:continue` (default), `:stop`, or `:abort`
+  - `:batch_size` - Number of quads per batch
+  - `:bulk_mode` - Enable bulk loading optimizations
+  - `:clear_graphs` - Clear target graphs before loading (default: false)
+  - `:progress_callback` - Callback with per-file progress
+
+  ## Returns
+
+  - `{:ok, summary}` - Map of `%{graph_term => quad_count}`
+  - `{:error, reason}` - On failure (depends on `:on_conflict`)
+
+  ## Examples
+
+      graph_files = %{
+        RDF.iri("http://example.org/g1") => "data1.ttl",
+        RDF.iri("http://example.org/g2") => "data2.nt"
+      }
+
+      {:ok, summary} = Loader.load_files_to_graphs(db, manager, graph_files)
+
+  ## Conflict Modes
+
+  - `:continue` - Continue loading other files on error (default)
+  - `:stop` - Stop loading on first error, return partial results
+  - `:abort` - Abort entire operation, rollback no data (not yet implemented)
+
+  ## Telemetry
+
+  Emits `[:triple_store, :loader, :multi_graph_start]` on start and
+  `[:triple_store, :loader, :multi_graph_stop]` on completion.
+  """
+  @spec load_files_to_graphs(
+          db_ref(),
+          manager(),
+          %{(RDF.IRI.t() | RDF.BlankNode.t()) => Path.t()},
+          keyword()
+        ) ::
+          {:ok, %{(RDF.IRI.t() | RDF.BlankNode.t()) => non_neg_integer()}}
+          | {:error, term()}
+  def load_files_to_graphs(db, manager, graph_files, opts \\ []) do
+    # Validate inputs - return early for empty map
+    if map_size(graph_files) == 0 do
+      {:ok, %{}}
+    else
+      do_load_files_to_graphs(db, manager, graph_files, opts)
+    end
+  end
+
+  # Internal implementation of load_files_to_graphs
+  defp do_load_files_to_graphs(db, manager, graph_files, opts) do
+    parallel? = Keyword.get(opts, :parallel, false)
+    on_conflict = Keyword.get(opts, :on_conflict, :continue)
+    clear_graphs? = Keyword.get(opts, :clear_graphs, false)
+    progress_callback = Keyword.get(opts, :progress_callback)
+
+    start_metadata = %{
+      source: :multi_graph,
+      file_count: map_size(graph_files),
+      parallel: parallel?
+    }
+
+    emit_start_telemetry(start_metadata)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    result =
+      if parallel? do
+        load_files_to_graphs_parallel(db, manager, graph_files, opts, clear_graphs?)
+      else
+        load_files_to_graphs_sequential(
+          db,
+          manager,
+          graph_files,
+          opts,
+          clear_graphs?,
+          on_conflict,
+          progress_callback,
+          start_time
+        )
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      {:ok, summary} ->
+        :telemetry.execute(
+          [:triple_store, :loader, :multi_graph_stop],
+          %{duration: duration, count: map_size(summary)},
+          %{status: :ok}
+        )
+
+        {:ok, summary}
+
+      {:error, _} = error ->
+        :telemetry.execute(
+          [:triple_store, :loader, :multi_graph_stop],
+          %{duration: duration},
+          %{status: :error}
+        )
+
+        error
+    end
+  end
+
+  # ===========================================================================
+  # Private - Graph-Scoped Loading Helpers
+  # ===========================================================================
+
+  # Emit telemetry start event for multi-graph loading
+  defp emit_start_telemetry(metadata) do
+    :telemetry.execute(
+      [:triple_store, :loader, :multi_graph_start],
+      %{system_time: System.system_time()},
+      metadata
+    )
+  end
+
+  # Convert a stream of triples to quads with a specific graph term
+  # The graph term is used directly (IRI or BlankNode), and will be
+  # converted to graph_id by Adapter.from_rdf_quads during encoding
+  # :default is converted to nil which RDF.ex uses for the default graph
+  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t() | :default) :: Enumerable.t()
+  defp triples_to_quads(triples, :default) do
+    Stream.map(triples, fn
+      {s, p, o} -> RDF.Quad.new(s, p, o, nil)
+      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, nil)
+    end)
+  end
+
+  defp triples_to_quads(triples, graph_term) do
+    Stream.map(triples, fn
+      {s, p, o} -> RDF.Quad.new(s, p, o, graph_term)
+      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, graph_term)
+    end)
+  end
+
+  # Sequential multi-graph loading
+  defp load_files_to_graphs_sequential(
+         db,
+         manager,
+         graph_files,
+         opts,
+         clear_graphs?,
+         on_conflict,
+         progress_callback,
+         start_time
+       ) do
+    Enum.reduce_while(graph_files, {:ok, %{}}, fn {graph, path}, {:ok, summary} ->
+      # Call progress callback if provided
+      callback_result =
+        if progress_callback do
+          progress_info = %{
+            graph: graph,
+            file: Path.basename(path),
+            loaded_so_far: map_size(summary),
+            total_files: map_size(graph_files),
+            elapsed_ms: System.monotonic_time(:millisecond) - start_time
+          }
+
+          case progress_callback.(progress_info) do
+            :continue -> :continue
+            :halt -> :halt
+          end
+        else
+          :continue
+        end
+
+      # Check if callback requested halt
+      if callback_result == :halt do
+        {:halt, {:ok, summary}}
+      else
+        # Load single file to graph
+        load_opts =
+          opts
+          |> Keyword.put(:clear_graph, clear_graphs?)
+          |> Keyword.delete(:on_conflict)
+          |> Keyword.delete(:progress_callback)
+
+        case load_to_graph(db, manager, path, graph, load_opts) do
+          {:ok, count} ->
+            {:cont, {:ok, Map.put(summary, graph, count)}}
+
+          {:halted, count} ->
+            {:cont, {:ok, Map.put(summary, graph, count)}}
+
+          {:error, reason} ->
+            case on_conflict do
+              :continue ->
+                {:cont, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+              :stop ->
+                {:halt, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+              :abort ->
+                {:halt, {:error, {:load_error, graph, path, reason}}}
+            end
+        end
+      end
+    end)
+  end
+
+  # Parallel multi-graph loading using Task.async_stream
+  defp load_files_to_graphs_parallel(db, manager, graph_files, opts, clear_graphs?) do
+    # Note: Parallel loading requires caution with Dictionary Manager access
+    # For now, use Task.async_stream with limited concurrency
+    load_opts =
+      opts
+      |> Keyword.put(:clear_graph, clear_graphs?)
+      |> Keyword.delete(:on_conflict)
+      |> Keyword.delete(:progress_callback)
+      |> Keyword.delete(:parallel)
+
+    graph_files
+    |> Task.async_stream(
+      fn {graph, path} ->
+        case load_to_graph(db, manager, path, graph, load_opts) do
+          {:ok, count} -> {graph, count}
+          {:halted, count} -> {graph, count}
+          {:error, reason} -> {graph, {:error, reason}}
+        end
+      end,
+      max_concurrency: System.schedulers_online(),
+      timeout: :infinity,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce_while({:ok, %{}}, fn
+      {:ok, {graph, result}}, {:ok, summary} ->
+        {:cont, {:ok, Map.put(summary, graph, result)}}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, {:task_exit, reason}}}
+    end)
+  end
+
+  # ===========================================================================
   # Private - Core Loading Logic
   # ===========================================================================
 
@@ -714,6 +1534,66 @@ defmodule TripleStore.Loader do
     end
   end
 
+  # Load quads - similar to load_triples but uses QuadOperations instead of Index
+  @spec load_quads(db_ref(), manager(), Enumerable.t(), pos_integer(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads(db, manager, quads, batch_size, opts) do
+    alias TripleStore.QuadOperations
+
+    parallel? = Keyword.get(opts, :parallel, @default_parallel)
+    bulk_mode? = Keyword.get(opts, :bulk_mode, false)
+    progress_callback = Keyword.get(opts, :progress_callback)
+    progress_interval = validate_progress_interval(Keyword.get(opts, :progress_interval))
+    start_time = System.monotonic_time(:millisecond)
+
+    # In bulk mode, use sync: false for writes
+    sync? = not bulk_mode?
+
+    progress_opts = %{
+      callback: progress_callback,
+      interval: progress_interval,
+      start_time: start_time
+    }
+
+    write_opts = %{
+      sync: sync?
+    }
+
+    result =
+      if parallel? do
+        stages = resolve_stages(opts)
+        max_demand = validate_max_demand(Keyword.get(opts, :max_demand))
+
+        load_quads_parallel(
+          db,
+          manager,
+          quads,
+          batch_size,
+          stages,
+          max_demand,
+          progress_opts,
+          write_opts
+        )
+      else
+        load_quads_sequential(db, manager, quads, batch_size, progress_opts, write_opts)
+      end
+
+    # In bulk mode, flush WAL after successful load for durability.
+    case result do
+      {:ok, count} when bulk_mode? ->
+        case NIF.flush_wal(db, true) do
+          :ok ->
+            {:ok, count}
+
+          {:error, reason} ->
+            {:error, {:flush_failed, count, reason}}
+        end
+
+      other ->
+        other
+    end
+  end
+
   # Validate progress_interval option
   @spec validate_progress_interval(term()) :: pos_integer()
   defp validate_progress_interval(nil), do: @default_progress_interval
@@ -762,27 +1642,37 @@ defmodule TripleStore.Loader do
     |> Stream.chunk_every(batch_size)
     |> Stream.with_index(1)
     |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
-      batch_start = System.monotonic_time()
-      batch_count = length(batch)
+      # Check max triples limit before processing batch
+      if total >= @max_triples do
+        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+      else
+        batch_start = System.monotonic_time()
+        batch_count = length(batch)
 
-      case process_batch(db, manager, batch, write_opts) do
-        :ok ->
-          new_total = total + batch_count
-          batch_duration = System.monotonic_time() - batch_start
+        # Don't process batch if it would exceed max triples
+        if total + batch_count > @max_triples do
+          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+        else
+          case process_batch(db, manager, batch, write_opts) do
+            :ok ->
+              new_total = total + batch_count
+              batch_duration = System.monotonic_time() - batch_start
 
-          emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
 
-          # Check if we should report progress and handle cancellation
-          case maybe_report_progress(progress_opts, batch_number, new_total) do
-            :continue ->
-              {:cont, {:ok, new_total}}
+              # Check if we should report progress and handle cancellation
+              case maybe_report_progress(progress_opts, batch_number, new_total) do
+                :continue ->
+                  {:cont, {:ok, new_total}}
 
-            :halt ->
-              {:halt, {:halted, new_total}}
+                :halt ->
+                  {:halt, {:halted, new_total}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
           end
-
-        {:error, reason} ->
-          {:halt, {:error, reason}}
+        end
       end
     end)
   end
@@ -982,6 +1872,7 @@ defmodule TripleStore.Loader do
   end
 
   # Report progress if callback is set and interval is reached
+  # Includes timeout protection to prevent slow/hanging callbacks from blocking load
   @spec maybe_report_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
   defp maybe_report_progress(%{callback: nil}, _batch_number, _total), do: :continue
 
@@ -1002,7 +1893,13 @@ defmodule TripleStore.Loader do
         rate_per_second: rate
       }
 
-      callback.(progress_info)
+      # Call callback with timeout to prevent blocking
+      task = Task.async(fn -> callback.(progress_info) end)
+
+      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
+        {:ok, :halt} -> :halt
+        _ -> :continue
+      end
     else
       :continue
     end
@@ -1016,6 +1913,274 @@ defmodule TripleStore.Loader do
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  # ===========================================================================
+  # Private - Quad Loading Functions
+  # ===========================================================================
+
+  # Sequential quad loading - similar to triple loading but uses QuadOperations
+  @spec load_quads_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map(), map()) ::
+          {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads_sequential(db, manager, quads, batch_size, progress_opts, write_opts) do
+    alias TripleStore.QuadOperations
+
+    quads
+    |> Stream.chunk_every(batch_size)
+    |> Stream.with_index(1)
+    |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
+      # Check max triples limit before processing batch
+      if total >= @max_triples do
+        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+      else
+        batch_start = System.monotonic_time()
+        batch_count = length(batch)
+
+        # Don't process batch if it would exceed max triples
+        if total + batch_count > @max_triples do
+          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
+        else
+          case process_quad_batch(db, manager, batch, write_opts) do
+            :ok ->
+              new_total = total + batch_count
+              batch_duration = System.monotonic_time() - batch_start
+
+              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+
+              # Check if we should report progress and handle cancellation
+              case maybe_report_quad_progress(progress_opts, batch_number, new_total) do
+                :continue ->
+                  {:cont, {:ok, new_total}}
+
+                :halt ->
+                  {:halt, {:halted, new_total}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
+          end
+        end
+      end
+    end)
+  end
+
+  # Parallel quad loading - Flow-based pipeline for quads
+  @spec load_quads_parallel(
+          db_ref(),
+          manager(),
+          Enumerable.t(),
+          pos_integer(),
+          pos_integer(),
+          pos_integer(),
+          map(),
+          map()
+        ) :: {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
+  defp load_quads_parallel(
+         db,
+         manager,
+         quads,
+         batch_size,
+         stages,
+         max_demand,
+         progress_opts,
+         write_opts
+       ) do
+    alias TripleStore.QuadOperations
+
+    # Use Agent for error tracking
+    {:ok, error_agent} = Agent.start_link(fn -> nil end)
+    halt_ref = :atomics.new(1, signed: false)
+
+    try do
+      result =
+        quads
+        |> Stream.chunk_every(batch_size)
+        |> Flow.from_enumerable(stages: stages, max_demand: max_demand)
+        # Stage 2: Parallel dictionary encoding for quads
+        |> Flow.map(fn batch ->
+          if halted?(halt_ref) do
+            {:halted, []}
+          else
+            encode_quad_batch(manager, batch, error_agent)
+          end
+        end)
+        # Stage 3: Sequential writing via single partition
+        |> Flow.partition(stages: 1, max_demand: max_demand)
+        |> Flow.reduce(fn -> {0, 0} end, fn encoded_batch, {total, batch_num} ->
+          write_encoded_quad_batch_with_progress(
+            db,
+            encoded_batch,
+            batch_num + 1,
+            error_agent,
+            halt_ref,
+            total,
+            progress_opts,
+            write_opts
+          )
+        end)
+        |> Flow.emit(:state)
+        |> Enum.to_list()
+
+      cond do
+        halted?(halt_ref) ->
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:halted, total}
+
+        error = Agent.get(error_agent, & &1) ->
+          error
+
+        true ->
+          total = Enum.reduce(result, 0, fn {count, _batch_num}, acc -> acc + count end)
+          {:ok, total}
+      end
+    after
+      Agent.stop(error_agent)
+    end
+  end
+
+  # Process a batch of quads for insertion
+  @spec process_quad_batch(db_ref(), manager(), [RDF.Quad.t()], map()) :: :ok | {:error, term()}
+  defp process_quad_batch(db, manager, rdf_quads, write_opts) do
+    alias TripleStore.QuadOperations
+
+    case Adapter.from_rdf_quads(manager, rdf_quads) do
+      {:ok, internal_quads} ->
+        QuadOperations.insert_quads(db, internal_quads, sync: write_opts.sync)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Encode a batch of RDF quads to internal representation
+  @spec encode_quad_batch(manager(), [RDF.Quad.t()], pid()) ::
+          {:ok, list()} | {:error, term()}
+  defp encode_quad_batch(manager, rdf_quads, error_agent) do
+    case Adapter.from_rdf_quads(manager, rdf_quads) do
+      {:ok, internal_quads} ->
+        {:ok, internal_quads}
+
+      {:error, reason} = error ->
+        Agent.update(error_agent, fn _ -> error end)
+        {:error, reason}
+    end
+  end
+
+  # Write encoded quad batch with progress reporting
+  @spec write_encoded_quad_batch_with_progress(
+          db_ref(),
+          {:ok, list()} | {:error, term()} | {:halted, list()},
+          pos_integer(),
+          pid(),
+          reference(),
+          non_neg_integer(),
+          map(),
+          map()
+        ) :: {non_neg_integer(), pos_integer()}
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:error, _reason},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:halted, _quads},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         _db,
+         {:ok, []},
+         batch_num,
+         _error_agent,
+         _halt_ref,
+         total,
+         _progress_opts,
+         _write_opts
+       ) do
+    {total, batch_num}
+  end
+
+  defp write_encoded_quad_batch_with_progress(
+         db,
+         {:ok, internal_quads},
+         batch_num,
+         _error_agent,
+         halt_ref,
+         total,
+         progress_opts,
+         write_opts
+       ) do
+    batch_start = System.monotonic_time()
+    batch_count = length(internal_quads)
+
+    case TripleStore.QuadOperations.insert_quads(db, internal_quads, sync: write_opts.sync) do
+      :ok ->
+        new_total = total + batch_count
+        batch_duration = System.monotonic_time() - batch_start
+
+        emit_batch_telemetry(batch_count, batch_duration, batch_num, write_opts.sync)
+
+        case maybe_report_quad_progress(progress_opts, batch_num, new_total) do
+          :continue ->
+            {new_total, batch_num}
+
+          :halt ->
+            set_halted(halt_ref)
+            {new_total, batch_num}
+        end
+
+      {:error, _reason} ->
+        {total, batch_num}
+    end
+  end
+
+  # Report progress for quad loading
+  # Includes timeout protection to prevent slow/hanging callbacks from blocking load
+  @spec maybe_report_quad_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
+  defp maybe_report_quad_progress(%{callback: nil}, _batch_number, _total), do: :continue
+
+  defp maybe_report_quad_progress(
+         %{callback: callback, interval: interval, start_time: start_time},
+         batch_number,
+         total
+       ) do
+    if rem(batch_number, interval) == 0 do
+      elapsed_ms = System.monotonic_time(:millisecond) - start_time
+      rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
+
+      progress_info = %{
+        quads_loaded: total,
+        batch_number: batch_number,
+        elapsed_ms: elapsed_ms,
+        rate_per_second: rate
+      }
+
+      # Call callback with timeout to prevent blocking
+      task = Task.async(fn -> callback.(progress_info) end)
+
+      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
+        {:ok, :halt} -> :halt
+        _ -> :continue
+      end
+    else
+      :continue
     end
   end
 
@@ -1091,14 +2256,71 @@ defmodule TripleStore.Loader do
   # Private - Path Validation
   # ===========================================================================
 
-  @spec validate_file_path(Path.t()) :: {:ok, Path.t()} | {:error, :invalid_path}
-  defp validate_file_path(path) do
-    # Prevent path traversal attacks
-    if String.contains?(path, "..") do
+  @spec validate_file_path(Path.t(), [Path.t()] | nil) :: {:ok, Path.t()} | {:error, :invalid_path}
+  defp validate_file_path(path, allowed_dirs \\ nil) do
+    # Check for path traversal in the original path before expansion
+    # This catches attempts like "../", "..\\", "%2e%2e", etc.
+    if has_path_traversal?(path) do
       {:error, :invalid_path}
     else
-      {:ok, Path.expand(path)}
+      expanded = Path.expand(path)
+
+      # If allowed_dirs is specified, verify the path is within them
+      if allowed_dirs != nil and Path.type(expanded) == :absolute do
+        if is_within_allowed_dirs?(expanded, allowed_dirs) do
+          {:ok, expanded}
+        else
+          {:error, :invalid_path}
+        end
+      else
+        # No directory restrictions or relative path - safe to use
+        {:ok, expanded}
+      end
     end
+  rescue
+    _ -> {:error, :invalid_path}
+  end
+
+  # Check if a path contains path traversal attempts
+  # This checks for literal "..", URL-encoded variants, and other bypasses
+  defp has_path_traversal?(path) when is_binary(path) do
+    # Check for literal dot-dot-slash sequences
+    dot_dot_checks = [
+      "..",           # Literal ".."
+      "%2e%2e",       # URL encoded ".."
+      "%2e.",         # Partially encoded
+      ".%2e",         # Partially encoded
+      "..\\",         # Windows backslash separator (if on Unix, this is safe check)
+      "%252e",        # Double-encoded "."
+      "%c0%ae",       # Unicode bypass (UTF-8)
+      "%e0%80%af"     # Unicode bypass (overlong)
+    ]
+
+    # Normalize path for checking (lowercase for case-insensitive checks)
+    normalized = String.downcase(path)
+
+    Enum.any?(dot_dot_checks, fn pattern ->
+      String.contains?(normalized, pattern)
+    end)
+  end
+
+  # Check if a path is within the list of allowed directories
+  defp is_within_allowed_dirs?(path, allowed_dirs) do
+    normalized_path = normalize_path(path)
+
+    Enum.any?(allowed_dirs, fn dir ->
+      normalized_allowed = normalize_path(dir)
+      # Check if path starts with allowed directory (with trailing slash for proper prefix match)
+      String.starts_with?(normalized_path <> "/", normalized_allowed <> "/") or
+        normalized_path == normalized_allowed
+    end)
+  end
+
+  # Normalize a path for comparison
+  defp normalize_path(path) do
+    path
+    |> Path.expand()
+    |> String.replace_trailing("/", "")
   end
 
   @spec check_file_size(Path.t(), pos_integer()) ::
@@ -1189,6 +2411,28 @@ defmodule TripleStore.Loader do
   @spec parse_nquads_string(String.t(), keyword()) :: {:ok, RDF.Graph.t()} | {:error, term()}
   defp parse_nquads_string(content, opts) do
     RDF.NQuads.read_string(content, opts) |> extract_default_graph()
+  end
+
+  # Full N-Quads parsing - returns the complete dataset (preserves named graphs)
+  @spec parse_nquads_file_full(Path.t()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_nquads_file_full(path) do
+    RDF.NQuads.read_file(path)
+  end
+
+  @spec parse_nquads_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_nquads_string_full(content, opts) do
+    RDF.NQuads.read_string(content, opts)
+  end
+
+  # Full TriG parsing - returns the complete dataset (preserves named graphs)
+  @spec parse_trig_file_full(Path.t()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_trig_file_full(path) do
+    RDF.TriG.read_file(path)
+  end
+
+  @spec parse_trig_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  defp parse_trig_string_full(content, opts) do
+    RDF.TriG.read_string(content, opts)
   end
 
   @spec parse_trig_file(Path.t()) :: {:ok, RDF.Graph.t()} | {:error, term()}

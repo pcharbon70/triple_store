@@ -84,6 +84,26 @@ defmodule TripleStore.Backend.RocksDB.NIF do
   end
 
   @doc """
+  Opens a RocksDB database at the given path with options.
+
+  ## Parameters
+
+  - `path`: Path to the database directory
+  - `opts`: Keyword list of options
+    - `:schema` - Schema type: `:triple` (default) or `:quad`
+
+  ## Returns
+
+  - `{:ok, db_ref}` - Database opened successfully
+  - `{:error, reason}` - Failed to open database
+
+  """
+  @spec open(String.t(), keyword()) :: {:ok, db_ref()} | {:error, term()}
+  def open(path, opts) when is_binary(path) and is_list(opts) do
+    ErlangAdapter.open(path, opts)
+  end
+
+  @doc """
   Closes the database and releases all resources.
 
   ## Parameters

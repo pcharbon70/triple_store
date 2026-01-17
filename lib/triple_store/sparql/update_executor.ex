@@ -2,21 +2,39 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @moduledoc """
   SPARQL UPDATE operation executor.
 
-  This module executes SPARQL UPDATE operations against the triple store,
+  This module executes SPARQL UPDATE operations against the triple/quad store,
   providing support for all SPARQL 1.1 Update operations:
 
-  - **INSERT DATA**: Direct insertion of ground triples
-  - **DELETE DATA**: Direct deletion of ground triples
+  - **INSERT DATA**: Direct insertion of ground triples/quads
+  - **DELETE DATA**: Direct deletion of ground triples/quads
   - **DELETE WHERE**: Pattern-based deletion
   - **INSERT WHERE**: Pattern-based insertion (using templates)
   - **DELETE/INSERT WHERE**: Combined delete and insert in single operation
+  - **CREATE/DROP/CLEAR GRAPH**: Named graph management
+  - **COPY/MOVE/ADD**: Bulk graph operations
+
+  ## Quad Store Support
+
+  For quad stores (schema: :quad), all operations support named graphs:
+  - INSERT DATA can target specific named graphs
+  - DELETE DATA can target specific named graphs
+  - MODIFY operations can use GRAPH clauses in WHERE patterns
+  - CREATE/DROP/CLEAR GRAPH manage named graphs
+  - COPY/MOVE/ADD transfer quads between graphs
+
+  For triple stores, operations work on the default graph only.
 
   ## Execution Model
 
   All update operations are executed atomically using RocksDB's WriteBatch.
   Operations that involve WHERE clauses first query the database to find
   matching bindings, then apply those bindings to templates to generate
-  the actual triples to insert or delete.
+  the actual triples/quads to insert or delete.
+
+  ## Cache Invalidation
+
+  After successful graph modifications (CREATE, DROP, CLEAR, COPY, MOVE, ADD),
+  the query cache is automatically invalidated if running.
 
   ## Usage
 
@@ -28,20 +46,61 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       {:ok, count} = UpdateExecutor.execute_insert_data(ctx, quads)
       {:ok, count} = UpdateExecutor.execute_delete_where(ctx, pattern)
 
+      # Graph operations (quad stores only)
+      {:ok, 0} = UpdateExecutor.execute_create_graph(ctx, graph_iri)
+      {:ok, count} = UpdateExecutor.execute_copy(ctx, source_graph, target_graph)
+
   ## Security
 
   - All operations validate input size to prevent DoS
   - Pattern-based operations have result limits
   - Templates are validated before execution
+  - **Authorization**: All UPDATE operations check permissions via the Authorization module
+
+  ### Authorization
+
+  UPDATE operations require the following permissions:
+
+  - **INSERT DATA**: `:write` permission on target graph(s)
+  - **DELETE DATA**: `:write` permission on target graph(s)
+  - **MODIFY (DELETE/INSERT WHERE)**: `:write` permission on affected graph(s)
+  - **CREATE GRAPH**: `:admin` permission on graph
+  - **DROP GRAPH**: `:admin` permission on graph
+  - **CLEAR GRAPH**: `:write` permission on graph
+  - **COPY**: `:read` permission on source, `:write` permission on target
+  - **MOVE**: `:admin` permission on both source and target
+  - **ADD**: `:read` permission on source, `:write` permission on target
+
+  To provide a user context, include `:user` in the execution context:
+
+      ctx = %{
+        db: db,
+        dict_manager: dict_manager,
+        user: %{id: "user123", roles: [:editor]}
+      }
+
+  For internal operations where authorization should be bypassed (e.g., maintenance),
+  omit the `:user` key from the context.
+
+  The default graph (`:default`) is always writable without explicit authorization.
+
+  ## Architecture
+
+  The UpdateExecutor delegates to specialized modules for each operation type:
+  - `TripleStore.SPARQL.Update.InsertData` - INSERT DATA operations
+  - `TripleStore.SPARQL.Update.DeleteData` - DELETE DATA and DELETE WHERE operations
+  - `TripleStore.SPARQL.Update.Modify` - MODIFY (DELETE/INSERT WHERE) operations
+  - `TripleStore.SPARQL.Update.GraphOperations` - CREATE/DROP/CLEAR/COPY/MOVE/ADD operations
+  - `TripleStore.SPARQL.Update.Helpers` - Common utilities (authorization, conversion, etc.)
+
   """
 
-  alias TripleStore.Adapter
-  alias TripleStore.Dictionary
-  alias TripleStore.Dictionary.StringToId
-  alias TripleStore.Index
   alias TripleStore.Query.Cache, as: QueryCache
-  alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.Update.InsertData
+  alias TripleStore.SPARQL.Update.DeleteData
+  alias TripleStore.SPARQL.Update.Modify
+  alias TripleStore.SPARQL.Update.GraphOperations
 
   # Suppress MapSet opaque type warnings in predicate extraction functions
   @dialyzer {:nowarn_function, extract_predicates_from_operations: 1}
@@ -57,7 +116,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
           db: reference(),
-          dict_manager: GenServer.server()
+          dict_manager: GenServer.server(),
+          user: map() | nil
         }
 
   @typedoc "A quad (subject, predicate, object, optional graph)"
@@ -75,9 +135,6 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   # Maximum pattern matches for DELETE/INSERT WHERE
   @max_pattern_matches 1_000_000
-
-  # Maximum template size (triples per template)
-  @max_template_size 1_000
 
   @doc """
   Returns the maximum number of triples allowed in INSERT/DELETE DATA.
@@ -144,21 +201,17 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
     :telemetry.execute(
       [:triple_store, :sparql, :update, :stop],
-      %{duration: duration, triple_count: triple_count},
-      %{operation_count: operation_count, status: status}
+      %{duration: duration, triple_count: triple_count || 0},
+      %{status: status, operation_count: operation_count}
     )
-
-    # Invalidate query cache after successful update
-    if status == :ok and triple_count > 0 do
-      invalidate_cache_for_operations(operations)
-    end
 
     result
   end
 
-  def execute(_ctx, _ast), do: {:error, :invalid_update_ast}
+  def execute(_ctx, _ast) do
+    {:error, :invalid_update_ast}
+  end
 
-  # Extract status and triple count for telemetry
   defp telemetry_result({:ok, count}), do: {:ok, count}
   defp telemetry_result({:error, _}), do: {:error, 0}
 
@@ -178,10 +231,12 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   def execute_operation(ctx, {:delete_insert, props}) when is_list(props) do
-    delete_template = Keyword.get(props, :delete, [])
-    insert_template = Keyword.get(props, :insert, [])
-    pattern = Keyword.get(props, :pattern)
-    _using = Keyword.get(props, :using)
+    # Parser returns charlist keys like {"delete", ...}, not atoms
+    # We need to extract values by matching the key
+    delete_template = get_prop_value(props, "delete", [])
+    insert_template = get_prop_value(props, "insert", [])
+    pattern = get_prop_value(props, "pattern")
+    _using = get_prop_value(props, "using")
 
     execute_modify(ctx, delete_template, insert_template, pattern)
   end
@@ -195,24 +250,57 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     execute_clear(ctx, props)
   end
 
-  def execute_operation(_ctx, {:create, _props}) do
-    # CREATE GRAPH is a no-op for our single-graph store
-    {:ok, 0}
-  end
-
-  def execute_operation(_ctx, {:drop, _props}) do
-    # DROP GRAPH - for now just return success
-    # Full implementation would track named graphs
-    {:ok, 0}
-  end
-
-  # Handle clear with atom target directly
   def execute_operation(ctx, {:clear, target}) when is_atom(target) do
-    execute_clear(ctx, target: target)
+    # Normalize parser atoms and use correct key name for execute_clear
+    normalized = normalize_clear_target(target)
+    execute_clear(ctx, graph: normalized)
+  end
+
+  # Normalize parser target atoms to internal atoms
+  defp normalize_clear_target(:all_graphs), do: :all
+  defp normalize_clear_target(:default_graph), do: :default
+  defp normalize_clear_target(:all_named), do: :named
+  defp normalize_clear_target(other), do: other
+
+  def execute_operation(ctx, {:create, props}) when is_list(props) do
+    execute_create_graph(ctx, props)
+  end
+
+  def execute_operation(ctx, {:drop, props}) when is_list(props) do
+    execute_drop_graph(ctx, props)
+  end
+
+  def execute_operation(ctx, {:move, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_move(ctx, source, target, silent: silent)
+  end
+
+  def execute_operation(ctx, {:copy, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_copy(ctx, source, target, silent: silent)
+  end
+
+  def execute_operation(ctx, {:add, props}) when is_list(props) do
+    source = get_prop_value(props, "source")
+    target = get_prop_value(props, "target")
+    silent = get_prop_value(props, "silent", false)
+    execute_add(ctx, source, target, silent: silent)
   end
 
   def execute_operation(_ctx, op) do
     {:error, {:unsupported_operation, op}}
+  end
+
+  # Helper to get value from parser properties (which use charlist keys)
+  defp get_prop_value(props, key, default \\ nil) do
+    case List.keyfind(props, key, 0) do
+      {^key, value} -> value
+      _ -> default
+    end
   end
 
   # ===========================================================================
@@ -222,8 +310,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes an INSERT DATA operation.
 
-  Inserts ground triples (no variables) directly into the database.
-  All triples are inserted atomically using a single WriteBatch.
+  Inserts ground quads (no variables) directly into the database.
+  All quads are inserted atomically using a single WriteBatch.
+
+  For quad stores, the graph component of each quad is respected.
+  For triple stores, all data is inserted into the default graph.
 
   ## Arguments
 
@@ -232,12 +323,13 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples inserted
+  - `{:ok, count}` - Number of quads inserted
   - `{:error, :too_many_triples}` - If quad count exceeds limit
   - `{:error, reason}` - On other failures
 
   ## Examples
 
+      # Insert into default graph
       quads = [
         {:quad, {:named_node, "http://example.org/s"},
                 {:named_node, "http://example.org/p"},
@@ -246,23 +338,19 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       ]
       {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
 
+      # Insert into named graph (quad stores)
+      quads = [
+        {:quad, {:named_node, "http://example.org/s"},
+                {:named_node, "http://example.org/p"},
+                {:literal, :simple, "value"},
+                {:named_node, "http://example.org/named"}}
+      ]
+      {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
+
   """
   @spec execute_insert_data(context(), [term()]) :: update_result()
-  def execute_insert_data(_ctx, []), do: {:ok, 0}
-
-  def execute_insert_data(_ctx, quads) when length(quads) > @max_data_triples do
-    {:error, :too_many_triples}
-  end
-
-  def execute_insert_data(ctx, quads) when is_list(quads) do
-    # Convert AST quads to RDF terms, then to internal IDs
-    with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
-         {:ok, internal_triples} <- Adapter.from_rdf_triples(ctx.dict_manager, rdf_triples) do
-      case Index.insert_triples(ctx.db, internal_triples) do
-        :ok -> {:ok, length(internal_triples)}
-        {:error, _} = error -> error
-      end
-    end
+  def execute_insert_data(ctx, quads) do
+    InsertData.execute(ctx, quads)
   end
 
   # ===========================================================================
@@ -272,9 +360,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes a DELETE DATA operation.
 
-  Deletes ground triples (no variables) directly from the database.
-  All deletions are performed atomically using a single DeleteBatch.
-  Deleting non-existent triples is a no-op (idempotent).
+  Deletes ground quads (no variables) directly from the database.
 
   ## Arguments
 
@@ -283,40 +369,14 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples in the delete request
+  - `{:ok, count}` - Number of quads deleted
   - `{:error, :too_many_triples}` - If quad count exceeds limit
   - `{:error, reason}` - On other failures
 
-  ## Examples
-
-      quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
-      ]
-      {:ok, 1} = UpdateExecutor.execute_delete_data(ctx, quads)
-
   """
   @spec execute_delete_data(context(), [term()]) :: update_result()
-  def execute_delete_data(_ctx, []), do: {:ok, 0}
-
-  def execute_delete_data(_ctx, quads) when length(quads) > @max_data_triples do
-    {:error, :too_many_triples}
-  end
-
-  def execute_delete_data(ctx, quads) when is_list(quads) do
-    # Convert AST quads to RDF terms
-    with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
-         {:ok, internal_triples} <- lookup_triple_ids(ctx, rdf_triples) do
-      # Only delete triples that exist (have valid IDs)
-      valid_triples = Enum.filter(internal_triples, &(&1 != nil))
-
-      case Index.delete_triples(ctx.db, valid_triples) do
-        :ok -> {:ok, length(valid_triples)}
-        {:error, _} = error -> error
-      end
-    end
+  def execute_delete_data(ctx, quads) do
+    DeleteData.execute(ctx, quads)
   end
 
   # ===========================================================================
@@ -326,33 +386,22 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes a DELETE WHERE operation.
 
-  Finds all triples matching the WHERE pattern and deletes them.
-  This is equivalent to DELETE { pattern } WHERE { pattern }.
+  Executes a WHERE clause and deletes all matching triples.
 
   ## Arguments
 
   - `ctx` - Execution context with `:db` and `:dict_manager` keys
-  - `pattern` - The WHERE pattern to match and delete
+  - `pattern` - WHERE clause pattern (e.g., {:bgp, [...]})
 
   ## Returns
 
   - `{:ok, count}` - Number of triples deleted
-  - `{:error, :too_many_matches}` - If match count exceeds limit
-  - `{:error, reason}` - On other failures
-
-  ## Examples
-
-      # Delete all triples with predicate :name
-      pattern = {:bgp, [{:triple, {:variable, "s"},
-                                  {:named_node, "http://example.org/name"},
-                                  {:variable, "o"}}]}
-      {:ok, count} = UpdateExecutor.execute_delete_where(ctx, pattern)
+  - `{:error, reason}` - On failure
 
   """
   @spec execute_delete_where(context(), term()) :: update_result()
   def execute_delete_where(ctx, pattern) do
-    # DELETE WHERE uses the pattern as both template and query
-    execute_modify(ctx, [pattern], [], pattern)
+    Modify.execute(ctx, [pattern], [], pattern)
   end
 
   # ===========================================================================
@@ -360,71 +409,51 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   # ===========================================================================
 
   @doc """
-  Executes an INSERT operation with WHERE pattern.
+  Executes an INSERT WHERE operation.
 
-  Queries the database using the WHERE pattern, then for each matching
-  binding, instantiates the insert template and inserts the resulting triples.
+  Executes a WHERE clause and inserts triples generated from templates.
 
   ## Arguments
 
   - `ctx` - Execution context with `:db` and `:dict_manager` keys
-  - `template` - Template patterns to instantiate
-  - `pattern` - The WHERE pattern to match
+  - `template` - List of template patterns (may contain variables)
+  - `pattern` - WHERE clause pattern (e.g., {:bgp, [...]})
 
   ## Returns
 
   - `{:ok, count}` - Number of triples inserted
-  - `{:error, :too_many_matches}` - If match count exceeds limit
-  - `{:error, reason}` - On other failures
-
-  ## Examples
-
-      # Copy all :name values to :label
-      template = [{:triple, {:variable, "s"},
-                            {:named_node, "http://example.org/label"},
-                            {:variable, "name"}}]
-      pattern = {:bgp, [{:triple, {:variable, "s"},
-                                  {:named_node, "http://example.org/name"},
-                                  {:variable, "name"}}]}
-      {:ok, count} = UpdateExecutor.execute_insert_where(ctx, template, pattern)
+  - `{:error, reason}` - On failure
 
   """
   @spec execute_insert_where(context(), [term()], term()) :: update_result()
   def execute_insert_where(ctx, template, pattern) do
-    execute_modify(ctx, [], template, pattern)
+    Modify.execute(ctx, [], template, pattern)
   end
 
   # ===========================================================================
-  # DELETE/INSERT WHERE (MODIFY)
+  # MODIFY (DELETE/INSERT WHERE)
   # ===========================================================================
 
   @doc """
-  Executes a combined DELETE/INSERT WHERE operation.
+  Executes a MODIFY operation (DELETE/INSERT WHERE).
 
-  This is the most general form of SPARQL update that:
-  1. Evaluates the WHERE pattern to get bindings
-  2. For each binding, instantiates both delete and insert templates
-  3. Deletes all resulting delete triples
-  4. Inserts all resulting insert triples
-
-  The delete and insert happen atomically via a single WriteBatch.
+  Executes a WHERE clause, then deletes and inserts triples based on templates.
 
   ## Arguments
 
   - `ctx` - Execution context with `:db` and `:dict_manager` keys
-  - `delete_template` - Template patterns for deletion
-  - `insert_template` - Template patterns for insertion
-  - `pattern` - The WHERE pattern to match
+  - `delete_template` - List of delete patterns (may contain variables)
+  - `insert_template` - List of insert patterns (may contain variables)
+  - `pattern` - WHERE clause pattern (e.g., {:bgp, [...]})
 
   ## Returns
 
-  - `{:ok, count}` - Number of triples affected (deleted + inserted)
-  - `{:error, :too_many_matches}` - If match count exceeds limit
-  - `{:error, reason}` - On other failures
+  - `{:ok, count}` - Total number of triples affected
+  - `{:error, reason}` - On failure
 
   ## Examples
 
-      # Change all :name values to uppercase (conceptually)
+      # Delete and insert in single operation
       delete_tmpl = [{:triple, {:variable, "s"},
                                {:named_node, "http://example.org/name"},
                                {:variable, "name"}}]
@@ -436,39 +465,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   """
   @spec execute_modify(context(), [term()], [term()], term()) :: update_result()
-  def execute_modify(_ctx, [], [], _pattern), do: {:ok, 0}
-
   def execute_modify(ctx, delete_template, insert_template, pattern) do
-    # Validate template sizes
-    if length(delete_template) > @max_template_size or
-         length(insert_template) > @max_template_size do
-      {:error, :template_too_large}
-    else
-      do_execute_modify(ctx, delete_template, insert_template, pattern)
-    end
-  end
-
-  defp do_execute_modify(ctx, delete_template, insert_template, pattern) do
-    # Execute WHERE pattern to get bindings
-    case execute_where_pattern(ctx, pattern) do
-      {:ok, bindings} when length(bindings) > @max_pattern_matches ->
-        {:error, :too_many_matches}
-
-      {:ok, bindings} ->
-        # Instantiate templates with bindings
-        delete_triples = instantiate_template(delete_template, bindings)
-        insert_triples = instantiate_template(insert_template, bindings)
-
-        # Convert to internal representation
-        with {:ok, delete_internal} <- triples_to_internal(ctx, delete_triples, :lookup),
-             {:ok, insert_internal} <- triples_to_internal(ctx, insert_triples, :create) do
-          # Perform atomic delete + insert
-          execute_atomic_modify(ctx.db, delete_internal, insert_internal)
-        end
-
-      {:error, _} = error ->
-        error
-    end
+    Modify.execute(ctx, delete_template, insert_template, pattern)
   end
 
   # ===========================================================================
@@ -478,8 +476,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes a CLEAR operation.
 
-  CLEAR removes all triples from the default graph or a named graph.
-  For our single-graph implementation, CLEAR DEFAULT/ALL removes all triples.
+  CLEAR removes all triples from the default graph, a named graph, or all graphs.
 
   ## Arguments
 
@@ -494,265 +491,142 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   """
   @spec execute_clear(context(), keyword()) :: update_result()
   def execute_clear(ctx, props) do
-    target = Keyword.get(props, :target, :all)
-    silent = Keyword.get(props, :silent, false)
-
-    case target do
-      :all ->
-        clear_all_triples(ctx)
-
-      :default ->
-        clear_all_triples(ctx)
-
-      :named ->
-        # No named graphs in current implementation
-        if silent, do: {:ok, 0}, else: {:error, :no_named_graphs}
-
-      {:graph, _iri} ->
-        # Named graph clear - not implemented
-        if silent, do: {:ok, 0}, else: {:error, :named_graphs_not_supported}
-
-      _ ->
-        {:error, {:invalid_clear_target, target}}
-    end
-  end
-
-  # Batch size for chunked clear operations to prevent OOM
-  @clear_batch_size 10_000
-
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-  defp clear_all_triples(ctx) do
-    # Stream triples and delete in batches to prevent OOM on large databases
-    {:ok, stream} = Index.lookup(ctx.db, {:var, :var, :var})
-
-    stream
-    |> Stream.chunk_every(@clear_batch_size)
-    |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, count} ->
-      case Index.delete_triples(ctx.db, chunk) do
-        :ok -> {:cont, {:ok, count + length(chunk)}}
-        {:error, _} = error -> {:halt, error}
-      end
-    end)
+    GraphOperations.execute_clear(ctx, props)
   end
 
   # ===========================================================================
-  # Private Helpers: Quad/Triple Conversion
+  # CREATE
   # ===========================================================================
 
-  # Converts parser quads to RDF.ex triples
-  defp quads_to_rdf_triples(quads) do
-    triples =
-      Enum.map(quads, fn
-        {:quad, s, p, o, _graph} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
-        {:triple, s, p, o} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
-        {s, p, o} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
-      end)
+  @doc """
+  Executes a CREATE GRAPH operation.
 
-    {:ok, triples}
-  rescue
-    e -> {:error, {:conversion_error, e}}
-  end
+  CREATE GRAPH creates an empty named graph. In our implementation, this
+  reserves a graph ID in the dictionary.
 
-  # Converts parser AST term to RDF.ex term
-  defp ast_to_rdf({:named_node, iri}), do: RDF.iri(iri)
-  defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
-  defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
-  defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
+  ## Arguments
 
-  defp ast_to_rdf({:literal, :language_tagged, value, lang}),
-    do: RDF.literal(value, language: lang)
+  - `ctx` - Execution context
+  - `props` - Properties from the CREATE operation
 
-  defp ast_to_rdf({:literal, :typed, value, datatype}) do
-    RDF.literal(value, datatype: datatype)
-  end
+  ## Returns
 
-  defp ast_to_rdf({:variable, _name}) do
-    raise ArgumentError, "Variables not allowed in INSERT/DELETE DATA"
-  end
+  - `{:ok, 0}` - Graph created (SPARQL CREATE returns no count)
+  - `{:error, reason}` - On failure
 
-  defp ast_to_rdf(term), do: term
-
-  # Looks up existing IDs for triples (for DELETE - doesn't create new IDs)
-  defp lookup_triple_ids(ctx, rdf_triples) do
-    results =
-      Enum.map(rdf_triples, fn {s, p, o} ->
-        with {:ok, s_id} <- lookup_term_id(ctx.db, s),
-             {:ok, p_id} <- lookup_term_id(ctx.db, p),
-             {:ok, o_id} <- lookup_term_id(ctx.db, o) do
-          {s_id, p_id, o_id}
-        else
-          :not_found -> nil
-          {:error, _} -> nil
-        end
-      end)
-
-    {:ok, results}
-  end
-
-  # Lookup term ID - uses inline encoding for numeric types, dictionary for others
-  defp lookup_term_id(db, %RDF.Literal{} = literal) do
-    if Dictionary.inline_encodable?(literal) do
-      encode_inline_literal(literal)
-    else
-      StringToId.lookup_id(db, literal)
-    end
-  end
-
-  defp lookup_term_id(db, term) do
-    StringToId.lookup_id(db, term)
-  end
-
-  # Encode inline-encodable literals directly
-  defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}})
-       when is_integer(value) do
-    Dictionary.encode_integer(value)
-  end
-
-  defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Decimal{value: %Decimal{} = value}}) do
-    Dictionary.encode_decimal(value)
-  end
-
-  defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.DateTime{value: %DateTime{} = value}}) do
-    Dictionary.encode_datetime(value)
-  end
-
-  defp encode_inline_literal(_literal) do
-    {:error, :not_inline_encodable}
-  end
-
-  # Converts triples to internal representation
-  defp triples_to_internal(_ctx, [], _mode), do: {:ok, []}
-
-  defp triples_to_internal(ctx, triples, :create) do
-    Adapter.from_rdf_triples(ctx.dict_manager, triples)
-  end
-
-  defp triples_to_internal(ctx, triples, :lookup) do
-    lookup_triple_ids(ctx, triples)
+  """
+  @spec execute_create_graph(context(), keyword()) :: update_result()
+  def execute_create_graph(ctx, props) do
+    GraphOperations.execute_create_graph(ctx, props)
   end
 
   # ===========================================================================
-  # Private Helpers: Pattern Execution
+  # DROP
   # ===========================================================================
 
-  # Executes a WHERE pattern and returns all bindings
-  defp execute_where_pattern(_ctx, nil), do: {:ok, [%{}]}
+  @doc """
+  Executes a DROP GRAPH operation.
 
-  defp execute_where_pattern(ctx, {:bgp, patterns}) do
-    # execute_bgp always returns {:ok, stream}
-    {:ok, stream} = Executor.execute_bgp(ctx, patterns)
+  DROP GRAPH removes all quads from a named graph.
 
-    # Materialize the stream with limit
-    bindings =
-      stream
-      |> Stream.take(@max_pattern_matches + 1)
-      |> Enum.to_list()
+  ## Arguments
 
-    {:ok, bindings}
-  end
+  - `ctx` - Execution context
+  - `props` - Properties from the DROP operation
 
-  defp execute_where_pattern(_ctx, pattern) do
-    # For now, only BGP patterns are supported
-    {:error, {:unsupported_pattern, pattern}}
+  ## Returns
+
+  - `{:ok, count}` - Number of quads removed
+  - `{:error, reason}` - On failure
+
+  """
+  @spec execute_drop_graph(context(), keyword()) :: update_result()
+  def execute_drop_graph(ctx, props) do
+    GraphOperations.execute_drop_graph(ctx, props)
   end
 
   # ===========================================================================
-  # Private Helpers: Template Instantiation
+  # COPY
   # ===========================================================================
 
-  # Instantiates a template with bindings to produce ground triples
-  defp instantiate_template([], _bindings), do: []
+  @doc """
+  Executes a COPY GRAPH operation.
 
-  defp instantiate_template(template, bindings) do
-    for binding <- bindings,
-        pattern <- template,
-        triple <- instantiate_pattern(pattern, binding),
-        do: triple
+  Copies all triples from source graph to target graph, replacing target.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI or :default)
+  - `target_graph` - Target graph term (RDF.IRI or :default)
+  - `opts` - Options, including `:silent` to suppress errors
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples copied
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+
+  """
+  @spec execute_copy(context(), term(), term(), keyword()) :: update_result()
+  def execute_copy(ctx, source_graph, target_graph, opts \\ []) do
+    GraphOperations.execute_copy(ctx, source_graph, target_graph, opts)
   end
-
-  # Instantiates a single pattern with a binding
-  defp instantiate_pattern({:triple, s, p, o}, binding) do
-    with {:ok, s_val} <- substitute(s, binding),
-         {:ok, p_val} <- substitute(p, binding),
-         {:ok, o_val} <- substitute(o, binding) do
-      [{ast_to_rdf(s_val), ast_to_rdf(p_val), ast_to_rdf(o_val)}]
-    else
-      :unbound -> []
-    end
-  end
-
-  defp instantiate_pattern({:bgp, triples}, binding) do
-    Enum.flat_map(triples, &instantiate_pattern(&1, binding))
-  end
-
-  defp instantiate_pattern(_, _binding), do: []
-
-  # Substitutes variables in a term with values from binding
-  defp substitute({:variable, name}, binding) do
-    case Map.get(binding, name) do
-      nil -> :unbound
-      value -> {:ok, value}
-    end
-  end
-
-  defp substitute(term, _binding), do: {:ok, term}
 
   # ===========================================================================
-  # Private Helpers: Atomic Operations
+  # MOVE
   # ===========================================================================
 
-  # Performs atomic delete + insert operation
-  defp execute_atomic_modify(db, delete_triples, insert_triples) do
-    # Filter out nil entries from lookup failures
-    valid_deletes = Enum.filter(delete_triples, &(&1 != nil))
-    valid_inserts = Enum.filter(insert_triples, &is_tuple/1)
+  @doc """
+  Executes a MOVE GRAPH operation.
 
-    # Build combined operations
-    delete_ops =
-      for {s, p, o} <- valid_deletes,
-          {cf, key} <- Index.encode_triple_keys(s, p, o) do
-        {:delete, cf, key}
-      end
+  Moves all triples from source graph to target graph, then clears source.
 
-    insert_ops =
-      for {s, p, o} <- valid_inserts,
-          {cf, key} <- Index.encode_triple_keys(s, p, o) do
-        {:put, cf, key, <<>>}
-      end
+  ## Arguments
 
-    # Execute as single batch
-    all_ops = delete_ops ++ insert_ops
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI or :default)
+  - `target_graph` - Target graph term (RDF.IRI or :default)
+  - `opts` - Options, including `:silent` to suppress errors
 
-    case execute_batch(db, all_ops) do
-      :ok ->
-        {:ok, length(valid_deletes) + length(valid_inserts)}
+  ## Returns
 
-      {:error, _} = error ->
-        error
-    end
+  - `{:ok, count}` - Number of triples moved
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+
+  """
+  @spec execute_move(context(), term(), term(), keyword()) :: update_result()
+  def execute_move(ctx, source_graph, target_graph, opts \\ []) do
+    GraphOperations.execute_move(ctx, source_graph, target_graph, opts)
   end
 
-  # Executes a batch of operations
-  defp execute_batch(_db, []), do: :ok
+  # ===========================================================================
+  # ADD
+  # ===========================================================================
 
-  defp execute_batch(db, operations) do
-    alias TripleStore.Backend.RocksDB.NIF
+  @doc """
+  Executes an ADD GRAPH operation.
 
-    # Convert to NIF format
-    {puts, deletes} =
-      Enum.reduce(operations, {[], []}, fn
-        {:put, cf, key, value}, {puts, deletes} ->
-          {[{cf, key, value} | puts], deletes}
+  Adds all triples from source graph to target graph (merge, no replace).
 
-        {:delete, cf, key}, {puts, deletes} ->
-          {puts, [{cf, key} | deletes]}
-      end)
+  ## Arguments
 
-    # Execute deletes first, then puts
-    # SPARQL updates use sync: true for data integrity
-    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes, true)) do
-      if(puts == [], do: :ok, else: NIF.write_batch(db, puts, true))
-    end
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `source_graph` - Source graph term (RDF.IRI or :default)
+  - `target_graph` - Target graph term (RDF.IRI or :default)
+  - `opts` - Options, including `:silent` to suppress errors
+
+  ## Returns
+
+  - `{:ok, count}` - Number of triples added
+  - `{:error, :source_equals_target}` - Source and target are the same
+  - `{:error, reason}` - On other failures
+
+  """
+  @spec execute_add(context(), term(), term(), keyword()) :: update_result()
+  def execute_add(ctx, source_graph, target_graph, opts \\ []) do
+    GraphOperations.execute_add(ctx, source_graph, target_graph, opts)
   end
 
   # ===========================================================================
@@ -817,9 +691,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   defp extract_predicates_from_operation({:delete_insert, props}) when is_list(props) do
-    delete_template = Keyword.get(props, :delete, [])
-    insert_template = Keyword.get(props, :insert, [])
-    pattern = Keyword.get(props, :pattern)
+    delete_template = get_prop_value(props, "delete", [])
+    insert_template = get_prop_value(props, "insert", [])
+    pattern = get_prop_value(props, "pattern")
 
     # Extract predicates from templates and pattern
     predicates =

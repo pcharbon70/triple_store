@@ -712,4 +712,122 @@ defmodule TripleStore.SPARQL.CostModelTest do
       assert CostModel.compare_costs(selective_cost, general_cost) == :lt
     end
   end
+
+  # ===========================================================================
+  # Configurable Weights Tests (C15)
+  # ===========================================================================
+
+  describe "get_weights/0" do
+    test "returns default weights when no config is set" do
+      # Ensure no app config is set
+      Application.delete_env(:triple_store, :sparql)
+
+      weights = CostModel.get_weights()
+
+      # Should have all default weights
+      assert weights.comparison_cost == 1.0
+      assert weights.hash_cost == 2.0
+      assert weights.index_seek_cost == 10.0
+    end
+
+    test "merges app config with defaults" do
+      # Set app config
+      Application.put_env(:triple_store, :sparql, cost_model_weights: %{hash_cost: 5.0})
+
+      weights = CostModel.get_weights()
+
+      # Custom weight should override default
+      assert weights.hash_cost == 5.0
+      # Other weights should have defaults
+      assert weights.comparison_cost == 1.0
+
+      # Clean up
+      Application.delete_env(:triple_store, :sparql)
+    end
+  end
+
+  describe "validate_weights/1" do
+    test "accepts valid weights" do
+      assert CostModel.validate_weights(%{hash_cost: 3.0}) == :ok
+      assert CostModel.validate_weights(%{index_seek_cost: 15.0}) == :ok
+      assert CostModel.validate_weights(%{hash_join_threshold: 200}) == :ok
+    end
+
+    test "accepts all valid weights" do
+      weights = %{
+        comparison_cost: 1.5,
+        hash_cost: 3.0,
+        hash_probe_cost: 2.0,
+        index_seek_cost: 15.0,
+        sequential_read_cost: 0.2,
+        memory_weight: 1.5,
+        leapfrog_seek_cost: 6.0,
+        leapfrog_comparison_cost: 2.0,
+        cpu_weight: 1.2,
+        io_weight: 1.3,
+        memory_weight_factor: 0.15,
+        hash_join_threshold: 150
+      }
+
+      assert CostModel.validate_weights(weights) == :ok
+    end
+
+    test "rejects negative weights" do
+      assert CostModel.validate_weights(%{hash_cost: -1.0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+    end
+
+    test "rejects zero weights" do
+      assert CostModel.validate_weights(%{index_seek_cost: 0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+    end
+
+    test "rejects invalid type for float weight" do
+      assert CostModel.validate_weights(%{hash_cost: "not_a_number"}) == {:error, {:invalid_weight, :must_be_positive_float}}
+    end
+
+    test "rejects invalid type for integer weight" do
+      assert CostModel.validate_weights(%{hash_join_threshold: "not_a_number"}) == {:error, {:invalid_weight, :must_be_positive_integer}}
+    end
+
+    test "accepts unknown keys (for extensibility)" do
+      # Unknown keys are ignored to allow future weight additions
+      assert CostModel.validate_weights(%{future_weight: 1.0}) == :ok
+    end
+  end
+
+  describe "set_weights/1" do
+    setup do
+      # Clean up before each test
+      Application.delete_env(:triple_store, :sparql)
+      :ok
+    end
+
+    test "sets valid weights" do
+      assert CostModel.set_weights(%{hash_cost: 3.0}) == :ok
+
+      # Verify the weight was set
+      weights = CostModel.get_weights()
+      assert weights.hash_cost == 3.0
+    end
+
+    test "rejects invalid weights" do
+      assert CostModel.set_weights(%{hash_cost: -1.0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+
+      # Verify the weight was NOT set
+      weights = CostModel.get_weights()
+      assert weights.hash_cost == 2.0  # Default value
+    end
+
+    test "merges with existing weights" do
+      # Set one weight
+      assert CostModel.set_weights(%{hash_cost: 3.0}) == :ok
+
+      # Set another weight
+      assert CostModel.set_weights(%{index_seek_cost: 15.0}) == :ok
+
+      # Both should be set
+      weights = CostModel.get_weights()
+      assert weights.hash_cost == 3.0
+      assert weights.index_seek_cost == 15.0
+    end
+  end
 end

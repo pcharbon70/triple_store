@@ -907,4 +907,122 @@ defmodule TripleStore.StatisticsTest do
       assert selectivity > 0.0 and selectivity < 1.0
     end
   end
+
+  # ===========================================================================
+  # Stats Validation Tests (C19)
+  # ===========================================================================
+
+  describe "validate_stats_structure/1" do
+    test "accepts valid stats with all required keys" do
+      stats = %{
+        triple_count: 1000,
+        distinct_subjects: 100,
+        distinct_predicates: 50,
+        distinct_objects: 200,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      assert Statistics.validate_stats_structure(stats) == :ok
+    end
+
+    test "rejects empty stats map" do
+      assert {:error, {:missing_keys, _keys}} = Statistics.validate_stats_structure(%{})
+    end
+
+    test "rejects stats missing required keys" do
+      stats = %{triple_count: 1000}
+      assert {:error, {:missing_keys, _keys}} = Statistics.validate_stats_structure(stats)
+    end
+
+    test "rejects negative triple_count" do
+      stats = %{
+        triple_count: -1,
+        distinct_subjects: 100,
+        distinct_predicates: 50,
+        distinct_objects: 200,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+      assert {:error, {:invalid_types, _}} = Statistics.validate_stats_structure(stats)
+    end
+
+    test "rejects non-map input" do
+      assert {:error, :not_a_map} = Statistics.validate_stats_structure(nil)
+      assert {:error, :not_a_map} = Statistics.validate_stats_structure("not a map")
+      assert {:error, :not_a_map} = Statistics.validate_stats_structure(123)
+    end
+  end
+
+  describe "validate_stats!/1" do
+    test "returns :ok for valid stats" do
+      stats = %{
+        triple_count: 1000,
+        distinct_subjects: 100,
+        distinct_predicates: 50,
+        distinct_objects: 200,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      assert Statistics.validate_stats!(stats) == :ok
+    end
+
+    test "raises ArgumentError for empty stats map" do
+      assert_raise ArgumentError, ~r/missing required keys/, fn ->
+        Statistics.validate_stats!(%{})
+      end
+    end
+
+    test "raises ArgumentError for missing required keys" do
+      stats = %{triple_count: 1000}
+
+      assert_raise ArgumentError, ~r/missing required keys/, fn ->
+        Statistics.validate_stats!(stats)
+      end
+    end
+
+    test "raises ArgumentError for negative triple_count" do
+      stats = %{
+        triple_count: -1,
+        distinct_subjects: 100,
+        distinct_predicates: 50,
+        distinct_objects: 200,
+        predicate_histogram: %{},
+        numeric_histograms: %{},
+        collected_at: DateTime.utc_now(),
+        version: 1
+      }
+
+      assert_raise ArgumentError, ~r/has invalid value/, fn ->
+        Statistics.validate_stats!(stats)
+      end
+    end
+
+    test "raises ArgumentError for non-map input" do
+      assert_raise ArgumentError, ~r/expected a map/, fn ->
+        Statistics.validate_stats!(nil)
+      end
+
+      assert_raise ArgumentError, ~r/expected a map/, fn ->
+        Statistics.validate_stats!("invalid")
+      end
+    end
+
+    test "error message includes missing keys" do
+      error =
+        assert_raise ArgumentError, fn ->
+          Statistics.validate_stats!(%{})
+        end
+
+      # Should mention some of the required keys
+      assert error.message =~ "triple_count" or error.message =~ "distinct_subjects"
+    end
+  end
 end

@@ -39,6 +39,113 @@ defmodule TripleStore.SPARQL.Executor do
   executor level via module attributes. Property path operations have their own depth,
   frontier size, and result set limits defined in `TripleStore.SPARQL.PropertyPath`.
 
+  ## Security
+
+  ### Authorization
+
+  The executor enforces graph-level access control through the `TripleStore.SPARQL.Authorization`
+  module. All graph access is checked against the user's permissions:
+
+  - **Named graphs**: User must have `:read` permission
+  - **Default graph**: Always accessible
+  - **Graph variable queries** (`GRAPH ?g`): Only returns graphs the user can access
+
+  To provide a user context, include `:user` in the execution context:
+
+      ctx = %{
+        db: db,
+        dict_manager: dict_manager,
+        user: %{id: "user123", roles: [:editor]}
+      }
+
+  Permission levels are:
+  - `:read` - Can query the graph
+  - `:write` - Can modify the graph
+  - `:admin` - Can manage permissions
+  - `:owner` - Full control including ownership transfer
+
+  ### Graph IRI Validation
+
+  All graph IRIs are validated before query execution to prevent security issues:
+
+  - **Scheme whitelist**: Only `http`, `https`, `urn`, `info`, `lsi` schemes allowed
+  - **Path traversal protection**: Blocks `../`, encoded variants, null bytes
+  - **Suspicious pattern detection**: Blocks paths like `/etc/passwd`
+  - **Length limits**: Maximum IRI length of 2048 characters
+
+  Validation failures emit telemetry events for monitoring.
+
+  ### Resource Limits
+
+  The executor enforces several resource limits to prevent DoS attacks:
+
+  | Limit | Attribute | Default | Purpose |
+  |-------|-----------|---------|---------|
+  | Query timeout | `@default_query_timeout` | 30,000ms | Prevent long-running queries |
+  | Max graphs in GRAPH ?g | `@max_graphs_in_variable_query` | 1,000 | Prevent iterating over too many graphs |
+  | DISTINCT size | `@max_distinct_size` | 100,000 | Prevent memory exhaustion |
+  | ORDER BY size | `@max_order_by_size` | 1,000,000 | Prevent memory exhaustion |
+  | DESCRIBE triples | `@max_describe_triples` | 10,000 | Limit blank node following |
+
+  All limit violations emit telemetry events and return `{:error, reason}`.
+
+  ### Telemetry Events
+
+  The following telemetry events are emitted for security monitoring:
+
+  - `[:triple_store, :sparql, :executor, :timeout_exceeded]` - Query timeout
+  - `[:triple_store, :sparql, :executor, :too_many_graphs]` - Graph count limit exceeded
+  - `[:triple_store, :sparql, :validation_failure]` - IRI validation failure
+  - `[:triple_store, :sparql, :auth_failure]` - Authorization failure (via Authorization module)
+
+  ## Architecture
+
+  ### Stream Processing Strategy
+
+  The executor uses Elixir Streams for lazy evaluation throughout the query execution
+  pipeline. This approach provides:
+
+  - **Natural backpressure**: Streams only process data as demanded by consumers
+  - **Memory efficiency**: Intermediate results are not fully materialized
+  - **Composability**: Stream transformations can be chained without intermediate allocations
+
+  Key stream operations:
+  - `Stream.flat_map` - Extending bindings with pattern matches
+  - `Stream.resource` - Lazy iteration over graphs in `GRAPH ?g` queries
+  - `Stream.concat` - Combining streams without materialization
+  - `Enum.reduce_while` - Early termination on timeout/errors
+
+  ### Memory Management
+
+  The executor employs several strategies to prevent memory exhaustion:
+
+  1. **Lazy binding extension**: Each pattern match extends bindings on-demand
+  2. **Result limits**: DISTINCT, ORDER BY have configurable size limits
+  3. **Timeout checks**: BGP execution checks timeout between patterns
+  4. **Graph iteration**: Uses `Stream.resource` for lazy graph iteration
+
+  ### Graph Variable Tracking
+
+  For queries with graph variables (`GRAPH ?g { ... }`), the executor:
+
+  1. Detects graph variables by naming convention (`g`, `graph`, `graphName`, or `*graph*` pattern)
+  2. Peeks at the first binding to determine if graph variables are present
+  3. Reconstructs the stream after peeking to preserve laziness
+  4. Uses explicit graph variable lists instead of string-based heuristics
+
+  This approach avoids the fragile `String.contains?(k, "g") heuristic that incorrectly
+  matched variables like "age".
+
+  ### Quad Pattern Execution
+
+  Quad patterns (4-tuples with graph position) are handled differently from triple patterns:
+
+  - **Named graph**: Executes pattern against specific graph using quad index lookup
+  - **Default graph**: Executes as triple pattern with graph ID 0
+  - **Graph variable**: Iterates over accessible graphs using `execute_with_graph_variable`
+
+  The quad index (GSPO, GPOS, SPOG, POSG) enables efficient graph-scoped queries.
+
   ## Examples
 
       # Execute a BGP against the database
@@ -50,18 +157,45 @@ defmodule TripleStore.SPARQL.Executor do
 
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Index
   alias TripleStore.Index.NumericRange
   alias TripleStore.Index.SubjectCache
+  alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Expression
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
   alias TripleStore.SPARQL.Term
+  alias TripleStore.SPARQL.Validation
 
   # ===========================================================================
   # Types
   # ===========================================================================
+
+  @typedoc "SPARQL algebra term - can be a variable, named node, literal, or other RDF term"
+  @type sparql_term ::
+          {:variable, String.t()}
+          | {:named_node, String.t()}
+          | {:literal, :simple, String.t()}
+          | {:literal, :typed, String.t(), String.t()}
+          | {:literal, :lang, String.t(), String.t()}
+          | :default_graph
+          | term()
+
+  @typedoc "Triple pattern from SPARQL algebra: {:triple, subject, predicate, object}"
+  @type triple_pattern :: {:triple, sparql_term(), sparql_term(), sparql_term()}
+
+  @typedoc "Quad pattern from SPARQL algebra: {:quad, subject, predicate, object, graph}
+  The graph position can be:
+  - A variable: {:variable, \"g\"}
+  - A named node IRI: {:named_node, \"http...\"}
+  - The atom :default_graph for SPARQL default graph
+  "
+  @type quad_pattern :: {:quad, sparql_term(), sparql_term(), sparql_term(), sparql_term()}
+
+  @typedoc "Pattern - either a triple or quad pattern"
+  @type pattern :: triple_pattern() | quad_pattern()
 
   @typedoc "A solution binding - map from variable names to RDF terms"
   @type binding :: %{String.t() => term()}
@@ -75,11 +209,21 @@ defmodule TripleStore.SPARQL.Executor do
   @typedoc "Dictionary manager reference"
   @type dict_manager :: GenServer.server()
 
-  @typedoc "Execution context containing database and dictionary references"
+  @typedoc "Execution context containing database, dictionary, and optional user references"
   @type context :: %{
           :db => db(),
           :dict_manager => dict_manager(),
-          optional(:range_context) => range_context()
+          optional(:range_context) => range_context(),
+          optional(:user) => user(),
+          optional(:query_start_time) => integer(),
+          optional(:timeout_ms) => pos_integer()
+        }
+
+  @typedoc "User object for authorization"
+  @type user :: %{
+          optional(:id) => String.t(),
+          optional(:roles) => [atom()],
+          optional(atom()) => term()
         }
 
   @typedoc "Range filter context for numeric range queries"
@@ -88,9 +232,21 @@ defmodule TripleStore.SPARQL.Executor do
           optional(:range_indexed_predicates) => MapSet.t()
         }
 
+  @typedoc "Graph context for pattern conversion"
+  @type graph_context :: :default | :default_graph | {:named_node, String.t()} | {:variable, String.t()} | nil
+
   # ===========================================================================
   # Security Limits
   # ===========================================================================
+
+  # Default query timeout in milliseconds (30 seconds)
+  @default_query_timeout 30_000
+
+  # Maximum number of graphs to iterate in GRAPH ?g queries
+  @max_graphs_in_variable_query 1000
+
+  # Batch size for streaming results from graph variable queries
+  @graph_variable_batch_size 100
 
   # Maximum number of unique bindings to track for DISTINCT
   # Exceeding this limit returns an error to prevent memory exhaustion
@@ -102,6 +258,553 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Maximum number of triples to collect in DESCRIBE (blank node following)
   @max_describe_triples 10_000
+
+  # Default graph ID (matches TripleStore.QuadIndex.default_graph_id/0)
+  @default_graph_id 0
+
+  # ===========================================================================
+  # Quad Pattern Helpers (Section 3.1: Quad Pattern Representation)
+  # ===========================================================================
+
+  @doc """
+  Checks if a pattern is a quad pattern (4-element tuple).
+
+  ## Examples
+
+      iex> Executor.is_quad_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      true
+
+      iex> Executor.is_quad_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      false
+
+  """
+  @spec is_quad_pattern?(term()) :: boolean()
+  def is_quad_pattern?({:quad, _s, _p, _o, _g}), do: true
+  def is_quad_pattern?(_), do: false
+
+  @doc """
+  Checks if a pattern is a triple pattern (3-element tuple).
+
+  ## Examples
+
+      iex> Executor.is_triple_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      true
+
+      iex> Executor.is_triple_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      false
+
+  """
+  @spec is_triple_pattern?(term()) :: boolean()
+  def is_triple_pattern?({:triple, _s, _p, _o}), do: true
+  def is_triple_pattern?(_), do: false
+
+  @doc """
+  Converts a triple pattern to a quad pattern by adding a graph context.
+
+  ## Arguments
+
+  - `triple_pattern` - A triple pattern `{:triple, s, p, o}`
+  - `graph_context` - The graph context to add:
+    - `:default` or `:default_graph` - Use default graph (ID 0)
+    - `{:named_node, iri}` - Use specific named graph
+    - `{:variable, var}` - Use as graph variable
+    - `nil` - Use `:var` (unbound, matches any graph)
+
+  ## Returns
+
+  - A quad pattern `{:quad, s, p, o, graph}`
+
+  ## Examples
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, :default)
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, {:named_node, "http://example.org/graph"})
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/graph"}}
+
+      iex> triple = {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+      iex> Executor.triple_pattern_to_quad(triple, {:variable, "g"})
+      {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+  """
+  @spec triple_pattern_to_quad(triple_pattern(), graph_context()) :: quad_pattern()
+
+  def triple_pattern_to_quad({:triple, s, p, o}, :default) do
+    {:quad, s, p, o, :default_graph}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, :default_graph) do
+    {:quad, s, p, o, :default_graph}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, {:named_node, _iri} = graph_iri) do
+    {:quad, s, p, o, graph_iri}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, {:variable, _var} = graph_var) do
+    {:quad, s, p, o, graph_var}
+  end
+
+  def triple_pattern_to_quad({:triple, s, p, o}, nil) do
+    {:quad, s, p, o, {:variable, "_graph"}}
+  end
+
+  @doc """
+  Checks if a binding contains a specific graph variable.
+
+  ## Arguments
+
+  - `binding` - A solution binding map
+  - `graph_var` - Either a variable name (String) or `{:variable, name}` tuple
+
+  ## Returns
+
+  - `true` if the graph variable is bound in the binding
+  - `false` otherwise
+
+  ## Examples
+
+      iex> binding = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}}
+      iex> Executor.binding_has_graph?(binding, "g")
+      true
+
+      iex> Executor.binding_has_graph?(binding, {:variable, "g"})
+      true
+
+      iex> Executor.binding_has_graph?(binding, "x")
+      false
+
+  """
+  @spec binding_has_graph?(binding(), String.t() | {:variable, String.t()}) :: boolean()
+  def binding_has_graph?(binding, {:variable, var_name}), do: Map.has_key?(binding, var_name)
+  def binding_has_graph?(binding, var_name) when is_binary(var_name), do: Map.has_key?(binding, var_name)
+
+  @doc """
+  Extracts the graph value from a binding.
+
+  Returns information about the graph context in the binding:
+  - `{:bound, graph_id}` - If graph variable is bound to a specific graph ID
+  - `{:bound, :default}` - If bound to the default graph
+  - `{:var, var_name}` - If graph is a variable (not yet bound)
+  - `:not_bound` - If graph context is unknown
+
+  ## Examples
+
+      iex> binding = %{"g" => {:named_node, "http://example.org/graph1"}}
+      iex> Executor.extract_graph_from_binding(binding, {:variable, "g"})
+      {:bound, {:named_node, "http://example.org/graph1"}}
+
+  """
+  @spec extract_graph_from_binding(binding(), {:variable, String.t()}) ::
+          {:bound, term()} | {:var, String.t()} | :not_bound
+  def extract_graph_from_binding(binding, {:variable, var_name}) do
+    case Map.get(binding, var_name) do
+      nil -> :not_bound
+      graph_term -> {:bound, graph_term}
+    end
+  end
+
+  @doc """
+  Gets the default graph ID.
+
+  Returns the reserved ID used to represent the default graph in quad storage.
+  This matches the value in `TripleStore.QuadIndex.default_graph_id/0`.
+
+  """
+  @spec default_graph_id() :: 0
+  def default_graph_id, do: @default_graph_id
+
+  @doc """
+  Returns the maximum number of graphs allowed in a GRAPH ?g variable query.
+
+  This limit prevents memory exhaustion and unbounded iteration over
+  all named graphs in the database.
+
+  """
+  @spec max_graphs_in_variable_query() :: pos_integer()
+  def max_graphs_in_variable_query, do: @max_graphs_in_variable_query
+
+  @doc """
+  Checks if a BGP (Basic Graph Pattern) contains any quad patterns.
+
+  Returns true if any pattern in the BGP is a quad pattern (4-tuple),
+  false if all patterns are triple patterns (3-tuple).
+
+  ## Examples
+
+      iex> Executor.is_quad_bgp?([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}])
+      false
+
+      iex> Executor.is_quad_bgp?([{:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}])
+      true
+
+      iex> Executor.is_quad_bgp?([{:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}, {:quad, ...}])
+      true
+
+  """
+  @spec is_quad_bgp?(list()) :: boolean()
+  def is_quad_bgp?(patterns) when is_list(patterns) do
+    Enum.any?(patterns, fn
+      {:quad, _s, _p, _o, _g} -> true
+      _ -> false
+    end)
+  end
+
+  # ===========================================================================
+  # GRAPH Clause Execution (Section 3.2: GRAPH Clause Execution)
+  # ===========================================================================
+
+  alias TripleStore.QuadOperations
+
+  @doc """
+  Executes a GRAPH clause against the quad store.
+
+  The GRAPH clause allows queries to be scoped to specific named graphs or to
+  iterate over all graphs using a graph variable.
+
+  ## Arguments
+
+  - `ctx` - Execution context with `:db` and `:dict_manager` keys
+  - `graph_spec` - Graph specification:
+    - `:default` - Execute in default graph
+    - `{:iri, iri}` - Execute in specific named graph
+    - `{:variable, var_name}` - Execute with graph as variable (iterate all graphs)
+  - `pattern` - Inner SPARQL algebra pattern to execute in graph context
+  - `initial_binding` - Initial variable bindings (default: empty map)
+
+  ## Returns
+
+  - `{:ok, stream}` - Stream of binding maps
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Named graph
+      {:ok, stream} = Executor.execute_graph(ctx, {:iri, "http://example.org/g1"}, bgp)
+
+      # Graph variable
+      {:ok, stream} = Executor.execute_graph(ctx, {:variable, "g"}, bgp)
+
+      # Default graph
+      {:ok, stream} = Executor.execute_graph(ctx, :default, bgp)
+
+  """
+  @spec execute_graph(context(), :default | {:iri, String.t()} | {:named_node, String.t()} | {:variable, String.t()}, term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_graph(ctx, graph_spec, pattern, initial_binding \\ %{})
+
+  def execute_graph(ctx, :default, pattern, initial_binding) do
+    execute_in_default_graph(ctx, pattern, initial_binding)
+  end
+
+  def execute_graph(ctx, {:named_node, iri}, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, {:named_node, iri}, initial_binding)
+  end
+
+  def execute_graph(ctx, {:iri, iri}, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, {:named_node, iri}, initial_binding)
+  end
+
+  def execute_graph(ctx, {:variable, var_name}, pattern, initial_binding) do
+    execute_with_graph_variable(ctx, pattern, var_name, initial_binding)
+  end
+
+  @doc """
+  Executes a pattern in the context of a specific named graph.
+
+  All triple patterns in the pattern are converted to quad patterns with the
+  specified graph bound, and the query is executed against only that graph's quads.
+
+  Validation and authorization are checked before executing the pattern.
+
+  """
+  @spec execute_in_named_graph(context(), term(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_in_named_graph(ctx, pattern, graph_term, initial_binding) do
+    # Validate graph term first
+    case validate_graph_term(graph_term) do
+      :ok ->
+        # Check authorization before executing
+        user_or_public = Map.get(ctx, :user, :public)
+
+        case Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
+          {:ok, true} ->
+            # User has access, convert and execute pattern
+            convert_and_execute_pattern(ctx, pattern, graph_term, initial_binding)
+
+          {:ok, false} ->
+            # User does not have access - check if graph exists first
+            # If graph doesn't exist, return empty results (not an error)
+            # This matches SPARQL semantics where querying a non-existent graph returns no results
+            case internal_to_rdf(graph_term) do
+              {:ok, graph_iri} ->
+                if QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph_iri) do
+                  {:error, :unauthorized}
+                else
+                  # Graph doesn't exist - return empty stream
+                  {:ok, []}
+                end
+
+              :error ->
+                # Invalid term - return empty stream
+                {:ok, []}
+            end
+
+          {:error, _reason} = auth_error ->
+            auth_error
+        end
+
+      {:error, reason} = _error ->
+        # Emit telemetry for validation failure
+        emit_validation_failure(graph_term, reason)
+        {:error, reason}
+    end
+  end
+
+  defp convert_and_execute_pattern(ctx, pattern, graph_term, initial_binding) do
+    # Convert triple patterns in BGP to quad patterns with bound graph
+    {:ok, quad_pattern} = convert_patterns_to_quads(pattern, graph_term)
+    # Execute the quad pattern
+    execute_quad_pattern(ctx, quad_pattern, initial_binding)
+  end
+
+  @doc """
+  Executes a pattern in the default graph context.
+
+  All triple patterns in the pattern are converted to quad patterns with the
+  default graph (ID 0) bound, and the query is executed against only default
+  graph quads.
+
+  """
+  @spec execute_in_default_graph(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_in_default_graph(ctx, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, :default_graph, initial_binding)
+  end
+
+  @doc """
+  Executes a pattern with graph as a variable.
+
+  Iterates over all named graphs the user has access to, executes the pattern
+  in each graph context, and binds the graph variable to the graph IRI in results.
+
+  Authorization is enforced - only graphs accessible to the user are queried.
+
+  Uses lazy stream evaluation via Stream.resource to avoid memory exhaustion
+  with many graphs.
+
+  """
+  @spec execute_with_graph_variable(context(), term(), String.t(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_with_graph_variable(ctx, pattern, var_name, initial_binding) do
+    user_or_public = Map.get(ctx, :user, :public)
+
+    case QuadOperations.list_graphs(ctx.db, include_default: true) do
+      {:ok, graph_terms} when is_list(graph_terms) ->
+        # Check for too many graphs before filtering
+        if length(graph_terms) > @max_graphs_in_variable_query do
+          :telemetry.execute(
+            [:triple_store, :sparql, :executor, :too_many_graphs],
+            %{
+              graph_count: length(graph_terms),
+              max_allowed: @max_graphs_in_variable_query
+            },
+            %{}
+          )
+
+          {:error, {:too_many_graphs, length(graph_terms), @max_graphs_in_variable_query}}
+        else
+          # Filter graphs by authorization first
+          # This is O(n) but n is typically the number of graphs (not quads)
+          # Also convert RDF.IRI terms to internal format {:named_node, iri}
+          # Special case: default graph IRI should be converted to :default_graph
+          authorized_graphs =
+            graph_terms
+            |> Enum.filter(fn graph_term ->
+              case Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
+                {:ok, true} -> true
+                _ -> false
+              end
+            end)
+            |> Enum.map(fn graph_term ->
+              # Convert RDF.IRI to internal format
+              case graph_term do
+                %RDF.IRI{value: "http://www.w3.org/ns/graphs/default"} -> :default_graph
+                %RDF.IRI{value: value} -> {:named_node, value}
+                %RDF.BlankNode{value: value} -> {:blank_node, value}
+                _ -> graph_term
+              end
+            end)
+
+          # Simplified approach: iterate over graphs and collect all results
+          # This is less memory-efficient but more reliable
+          results =
+            Enum.flat_map(authorized_graphs, fn graph ->
+              # Debug: log graph iteration
+              # IO.inspect({:graph, graph}, label: "ITERATING GRAPH")
+              # Normalize graph term - convert :default to :default_graph
+              normalized_graph = case graph do
+                :default -> :default_graph
+                other -> other
+              end
+
+              # Bind graph variable in initial binding BEFORE executing pattern
+              # Use internal format for expression evaluation to work correctly
+              graph_binding = Map.put(initial_binding, var_name, normalized_graph)
+
+              case execute_in_named_graph(ctx, pattern, normalized_graph, graph_binding) do
+                {:ok, stream} ->
+                  # Convert graph term to RDF format for result bindings
+                  graph_value = convert_graph_term_to_rdf(normalized_graph)
+                  # Replace graph variable with RDF format in final results
+                  stream
+                  |> Enum.map(fn binding -> Map.put(binding, var_name, graph_value) end)
+
+                {:error, _} ->
+                  []
+              end
+            end)
+
+          {:ok, results}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Take a batch from a stream, returning {batch, remaining_stream}
+  # This is used to implement lazy graph iteration without materializing
+  # entire result sets
+  defp take_batch(stream, count) do
+    # Collect all elements from the stream into a list
+    # This is necessary because streams can't be properly "continued"
+    # after taking elements - both Stream.take and Stream.drop would
+    # start from the beginning
+    all_items = Enum.to_list(stream)
+
+    # Split into batch and remaining
+    if length(all_items) > count do
+      {Enum.take(all_items, count), Enum.drop(all_items, count)}
+    else
+      {all_items, []}
+    end
+  end
+
+  @spec convert_patterns_to_quads(term(), term()) :: {:ok, term()} | {:error, term()}
+  defp convert_patterns_to_quads({:bgp, triple_patterns}, graph_term) do
+    quad_patterns =
+      Enum.map(triple_patterns, fn triple_pattern ->
+        case triple_pattern do
+          {:triple, s, p, o} ->
+            {:quad, s, p, o, graph_term}
+
+          _ ->
+            triple_pattern
+        end
+      end)
+
+    {:ok, {:bgp, quad_patterns}}
+  end
+
+  # Recursively convert patterns in FILTER
+  defp convert_patterns_to_quads({:filter, expr, inner_pattern}, graph_term) do
+    with {:ok, converted_inner} <- convert_patterns_to_quads(inner_pattern, graph_term) do
+      {:ok, {:filter, expr, converted_inner}}
+    end
+  end
+
+  # Recursively convert patterns in UNION
+  defp convert_patterns_to_quads({:union, left, right}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:union, converted_left, converted_right}}
+    end
+  end
+
+  # Recursively convert patterns in LEFT_JOIN
+  defp convert_patterns_to_quads({:left_join, left, right, expr}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:left_join, converted_left, converted_right, expr}}
+    end
+  end
+
+  # Recursively convert patterns in JOIN
+  defp convert_patterns_to_quads({:join, left, right}, graph_term) do
+    with {:ok, converted_left} <- convert_patterns_to_quads(left, graph_term),
+         {:ok, converted_right} <- convert_patterns_to_quads(right, graph_term) do
+      {:ok, {:join, converted_left, converted_right}}
+    end
+  end
+
+  defp convert_patterns_to_quads(other_pattern, _graph_term) do
+    # For other patterns, return as-is
+    {:ok, other_pattern}
+  end
+
+  @doc """
+  Executes a quad pattern against the quad store.
+
+  Similar to execute_pattern but handles quad patterns (4-tuple) instead of
+  triple patterns (3-tuple).
+
+  """
+  @spec execute_quad_pattern(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  def execute_quad_pattern(ctx, pattern, initial_binding \\ %{})
+
+  def execute_quad_pattern(ctx, {:bgp, quad_patterns}, initial_binding) do
+    # Execute quad patterns by using the existing extend_bindings function
+    # which properly handles quad pattern lookups
+    # Create initial stream with just the initial binding
+    initial_stream = Stream.iterate(initial_binding, & &1) |> Stream.take(1)
+
+    # Execute each quad pattern sequentially, extending bindings
+    result =
+      Enum.reduce_while(quad_patterns, {:ok, initial_stream}, fn quad_pattern, {:ok, stream} ->
+        case extend_bindings(ctx, stream, quad_pattern) do
+          {:ok, new_stream} -> {:cont, {:ok, new_stream}}
+          {:error, _reason} = error -> {:halt, error}
+        end
+      end)
+
+    result
+  end
+
+  # Handle FILTER pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:filter, expr, inner_pattern}, initial_binding) do
+    with {:ok, stream} <- execute_quad_pattern(ctx, inner_pattern, initial_binding) do
+      {:ok, filter(stream, expr)}
+    end
+  end
+
+  # Handle UNION pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:union, left, right}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      # UNION should return distinct results
+      {:ok, left_stream |> Stream.concat(right_stream) |> distinct()}
+    end
+  end
+
+  # Handle LEFT_JOIN (OPTIONAL) pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:left_join, left, right, expr}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      opts = if expr, do: [filter: fn binding -> evaluate_filter(expr, binding) end], else: []
+      {:ok, left_join(left_stream, right_stream, opts)}
+    end
+  end
+
+  # Handle JOIN pattern within GRAPH clause
+  def execute_quad_pattern(ctx, {:join, left, right}, initial_binding) do
+    with {:ok, left_stream} <- execute_quad_pattern(ctx, left, initial_binding),
+         {:ok, right_stream} <- execute_quad_pattern(ctx, right, initial_binding) do
+      {:ok, hash_join(left_stream, right_stream)}
+    end
+  end
+
+  def execute_quad_pattern(_ctx, other, _initial_binding) do
+    {:error, {:unsupported_quad_pattern, other}}
+  end
 
   # ===========================================================================
   # BGP Execution (Task 2.4.1)
@@ -151,6 +854,9 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   def execute_bgp(ctx, patterns, initial_binding) when is_list(patterns) do
+    # Initialize timeout tracking if not already set
+    ctx = init_timeout_tracking(ctx)
+
     # Reorder patterns by selectivity
     reordered = Optimizer.reorder_bgp_patterns({:bgp, patterns})
     {:bgp, ordered_patterns} = reordered
@@ -159,13 +865,21 @@ defmodule TripleStore.SPARQL.Executor do
     initial_stream = Stream.iterate(initial_binding, & &1) |> Stream.take(1)
 
     # Execute patterns sequentially using nested loop join
-    result_stream =
-      Enum.reduce(ordered_patterns, initial_stream, fn pattern, stream ->
-        {:ok, new_stream} = extend_bindings(ctx, stream, pattern)
-        new_stream
+    # Check timeout between each pattern execution
+    result =
+      Enum.reduce_while(ordered_patterns, {:ok, initial_stream}, fn pattern, {:ok, stream} ->
+        # Check timeout before executing next pattern
+        case check_timeout(ctx, "bgp_pattern") do
+          {:ok, _remaining} ->
+            {:ok, new_stream} = extend_bindings(ctx, stream, pattern)
+            {:cont, {:ok, new_stream}}
+
+          {:error, :timeout_exceeded} = error ->
+            {:halt, error}
+        end
       end)
 
-    {:ok, result_stream}
+    result
   end
 
   @doc """
@@ -195,33 +909,54 @@ defmodule TripleStore.SPARQL.Executor do
   # Pattern Execution (Internal)
   # ===========================================================================
 
-  # Extends each binding in the stream by matching a pattern
-  defp extend_bindings(ctx, binding_stream, {:triple, s, p, o}) do
+  # Generic helper for extending bindings with a pattern execution function
+  # Reduces code duplication across extend_bindings clauses
+  defp extend_bindings_with(ctx, binding_stream, pattern, exec_fn) do
     result_stream =
       Stream.flat_map(binding_stream, fn binding ->
-        case execute_single_pattern(ctx, binding, s, p, o) do
+        case exec_fn.(ctx, binding, pattern) do
           {:ok, matches} -> matches
           {:error, _} -> []
         end
       end)
 
     {:ok, result_stream}
+  end
+
+  # Extends each binding in the stream by matching a triple pattern
+  @doc false
+  def extend_bindings(ctx, binding_stream, {:triple, s, p, o}) do
+    # For quad stores, convert triple pattern to quad pattern with default graph
+    # This enables WHERE clauses in MODIFY operations to work with quad stores
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, true} ->
+        extend_bindings(ctx, binding_stream, {:quad, s, p, o, :default_graph})
+      {:ok, false} ->
+        extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx, binding, {:triple, s, p, o} ->
+          execute_single_pattern(ctx, binding, s, p, o)
+        end)
+    end
   end
 
   # Property path pattern - delegates to PropertyPath module
-  defp extend_bindings(ctx, binding_stream, {:path, s, path_expr, o}) do
-    result_stream =
-      Stream.flat_map(binding_stream, fn binding ->
-        case PropertyPath.evaluate(ctx, binding, s, path_expr, o) do
-          {:ok, matches} -> matches
-          {:error, _} -> []
-        end
-      end)
+  @doc false
+  def extend_bindings(ctx, binding_stream, {:path, s, path_expr, o}) do
+    extend_bindings_with(ctx, binding_stream, {:path, s, path_expr, o}, fn ctx, binding, {:path, s, path_expr, o} ->
+      PropertyPath.evaluate(ctx, binding, s, path_expr, o)
+    end)
+  end
 
-    {:ok, result_stream}
+  # Quad pattern - extends bindings using quad index lookup
+  @doc false
+  def extend_bindings(ctx, binding_stream, {:quad, s, p, o, g}) do
+    extend_bindings_with(ctx, binding_stream, {:quad, s, p, o, g}, fn ctx, binding, {:quad, s, p, o, g} ->
+      execute_single_quad_pattern(ctx, binding, s, p, o, g)
+    end)
   end
 
   # Execute a single triple pattern with a specific binding
+  @spec execute_single_pattern(context(), binding(), term(), term(), term()) ::
+          {:ok, binding_stream()} | {:error, term()}
   defp execute_single_pattern(ctx, binding, s, p, o) do
     # Check if we can use range index for this pattern
     case check_range_query_opportunity(ctx, binding, s, p, o) do
@@ -234,49 +969,115 @@ defmodule TripleStore.SPARQL.Executor do
     end
   end
 
+  # Execute a single quad pattern with a specific binding
+  @spec execute_single_quad_pattern(context(), binding(), term(), term(), term(), term()) ::
+          {:ok, binding_stream()} | {:error, term()}
+  defp execute_single_quad_pattern(ctx, binding, s, p, o, g) do
+    # This function should only be called for quad stores
+    {:ok, true} = ErlangAdapter.is_quad_store?(ctx.db)
+
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    # Substitute bound variables and encode terms for all 4 positions
+    with {:ok, s_pattern} <- term_to_index_pattern(s, binding, dict_manager),
+         {:ok, p_pattern} <- term_to_index_pattern(p, binding, dict_manager),
+         {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
+         {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
+      # Check if any bound term was not found in the dictionary
+      if has_not_found?([s_pattern, p_pattern, o_pattern, g_pattern]) do
+        {:ok, empty_stream()}
+      else
+        # Build quad index pattern for QuadOperations
+        # Pattern tuple contains :bound or :var for each position
+        quad_pattern = {
+          pattern_type(s_pattern),
+          pattern_type(p_pattern),
+          pattern_type(o_pattern),
+          pattern_type(g_pattern)
+        }
+
+        # Extract values map (only for :bound positions)
+        values = %{
+          s: value_from_pattern(s_pattern),
+          p: value_from_pattern(p_pattern),
+          o: value_from_pattern(o_pattern),
+          g: value_from_pattern(g_pattern)
+        }
+
+        # Use QuadOperations for quad lookup
+        # lookup_quads returns [quad()] (Telemetry.span unwraps the {result, metadata} tuple)
+        quads = QuadOperations.lookup_quads(db, quad_pattern, values)
+
+        case quads do
+          [] ->
+            # No matches
+            {:ok, empty_stream()}
+
+          quads when is_list(quads) ->
+            # Convert matching quads to bindings
+            binding_stream =
+              Stream.flat_map(quads, fn {s_id, p_id, o_id, g_id} ->
+                case extend_binding_from_quad_match(
+                       binding,
+                       s,
+                       p,
+                       o,
+                       g,
+                       s_id,
+                       p_id,
+                       o_id,
+                       g_id,
+                       dict_manager
+                     ) do
+                  {:ok, new_binding} -> [new_binding]
+                  {:error, _} -> []
+                end
+              end)
+
+            {:ok, binding_stream}
+        end
+      end
+    end
+  end
+
+  # Extract pattern type (:bound or :var) from term pattern
+  defp pattern_type({:bound, _id}), do: :bound
+  defp pattern_type({:var, _name}), do: :var
+  defp pattern_type(:var), do: :var
+
+  # Extract value from bound pattern, return nil for var
+  defp value_from_pattern({:bound, id}), do: id
+  defp value_from_pattern({:var, _name}), do: nil
+  defp value_from_pattern(:var), do: nil
+
   # Check if this pattern can use a range index
   # Returns {:use_range_index, predicate_id, var_name, min, max} or :use_regular_index
   defp check_range_query_opportunity(ctx, _binding, _s, p, {:variable, var_name}) do
     range_context = Map.get(ctx, :range_context, %{})
     filter_context = Map.get(range_context, :filter_context, %{})
     range_indexed = Map.get(range_context, :range_indexed_predicates, MapSet.new())
-
-    # Check if the object variable has a range filter
     range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
 
-    if MapSet.member?(range_vars, var_name) do
-      # Check if the predicate is a concrete IRI with a range index
-      case p do
-        {:named_node, predicate_uri} ->
-          if MapSet.member?(range_indexed, predicate_uri) do
-            # Get the predicate ID
-            %{dict_manager: dict_manager} = ctx
-
-            case Term.encode({:named_node, predicate_uri}, dict_manager) do
-              {:ok, predicate_id} ->
-                # Get the range bounds for this variable
-                variable_ranges = Map.get(filter_context, :variable_ranges, %{})
-                {min_val, max_val} = Map.get(variable_ranges, var_name, {nil, nil})
-
-                # Convert nil to :unbounded for the range query
-                min_bound = if min_val == nil, do: :unbounded, else: min_val
-                max_bound = if max_val == nil, do: :unbounded, else: max_val
-
-                {:use_range_index, predicate_id, var_name, min_bound, max_bound}
-
-              _ ->
-                :use_regular_index
-            end
-          else
-            :use_regular_index
-          end
-
-        _ ->
-          :use_regular_index
-      end
+    with true <- MapSet.member?(range_vars, var_name),
+         {:named_node, predicate_uri} <- p,
+         true <- MapSet.member?(range_indexed, predicate_uri),
+         {:ok, predicate_id} <- Term.encode({:named_node, predicate_uri}, ctx.dict_manager),
+         {:ok, min_bound, max_bound} <- get_range_bounds(filter_context, var_name) do
+      {:use_range_index, predicate_id, var_name, min_bound, max_bound}
     else
-      :use_regular_index
+      _ -> :use_regular_index
     end
+  end
+
+  # Gets range bounds for a variable from filter context
+  defp get_range_bounds(filter_context, var_name) do
+    variable_ranges = Map.get(filter_context, :variable_ranges, %{})
+    {min_val, max_val} = Map.get(variable_ranges, var_name, {nil, nil})
+
+    min_bound = if min_val == nil, do: :unbounded, else: min_val
+    max_bound = if max_val == nil, do: :unbounded, else: max_val
+
+    {:ok, min_bound, max_bound}
   end
 
   defp check_range_query_opportunity(_ctx, _binding, _s, _p, _o), do: :use_regular_index
@@ -465,6 +1266,35 @@ defmodule TripleStore.SPARQL.Executor do
     term_to_bound_pattern(term, dict_manager)
   end
 
+  # Convert a graph term to an index pattern element
+  # Handles special cases for :default_graph and graph variables
+  defp term_to_index_pattern_for_graph(:default_graph, _binding, _dict_manager) do
+    # Default graph always has ID 0
+    {:ok, {:bound, @default_graph_id}}
+  end
+
+  defp term_to_index_pattern_for_graph({:variable, name}, binding, dict_manager) do
+    case Map.get(binding, name) do
+      nil ->
+        # Unbound graph variable - match any graph
+        {:ok, :var}
+
+      term ->
+        # Graph variable is bound - encode the term
+        term_to_bound_pattern(term, dict_manager)
+    end
+  end
+
+  defp term_to_index_pattern_for_graph({:named_node, _iri} = term, _binding, dict_manager) do
+    # Named graph IRI - encode it
+    term_to_bound_pattern(term, dict_manager)
+  end
+
+  defp term_to_index_pattern_for_graph(_term, _binding, _dict_manager) do
+    # Other graph terms (shouldn't happen in practice)
+    {:ok, :var}
+  end
+
   # Convert a concrete term to a bound index pattern
   defp term_to_bound_pattern(term, dict_manager) do
     case Term.encode(term, dict_manager) do
@@ -485,6 +1315,42 @@ defmodule TripleStore.SPARQL.Executor do
          {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager) do
       maybe_bind(binding2, o, o_id, dict_manager)
     end
+  end
+
+  # Extend a binding with values from a matched quad
+  # Similar to extend_binding_from_match but handles 4 positions
+  defp extend_binding_from_quad_match(binding, s, p, o, g, s_id, p_id, o_id, g_id, dict_manager) do
+    with {:ok, binding1} <- maybe_bind(binding, s, s_id, dict_manager),
+         {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager),
+         {:ok, binding3} <- maybe_bind(binding2, o, o_id, dict_manager) do
+      # Handle graph position - only bind if it's a variable
+      maybe_bind_graph(binding3, g, g_id, dict_manager)
+    end
+  end
+
+  # Bind a graph variable if the graph position is a variable
+  # If graph is bound (:default_graph or named IRI), don't bind to binding
+  defp maybe_bind_graph(binding, {:variable, name}, graph_id, dict_manager) do
+    # Bind graph variable to the graph IRI term
+    case Term.decode(graph_id, dict_manager) do
+      {:ok, term} -> {:ok, Map.put(binding, name, term)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp maybe_bind_graph(binding, :default_graph, _graph_id, _dict_manager) do
+    # Default graph - don't add to binding (default graph is implicit in SPARQL)
+    {:ok, binding}
+  end
+
+  defp maybe_bind_graph(binding, {:named_node, _iri}, _graph_id, _dict_manager) do
+    # Named graph IRI that's not a variable - don't add to binding
+    {:ok, binding}
+  end
+
+  defp maybe_bind_graph(_binding, _other, _graph_id, _dict_manager) do
+    # Other graph terms - don't add to binding
+    {:ok, %{}}
   end
 
   # Bind a variable to a term ID, or verify consistency if already bound
@@ -1714,27 +2580,28 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # Compare literals - try numeric comparison first, then lexicographic
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp compare_literals(a, b) do
-    a_numeric = try_numeric_value(a)
-    b_numeric = try_numeric_value(b)
+    case {try_numeric_value(a), try_numeric_value(b)} do
+      {nil, _} -> compare_lexicographic(a, b)
+      {_, nil} -> compare_lexicographic(a, b)
+      {a_num, b_num} -> compare_numeric(a_num, b_num)
+    end
+  end
 
-    if a_numeric != nil and b_numeric != nil do
-      cond do
-        a_numeric < b_numeric -> :lt
-        a_numeric > b_numeric -> :gt
-        true -> :eq
-      end
-    else
-      # Fall back to lexicographic comparison
-      a_str = literal_sort_key(a)
-      b_str = literal_sort_key(b)
+  # Compare two numeric values
+  defp compare_numeric(a, b) when a < b, do: :lt
+  defp compare_numeric(a, b) when a > b, do: :gt
+  defp compare_numeric(_, _), do: :eq
 
-      cond do
-        a_str < b_str -> :lt
-        a_str > b_str -> :gt
-        true -> :eq
-      end
+  # Compare literals lexicographically
+  defp compare_lexicographic(a, b) do
+    a_str = literal_sort_key(a)
+    b_str = literal_sort_key(b)
+
+    cond do
+      a_str < b_str -> :lt
+      a_str > b_str -> :gt
+      true -> :eq
     end
   end
 
@@ -2350,10 +3217,13 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   @doc """
-  Serializes CONSTRUCT query results to an RDF.Graph.
+  Serializes CONSTRUCT query results to an RDF.Graph or RDF.Dataset.
 
   Takes a template (list of triple patterns with variables) and instantiates
-  it with each binding to produce triples for the result graph.
+  it with each binding to produce triples for the result graph/dataset.
+
+  When bindings contain graph variables, returns an RDF.Dataset with named
+  graphs. Otherwise, returns an RDF.Graph (default graph).
 
   ## Arguments
 
@@ -2361,11 +3231,12 @@ defmodule TripleStore.SPARQL.Executor do
   - `stream` - Binding stream from query execution
   - `template` - List of triple patterns `{:triple, s, p, o}` where components
                  can be variables or concrete terms
-  - `opts` - Options passed to `RDF.Graph.new/2` (optional)
+  - `opts` - Options passed to `RDF.Graph.new/2` or `RDF.Dataset.new/2` (optional)
 
   ## Returns
 
-  - `{:ok, graph}` - RDF.Graph containing constructed triples
+  - `{:ok, graph}` - RDF.Graph containing constructed triples (no graph context)
+  - `{:ok, dataset}` - RDF.Dataset containing constructed quads (with graph context)
   - `{:error, reason}` - On failure
 
   ## Template Variable Substitution
@@ -2375,26 +3246,87 @@ defmodule TripleStore.SPARQL.Executor do
   - Concrete terms are passed through unchanged
   - If a variable is unbound, that triple is skipped
 
+  ## Graph Context
+
+  When bindings contain a graph variable (e.g., from `GRAPH ?g { ... }`),
+  the constructed quads include the graph context and an RDF.Dataset is returned.
+
   ## Examples
 
+      # Without graph context - returns RDF.Graph
       template = [
         {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
       ]
       {:ok, graph} = Executor.to_construct_result(ctx, stream, template)
 
+      # With graph context - returns RDF.Dataset
+      {:ok, dataset} = Executor.to_construct_result(ctx, stream_with_graph, template)
+
   """
   @spec to_construct_result(context(), Enumerable.t(), [tuple()], keyword()) ::
-          {:ok, RDF.Graph.t()} | {:error, term()}
+          {:ok, RDF.Graph.t()} | {:ok, RDF.Dataset.t()} | {:error, term()}
   def to_construct_result(ctx, stream, template, opts \\ []) do
-    triples =
-      stream
-      |> Stream.flat_map(fn binding ->
-        instantiate_template(template, binding)
-      end)
-      |> Enum.to_list()
+    to_construct_result(ctx, stream, template, nil, opts)
+  end
 
-    # Convert internal terms to RDF terms and build graph
-    build_graph_from_terms(ctx, triples, opts)
+  @doc """
+  Serializes CONSTRUCT query results with explicit graph variable tracking.
+
+  This version accepts graph_vars parameter to avoid fragile heuristic detection
+  and enables lazy stream processing without materialization.
+
+  ## Arguments
+
+  - `ctx` - Execution context
+  - `stream` - Binding stream from query execution
+  - `template` - Triple template for CONSTRUCT
+  - `graph_vars` - List of graph variable names (nil to auto-detect)
+  - `opts` - Options for graph/dataset creation
+
+  """
+  @spec to_construct_result(context(), Enumerable.t(), [tuple()], [String.t()] | nil, keyword()) ::
+          {:ok, RDF.Graph.t()} | {:ok, RDF.Dataset.t()} | {:error, term()}
+  def to_construct_result(ctx, stream, template, graph_vars, opts) do
+    # If graph_vars not provided, try to detect from first few bindings
+    # Take only first binding to determine if we have graph context
+    # This avoids materializing the entire stream
+    {detected_graph_vars, sample_binding} =
+      case graph_vars do
+        nil ->
+          # Peek at first binding to detect graph variables
+          case Enum.take(stream, 1) do
+            [binding | _] ->
+              # Detect graph variables by checking if binding has graph terms
+              detected = detect_graph_variables_in_binding(binding)
+              {detected, binding}
+
+            [] ->
+              # Empty stream - return empty result
+              {[], nil}
+          end
+
+        vars ->
+          {vars, nil}
+      end
+
+    has_graph_vars? = length(detected_graph_vars) > 0
+
+    # Reconstruct stream if we consumed it for detection
+    stream_to_process =
+      if graph_vars == nil and sample_binding != nil do
+        # We consumed the first element - need to prepend it back
+        Stream.concat([sample_binding], Stream.drop(stream, 1))
+      else
+        stream
+      end
+
+    if has_graph_vars? do
+      # Process as dataset with streaming
+      build_dataset_from_stream(ctx, stream_to_process, template, detected_graph_vars, opts)
+    else
+      # Process as graph with streaming
+      build_graph_from_stream(ctx, stream_to_process, template, opts)
+    end
   end
 
   @doc """
@@ -2501,6 +3433,178 @@ defmodule TripleStore.SPARQL.Executor do
     {:ok, RDF.Graph.new(rdf_triples, opts)}
   end
 
+  # Build RDF.Dataset from internal term quads (for named graph queries)
+  defp build_dataset_from_terms(_ctx, [], _opts) do
+    {:ok, RDF.Dataset.new([])}
+  end
+
+  defp build_dataset_from_terms(_ctx, quads, _opts) do
+    # Convert internal quads to RDF quads
+    # Quads are {s, p, o, g} or {s, p, o} with graph context from binding
+    rdf_quads =
+      Enum.flat_map(quads, fn
+        {s, _p, _o, g} = quad ->
+          with {:ok, s_term} <- internal_to_rdf(s),
+               {:ok, p_term} <- internal_to_rdf(elem(quad, 1)),
+               {:ok, o_term} <- internal_to_rdf(elem(quad, 2)),
+               {:ok, g_term} <- internal_to_rdf(g) do
+            [{s_term, p_term, o_term, g_term}]
+          else
+            _ -> []
+          end
+
+        {_s, _p, _o} ->
+          # Triple without explicit graph - skip in dataset mode
+          # (this shouldn't happen if has_graph_vars? is true)
+          []
+      end)
+
+    {:ok, RDF.Dataset.new(rdf_quads)}
+  end
+
+  # Build RDF.Graph from stream of bindings (streaming, no materialization)
+  defp build_graph_from_stream(_ctx, stream, template, opts) do
+    rdf_triples =
+      stream
+      |> Stream.flat_map(fn binding ->
+        instantiate_template(template, binding)
+      end)
+      |> Stream.flat_map(fn {s, p, o} ->
+        with {:ok, s_term} <- internal_to_rdf(s),
+             {:ok, p_term} <- internal_to_rdf(p),
+             {:ok, o_term} <- internal_to_rdf(o) do
+          [{s_term, p_term, o_term}]
+        else
+          _ -> []
+        end
+      end)
+      |> Enum.to_list()
+
+    {:ok, RDF.Graph.new(rdf_triples, opts)}
+  end
+
+  # Build RDF.Dataset from stream of bindings with explicit graph variables
+  defp build_dataset_from_stream(_ctx, stream, template, graph_vars, opts) do
+    rdf_quads =
+      stream
+      |> Stream.flat_map(fn binding ->
+        instantiate_template_with_graph_vars(template, binding, graph_vars)
+      end)
+      |> Stream.flat_map(fn
+        {s, p, o, g} ->
+          with {:ok, s_term} <- internal_to_rdf(s),
+               {:ok, p_term} <- internal_to_rdf(p),
+               {:ok, o_term} <- internal_to_rdf(o),
+               {:ok, g_term} <- internal_to_rdf(g) do
+            [{s_term, p_term, o_term, g_term}]
+          else
+            _ -> []
+          end
+
+        {s, p, o} ->
+          # Triple without graph - add to default graph
+          with {:ok, s_term} <- internal_to_rdf(s),
+               {:ok, p_term} <- internal_to_rdf(p),
+               {:ok, o_term} <- internal_to_rdf(o) do
+            [{s_term, p_term, o_term}]
+          else
+            _ -> []
+          end
+      end)
+      |> Enum.to_list()
+
+    {:ok, RDF.Dataset.new(rdf_quads, opts)}
+  end
+
+  # Detect graph variables in a binding by looking for graph term values
+  # Graph variables are identified by checking common naming conventions
+  # and special graph term types
+  defp detect_graph_variables_in_binding(binding) do
+    Enum.filter(binding, fn {k, v} ->
+      is_graph_variable_name?(k) or is_special_graph_term?(v)
+    end)
+    |> Enum.map(fn {k, _v} -> k end)
+  end
+
+  # Check if a variable name is commonly used for graphs
+  defp is_graph_variable_name?("g"), do: true
+  defp is_graph_variable_name?("graph"), do: true
+  defp is_graph_variable_name?("graphName"), do: true
+  defp is_graph_variable_name?(name) when is_binary(name) do
+    # Check for common graph variable patterns
+    String.starts_with?(name, "graph") or String.ends_with?(name, "Graph")
+  end
+  defp is_graph_variable_name?(_), do: false
+
+  # Check if a value is a special graph term (not regular RDF terms)
+  defp is_special_graph_term?(:default_graph), do: true
+  defp is_special_graph_term?(:default), do: true
+  defp is_special_graph_term?(_), do: false
+
+  # Instantiate template with explicit graph variables
+  # Returns list of {s, p, o} or {s, p, o, g} tuples
+  defp instantiate_template_with_graph_vars(template, binding, graph_vars) do
+    # Find the graph value from the binding using known graph variable names
+    graph_term =
+      Enum.find_value(graph_vars, fn var_name ->
+        Map.get(binding, var_name)
+      end)
+
+    Enum.flat_map(template, fn {:triple, s, p, o} ->
+      with {:ok, s_val} <- substitute_term(s, binding),
+           {:ok, p_val} <- substitute_term(p, binding),
+           {:ok, o_val} <- substitute_term(o, binding) do
+        if graph_term do
+          [{s_val, p_val, o_val, graph_term}]
+        else
+          [{s_val, p_val, o_val}]
+        end
+      else
+        :unbound -> []
+      end
+    end)
+  end
+
+  # Instantiate template with graph context
+  # Returns list of {s, p, o, g} quads when graph is present, or {s, p, o} when not
+  defp instantiate_template_with_graph(template, binding) do
+    # Try to find the graph variable value in the binding
+    # Graph variables are typically named "g", "graph", or contain "graph"
+    graph_term =
+      Enum.find_value(binding, fn
+        {"g", v} -> v
+        {"graph", v} -> v
+        {k, v} when is_binary(k) ->
+          if String.contains?(k, "graph"), do: v, else: nil
+        _ -> nil
+      end)
+
+    Enum.flat_map(template, fn {:triple, s, p, o} ->
+      with {:ok, s_val} <- substitute_term(s, binding),
+           {:ok, p_val} <- substitute_term(p, binding),
+           {:ok, o_val} <- substitute_term(o, binding) do
+        if graph_term do
+          # Include graph context
+          [{s_val, p_val, o_val, graph_term}]
+        else
+          # No graph context - return triple
+          [{s_val, p_val, o_val}]
+        end
+      else
+        :unbound -> []
+      end
+    end)
+  end
+
+  # Extract graph names from binding and instantiated quads
+  defp extract_graph_names(_binding, instantiated) do
+    # Collect all graph values from the instantiated quads
+    Enum.reduce(instantiated, MapSet.new(), fn
+      {_s, _p, _o, g}, acc -> MapSet.put(acc, g)
+      {_s, _p, _o}, acc -> acc
+    end)
+  end
+
   # Convert internal term representation to RDF.ex terms
   defp internal_to_rdf({:named_node, uri}), do: {:ok, RDF.iri(uri)}
   defp internal_to_rdf({:blank_node, id}), do: {:ok, RDF.bnode(id)}
@@ -2515,6 +3619,16 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   defp internal_to_rdf(_), do: :error
+
+  # Convert internal graph term to RDF format for result bindings
+  # This is used when binding graph variables in GRAPH ?g patterns
+  defp convert_graph_term_to_rdf(:default_graph), do: RDF.iri("http://www.w3.org/ns/graphs/default")
+  defp convert_graph_term_to_rdf(:default), do: RDF.iri("http://www.w3.org/ns/graphs/default")
+  defp convert_graph_term_to_rdf({:named_node, uri}), do: RDF.iri(uri)
+  defp convert_graph_term_to_rdf({:blank_node, id}), do: RDF.bnode(id)
+  defp convert_graph_term_to_rdf(%RDF.IRI{} = iri), do: iri
+  defp convert_graph_term_to_rdf(%RDF.BlankNode{} = bnode), do: bnode
+  defp convert_graph_term_to_rdf(other), do: other
 
   # Describe resources by fetching their CBD from the database
   defp describe_resources(ctx, resources, follow_bnodes, opts) do
@@ -2596,37 +3710,39 @@ defmodule TripleStore.SPARQL.Executor do
   defp do_follow_blank_nodes(ctx, triples, seen, depth) do
     %{db: db} = ctx
 
-    # Find blank node objects we haven't seen yet
-    new_bnodes =
-      triples
-      |> Enum.flat_map(fn {_s, _p, o} ->
-        if blank_node_id?(o) and not MapSet.member?(seen, o) do
-          [o]
-        else
-          []
-        end
-      end)
-      |> Enum.uniq()
+    case find_new_blank_nodes(triples, seen) do
+      [] ->
+        triples
 
-    if Enum.empty?(new_bnodes) do
-      triples
-    else
-      # Fetch triples for new blank nodes
-      new_seen = Enum.reduce(new_bnodes, seen, &MapSet.put(&2, &1))
-
-      new_triples =
-        Enum.flat_map(new_bnodes, fn bnode_id ->
-          # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-          case Index.lookup_all(db, {{:bound, bnode_id}, :var, :var}) do
-            {:ok, bnode_triples} -> bnode_triples
-            _ -> []
-          end
-        end)
-
-      # Recursively follow more blank nodes with accumulator pattern
-      all_triples = triples ++ new_triples
-      follow_blank_nodes(ctx, all_triples, new_seen, depth + 1)
+      new_bnodes ->
+        new_seen = Enum.reduce(new_bnodes, seen, &MapSet.put(&2, &1))
+        new_triples = fetch_triples_for_blank_nodes(db, new_bnodes)
+        all_triples = triples ++ new_triples
+        follow_blank_nodes(ctx, all_triples, new_seen, depth + 1)
     end
+  end
+
+  # Find blank node objects in triples that haven't been seen yet
+  defp find_new_blank_nodes(triples, seen) do
+    triples
+    |> Enum.flat_map(fn {_s, _p, o} ->
+      if blank_node_id?(o) and not MapSet.member?(seen, o) do
+        [o]
+      else
+        []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  # Fetch triples for a list of blank node IDs
+  defp fetch_triples_for_blank_nodes(db, bnode_ids) do
+    Enum.flat_map(bnode_ids, fn bnode_id ->
+      case Index.lookup_all(db, {{:bound, bnode_id}, :var, :var}) do
+        {:ok, bnode_triples} -> bnode_triples
+        _ -> []
+      end
+    end)
   end
 
   # Check if an ID represents a blank node (type tag 1)
@@ -2663,5 +3779,78 @@ defmodule TripleStore.SPARQL.Executor do
       end
     end)
     |> Enum.reverse()
+  end
+
+  # Checks if the query has exceeded its timeout
+  # Returns {:ok, remaining_ms} or {:error, :timeout_exceeded}
+  @spec check_timeout(context(), String.t()) :: {:ok, pos_integer()} | {:error, :timeout_exceeded}
+  defp check_timeout(ctx, operation \\ "query") do
+    start_time = Map.get(ctx, :query_start_time)
+    timeout_ms = Map.get(ctx, :timeout_ms, @default_query_timeout)
+
+    if start_time do
+      elapsed = System.monotonic_time(:millisecond) - start_time
+
+      if elapsed > timeout_ms do
+        :telemetry.execute(
+          [:triple_store, :sparql, :executor, :timeout_exceeded],
+          %{
+            elapsed_ms: elapsed,
+            timeout_ms: timeout_ms,
+            operation: operation
+          },
+          %{}
+        )
+
+        {:error, :timeout_exceeded}
+      else
+        {:ok, timeout_ms - elapsed}
+      end
+    else
+      # No timeout tracking - allow execution
+      {:ok, timeout_ms}
+    end
+  end
+
+  # Initializes timeout tracking in the context if not present
+  @spec init_timeout_tracking(context()) :: context()
+  defp init_timeout_tracking(ctx) do
+    if Map.has_key?(ctx, :query_start_time) do
+      ctx
+    else
+      Map.put(ctx, :query_start_time, System.monotonic_time(:millisecond))
+    end
+  end
+
+  # ===========================================================================
+  # Graph Term Validation (Security)
+  # ===========================================================================
+
+  # Validates a graph term before using it in query execution
+  @spec validate_graph_term(term()) :: :ok | {:error, atom()}
+  defp validate_graph_term(:default_graph), do: :ok
+  defp validate_graph_term(:default), do: :ok
+  defp validate_graph_term({:named_node, iri}) when is_binary(iri) do
+    Validation.validate_graph_iri(iri)
+  end
+  defp validate_graph_term({:blank_node, _id}), do: :ok
+  defp validate_graph_term(_), do: {:error, :invalid_graph_term}
+
+  # Emits telemetry event for validation failures
+  @spec emit_validation_failure(term(), atom()) :: :ok
+  defp emit_validation_failure(graph_term, reason) do
+    graph_iri =
+      case graph_term do
+        {:named_node, iri} -> iri
+        :default_graph -> "default"
+        :default -> "default"
+        _ -> "unknown"
+      end
+
+    Validation.emit_validation_telemetry(
+      reason,
+      graph_iri,
+      %{graph_term: inspect(graph_term)}
+    )
   end
 end

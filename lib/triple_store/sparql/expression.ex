@@ -1154,6 +1154,7 @@ defmodule TripleStore.SPARQL.Expression do
   defp to_string_value(_), do: :error
 
   # Convert term to string representation
+  defp term_to_string(:default_graph), do: "http://www.w3.org/ns/graphs/default"
   defp term_to_string({:named_node, iri}), do: iri
   defp term_to_string({:blank_node, id}), do: "_:#{id}"
   defp term_to_string({:literal, :simple, s}), do: s

@@ -77,6 +77,67 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   ```
 
   The API is identical - simply replace `NIF` with `ErlangAdapter`.
+
+  ## Schema Versions
+
+  The adapter supports two database schemas:
+
+  | Schema | Version | Key Size | Indices | Column Families |
+  |--------|---------|----------|---------|-----------------|
+  | Triple Store | v1 | 24 bytes | spo, pos, osp | id2str, str2id, spo, pos, osp, derived, numeric_range |
+  | Quad Store | v2 | 32 bytes | gspo, gpos, spog, posg | id2str, str2id, gspo, gpos, spog, posg, derived, numeric_range |
+
+  ### Opening a Database
+
+  ```elixir
+  # Open as triple store (default, v1)
+  {:ok, adapter} = ErlangAdapter.open("/path/to/db")
+
+  # Open as quad store (v2)
+  {:ok, adapter} = ErlangAdapter.open("/path/to/quad_db", schema: :quad)
+
+  # Check if database is a quad store
+  {:ok, is_quad} = ErlangAdapter.is_quad_store?(adapter)
+  ```
+
+  ## Schema Migration
+
+  **Direct in-place migration from triple store (v1) to quad store (v2) is NOT supported.**
+
+  Triple stores and quad stores use different column families and key formats:
+  - Triple stores use 24-byte keys with SPO, POS, OSP indices
+  - Quad stores use 32-byte keys with GSPO, GPOS, SPOG, POSG indices
+
+  To migrate from triple store to quad store:
+
+  1. **Export data from triple store:**
+     ```elixir
+     {:ok, triple_adapter} = ErlangAdapter.open("/path/to/triple_db")
+     # Export all triples to N-Triples or another format
+     ```
+
+  2. **Import into new quad store:**
+     ```elixir
+     {:ok, quad_adapter} = ErlangAdapter.open("/path/to/quad_db", schema: :quad)
+     # Import exported data with graph context (default graph = ID 0)
+     ```
+
+  3. **Verification:**
+     ```elixir
+     {:ok, true} = ErlangAdapter.is_quad_store?(quad_adapter)
+     ```
+
+  ### Why Export/Import?
+
+  - **Key format change**: 24-byte → 32-byte keys requires rewriting all keys
+  - **Index structure change**: 3 indices → 4 indices requires rebuilding indices
+  - **Graph context**: Triples gain graph position (default graph = ID 0)
+  - **Column families**: Old CFs (spo, pos, osp) are not compatible with new CFs (gspo, gpos, spog, posg)
+
+  The export/import process ensures data integrity and allows for:
+  - Adding named graph context to existing triples
+  - Rebuilding all four quad indices from scratch
+  - Proper validation of the new schema
   """
 
   use GenServer
@@ -87,7 +148,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @type adapter :: pid()
   @type db_ref :: reference()
-  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range
+  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range | :gspo | :gpos | :spog | :posg | :acl
   @type cf_handle :: reference()
   @type cf_name :: charlist()
   @type iterator_ref :: pid()
@@ -96,6 +157,20 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # Fold function types
   @type fold_fun :: ({binary(), binary()}, term() -> term())
   @type fold_keys_fun :: (binary(), term() -> term())
+
+  # ===========================================================================
+  # Schema Version Constants (Section 1.1.3)
+  # ===========================================================================
+
+  # Schema version for triple store (24-byte keys, 3 indices: spo, pos, osp)
+  @schema_v1_triple 1
+
+  # Schema version for quad store (32-byte keys, 4 indices: gspo, gpos, spog, posg)
+  @schema_v2_quad 2
+
+  # Special key for storing schema version in default CF
+  # Uses a distinctive pattern to avoid collision with real data
+  @schema_version_key <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>
 
   # ===========================================================================
   # Client API
@@ -137,11 +212,23 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `opts`: Keyword list of options
     - `:create_if_missing` - Create database if it doesn't exist (default: true)
     - `:error_if_exists` - Error if database already exists (default: false)
+    - `:schema` - Schema type: `:triple` (default) or `:quad`
+      - `:triple` - Triple store with 24-byte keys, 3 indices (spo, pos, osp)
+      - `:quad` - Quad store with 32-byte keys, 4 indices (gspo, gpos, spog, posg)
 
   ## Returns
 
   - `{:ok, adapter}` - Database opened successfully
   - `{:error, reason}` - Failed to open database
+  - `{:error, :schema_mismatch}` - Database schema version doesn't match expected
+
+  ## Examples
+
+      # Open as triple store (default)
+      {:ok, adapter} = ErlangAdapter.open("/path/to/db")
+
+      # Open as quad store
+      {:ok, adapter} = ErlangAdapter.open("/path/to/quad_db", schema: :quad)
 
   """
   @spec open(String.t(), keyword()) :: {:ok, adapter()} | {:error, term()}
@@ -280,6 +367,39 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @spec is_open(adapter()) :: boolean()
   def is_open(adapter) when is_pid(adapter) do
     Process.alive?(adapter) and GenServer.call(adapter, :is_open)
+  end
+
+  @doc """
+  Checks if the database is a quad store (schema version 2).
+
+  A quad store uses 32-byte keys and four indices (gspo, gpos, spog, posg)
+  to support named graphs. A triple store uses 24-byte keys and three
+  indices (spo, pos, osp).
+
+  ## Parameters
+
+  - `adapter`: The adapter PID
+
+  ## Returns
+
+  - `{:ok, true}` - Database is a quad store
+  - `{:ok, false}` - Database is a triple store
+  - `{:error, reason}` - Error occurred
+
+  ## Examples
+
+      iex> {:ok, adapter} = ErlangAdapter.open("/tmp/test_db", schema: :quad)
+      iex> ErlangAdapter.is_quad_store?(adapter)
+      {:ok, true}
+
+      iex> {:ok, adapter} = ErlangAdapter.open("/tmp/test_db", schema: :triple)
+      iex> ErlangAdapter.is_quad_store?(adapter)
+      {:ok, false}
+
+  """
+  @spec is_quad_store?(adapter()) :: {:ok, boolean()} | {:error, term()}
+  def is_quad_store?(adapter) when is_pid(adapter) do
+    GenServer.call(adapter, :is_quad_store)
   end
 
   @doc """
@@ -901,6 +1021,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
         end
       end,
       fn
+        # Halted state - check this first since it's more specific
+        {:halt, acc} ->
+          {:halt, acc}
+
         # Next: get one entry
         {iter_pid, _ref} ->
           case Iterator.next(iter_pid) do
@@ -910,10 +1034,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
             :iterator_end ->
               {:halt, {iter_pid, nil}}
           end
-
-        # Halted state
-        {:halt, acc} ->
-          {:halt, acc}
       end,
       fn
         # Cleanup: close iterator and demonitor
@@ -936,6 +1056,14 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @impl true
   def init({path, opts}) do
+    # Determine schema type (default to :triple for backward compatibility)
+    schema_type = Keyword.get(opts, :schema, :triple)
+
+    # Validate schema type
+    unless schema_type in [:triple, :quad] do
+      raise ArgumentError, "Invalid schema type: #{schema_type}. Must be :triple or :quad"
+    end
+
     # Get database options from config
     db_opts = ColumnFamilyConfig.db_options()
 
@@ -952,12 +1080,12 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     db_path = String.to_charlist(path)
 
     # Open or create the database
-    case open_or_create_database(db_path, db_opts, path) do
+    case open_or_create_database(db_path, db_opts, path, schema_type) do
       {:ok, db, cf_handles} ->
         # Map column family names to atoms
-        cf_map = map_cf_handles(cf_handles)
+        cf_map = map_cf_handles(cf_handles, schema_type)
 
-        {:ok, %{db: db, cf_handles: cf_map, path: path}}
+        {:ok, %{db: db, cf_handles: cf_map, path: path, schema_type: schema_type}}
 
       {:error, _reason} = error ->
         # Return error to prevent the GenServer from starting
@@ -968,6 +1096,16 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @impl true
   def handle_call(:is_open, _from, state) do
     {:reply, true, state}
+  end
+
+  @impl true
+  def handle_call(:is_quad_store, _from, %{db: db} = state) do
+    case read_schema_version(db) do
+      {:ok, @schema_v2_quad} -> {:reply, {:ok, true}, state}
+      {:ok, @schema_v1_triple} -> {:reply, {:ok, false}, state}
+      {:ok, version} -> {:reply, {:error, {:unknown_schema_version, version}}, state}
+      {:error, _reason} = error -> {:reply, error, state}
+    end
   end
 
   @impl true
@@ -1311,7 +1449,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # ===========================================================================
 
   # Opens an existing database or creates a new one with all column families
-  defp open_or_create_database(db_path, db_opts, original_path) do
+  defp open_or_create_database(db_path, db_opts, original_path, schema_type) do
     db_exists = database_exists?(original_path)
 
     cond do
@@ -1319,12 +1457,12 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
         {:error, :database_already_exists}
 
       db_exists ->
-        # Open existing database with all CFs
-        open_existing_database(db_path, db_opts)
+        # Open existing database with all CFs and validate schema version
+        open_existing_database(db_path, db_opts, schema_type)
 
       true ->
-        # Create new database with all CFs
-        create_new_database(db_path, db_opts)
+        # Create new database with all CFs and set schema version
+        create_new_database(db_path, db_opts, schema_type)
     end
   end
 
@@ -1343,17 +1481,79 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # Opens an existing database with all configured column families
-  defp open_existing_database(db_path, db_opts) do
-    # Get all column family descriptors
-    cf_descriptors = ColumnFamilyConfig.cf_descriptors()
+  defp open_existing_database(db_path, db_opts, expected_schema_type) do
+    # Get column family descriptors - we need to determine which schema the DB has first
+    # For now, try to detect schema by listing existing CFs
+    case :rocksdb.list_column_families(db_path, []) do
+      {:ok, existing_cf_names} ->
+        # Detect schema from existing CFs
+        detected_schema = detect_schema_from_cfs(existing_cf_names)
 
-    # Convert to charlist format for erlang-rocksdb
-    cf_descriptors_charlist =
-      Enum.map(cf_descriptors, fn {name, opts} -> {String.to_charlist(name), opts} end)
+        # Validate schema version matches what we expect
+        schema_version =
+          case detected_schema do
+            :triple -> @schema_v1_triple
+            :quad -> @schema_v2_quad
+          end
 
-    case :rocksdb.open_with_cf(db_path, db_opts, cf_descriptors_charlist) do
-      {:ok, db, cf_handles} ->
-        {:ok, db, cf_handles}
+        expected_version =
+          case expected_schema_type do
+            :triple -> @schema_v1_triple
+            :quad -> @schema_v2_quad
+          end
+
+        if schema_version != expected_version do
+          # Schema mismatch - this is a hard error
+          Logger.error(
+            "Schema mismatch: expected #{expected_schema_type} (v#{expected_version}), but database has #{detected_schema} (v#{schema_version})"
+          )
+
+          {:error, :schema_mismatch}
+        else
+          # Schema matches, proceed with opening
+          cf_descriptors = ColumnFamilyConfig.cf_descriptors(detected_schema)
+
+          # Convert to charlist format for erlang-rocksdb
+          cf_descriptors_charlist =
+            Enum.map(cf_descriptors, fn {name, opts} ->
+              {String.to_charlist(name), opts}
+            end)
+
+          case :rocksdb.open_with_cf(db_path, db_opts, cf_descriptors_charlist) do
+            {:ok, db, cf_handles} ->
+              # Validate schema version from stored metadata
+              case read_schema_version(db) do
+                {:ok, ^schema_version} ->
+                  {:ok, db, cf_handles}
+
+                {:ok, actual_version} ->
+                  Logger.error(
+                    "Schema version mismatch in metadata: expected v#{schema_version}, got v#{actual_version}"
+                  )
+
+                  {:error, :schema_mismatch}
+
+                {:error, :not_found} ->
+                  # Old database without schema version metadata
+                  # If we have triple indices, assume it's a v1 triple store
+                  if detected_schema == :triple do
+                    Logger.info(
+                      "No schema version metadata found, assuming v1 (triple) based on column families"
+                    )
+
+                    {:ok, db, cf_handles}
+                  else
+                    {:error, :missing_schema_metadata}
+                  end
+
+                {:error, _reason} = error ->
+                  error
+              end
+
+            {:error, _reason} = error ->
+              error
+          end
+        end
 
       {:error, _reason} = error ->
         error
@@ -1361,21 +1561,36 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # Creates a new database with all column families
-  defp create_new_database(db_path, db_opts) do
+  defp create_new_database(db_path, db_opts, schema_type) do
     # First, open with just the default column family
     case :rocksdb.open_with_cf(db_path, db_opts, [{~c"default", []}]) do
       {:ok, db, [default_cf]} ->
-        # Create additional column families
-        with {:ok, id2str_cf} <- :rocksdb.create_column_family(db, ~c"id2str", []),
-             {:ok, str2id_cf} <- :rocksdb.create_column_family(db, ~c"str2id", []),
-             {:ok, spo_cf} <- :rocksdb.create_column_family(db, ~c"spo", []),
-             {:ok, pos_cf} <- :rocksdb.create_column_family(db, ~c"pos", []),
-             {:ok, osp_cf} <- :rocksdb.create_column_family(db, ~c"osp", []),
-             {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
-             {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []) do
-          {:ok, db,
-           [default_cf, id2str_cf, str2id_cf, spo_cf, pos_cf, osp_cf, derived_cf, numeric_cf]}
-        else
+        # Create schema-appropriate column families
+        create_result =
+          case schema_type do
+            :triple -> create_triple_column_families(db)
+            :quad -> create_quad_column_families(db)
+          end
+
+        case create_result do
+          {:ok, cf_handles} ->
+            # Write schema version to metadata
+            schema_version =
+              case schema_type do
+                :triple -> @schema_v1_triple
+                :quad -> @schema_v2_quad
+              end
+
+            case write_schema_version(db, schema_version) do
+              :ok ->
+                {:ok, db, [default_cf | cf_handles]}
+
+              {:error, _reason} = error ->
+                # Clean up on error
+                :rocksdb.close(db)
+                error
+            end
+
           {:error, _reason} = error ->
             # Clean up on error
             :rocksdb.close(db)
@@ -1387,11 +1602,47 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     end
   end
 
+  # Creates triple store column families
+  defp create_triple_column_families(db) do
+    with {:ok, id2str_cf} <- :rocksdb.create_column_family(db, ~c"id2str", []),
+         {:ok, str2id_cf} <- :rocksdb.create_column_family(db, ~c"str2id", []),
+         {:ok, spo_cf} <- :rocksdb.create_column_family(db, ~c"spo", []),
+         {:ok, pos_cf} <- :rocksdb.create_column_family(db, ~c"pos", []),
+         {:ok, osp_cf} <- :rocksdb.create_column_family(db, ~c"osp", []),
+         {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
+         {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []) do
+      {:ok, [id2str_cf, str2id_cf, spo_cf, pos_cf, osp_cf, derived_cf, numeric_cf]}
+    end
+  end
+
+  # Creates quad store column families
+  defp create_quad_column_families(db) do
+    with {:ok, id2str_cf} <- :rocksdb.create_column_family(db, ~c"id2str", []),
+         {:ok, str2id_cf} <- :rocksdb.create_column_family(db, ~c"str2id", []),
+         {:ok, gspo_cf} <- :rocksdb.create_column_family(db, ~c"gspo", []),
+         {:ok, gpos_cf} <- :rocksdb.create_column_family(db, ~c"gpos", []),
+         {:ok, spog_cf} <- :rocksdb.create_column_family(db, ~c"spog", []),
+         {:ok, posg_cf} <- :rocksdb.create_column_family(db, ~c"posg", []),
+         {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
+         {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []),
+         {:ok, acl_cf} <- :rocksdb.create_column_family(db, ~c"acl", []) do
+      {:ok, [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, numeric_cf, acl_cf]}
+    end
+  end
+
   # Maps column family handles to their atom names
-  defp map_cf_handles(cf_handles) do
+  defp map_cf_handles(cf_handles, schema_type) do
     # The order of cf_handles matches the order we opened them
-    # [default, id2str, str2id, spo, pos, osp, derived, numeric_range]
-    cf_names_in_order = [:default, :id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range]
+    # Triple: [default, id2str, str2id, spo, pos, osp, derived, numeric_range]
+    # Quad: [default, id2str, str2id, gspo, gpos, spog, posg, derived, numeric_range, acl]
+    cf_names_in_order =
+      case schema_type do
+        :triple ->
+          [:default, :id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range]
+
+        :quad ->
+          [:default, :id2str, :str2id, :gspo, :gpos, :spog, :posg, :derived, :numeric_range, :acl]
+      end
 
     Enum.zip(cf_names_in_order, cf_handles)
     |> Enum.into(%{})
@@ -1406,30 +1657,36 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   # Validates the database path for security
+
+  # Uses Path.wildcard to safely check if the expanded path is within allowed directories.
+  # This handles path traversal attempts more securely than checking for literal ".."
+  # since Path.expand normalizes "../" sequences and we verify the result is within bounds.
   defp validate_path(path) when is_binary(path) do
     expanded_path = Path.expand(path)
     tmp_dir = Path.expand(System.tmp_dir!())
+    current_dir = Path.expand(File.cwd!())
     is_absolute = String.starts_with?(path, "/")
 
     cond do
-      # Check for path traversal attempts
-      String.contains?(path, "..") ->
-        {:error, :path_traversal_attempt}
-
-      # Check for suspicious characters
+      # Check for null bytes (security: can be used to bypass string checks)
       String.contains?(path, "\0") ->
         {:error, :null_byte_in_path}
 
-      # Allow relative paths (will be expanded to current working directory)
+      # Check if expanded path attempts to escape allowed directories
+      # For relative paths: check they don't escape current directory after expansion
+      not is_absolute and not path_within_directory?(expanded_path, current_dir) ->
+        {:error, :path_traversal_attempt}
+
+      # Allow relative paths that stay within current directory
       not is_absolute ->
         :ok
 
       # Allow paths under /tmp
-      String.starts_with?(expanded_path, tmp_dir) ->
+      path_within_directory?(expanded_path, tmp_dir) ->
         :ok
 
       # Allow paths under the current project directory
-      String.starts_with?(expanded_path, Path.expand(File.cwd!())) ->
+      path_within_directory?(expanded_path, current_dir) ->
         :ok
 
       # Reject other absolute paths for security
@@ -1439,6 +1696,15 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       true ->
         :ok
     end
+  end
+
+  # Checks if a path is within a directory (after expansion)
+  defp path_within_directory?(path, directory) do
+    # Ensure both paths end with / for proper prefix comparison
+    dir_with_slash = directory <> "/"
+
+    # Check if path starts with directory (or equals it)
+    path == directory or String.starts_with?(path <> "/", dir_with_slash)
   end
 
   # Ensures the database directory exists
@@ -1584,5 +1850,48 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   defp has_prefix?(key, prefix) do
     binary_part(key, 0, byte_size(prefix)) == prefix
+  end
+
+  # ===========================================================================
+  # Schema Version Functions (Section 1.1.3)
+  # ===========================================================================
+
+  # Detects schema type from list of column families
+  defp detect_schema_from_cfs(cf_names) do
+    cf_strings = Enum.map(cf_names, &List.to_string/1)
+
+    cond do
+      # Quad store has gspo, gpos, spog, posg
+      "gspo" in cf_strings and "gpos" in cf_strings ->
+        :quad
+
+      # Triple store has spo, pos, osp but NOT gspo
+      "spo" in cf_strings and "pos" in cf_strings and "osp" in cf_strings ->
+        :triple
+
+      # Unknown schema - default to triple for backward compatibility
+      true ->
+        Logger.warning("Unable to detect schema from column families, assuming :triple")
+        :triple
+    end
+  end
+
+  # Reads the schema version from database metadata
+  defp read_schema_version(db) do
+    case :rocksdb.get(db, @schema_version_key, []) do
+      {:ok, <<version::64-big>>} ->
+        {:ok, version}
+
+      :not_found ->
+        {:error, :not_found}
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  # Writes the schema version to database metadata
+  defp write_schema_version(db, version) when is_integer(version) do
+    :rocksdb.put(db, @schema_version_key, <<version::64-big>>, [])
   end
 end
