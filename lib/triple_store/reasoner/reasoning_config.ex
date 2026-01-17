@@ -53,11 +53,14 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       config = ReasoningConfig.preset(:balanced)
   """
 
-  alias TripleStore.Reasoner.{ReasoningMode, ReasoningProfile, Rules}
+  alias TripleStore.Reasoner.{GraphReasoningConfig, ReasoningMode, ReasoningProfile, Rules}
 
   # ============================================================================
   # Types
   # ============================================================================
+
+  @typedoc "Reasoning scope for quad store"
+  @type reasoning_scope :: :local | :global | :hybrid
 
   @typedoc "Complete reasoning configuration"
   @type t :: %__MODULE__{
@@ -65,6 +68,10 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
           mode: ReasoningMode.mode_name(),
           mode_config: ReasoningMode.mode_config(),
           profile_opts: keyword(),
+          scope: reasoning_scope(),
+          graph_configs: %{non_neg_integer() => GraphReasoningConfig.t()} | nil,
+          tbox_graph: non_neg_integer() | nil,
+          inferred_graph: non_neg_integer() | :separate | nil,
           created_at: DateTime.t()
         }
 
@@ -73,6 +80,10 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     :mode,
     :mode_config,
     :profile_opts,
+    :scope,
+    :graph_configs,
+    :tbox_graph,
+    :inferred_graph,
     :created_at
   ]
 
@@ -99,6 +110,12 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   - `:materialized_rules` - Rules to materialize in hybrid mode
   - `:query_time_rules` - Rules for query-time in hybrid mode
 
+  ### Graph Scope Options (for quad store)
+  - `:scope` - Reasoning scope: `:local` (default), `:global`, or `:hybrid`
+  - `:graph_configs` - Map of graph_id to GraphReasoningConfig for per-graph configuration
+  - `:tbox_graph` - Graph ID containing shared TBox (nil = each graph has own TBox)
+  - `:inferred_graph` - Graph ID for global inferences (nil = same as premises, `:separate` = dedicated graph)
+
   ## Examples
 
       {:ok, config} = ReasoningConfig.new(profile: :rdfs, mode: :materialized)
@@ -108,11 +125,33 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         mode: :hybrid,
         materialized_rules: [:scm_sco, :cax_sco]
       )
+
+      # Graph-local reasoning (default)
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :local
+      )
+
+      # Global reasoning across all graphs
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :global,
+        tbox_graph: 0
+      )
+
+      # Hybrid with per-graph configuration
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :hybrid,
+        tbox_graph: 0,
+        inferred_graph: :separate
+      )
   """
   @spec new(keyword()) :: {:ok, t()} | {:error, term()}
   def new(opts \\ []) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     mode = Keyword.get(opts, :mode, :materialized)
+    scope = Keyword.get(opts, :scope, :local)
 
     # Separate profile and mode options
     profile_opts = Keyword.take(opts, [:rules, :exclude])
@@ -127,13 +166,25 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         :query_time_rules
       ])
 
+    graph_scope_opts =
+      Keyword.take(opts, [
+        :graph_configs,
+        :tbox_graph,
+        :inferred_graph
+      ])
+
     with :ok <- validate_profile(profile, profile_opts),
+         :ok <- validate_scope(scope),
          {:ok, mode_config} <- ReasoningMode.validate_config(mode, mode_opts) do
       config = %__MODULE__{
         profile: profile,
         mode: mode,
         mode_config: mode_config,
         profile_opts: profile_opts,
+        scope: scope,
+        graph_configs: Keyword.get(graph_scope_opts, :graph_configs),
+        tbox_graph: Keyword.get(graph_scope_opts, :tbox_graph),
+        inferred_graph: Keyword.get(graph_scope_opts, :inferred_graph),
         created_at: DateTime.utc_now()
       }
 
@@ -318,13 +369,146 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     %{
       profile: config.profile,
       mode: config.mode,
+      scope: config.scope,
       materialization_rules: materialization_rules(config),
       query_time_rules: query_time_rules(config),
       requires_materialization: requires_materialization?(config),
       requires_backward_chaining: requires_backward_chaining?(config),
-      parallel: config.mode_config.parallel
+      parallel: config.mode_config.parallel,
+      tbox_graph: config.tbox_graph,
+      inferred_graph: config.inferred_graph,
+      graph_config_count: graph_config_count(config)
     }
   end
+
+  # ============================================================================
+  # Graph Scope Query Functions
+  # ============================================================================
+
+  @doc """
+  Returns the reasoning scope.
+  """
+  @spec scope(t()) :: reasoning_scope()
+  def scope(%__MODULE__{scope: scope}), do: scope
+
+  @doc """
+  Returns true if reasoning is graph-local (default).
+  """
+  @spec local?(t()) :: boolean()
+  def local?(%__MODULE__{scope: :local}), do: true
+  def local?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns true if reasoning is global across all graphs.
+  """
+  @spec global?(t()) :: boolean()
+  def global?(%__MODULE__{scope: :global}), do: true
+  def global?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns true if reasoning uses hybrid (per-graph) configuration.
+  """
+  @spec hybrid?(t()) :: boolean()
+  def hybrid?(%__MODULE__{scope: :hybrid}), do: true
+  def hybrid?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns the graph configuration for the given graph ID.
+  """
+  @spec graph_config(t(), non_neg_integer()) :: {:ok, GraphReasoningConfig.t()} | :error
+  def graph_config(%__MODULE__{graph_configs: nil}, _graph_id), do: :error
+
+  def graph_config(%__MODULE__{graph_configs: configs}, graph_id) when is_map(configs) do
+    case Map.get(configs, graph_id) do
+      nil -> :error
+      config -> {:ok, config}
+    end
+  end
+
+  @doc """
+  Returns all graph configurations.
+  """
+  @spec graph_configs(t()) :: %{non_neg_integer() => GraphReasoningConfig.t()} | nil
+  def graph_configs(%__MODULE__{graph_configs: configs}), do: configs
+
+  @doc """
+  Returns the number of configured graphs.
+  """
+  @spec graph_config_count(t()) :: non_neg_integer()
+  def graph_config_count(%__MODULE__{graph_configs: nil}), do: 0
+  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs), do: map_size(configs)
+
+  @doc """
+  Returns the TBox graph ID if configured.
+  """
+  @spec tbox_graph(t()) :: non_neg_integer() | nil
+  def tbox_graph(%__MODULE__{tbox_graph: graph_id}), do: graph_id
+
+  @doc """
+  Returns whether TBox is shared across graphs.
+  """
+  @spec shared_tbox?(t()) :: boolean()
+  def shared_tbox?(%__MODULE__{tbox_graph: nil}), do: false
+  def shared_tbox?(%__MODULE__{tbox_graph: _graph_id}), do: true
+
+  @doc """
+  Returns the inferred graph ID or :separate if configured.
+  """
+  @spec inferred_graph(t()) :: non_neg_integer() | :separate | nil
+  def inferred_graph(%__MODULE__{inferred_graph: graph}), do: graph
+
+  @doc """
+  Returns whether derived quads are stored in a separate graph.
+  """
+  @spec separate_inferred_graph?(t()) :: boolean()
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: :separate}), do: true
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id), do: true
+  def separate_inferred_graph?(%__MODULE__{}), do: false
+
+  @doc """
+  Adds a graph configuration to the reasoning config.
+  """
+  @spec put_graph_config(t(), GraphReasoningConfig.t()) :: t()
+  def put_graph_config(%__MODULE__{} = config, %GraphReasoningConfig{graph_id: graph_id}) do
+    updated_configs =
+      config.graph_configs
+      |> Map.get(%{})
+      |> Map.put(graph_id, %GraphReasoningConfig{graph_id: graph_id})
+
+    %{config | graph_configs: updated_configs}
+  end
+
+  @doc """
+  Removes a graph configuration from the reasoning config.
+  """
+  @spec remove_graph_config(t(), non_neg_integer()) :: t()
+  def remove_graph_config(%__MODULE__{graph_configs: nil} = config, _graph_id), do: config
+
+  def remove_graph_config(%__MODULE__{graph_configs: configs} = config, graph_id)
+      when is_map(configs) do
+    %{config | graph_configs: Map.delete(configs, graph_id)}
+  end
+
+  @doc """
+  Sets the reasoning scope.
+  """
+  @spec put_scope(t(), reasoning_scope()) :: t()
+  def put_scope(%__MODULE__{} = config, scope) when scope in [:local, :global, :hybrid] do
+    %{config | scope: scope}
+  end
+
+  @doc """
+  Sets the TBox graph ID.
+  """
+  @spec put_tbox_graph(t(), non_neg_integer() | nil) :: t()
+  def put_tbox_graph(%__MODULE__{} = config, tbox_graph), do: %{config | tbox_graph: tbox_graph}
+
+  @doc """
+  Sets the inferred graph location.
+  """
+  @spec put_inferred_graph(t(), non_neg_integer() | :separate | nil) :: t()
+  def put_inferred_graph(%__MODULE__{} = config, inferred_graph),
+    do: %{config | inferred_graph: inferred_graph}
 
   # ============================================================================
   # Private Functions
@@ -336,4 +520,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp validate_scope(scope) when scope in [:local, :global, :hybrid], do: :ok
+  defp validate_scope(_scope), do: {:error, :invalid_scope}
 end

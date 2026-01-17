@@ -88,6 +88,23 @@ defmodule TripleStore.Reasoner.Rule do
   @typedoc "A triple pattern in a rule body or head"
   @type pattern :: {:pattern, [rule_term()]}
 
+  @typedoc """
+  A quad pattern for graph-aware reasoning.
+
+  The list contains [graph_term, subject, predicate, object].
+  """
+  @type quad_pattern :: {:quad_pattern, list()}
+
+  @typedoc "A pattern that can be triple or quad"
+  @type graph_pattern :: pattern() | quad_pattern()
+
+  @typedoc "A graph term in a quad pattern"
+  @type graph_term ::
+          {:var, String.t()}
+          | {:bound, non_neg_integer()}
+          | :default
+          | :all
+
   @typedoc "A condition that filters bindings without database access"
   @type condition ::
           {:not_equal, rule_term(), rule_term()}
@@ -97,7 +114,7 @@ defmodule TripleStore.Reasoner.Rule do
           | {:bound, rule_term()}
 
   @typedoc "A body element can be a pattern or condition"
-  @type body_element :: pattern() | condition()
+  @type body_element :: pattern() | quad_pattern() | condition()
 
   @typedoc "The reasoning profile this rule belongs to"
   @type profile :: :rdfs | :owl2rl | :custom
@@ -252,6 +269,52 @@ defmodule TripleStore.Reasoner.Rule do
   def pattern(subject, predicate, object) do
     {:pattern, [subject, predicate, object]}
   end
+
+  @doc """
+  Creates a quad pattern from graph, subject, predicate, and object terms.
+
+  The graph term can be:
+  - `{:var, "g"}` - A variable that matches any graph
+  - `{:bound, graph_id}` - A specific graph ID (for use with integer IDs)
+  - `:default` - The default graph (ID = 0)
+  - `:all` - All graphs (for global reasoning)
+
+  ## Examples
+
+      # Variable graph
+      iex> Rule.quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("http://example.org/knows"), Rule.var("y"))
+      {:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "http://example.org/knows"}, {:var, "y"}]}
+
+      # Specific graph ID
+      iex> Rule.quad_pattern({:bound, 1}, Rule.var("x"), Rule.iri("http://example.org/type"), Rule.iri("http://example.org/Person"))
+      {:quad_pattern, [{:bound, 1}, {:var, "x"}, {:iri, "http://example.org/type"}, {:iri, "http://example.org/Person"}]}
+
+      # Default graph
+      iex> Rule.quad_pattern(:default, Rule.var("x"), Rule.iri("http://example.org/type"), Rule.var("y"))
+      {:quad_pattern, [:default, {:var, "x"}, {:iri, "http://example.org/type"}, {:var, "y"}]}
+
+      # All graphs (global reasoning)
+      iex> Rule.quad_pattern(:all, Rule.var("x"), Rule.iri("http://example.org/type"), Rule.var("y"))
+      {:quad_pattern, [:all, {:var, "x"}, {:iri, "http://example.org/type"}, {:var, "y"}]}
+  """
+  @spec quad_pattern(graph_term(), rule_term(), rule_term(), rule_term()) :: quad_pattern()
+  def quad_pattern(graph, subject, predicate, object) do
+    {:quad_pattern, [graph, subject, predicate, object]}
+  end
+
+  @doc """
+  Returns true if the given element is a quad pattern.
+  """
+  @spec quad_pattern?(term()) :: boolean()
+  def quad_pattern?({:quad_pattern, [_, _, _, _]}), do: true
+  def quad_pattern?(_), do: false
+
+  @doc """
+  Returns true if the given element is a triple pattern.
+  """
+  @spec triple_pattern?(term()) :: boolean()
+  def triple_pattern?({:pattern, [_, _, _]}), do: true
+  def triple_pattern?(_), do: false
 
   # ============================================================================
   # Condition Constructors
