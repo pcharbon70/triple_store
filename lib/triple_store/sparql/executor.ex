@@ -491,11 +491,15 @@ defmodule TripleStore.SPARQL.Executor do
       {:ok, stream} = Executor.execute_graph(ctx, :default, bgp)
 
   """
-  @spec execute_graph(context(), :default | {:iri, String.t()} | {:variable, String.t()}, term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_graph(context(), :default | {:iri, String.t()} | {:named_node, String.t()} | {:variable, String.t()}, term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
   def execute_graph(ctx, graph_spec, pattern, initial_binding \\ %{})
 
   def execute_graph(ctx, :default, pattern, initial_binding) do
     execute_in_default_graph(ctx, pattern, initial_binding)
+  end
+
+  def execute_graph(ctx, {:named_node, iri}, pattern, initial_binding) do
+    execute_in_named_graph(ctx, pattern, {:named_node, iri}, initial_binding)
   end
 
   def execute_graph(ctx, {:iri, iri}, pattern, initial_binding) do
@@ -529,8 +533,22 @@ defmodule TripleStore.SPARQL.Executor do
             convert_and_execute_pattern(ctx, pattern, graph_term, initial_binding)
 
           {:ok, false} ->
-            # User does not have access
-            {:error, :unauthorized}
+            # User does not have access - check if graph exists first
+            # If graph doesn't exist, return empty results (not an error)
+            # This matches SPARQL semantics where querying a non-existent graph returns no results
+            case internal_to_rdf(graph_term) do
+              {:ok, graph_iri} ->
+                if QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph_iri) do
+                  {:error, :unauthorized}
+                else
+                  # Graph doesn't exist - return empty stream
+                  {:ok, []}
+                end
+
+              :error ->
+                # Invalid term - return empty stream
+                {:ok, []}
+            end
 
           {:error, _reason} = auth_error ->
             auth_error
@@ -596,11 +614,21 @@ defmodule TripleStore.SPARQL.Executor do
         else
           # Filter graphs by authorization first
           # This is O(n) but n is typically the number of graphs (not quads)
+          # Also convert RDF.IRI terms to internal format {:named_node, iri}
           authorized_graphs =
-            Enum.filter(graph_terms, fn graph_term ->
+            graph_terms
+            |> Enum.filter(fn graph_term ->
               case Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
                 {:ok, true} -> true
                 _ -> false
+              end
+            end)
+            |> Enum.map(fn graph_term ->
+              # Convert RDF.IRI to internal format {:named_node, iri}
+              case graph_term do
+                %RDF.IRI{value: value} -> {:named_node, value}
+                %RDF.BlankNode{value: value} -> {:blank_node, value}
+                _ -> graph_term
               end
             end)
 
@@ -622,11 +650,11 @@ defmodule TripleStore.SPARQL.Executor do
                       # and store the rest for next continuation
                       {batch, rest} = take_batch(stream, @graph_variable_batch_size)
                       bound_batch = Enum.map(batch, fn binding -> Map.put(binding, var_name, graph) end)
-                      {{:cont, bound_batch}, {:streaming, rest, remaining_graphs, graph, var_name}}
+                      {:cont, bound_batch, {:streaming, rest, remaining_graphs, graph, var_name}}
 
                     {:error, _} ->
                       # Skip graphs with errors, move to next
-                      {{:cont, []}, {:start, remaining_graphs}}
+                      {:cont, [], {:start, remaining_graphs}}
                   end
 
                 {:streaming, current_stream, remaining_graphs, graph, var_name} ->
@@ -636,9 +664,9 @@ defmodule TripleStore.SPARQL.Executor do
 
                   if batch == [] do
                     # Current graph exhausted, move to next graph
-                    {{:cont, []}, {:start, remaining_graphs}}
+                    {:cont, [], {:start, remaining_graphs}}
                   else
-                    {{:cont, bound_batch}, {:streaming, rest, remaining_graphs, graph, var_name}}
+                    {:cont, bound_batch, {:streaming, rest, remaining_graphs, graph, var_name}}
                   end
               end,
               fn _state -> :ok end
@@ -718,21 +746,21 @@ defmodule TripleStore.SPARQL.Executor do
   def execute_quad_pattern(ctx, pattern, initial_binding \\ %{})
 
   def execute_quad_pattern(ctx, {:bgp, quad_patterns}, initial_binding) do
-    # For now, convert quad patterns back to triple patterns for execution
-    # and filter by graph after the fact
-    # TODO: In Section 3.3, implement true quad BGP execution
-    triple_patterns =
-      Enum.map(quad_patterns, fn quad_pattern ->
-        case quad_pattern do
-          {:quad, s, p, o, _g} ->
-            {:triple, s, p, o}
+    # Execute quad patterns by using the existing extend_bindings function
+    # which properly handles quad pattern lookups
+    # Create initial stream with just the initial binding
+    initial_stream = Stream.iterate(initial_binding, & &1) |> Stream.take(1)
 
-          _ ->
-            quad_pattern
+    # Execute each quad pattern sequentially, extending bindings
+    result =
+      Enum.reduce_while(quad_patterns, {:ok, initial_stream}, fn quad_pattern, {:ok, stream} ->
+        case extend_bindings(ctx, stream, quad_pattern) do
+          {:ok, new_stream} -> {:cont, {:ok, new_stream}}
+          {:error, _reason} = error -> {:halt, error}
         end
       end)
 
-    execute_bgp(ctx, triple_patterns, initial_binding)
+    result
   end
 
   def execute_quad_pattern(_ctx, other, _initial_binding) do
