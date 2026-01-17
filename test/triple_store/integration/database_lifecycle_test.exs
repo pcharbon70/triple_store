@@ -20,15 +20,15 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
   @test_db_base "/tmp/triple_store_lifecycle_test"
 
   # ===========================================================================
-  # Helper Functions
+  # Helper Functions (using shared helpers from TripleStore.Integration.Helpers)
   # ===========================================================================
 
   defp unique_path do
-    "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
+    TripleStore.Integration.Helpers.unique_path("database_lifecycle_test")
   end
 
   defp cleanup_path(path) do
-    File.rm_rf(path)
+    TripleStore.Integration.Helpers.cleanup_path(path)
   end
 
   # ===========================================================================
