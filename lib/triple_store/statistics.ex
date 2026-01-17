@@ -626,19 +626,23 @@ defmodule TripleStore.Statistics do
   """
   @spec invalidate_quad_cache(db_ref(), term_id()) :: :ok
   def invalidate_quad_cache(_db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
-    graph_key = quad_cache_key(graph_id)
-    :ets.delete(@quad_cache_table, graph_key)
+    # Only attempt to invalidate if the ETS table exists
+    # (i.e., the Statistics server is running)
+    if :ets.whereis(@quad_cache_table) != :undefined do
+      graph_key = quad_cache_key(graph_id)
+      :ets.delete(@quad_cache_table, graph_key)
 
-    # Invalidate all-graphs summary
-    all_key = all_graphs_cache_key()
-    :ets.delete(@quad_cache_table, all_key)
+      # Invalidate all-graphs summary
+      all_key = all_graphs_cache_key()
+      :ets.delete(@quad_cache_table, all_key)
 
-    # Emit telemetry
-    :telemetry.execute(
-      [:triple_store, :statistics, :quad_cache, :invalidate],
-      %{graph_id: graph_id},
-      %{}
-    )
+      # Emit telemetry
+      :telemetry.execute(
+        [:triple_store, :statistics, :quad_cache, :invalidate],
+        %{graph_id: graph_id},
+        %{}
+      )
+    end
 
     :ok
   end
@@ -660,14 +664,18 @@ defmodule TripleStore.Statistics do
   """
   @spec invalidate_all_quad_cache(db_ref()) :: :ok
   def invalidate_all_quad_cache(_db) do
-    :ets.delete_all_objects(@quad_cache_table)
+    # Only attempt to invalidate if the ETS table exists
+    # (i.e., the Statistics server is running)
+    if :ets.whereis(@quad_cache_table) != :undefined do
+      :ets.delete_all_objects(@quad_cache_table)
 
-    # Emit telemetry
-    :telemetry.execute(
-      [:triple_store, :statistics, :quad_cache, :invalidate_all],
-      %{},
-      %{}
-    )
+      # Emit telemetry
+      :telemetry.execute(
+        [:triple_store, :statistics, :quad_cache, :invalidate_all],
+        %{},
+        %{}
+      )
+    end
 
     :ok
   end
