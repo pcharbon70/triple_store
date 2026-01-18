@@ -62,6 +62,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   @typedoc "Reasoning scope for quad store"
   @type reasoning_scope :: :local | :global | :hybrid
 
+  @typedoc "Derived quad storage strategy for global reasoning"
+  @type storage_strategy :: :same_as_premises | :separate_graph | :per_graph_cf
+
   @typedoc "Complete reasoning configuration"
   @type t :: %__MODULE__{
           profile: ReasoningProfile.profile_name(),
@@ -72,6 +75,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
           graph_configs: %{non_neg_integer() => GraphReasoningConfig.t()} | nil,
           tbox_graph: non_neg_integer() | nil,
           inferred_graph: non_neg_integer() | :separate | nil,
+          storage_strategy: storage_strategy() | nil,
           created_at: DateTime.t()
         }
 
@@ -84,6 +88,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     :graph_configs,
     :tbox_graph,
     :inferred_graph,
+    :storage_strategy,
     :created_at
   ]
 
@@ -115,6 +120,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   - `:graph_configs` - Map of graph_id to GraphReasoningConfig for per-graph configuration
   - `:tbox_graph` - Graph ID containing shared TBox (nil = each graph has own TBox)
   - `:inferred_graph` - Graph ID for global inferences (nil = same as premises, `:separate` = dedicated graph)
+  - `:storage_strategy` - Derived quad storage: `:same_as_premises` (default), `:separate_graph`, or `:per_graph_cf`
 
   ## Examples
 
@@ -170,11 +176,13 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       Keyword.take(opts, [
         :graph_configs,
         :tbox_graph,
-        :inferred_graph
+        :inferred_graph,
+        :storage_strategy
       ])
 
     with :ok <- validate_profile(profile, profile_opts),
          :ok <- validate_scope(scope),
+         :ok <- validate_storage_strategy(graph_scope_opts),
          {:ok, mode_config} <- ReasoningMode.validate_config(mode, mode_opts) do
       config = %__MODULE__{
         profile: profile,
@@ -185,6 +193,7 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         graph_configs: Keyword.get(graph_scope_opts, :graph_configs),
         tbox_graph: Keyword.get(graph_scope_opts, :tbox_graph),
         inferred_graph: Keyword.get(graph_scope_opts, :inferred_graph),
+        storage_strategy: Keyword.get(graph_scope_opts, :storage_strategy, :same_as_premises),
         created_at: DateTime.utc_now()
       }
 
@@ -466,6 +475,21 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   def separate_inferred_graph?(%__MODULE__{}), do: false
 
   @doc """
+  Returns the storage strategy for derived quads.
+  """
+  @spec storage_strategy(t()) :: storage_strategy() | nil
+  def storage_strategy(%__MODULE__{storage_strategy: strategy}), do: strategy
+
+  @doc """
+  Sets the storage strategy for derived quads.
+  """
+  @spec put_storage_strategy(t(), storage_strategy()) :: t()
+  def put_storage_strategy(%__MODULE__{} = config, strategy)
+      when strategy in [:same_as_premises, :separate_graph, :per_graph_cf] do
+    %{config | storage_strategy: strategy}
+  end
+
+  @doc """
   Adds a graph configuration to the reasoning config.
   """
   @spec put_graph_config(t(), GraphReasoningConfig.t()) :: t()
@@ -523,4 +547,14 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
 
   defp validate_scope(scope) when scope in [:local, :global, :hybrid], do: :ok
   defp validate_scope(_scope), do: {:error, :invalid_scope}
+
+  defp validate_storage_strategy(opts) do
+    case Keyword.get(opts, :storage_strategy, :same_as_premises) do
+      strategy when strategy in [:same_as_premises, :separate_graph, :per_graph_cf] ->
+        :ok
+
+      invalid ->
+        {:error, {:invalid_storage_strategy, invalid}}
+    end
+  end
 end
