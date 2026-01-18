@@ -76,10 +76,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     GraphReasoningConfig,
     GraphReasoningStatus,
     ReasoningConfig,
-    Rule,
-    SemiNaive
+    SemiNaive,
+    TBoxExtractor
   }
-  alias TripleStore.{Dictionary, QuadOperations}
 
   # ============================================================================
   # Types
@@ -279,8 +278,12 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Get rules to apply
     rules = Keyword.get(opts, :rules, get_rules_for_graph(config, graph_config))
 
-    # Create graph-scoped lookup and store functions
-    lookup_fn = make_graph_lookup_fn(db, graph_id)
+    # Check if we should load TBox from a separate graph
+    tbox_graph_id = ReasoningConfig.tbox_graph(config)
+    tbox_facts = load_tbox_facts(db, tbox_graph_id, graph_id)
+
+    # Create TBox-aware lookup and graph-scoped store functions
+    lookup_fn = make_tbox_aware_lookup_fn(db, graph_id, tbox_facts)
     store_fn = make_graph_store_fn(db, graph_id)
 
     # Run semi-naive materialization
@@ -300,7 +303,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           total_derived: semi_naive_stats.total_derived,
           duration_ms: duration_ms,
           rules_applied: semi_naive_stats.rules_applied,
-          graph_id: graph_id
+          graph_id: graph_id,
+          tbox_graph: tbox_graph_id
         }
 
         update_graph_status_after_materialization(db, graph_id, graph_config, stats)
@@ -311,6 +315,25 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         # Record error in status
         record_graph_error(db, graph_id, error)
         error
+    end
+  end
+
+  # Load TBox facts from the designated TBox graph
+  # If TBox graph is the same as target graph, don't duplicate facts
+  defp load_tbox_facts(_db, tbox_graph_id, target_graph_id) when tbox_graph_id == target_graph_id do
+    # TBox is in the same graph, facts already loaded as initial_facts
+    MapSet.new()
+  end
+
+  defp load_tbox_facts(db, tbox_graph_id, _target_graph_id) do
+    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
+      {:ok, tbox_quads} ->
+        # Convert TBox quads to triples for reasoning
+        Enum.into(tbox_quads, MapSet.new(), fn {_g, s, p, o} -> {s, p, o} end)
+
+      {:error, _reason} ->
+        # If TBox extraction fails, continue without TBox
+        MapSet.new()
     end
   end
 
@@ -456,30 +479,144 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
   defp load_graph_facts(db, graph_id) do
     # Load all explicit quads from the specified graph
-    case QuadOperations.fold_quads(db, fn quad, acc ->
-      MapSet.put(acc, quad_to_triple(quad))
-    end, MapSet.new(), graph_id: graph_id) do
-      {:ok, facts} when is_map(facts) -> {:ok, facts}
-      {:error, _} = error -> error
+    # Use GSPO index to iterate over the graph
+    prefix = QuadIndex.gspo_prefix(graph_id)
+
+    try do
+      facts =
+        NIF.fold(db, :gspo, prefix, MapSet.new(), fn {key, _value}, acc ->
+          case QuadIndex.key_to_quad(:gspo, key) do
+            {_g, _s, _p, _o} = quad ->
+              MapSet.put(acc, quad_to_triple(quad))
+
+            _error ->
+              acc
+          end
+        end)
+
+      {:ok, facts}
+    rescue
+      e -> {:error, {:fact_loading_failed, e}}
     end
   end
 
   defp load_all_facts(db) do
     # Load all quads from all graphs as triples
-    case QuadOperations.fold_all_quads(db, fn quad, acc ->
-      MapSet.put(acc, quad_to_triple(quad))
-    end, MapSet.new()) do
-      {:ok, facts} when is_map(facts) -> {:ok, facts}
-      {:error, _} = error -> error
+    # This requires scanning the entire GSPO index
+    try do
+      facts =
+        NIF.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
+          case QuadIndex.key_to_quad(:gspo, key) do
+            {_g, _s, _p, _o} = quad ->
+              MapSet.put(acc, quad_to_triple(quad))
+
+            _error ->
+              acc
+          end
+        end)
+
+      {:ok, facts}
+    rescue
+      e -> {:error, {:fact_loading_failed, e}}
     end
   end
 
   # Convert quad {s, p, o, g} to triple {s, p, o} for reasoning
-  defp quad_to_triple({s, p, o, _g}), do: {s, p, o}
+  defp quad_to_triple({_g, s, p, o}), do: {s, p, o}
+
+  # ============================================================================
+  # Private Functions - TBox-Aware Lookup
+  # ============================================================================
+
+  defp make_tbox_aware_lookup_fn(db, graph_id, tbox_facts) do
+    fn pattern ->
+      # First check TBox facts (these don't require database lookup)
+      tbox_matches = lookup_in_tbox_facts(pattern, tbox_facts)
+
+      # Then check graph facts
+      graph_matches = lookup_in_graph_facts(db, graph_id, pattern)
+
+      # Union both result sets
+      case {tbox_matches, graph_matches} do
+        {{:ok, tbox_results}, {:ok, graph_results}} ->
+          {:ok, MapSet.union(tbox_results, graph_results)}
+
+        {{:ok, tbox_results}, :error} ->
+          {:ok, tbox_results}
+
+        {:error, {:ok, graph_results}} ->
+          {:ok, graph_results}
+
+        {:error, :error} ->
+          :error
+      end
+    end
+  end
+
+  # Lookup facts in TBox (in-memory MapSet)
+  defp lookup_in_tbox_facts(_pattern, tbox_facts) when map_size(tbox_facts) == 0 do
+    {:ok, MapSet.new()}
+  end
+
+  defp lookup_in_tbox_facts({:pattern, [s, p, o]}, tbox_facts) do
+    # Pattern match against TBox triples
+    matches =
+      Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
+        matches_term?(s, fact_s) and matches_term?(p, fact_p) and matches_term?(o, fact_o)
+      end)
+
+    {:ok, MapSet.new(matches)}
+  end
+
+  defp lookup_in_tbox_facts({:quad_pattern, [_g, s, p, o]}, tbox_facts) do
+    # Quad pattern with variable/ignored graph - match on SPO
+    matches =
+      Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
+        matches_term?(s, fact_s) and matches_term?(p, fact_p) and matches_term?(o, fact_o)
+      end)
+
+    {:ok, MapSet.new(matches)}
+  end
+
+  defp lookup_in_tbox_facts(_pattern, _tbox_facts) do
+    # Unsupported pattern, return empty
+    {:ok, MapSet.new()}
+  end
+
+  defp matches_term?(:var, _fact), do: true
+  defp matches_term?({:var, _name}, _fact), do: true
+  defp matches_term?(:bound, _fact), do: true
+  defp matches_term?({:bound, term}, fact), do: term == fact
+  defp matches_term?(term, fact) when is_integer(term), do: term == fact
+  defp matches_term?(_, _), do: false
 
   # ============================================================================
   # Private Functions - Graph-Scoped Lookup/Store
   # ============================================================================
+
+  defp lookup_in_graph_facts(db, graph_id, pattern) do
+    # Build a quad pattern bound to the specific graph
+    quad_pattern = bind_graph_to_pattern(pattern, graph_id)
+    lookup_quads_as_triples_in_graph(db, quad_pattern, graph_id)
+  end
+
+  defp lookup_quads_as_triples_in_graph(db, {:quad_pattern, [{:bound, graph_id}, s, p, o]}, graph_id) do
+    # Build quad index lookup pattern
+    pattern = build_quad_lookup_pattern(graph_id, s, p, o)
+
+    case lookup_quads_with_pattern(db, pattern, graph_id) do
+      {:ok, quads} ->
+        triples = Enum.map(quads, fn {_g, s, p, o} -> {s, p, o} end)
+        {:ok, MapSet.new(triples)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp lookup_quads_as_triples_in_graph(_db, _pattern, _graph_id) do
+    {:ok, MapSet.new()}
+  end
 
   defp make_graph_lookup_fn(db, graph_id) do
     fn pattern ->
