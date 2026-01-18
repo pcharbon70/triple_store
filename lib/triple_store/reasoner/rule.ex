@@ -123,14 +123,18 @@ defmodule TripleStore.Reasoner.Rule do
   @type metadata :: %{
           optional(:delta_positions) => [non_neg_integer()],
           optional(:stratum) => non_neg_integer(),
-          optional(:priority) => integer()
+          optional(:priority) => integer(),
+          optional(:graph_id) => non_neg_integer() | :default | :all,
+          optional(:scope) => :local | :global,
+          optional(:tbox_rule) => boolean(),
+          optional(:quad_rule) => boolean()
         }
 
   @typedoc "A complete reasoning rule"
   @type t :: %__MODULE__{
           name: atom(),
           body: [body_element()],
-          head: pattern(),
+          head: pattern() | quad_pattern(),
           description: String.t() | nil,
           profile: profile() | nil,
           metadata: metadata() | nil
@@ -177,6 +181,81 @@ defmodule TripleStore.Reasoner.Rule do
       profile: Keyword.get(opts, :profile),
       metadata: Keyword.get(opts, :metadata)
     }
+  end
+
+  @doc """
+  Creates a new quad-aware rule with quad patterns in both body and head.
+
+  All patterns in this rule must be quad patterns (not mixed with triple patterns).
+
+  ## Parameters
+
+  - `name` - Unique atom identifying the rule
+  - `body` - List of quad patterns and conditions
+  - `head` - Quad pattern to derive when body is satisfied
+
+  ## Options
+
+  - `:description` - Human-readable description
+  - `:profile` - Reasoning profile (:rdfs, :owl2rl, or :custom)
+  - `:metadata` - Additional metadata (automatically sets quad_rule: true)
+  - `:graph_id` - Which graph this rule applies to (optional)
+  - `:scope` - :local or :global scope (default: :local)
+
+  ## Examples
+
+      iex> Rule.new_quad(:my_rule,
+      ...>   [{:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "p"}, {:var, "y"}]}],
+      ...>   {:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "q"}, {:var, "y"}]},
+      ...>   graph_id: 1,
+      ...>   scope: :local
+      ...> )
+  """
+  @spec new_quad(atom(), [body_element()], quad_pattern(), keyword()) :: t()
+  def new_quad(name, body, head, opts \\ []) when is_atom(name) and is_list(body) do
+    # Validate that body patterns are all quad patterns
+    validate_quad_body!(body)
+
+    # Build metadata with quad_rule: true
+    base_metadata = %{
+      quad_rule: true,
+      scope: Keyword.get(opts, :scope, :local)
+    }
+
+    # Add graph_id if provided
+    metadata =
+      case Keyword.get(opts, :graph_id) do
+        nil -> base_metadata
+        graph_id -> Map.put(base_metadata, :graph_id, graph_id)
+      end
+
+    # Merge with any provided metadata
+    custom_metadata = Keyword.get(opts, :metadata, %{})
+    final_metadata = Map.merge(metadata, custom_metadata)
+
+    # Build complete options
+    complete_opts = [
+      description: Keyword.get(opts, :description),
+      profile: Keyword.get(opts, :profile),
+      metadata: final_metadata
+    ]
+
+    new(name, body, head, complete_opts)
+  end
+
+  @doc """
+  Creates a quad pattern for use as a rule head.
+
+  This is a convenience function for creating quad head patterns.
+
+  ## Examples
+
+      iex> Rule.head_quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("p"), Rule.var("y"))
+      {:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "p"}, {:var, "y"}]}
+  """
+  @spec head_quad_pattern(graph_term(), rule_term(), rule_term(), rule_term()) :: quad_pattern()
+  def head_quad_pattern(graph, subject, predicate, object) do
+    {:quad_pattern, [graph, subject, predicate, object]}
   end
 
   @doc """
@@ -528,10 +607,11 @@ defmodule TripleStore.Reasoner.Rule do
   @doc """
   Returns patterns from the body only (excluding conditions).
   """
-  @spec body_patterns(t()) :: [pattern()]
+  @spec body_patterns(t()) :: [pattern() | quad_pattern()]
   def body_patterns(%__MODULE__{body: body}) do
     Enum.filter(body, fn
       {:pattern, _} -> true
+      {:quad_pattern, _} -> true
       _ -> false
     end)
   end
@@ -580,9 +660,13 @@ defmodule TripleStore.Reasoner.Rule do
       iex> Rule.substitute_pattern(pattern, binding)
       {:pattern, [{:iri, "http://example.org/alice"}, {:iri, "http://example.org/knows"}, {:iri, "http://example.org/bob"}]}
   """
-  @spec substitute_pattern(pattern(), binding()) :: pattern()
+  @spec substitute_pattern(pattern() | quad_pattern(), binding()) :: pattern() | quad_pattern()
   def substitute_pattern({:pattern, terms}, binding) do
     {:pattern, Enum.map(terms, &substitute(&1, binding))}
+  end
+
+  def substitute_pattern({:quad_pattern, [graph | terms]}, binding) do
+    {:quad_pattern, [substitute(graph, binding) | Enum.map(terms, &substitute(&1, binding))]}
   end
 
   @doc """
@@ -595,9 +679,19 @@ defmodule TripleStore.Reasoner.Rule do
 
       iex> Rule.ground?({:pattern, [{:var, "x"}, {:iri, "p"}, {:iri, "o"}]})
       false
+
+      iex> Rule.ground?({:quad_pattern, [{:bound, 1}, {:iri, "s"}, {:iri, "p"}, {:iri, "o"}]})
+      true
   """
-  @spec ground?(pattern()) :: boolean()
+  @spec ground?(pattern() | quad_pattern()) :: boolean()
   def ground?({:pattern, terms}) do
+    Enum.all?(terms, fn
+      {:var, _} -> false
+      _ -> true
+    end)
+  end
+
+  def ground?({:quad_pattern, terms}) do
     Enum.all?(terms, fn
       {:var, _} -> false
       _ -> true
@@ -673,6 +767,12 @@ defmodule TripleStore.Reasoner.Rule do
       {:var, name} -> [name]
       _ -> []
     end)
+  end
+
+  defp extract_vars({:quad_pattern, [graph | terms]}) do
+    graph_vars = extract_term_vars(graph)
+    term_vars = Enum.flat_map(terms, &extract_term_vars/1)
+    graph_vars ++ term_vars
   end
 
   defp extract_vars({:not_equal, term1, term2}) do
@@ -754,11 +854,16 @@ defmodule TripleStore.Reasoner.Rule do
   end
 
   defp check_pattern_structure(errors, %__MODULE__{body: body, head: head}) do
-    all_patterns = [head | Enum.filter(body, &match?({:pattern, _}, &1))]
+    all_patterns = [head | Enum.filter(body, fn
+      {:pattern, _} -> true
+      {:quad_pattern, _} -> true
+      _ -> false
+    end)]
 
     invalid =
       Enum.any?(all_patterns, fn
         {:pattern, terms} when is_list(terms) -> length(terms) != 3
+        {:quad_pattern, terms} when is_list(terms) -> length(terms) != 4
         _ -> true
       end)
 
@@ -960,6 +1065,7 @@ defmodule TripleStore.Reasoner.Rule do
   end
 
   defp explain_element({:pattern, _} = pattern), do: explain_pattern(pattern)
+  defp explain_element({:quad_pattern, _} = pattern), do: explain_pattern(pattern)
   defp explain_element({:not_equal, t1, t2}), do: "#{explain_term(t1)} != #{explain_term(t2)}"
   defp explain_element({:is_iri, t}), do: "isIRI(#{explain_term(t)})"
   defp explain_element({:is_blank, t}), do: "isBlank(#{explain_term(t)})"
@@ -969,6 +1075,16 @@ defmodule TripleStore.Reasoner.Rule do
   defp explain_pattern({:pattern, [s, p, o]}) do
     "#{explain_term(s)} #{explain_term(p)} #{explain_term(o)}"
   end
+
+  defp explain_pattern({:quad_pattern, [g, s, p, o]}) do
+    "#{explain_graph_term(g)} { #{explain_term(s)} #{explain_term(p)} #{explain_term(o)} }"
+  end
+
+  defp explain_graph_term({:var, name}), do: "?#{name}"
+  defp explain_graph_term({:bound, id}), do: "graph(#{id})"
+  defp explain_graph_term(:default), do: "graph(default)"
+  defp explain_graph_term(:all), do: "graph(all)"
+  defp explain_graph_term(term), do: explain_term(term)
 
   defp explain_term({:var, name}), do: "?#{name}"
   defp explain_term({:iri, iri}), do: "<#{Namespaces.extract_local_name(iri)}>"
@@ -1022,5 +1138,185 @@ defmodule TripleStore.Reasoner.Rule do
     |> body_patterns()
     |> Enum.with_index()
     |> Enum.map(fn {_, i} -> i end)
+  end
+
+  # ============================================================================
+  # Quad Pattern Support
+  # ============================================================================
+
+  @doc """
+  Returns true if this is a quad-aware rule.
+
+  A quad rule has quad patterns in its body/head.
+
+  ## Examples
+
+      iex> Rule.new_quad(:test, [{:quad_pattern, [...]}], {:quad_pattern, [...]})
+      ...> |> Rule.quad_rule?()
+      true
+
+      iex> Rule.new(:test, [{:pattern, [...]}], {:pattern, [...]})
+      ...> |> Rule.quad_rule?()
+      false
+  """
+  @spec quad_rule?(t()) :: boolean()
+  def quad_rule?(%__MODULE__{metadata: %{quad_rule: true}}), do: true
+  def quad_rule?(%__MODULE__{}), do: false
+
+  @doc """
+  Instantiates a rule head pattern with variable bindings.
+
+  For triple heads, returns a ground triple.
+  For quad heads, returns a ground quad.
+
+  ## Examples
+
+      iex> rule = Rule.new(:test, [{:pattern, [...]}], {:pattern, [{:var, "x"}, {:iri, "p"}, {:var, "y"}]})
+      iex> binding = %{"x" => {:iri, "s"}, "y" => {:iri, "o"}}
+      iex> Rule.instantiate_head(rule, binding)
+      {{:iri, "s"}, {:iri, "p"}, {:iri, "o"}}
+
+      iex> rule = Rule.new_quad(:test, [{:quad_pattern, [...]}], {:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "p"}, {:var, "y"}]})
+      iex> binding = %{"g" => {:bound, 1}, "x" => {:iri, "s"}, "y" => {:iri, "o"}}
+      iex> Rule.instantiate_head(rule, binding)
+      {{:bound, 1}, {:iri, "s"}, {:iri, "p"}, {:iri, "o"}}
+  """
+  @spec instantiate_head(t(), binding()) :: {term(), term(), term()} | {term(), term(), term(), term()}
+  def instantiate_head(%__MODULE__{head: {:pattern, terms}}, binding) do
+    terms
+    |> Enum.map(&substitute(&1, binding))
+    |> List.to_tuple()
+  end
+
+  def instantiate_head(%__MODULE__{head: {:quad_pattern, [graph | terms]}}, binding) do
+    graph = substitute(graph, binding)
+    terms = Enum.map(terms, &substitute(&1, binding))
+    List.to_tuple([graph | terms])
+  end
+
+  @doc """
+  Returns the graph_id from rule metadata, if set.
+
+  ## Examples
+
+      iex> Rule.new_quad(:test, [], {:quad_pattern, [...]}, graph_id: 1)
+      ...> |> Rule.graph_id()
+      1
+
+      iex> Rule.new(:test, [], {:pattern, [...]})
+      ...> |> Rule.graph_id()
+      nil
+  """
+  @spec graph_id(t()) :: non_neg_integer() | :default | :all | nil
+  def graph_id(%__MODULE__{metadata: %{graph_id: graph_id}}), do: graph_id
+  def graph_id(%__MODULE__{}), do: nil
+
+  @doc """
+  Returns the scope from rule metadata, if set.
+
+  ## Examples
+
+      iex> Rule.new_quad(:test, [], {:quad_pattern, [...]}, scope: :global)
+      ...> |> Rule.scope()
+      :global
+
+      iex> Rule.new(:test, [], {:pattern, [...]})
+      ...> |> Rule.scope()
+      :local  # Default for triple rules
+  """
+  @spec scope(t()) :: :local | :global
+  def scope(%__MODULE__{metadata: %{scope: scope}}) when scope in [:local, :global], do: scope
+  def scope(%__MODULE__{}), do: :local
+
+  @doc """
+  Checks if the rule applies to a specific graph.
+
+  ## Examples
+
+      iex> Rule.new_quad(:test, [], {:quad_pattern, [...]}, graph_id: 1, scope: :local)
+      ...> |> Rule.applies_to_graph?(1)
+      true
+
+      iex> Rule.new_quad(:test, [], {:quad_pattern, [...]}, graph_id: 1, scope: :local)
+      ...> |> Rule.applies_to_graph?(2)
+      false
+
+      iex> Rule.new_quad(:test, [], {:quad_pattern, [...]}, scope: :global)
+      ...> |> Rule.applies_to_graph?(1)
+      true
+  """
+  @spec applies_to_graph?(t(), non_neg_integer()) :: boolean()
+  def applies_to_graph?(%__MODULE__{} = rule, graph_id) do
+    case scope(rule) do
+      :global -> true
+      :local -> graph_id(rule) == graph_id or graph_id(rule) == :default
+    end
+  end
+
+  @doc """
+  Sets the graph_id for a rule.
+
+  ## Examples
+
+      iex> Rule.new(:test, [], {:pattern, [...]})
+      ...> |> Rule.put_graph_id(1)
+      ...> |> Rule.graph_id()
+      1
+  """
+  @spec put_graph_id(t(), non_neg_integer() | :default | :all) :: t()
+  def put_graph_id(%__MODULE__{} = rule, graph_id) do
+    metadata = (rule.metadata || %{}) |> Map.put(:graph_id, graph_id)
+    %{rule | metadata: metadata}
+  end
+
+  @doc """
+  Sets the scope for a rule.
+
+  ## Examples
+
+      iex> Rule.new(:test, [], {:pattern, [...]})
+      ...> |> Rule.put_scope(:global)
+      ...> |> Rule.scope()
+      :global
+  """
+  @spec put_scope(t(), :local | :global) :: t()
+  def put_scope(%__MODULE__{} = rule, scope) when scope in [:local, :global] do
+    metadata = (rule.metadata || %{}) |> Map.put(:scope, scope)
+    %{rule | metadata: metadata}
+  end
+
+  # ============================================================================
+  # Private Helpers for Quad Rules
+  # ============================================================================
+
+  @doc false
+  def validate_quad_body!(body) when is_list(body) do
+    patterns = Enum.filter(body, fn
+      {:pattern, _} -> true
+      {:quad_pattern, _} -> true
+      _ -> false
+    end)
+
+    has_triple = Enum.any?(patterns, &triple_pattern?/1)
+    has_quad = Enum.any?(patterns, &quad_pattern?/1)
+
+    if has_triple and has_quad do
+      raise ArgumentError, "Mixed triple and quad patterns in rule body are not allowed"
+    end
+
+    if has_quad do
+      # Validate all quad patterns have 4 elements
+      invalid_quads =
+        Enum.filter(patterns, fn
+          {:quad_pattern, terms} when is_list(terms) -> length(terms) != 4
+          _ -> false
+        end)
+
+      if Enum.any?(invalid_quads) do
+        raise ArgumentError, "Quad patterns must have exactly 4 elements [graph, s, p, o]"
+      end
+    end
+
+    :ok
   end
 end

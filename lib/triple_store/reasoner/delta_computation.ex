@@ -537,7 +537,8 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   end
 
   defp unify_pattern_with_fact({:quad_pattern, [pg, ps, pp, po]}, {fg, fs, fp, fo}, binding) do
-    with {:ok, b1} <- unify_term(pg, fg, binding),
+    # Use PatternMatcher.unify_graph_term for the graph position to handle :default, :all
+    with {:ok, b1} <- PatternMatcher.unify_graph_term(fg, pg, binding),
          {:ok, b2} <- unify_term(ps, fs, b1),
          {:ok, b3} <- unify_term(pp, fp, b2),
          {:ok, b4} <- unify_term(po, fo, b3) do
