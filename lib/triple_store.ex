@@ -897,6 +897,63 @@ defmodule TripleStore do
   end
 
   @doc """
+  Materializes inferences for multiple graphs independently.
+
+  Each graph is materialized separately, optionally in parallel. All derived
+  facts are stored within their respective source graphs.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_ids` - List of graph identifiers to materialize
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:parallel` - Enable parallel graph materialization (default: true)
+  - `:tbox_graph` - Graph ID containing shared TBox (optional)
+
+  ## Returns
+
+  - `{:ok, stats_map}` - Map of graph_id to materialization statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize graphs 1, 2, and 3 in parallel
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3])
+
+      # Materialize graphs sequentially
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3],
+        parallel: false
+      )
+
+      # Materialize with shared TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3],
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_graphs(store(), [non_neg_integer()], keyword()) ::
+          {:ok, %{non_neg_integer() => map()}} | {:error, term()}
+  def materialize_graphs(store, graph_ids, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    parallel = Keyword.get(opts, :parallel, true)
+
+    config_opts = [
+      graph_ids: graph_ids,
+      profile: profile,
+      tbox_graph: tbox_graph,
+      parallel: parallel
+    ]
+
+    GraphScopedReasoner.materialize_graphs(store, config_opts)
+  end
+
+  @doc """
   Returns the current reasoning status.
 
   Provides information about the reasoning subsystem including:

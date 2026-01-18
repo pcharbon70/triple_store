@@ -137,6 +137,38 @@ defmodule TripleStore.Reasoner.Namespaces do
   @spec owl_thing() :: String.t()
   def owl_thing, do: @owl <> "Thing"
 
+  @doc "Returns the owl:Class IRI."
+  @spec owl_class() :: String.t()
+  def owl_class, do: @owl <> "Class"
+
+  @doc "Returns the owl:DatatypeProperty IRI."
+  @spec owl_datatype_property() :: String.t()
+  def owl_datatype_property, do: @owl <> "DatatypeProperty"
+
+  @doc "Returns the owl:ObjectProperty IRI."
+  @spec owl_object_property() :: String.t()
+  def owl_object_property, do: @owl <> "ObjectProperty"
+
+  @doc "Returns the owl:equivalentClass IRI."
+  @spec owl_equivalent_class() :: String.t()
+  def owl_equivalent_class, do: @owl <> "equivalentClass"
+
+  @doc "Returns the owl:disjointWith IRI."
+  @spec owl_disjoint_with() :: String.t()
+  def owl_disjoint_with, do: @owl <> "disjointWith"
+
+  @doc "Returns the owl:ReflexiveProperty IRI."
+  @spec owl_reflexive_property() :: String.t()
+  def owl_reflexive_property, do: @owl <> "ReflexiveProperty"
+
+  @doc "Returns the owl:IrreflexiveProperty IRI."
+  @spec owl_irreflexive_property() :: String.t()
+  def owl_irreflexive_property, do: @owl <> "IrreflexiveProperty"
+
+  @doc "Returns the owl:AsymmetricProperty IRI."
+  @spec owl_asymmetric_property() :: String.t()
+  def owl_asymmetric_property, do: @owl <> "AsymmetricProperty"
+
   # ============================================================================
   # IRI Utilities
   # ============================================================================
