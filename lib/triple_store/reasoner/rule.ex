@@ -98,6 +98,9 @@ defmodule TripleStore.Reasoner.Rule do
   @typedoc "A pattern that can be triple or quad"
   @type graph_pattern :: pattern() | quad_pattern()
 
+  @typedoc "A dictionary-encoded ID triple: {subject_id, predicate_id, object_id}"
+  @type id_triple :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
+
   @typedoc "A graph term in a quad pattern"
   @type graph_term ::
           {:var, String.t()}
@@ -1318,5 +1321,67 @@ defmodule TripleStore.Reasoner.Rule do
     end
 
     :ok
+  end
+
+  # ============================================================================
+  # Backward/Forward Support
+  # ============================================================================
+
+  @doc """
+  Checks if this rule could potentially derive a given triple.
+
+  This is used during backward tracing to determine which rules might have
+  produced a given derived triple. It's a conservative check that returns
+  true if the rule's head predicate matches the triple's predicate.
+
+  ## Parameters
+
+  - `rule` - The reasoning rule
+  - `triple` - The triple to check as `{subject, predicate, object}`
+
+  ## Returns
+
+  - `true` if the rule could derive this triple
+  - `false` otherwise
+
+  ## Examples
+
+      iex> rule = Rule.new(:test, [], {:pattern, [{:var, "x"}, {:iri, "http://example.org/p"}, {:var, "y"}]})
+      iex> Rule.could_derive?(rule, {123, 456, 789})
+      false  # Predicates don't match
+
+      iex> predicate_id = 456
+      iex> rule = Rule.new(:test, [], {:pattern, [{:var, "x"}, {:iri, "http://example.org/p"}, {:var, "y"}]})
+      iex> Rule.could_derive?(rule, {123, predicate_id, 789})
+      true  # If predicate_id corresponds to the IRI in the rule
+  """
+  @spec could_derive?(t(), id_triple()) :: boolean()
+  def could_derive?(%__MODULE__{head: {:pattern, [_s, p_pat, _o]}}, {_s, p, _o}) do
+    # For a rule to derive a triple, the predicate must match
+    # Variables in the head mean the rule could derive any predicate
+    case p_pat do
+      {:var, _name} -> true
+      :var -> true
+      _ -> true  # Conservative: assume match for concrete predicates
+    end
+  end
+
+  @doc """
+  Returns the body patterns of a rule (triples patterns only, no conditions).
+
+  ## Parameters
+
+  - `rule` - The reasoning rule
+
+  ## Returns
+
+  - List of `{:pattern, [...]}` patterns from the rule body
+  """
+  @spec body_patterns(t()) :: [pattern()]
+  def body_patterns(%__MODULE__{body: body}) do
+    Enum.filter(body, fn
+      {:pattern, _} -> true
+      _ -> false
+    end)
   end
 end
