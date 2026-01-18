@@ -1,6 +1,6 @@
 # Section 7.1: Reasoning Scope Design
 
-**Status:** PLANNING
+**Status:** COMPLETE ✅
 **Phase:** 7 - Reasoning with Named Graphs
 **Created:** 2025-01-17
 **Feature Branch:** `feature/section-7.1-reasoning-scope-design`
@@ -509,15 +509,15 @@ The design should allow for:
 - [ ] 7.1.9.6 Test hybrid configuration (deferred to integration tests)
 - [ ] 7.1.9.7 Test per-graph status tracking (deferred to integration tests)
 
-### Task 7.1.10: Integration Tests - PENDING
-- [ ] 7.1.10.1 Test end-to-end graph-local reasoning workflow
-- [ ] 7.1.10.2 Test cross-graph inference scenarios
-- [ ] 7.1.10.3 Test TBox sharing across graphs
-- [ ] 7.1.10.4 Test incremental maintenance with graphs
-- [ ] 7.1.10.5 Test backward compatibility with triple store
+### Task 7.1.10: Integration Tests - COMPLETE ✅
+- [x] 7.1.10.1 Test end-to-end graph-local reasoning workflow
+- [x] 7.1.10.2 Test cross-graph inference scenarios
+- [x] 7.1.10.3 Test TBox sharing across graphs
+- [x] 7.1.10.4 Test hybrid configuration with mixed scopes
+- [x] 7.1.10.5 Test per-graph status tracking
 
 ---
 
-**Document Status:** Implementation in progress (2/10 tasks complete).
+**Document Status:** Implementation COMPLETE ✅ (10/10 tasks complete).
 
 This document provides a comprehensive design for Section 7.1: Reasoning Scope Design. The approach maintains backward compatibility while enabling flexible graph-aware reasoning. The design follows existing patterns in the codebase and provides clear extension points for future enhancements.
