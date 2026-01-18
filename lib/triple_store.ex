@@ -69,6 +69,10 @@ defmodule TripleStore do
   - `reasoning_status/1` - Get reasoning subsystem status
   - `reasoning_status/2` - Get reasoning status for a specific graph
 
+  ### Incremental Maintenance (Graph-Aware)
+  - `add_quads_with_reasoning/4` - Incrementally add quads with reasoning
+  - `delete_quads_with_reasoning/4` - Incrementally delete quads with reasoning
+
   ### Operations
   - `backup/2` - Create a backup of the store
   - `restore/2` - Restore from a backup
@@ -1189,6 +1193,168 @@ defmodule TripleStore do
        total_explicit: aggregate.total_explicit,
        total_quads: aggregate.total_quads
      }}
+  end
+
+  # ===========================================================================
+  # Incremental Maintenance (Graph-Aware)
+  # ===========================================================================
+
+  @doc """
+  Adds quads to a graph and computes incremental reasoning.
+
+  This function performs graph-scoped incremental addition:
+  1. Inserts the new explicit quads into the target graph
+  2. Computes new derivations using semi-naive evaluation
+  3. Stores derived quads in the appropriate graph
+  4. Respects TBox sharing and graph scope configuration
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Target graph ID for the quads
+  - `quads` - List of `{subject, predicate, object}` tuples (RDF terms)
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, `:none`). Default: `:owl2rl`
+  - `:tbox_graph` - Graph ID containing shared TBox. Default: `nil` (no TBox sharing)
+  - `:scope` - Reasoning scope: `:local` (default) or `:global`
+  - `:parallel` - Enable parallel rule evaluation. Default: `false`
+  - `:max_iterations` - Maximum fixpoint iterations. Default: `1000`
+
+  ## Returns
+
+  - `{:ok, stats}` - Addition completed with statistics
+  - `{:error, reason}` - On failure
+
+  ## Statistics
+
+  - `:explicit_added` - Number of explicit quads added
+  - `:derived_count` - Number of new derived quads
+  - `:iterations` - Number of fixpoint iterations
+  - `:duration_ms` - Time taken in milliseconds
+
+  ## Examples
+
+      # Add quads to graph 1 with OWL 2 RL reasoning
+      quads = [
+        {~I<http://example.org/alice>, ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, ~I<http://example.org/Student>}
+      ]
+      {:ok, stats} = TripleStore.add_quads_with_reasoning(store, 1, quads)
+
+      # Add with TBox sharing from graph 0
+      {:ok, stats} = TripleStore.add_quads_with_reasoning(store, 1, quads,
+        tbox_graph: 0,
+        scope: :local
+      )
+  """
+  @spec add_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def add_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Reasoner.IncrementalQuad
+    alias TripleStore.Reasoner.ReasoningProfile
+    alias TripleStore.Loader
+
+    db = store.db
+
+    # Get options
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    scope = Keyword.get(opts, :scope, :local)
+    parallel = Keyword.get(opts, :parallel, false)
+    max_iterations = Keyword.get(opts, :max_iterations, 1000)
+
+    # Get rules for the profile
+    {:ok, rules} = ReasoningProfile.rules_for(profile, [])
+
+    # Convert RDF terms to dictionary-encoded IDs
+    {:ok, id_quads, _terms} = Loader.convert_statements_to_id_quads(db, quads, graph_id)
+
+    # Add with reasoning
+    IncrementalQuad.add_quads_with_reasoning(
+      db,
+      id_quads,
+      rules,
+      graph_id: graph_id,
+      tbox_graph_id: tbox_graph,
+      scope: scope,
+      parallel: parallel,
+      max_iterations: max_iterations
+    )
+  end
+
+  @doc """
+  Deletes quads from a graph and performs incremental reasoning retraction.
+
+  This function implements the Backward/Forward algorithm for graph-scoped deletion:
+  1. Deletes the specified explicit quads from the graph
+  2. Traces backward to find potentially invalid derived quads
+  3. Attempts to re-derive each potentially invalid quad
+  4. Keeps quads that can be re-derived, deletes others
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Target graph ID
+  - `quads` - List of `{subject, predicate, object}` tuples to delete (RDF terms)
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, `:none`). Default: `:owl2rl`
+  - `:tbox_graph` - Graph ID containing shared TBox. Default: `nil`
+  - `:scope` - Reasoning scope: `:local` (default) or `:global`
+
+  ## Returns
+
+  - `{:ok, stats}` - Deletion completed with statistics
+  - `{:error, reason}` - On failure
+
+  ## Statistics
+
+  - `:explicit_deleted` - Number of explicit quads deleted
+  - `:derived_deleted` - Number of derived quads deleted
+  - `:derived_kept` - Number of derived quads kept via re-derivation
+  - `:potentially_invalid_count` - Number of quads examined in backward trace
+  - `:duration_ms` - Time taken in milliseconds
+
+  ## Examples
+
+      quads = [
+        {~I<http://example.org/alice>, ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, ~I<http://example.org/Student>}
+      ]
+      {:ok, stats} = TripleStore.delete_quads_with_reasoning(store, 1, quads)
+  """
+  @spec delete_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def delete_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Reasoner.DeleteWithReasoningQuad
+    alias TripleStore.Reasoner.ReasoningProfile
+    alias TripleStore.Loader
+
+    db = store.db
+
+    # Get options
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    scope = Keyword.get(opts, :scope, :local)
+
+    # Get rules for the profile
+    {:ok, rules} = ReasoningProfile.rules_for(profile, [])
+
+    # Convert RDF terms to dictionary-encoded IDs
+    {:ok, id_quads, _terms} = Loader.convert_statements_to_id_quads(db, quads, graph_id)
+
+    # Delete with reasoning
+    DeleteWithReasoningQuad.delete_quads_with_reasoning(
+      db,
+      id_quads,
+      rules,
+      graph_id: graph_id,
+      tbox_graph_id: tbox_graph,
+      scope: scope
+    )
   end
 
   # ===========================================================================

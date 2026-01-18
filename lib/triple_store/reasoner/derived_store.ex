@@ -972,4 +972,63 @@ defmodule TripleStore.Reasoner.DerivedStore do
   defp triple_matches_pattern?(triple, pattern) do
     PatternMatcher.matches_index_pattern?(triple, pattern)
   end
+
+  # ===========================================================================
+  # Backward/Forward Support Functions
+  # ===========================================================================
+
+  @doc """
+  Looks up all derived quads in a specific graph.
+
+  Returns all derived quads for the given graph, regardless of pattern.
+  Used by BackwardTraceQuad to find potentially affected derivations.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier
+
+  ## Returns
+
+  - `{:ok, [quad]}` with all derived quads in the graph
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_derived_quads_in_graph(db_ref(), non_neg_integer()) ::
+          {:ok, [id_quad()]} | {:error, term()}
+  def lookup_derived_quads_in_graph(db, graph_id) do
+    prefix = <<graph_id::64-big>>
+
+    try do
+      results =
+        NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+          {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+          [{g, s, p, o} | acc]
+        end)
+
+      {:ok, Enum.reverse(results)}
+    rescue
+      error -> {:error, error}
+    end
+  end
+
+  @doc """
+  Decodes a derived quad key from the derived column family.
+
+  The key is a GSPO-encoded quad key.
+
+  ## Parameters
+
+  - `key` - Binary key from derived column family (32 bytes)
+
+  ## Returns
+
+  - `{:ok, {graph, subject, predicate, object}}` on success
+  - `{:error, :invalid_key}` on failure
+  """
+  @spec decode_derived_key(binary()) :: {:ok, id_quad()} | {:error, :invalid_key}
+  def decode_derived_key(<<g::64-big, s::64-big, p::64-big, o::64-big>>) do
+    {:ok, {g, s, p, o}}
+  end
+
+  def decode_derived_key(_key), do: {:error, :invalid_key}
 end

@@ -1265,4 +1265,89 @@ defmodule TripleStore.QuadIndex do
   defp matches_position?(:o, value, :bound, values), do: Map.get(values, :o) == value
   defp matches_position?(:g, value, :bound, values), do: Map.get(values, :g) == value
   defp matches_position?(_, _value, :var, _values), do: true
+
+  # ===========================================================================
+  # Quad Lookup Operations (for IncrementalQuad)
+  # ===========================================================================
+
+  @doc """
+  Looks up all quads matching a pattern within a specific graph using fold.
+
+  Returns all matching quads as a list (not a stream). This is more efficient
+  than stream-based operations when you need all results at once.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements (subject, predicate, object)
+
+  ## Returns
+
+  - `{:ok, [triple]}` with matching triples (without graph component)
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, triples} = QuadIndex.lookup_all_fold(db, 1, {{:bound, 100}, :var, :var})
+      # => [{100, 200, 300}, {100, 400, 500}]
+  """
+  @spec lookup_all_fold(term(), term_id(), TripleStore.Reasoner.PatternMatcher.index_pattern()) ::
+          {:ok, [TripleStore.Reasoner.PatternMatcher.term_triple()]} | {:error, term()}
+  def lookup_all_fold(db, graph_id, pattern) do
+    prefix = graph_pattern_to_lookup_prefix(graph_id, pattern)
+
+    results =
+      TripleStore.Backend.RocksDB.NIF.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+        {g, s, p, o} = decode_gspo_key(key)
+
+        if g == graph_id and triple_matches_index_pattern?({s, p, o}, pattern) do
+          [{s, p, o} | acc]
+        else
+          acc
+        end
+      end)
+
+    {:ok, Enum.reverse(results)}
+  end
+
+  defp graph_pattern_to_lookup_prefix(graph_id, pattern) do
+    case pattern do
+      {{:bound, s}, {:bound, p}, {:bound, o}} ->
+        gspo_key(graph_id, s, p, o)
+
+      {{:bound, s}, {:bound, p}, :var} ->
+        gspo_prefix(graph_id, s, p)
+
+      {{:bound, s}, :var, :var} ->
+        gspo_prefix(graph_id, s)
+
+      _ ->
+        # For patterns that don't start with bound subject,
+        # scan this graph and filter
+        <<graph_id::64-big>>
+    end
+  end
+
+  defp triple_matches_index_pattern?({s, p, o}, pattern) do
+    case pattern do
+      {{:bound, s_exp}, {:bound, p_exp}, {:bound, o_exp}} ->
+        s == s_exp and p == p_exp and o == o_exp
+
+      {{:bound, s_exp}, {:bound, p_exp}, :var} ->
+        s == s_exp and p == p_exp
+
+      {{:bound, s_exp}, :var, :var} ->
+        s == s_exp
+
+      {{:bound, s_exp}, :var, {:bound, o_exp}} ->
+        s == s_exp and o == o_exp
+
+      :var ->
+        true
+
+      _ ->
+        true
+    end
+  end
 end
