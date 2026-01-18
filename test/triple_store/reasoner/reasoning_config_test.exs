@@ -337,4 +337,59 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
       assert config.mode_config.cache_results == true
     end
   end
+
+  # ============================================================================
+  # Tests: Graph-Aware Reasoning Scope Options (Section 7.1)
+  # ============================================================================
+
+  describe "graph-aware reasoning scope" do
+    test "creates config with local scope (default)" do
+      {:ok, config} = ReasoningConfig.new()
+      assert config.scope == :local
+    end
+
+    test "creates config with global scope" do
+      {:ok, config} = ReasoningConfig.new(scope: :global)
+      assert config.scope == :global
+    end
+
+    test "creates config with hybrid scope" do
+      {:ok, config} = ReasoningConfig.new(scope: :hybrid)
+      assert config.scope == :hybrid
+    end
+
+    test "returns error for invalid scope" do
+      {:error, reason} = ReasoningConfig.new(scope: :invalid)
+      assert reason == :invalid_scope
+    end
+
+    test "creates config with tbox_graph option" do
+      {:ok, config} = ReasoningConfig.new(scope: :global, tbox_graph: 0)
+      assert config.tbox_graph == 0
+    end
+
+    test "creates config with inferred_graph option" do
+      {:ok, config} = ReasoningConfig.new(scope: :global, inferred_graph: 99)
+      assert config.inferred_graph == 99
+    end
+
+    test "creates config with graph_configs map" do
+      {:ok, config} =
+        ReasoningConfig.new(
+          scope: :hybrid,
+          graph_configs: %{
+            1 => [scope: :local],
+            2 => [scope: :global]
+          }
+        )
+
+      assert config.graph_configs[1][:scope] == :local
+      assert config.graph_configs[2][:scope] == :global
+    end
+
+    test "accepts empty graph_configs" do
+      {:ok, config} = ReasoningConfig.new(scope: :hybrid, graph_configs: %{})
+      assert config.graph_configs == %{}
+    end
+  end
 end
