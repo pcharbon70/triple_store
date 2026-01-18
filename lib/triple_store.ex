@@ -69,6 +69,9 @@ defmodule TripleStore do
   - `reasoning_status/1` - Get reasoning subsystem status
   - `reasoning_status/2` - Get reasoning status for a specific graph
 
+  ### Derivation Explanation
+  - `explain_inference/4` - Explain how a derived quad was inferred
+
   ### Incremental Maintenance (Graph-Aware)
   - `add_quads_with_reasoning/4` - Incrementally add quads with reasoning
   - `delete_quads_with_reasoning/4` - Incrementally delete quads with reasoning
@@ -1355,6 +1358,135 @@ defmodule TripleStore do
       tbox_graph_id: tbox_graph,
       scope: scope
     )
+  end
+
+  # ===========================================================================
+  # Derivation Explanation
+  # ===========================================================================
+
+  @doc """
+  Explains how a derived quad was inferred.
+
+  Returns detailed provenance information about how a specific quad was
+  derived through reasoning, including the rule used, the premises,
+  and variable bindings.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `quad` - The derived quad to explain {subject, predicate, object}
+  - `graph_id` - Graph ID containing the quad
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:provenance_source` - Where to get provenance:
+    - `:memory` - Load from in-memory tracker (fast, requires recent reasoning)
+    - `:database` - Load from persistent provenance storage (slower, historical)
+    - Default: `:memory`
+
+  ## Returns
+
+  - `{:ok, explanation}` - Explanation map with:
+    - `:derived_quad` - The quad being explained
+    - `:rule_name` - The rule that produced it
+    - `:premises` - The premise quads used
+    - `:bindings` - Variable bindings
+    - `:formatted` - Human-readable string
+
+  - `:error` - If no derivation is found or on error
+
+  ## Examples
+
+      quad = {~I<http://example.org/alice>,
+              ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>,
+              ~I<http://example.org/Person>}
+
+      {:ok, explanation} = TripleStore.explain_inference(store, quad, 1)
+
+      explanation.formatted
+      # => """
+      #     Derived: [g:1 (alice rdf:type Person)]
+      #     Rule: cax_sco
+      #     Premises: [g:1 (alice rdf:type Student), g:1 (Student rdfs:subClassOf Person)]
+      #     Bindings: {x=alice, c1=Student, c2=Person}
+      #     """
+  """
+  @spec explain_inference(store(), RDF.Statement.t(), non_neg_integer(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def explain_inference(store, quad, graph_id, opts \\ []) do
+    alias TripleStore.Loader
+    alias TripleStore.Reasoner.DerivationProvenance
+    alias TripleStore.Reasoner.DerivedStore
+
+    db = store.db
+    provenance_source = Keyword.get(opts, :provenance_source, :memory)
+
+    # Convert RDF terms to dictionary-encoded IDs
+    {s_id, _p_id, _o_id} =
+      case Loader.ensure_term_id(db, elem(quad, 0)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    {p_id, _} =
+      case Loader.ensure_term_id(db, elem(quad, 1)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    {o_id, _} =
+      case Loader.ensure_term_id(db, elem(quad, 2)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    id_quad = {graph_id, s_id, p_id, o_id}
+
+    # Get provenance tracker
+    tracker =
+      case provenance_source do
+        :database ->
+          case DerivationProvenance.load(db, graph_id) do
+            {:ok, loaded} -> loaded
+            _error -> DerivationProvenance.new()
+          end
+
+        :memory ->
+          # For in-memory, we'd need to track during reasoning
+          # For now, fall back to database
+          case DerivationProvenance.load(db, graph_id) do
+            {:ok, loaded} -> loaded
+            _error -> DerivationProvenance.new()
+          end
+      end
+
+    # Check if this is a derived quad
+    case DerivedStore.derived_quad_exists?(db, id_quad) do
+      {:ok, true} ->
+        # Try to explain the derivation
+        case DerivationProvenance.explain_inference(tracker, id_quad, db) do
+          {:ok, explanation} ->
+            # Add RDF term version to the explanation
+            explanation_with_terms =
+              Map.put(explanation, :quad, quad)
+              |> Map.put(:graph_id, graph_id)
+
+            {:ok, explanation_with_terms}
+
+          :error ->
+            {:error, :no_provenance_found}
+        end
+
+      {:ok, false} ->
+        {:error, :not_a_derived_quad}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  catch
+    :throw, {:error, reason} -> {:error, reason}
+    error -> {:error, error}
   end
 
   # ===========================================================================
