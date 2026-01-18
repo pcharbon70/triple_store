@@ -357,6 +357,180 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
   end
 
   # ============================================================================
+  # Persistent Term Storage
+  # ============================================================================
+
+  @doc """
+  Stores a graph reasoning configuration in `:persistent_term` for fast access.
+
+  Configuration is stored with a compound key allowing O(1) access from all processes.
+
+  ## Parameters
+
+  - `config` - The graph reasoning configuration to store
+  - `store_key` - Unique identifier for the store (e.g., store path)
+
+  ## Returns
+
+  - `:ok` on success
+
+  ## Examples
+
+      config = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+      :ok = GraphReasoningConfig.store(config, "/path/to/store")
+  """
+  @spec store(t(), term()) :: :ok
+  def store(%__MODULE__{graph_id: graph_id} = config, store_key) do
+    :persistent_term.put({__MODULE__, store_key, graph_id}, config)
+    :ok
+  end
+
+  @doc """
+  Loads a graph reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+  - `graph_id` - The graph ID to load configuration for
+
+  ## Returns
+
+  - `{:ok, config}` if found
+  - `{:error, :not_found}` if not stored
+
+  ## Examples
+
+      {:ok, config} = GraphReasoningConfig.load("/path/to/store", 1)
+  """
+  @spec load(term(), non_neg_integer()) :: {:ok, t()} | {:error, :not_found}
+  def load(store_key, graph_id) do
+    case :persistent_term.get({__MODULE__, store_key, graph_id}, nil) do
+      nil -> {:error, :not_found}
+      config -> {:ok, config}
+    end
+  end
+
+  @doc """
+  Loads a graph reasoning configuration from `:persistent_term`, returning default if not found.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+  - `graph_id` - The graph ID to load configuration for
+
+  ## Returns
+
+  - The stored configuration or a default configuration for the graph
+
+  ## Examples
+
+      config = GraphReasoningConfig.load!("/path/to/store", 1)
+  """
+  @spec load!(term(), non_neg_integer()) :: t()
+  def load!(store_key, graph_id) do
+    case load(store_key, graph_id) do
+      {:ok, config} -> config
+      {:error, :not_found} -> default(graph_id)
+    end
+  end
+
+  @doc """
+  Removes a graph reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+  - `graph_id` - The graph ID to remove configuration for
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = GraphReasoningConfig.delete("/path/to/store", 1)
+  """
+  @spec delete(term(), non_neg_integer()) :: :ok
+  def delete(store_key, graph_id) do
+    :persistent_term.erase({__MODULE__, store_key, graph_id})
+    :ok
+  end
+
+  @doc """
+  Checks if a graph reasoning configuration exists in `:persistent_term`.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+  - `graph_id` - The graph ID to check
+
+  ## Returns
+
+  - `true` if stored, `false` otherwise
+
+  ## Examples
+
+      exists? = GraphReasoningConfig.stored?("/path/to/store", 1)
+  """
+  @spec stored?(term(), non_neg_integer()) :: boolean()
+  def stored?(store_key, graph_id) do
+    case :persistent_term.get({__MODULE__, store_key, graph_id}, nil) do
+      nil -> false
+      _config -> true
+    end
+  end
+
+  @doc """
+  Lists all graph IDs for stored graph configurations for a given store.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+
+  ## Returns
+
+  - List of graph IDs for which configurations are stored
+
+  ## Examples
+
+      graph_ids = GraphReasoningConfig.list_stored_for_store("/path/to/store")
+  """
+  @spec list_stored_for_store(term()) :: [non_neg_integer()]
+  def list_stored_for_store(store_key) do
+    # Get all persistent_term keys and filter for this store
+    :persistent_term.get()
+    |> Enum.filter(fn
+      {{__MODULE__, ^store_key, _graph_id}, _val} -> true
+      _ -> false
+    end)
+    |> Enum.map(fn {{__MODULE__, _store_key, graph_id}, _val} -> graph_id end)
+  end
+
+  @doc """
+  Clears all stored graph configurations for a given store.
+
+  ## Parameters
+
+  - `store_key` - The unique identifier for the store
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = GraphReasoningConfig.clear_store("/path/to/store")
+  """
+  @spec clear_store(term()) :: :ok
+  def clear_store(store_key) do
+    Enum.each(list_stored_for_store(store_key), fn graph_id ->
+      :persistent_term.erase({__MODULE__, store_key, graph_id})
+    end)
+
+    :ok
+  end
+
+  # ============================================================================
   # Private Functions
   # ============================================================================
 

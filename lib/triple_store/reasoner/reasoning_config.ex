@@ -493,12 +493,12 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   Adds a graph configuration to the reasoning config.
   """
   @spec put_graph_config(t(), GraphReasoningConfig.t()) :: t()
-  def put_graph_config(%__MODULE__{} = config, %GraphReasoningConfig{graph_id: graph_id}) do
-    updated_configs =
-      config.graph_configs
-      |> Map.get(%{})
-      |> Map.put(graph_id, %GraphReasoningConfig{graph_id: graph_id})
+  def put_graph_config(%__MODULE__{graph_configs: nil} = config, %GraphReasoningConfig{graph_id: graph_id} = graph_config) do
+    %{config | graph_configs: %{graph_id => graph_config}}
+  end
 
+  def put_graph_config(%__MODULE__{} = config, %GraphReasoningConfig{graph_id: graph_id} = graph_config) do
+    updated_configs = Map.put(config.graph_configs, graph_id, graph_config)
     %{config | graph_configs: updated_configs}
   end
 
@@ -533,6 +533,171 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   @spec put_inferred_graph(t(), non_neg_integer() | :separate | nil) :: t()
   def put_inferred_graph(%__MODULE__{} = config, inferred_graph),
     do: %{config | inferred_graph: inferred_graph}
+
+  # ============================================================================
+  # Persistent Term Storage
+  # ============================================================================
+
+  @doc """
+  Stores a reasoning configuration in `:persistent_term` for fast access.
+
+  Configuration is stored with a unique key (typically the store path)
+  allowing O(1) access from all processes.
+
+  ## Parameters
+
+  - `config` - The reasoning configuration to store
+  - `key` - Unique identifier for this configuration (e.g., store path)
+
+  ## Returns
+
+  - `:ok` on success
+
+  ## Examples
+
+      config = ReasoningConfig.new!(profile: :owl2rl, scope: :local)
+      :ok = ReasoningConfig.store(config, "/path/to/store")
+  """
+  @spec store(t(), term()) :: :ok
+  def store(%__MODULE__{} = config, key) do
+    :persistent_term.put({__MODULE__, key}, config)
+    :ok
+  end
+
+  @doc """
+  Loads a reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - `{:ok, config}` if found
+  - `{:error, :not_found}` if not stored
+
+  ## Examples
+
+      {:ok, config} = ReasoningConfig.load("/path/to/store")
+  """
+  @spec load(term()) :: {:ok, t()} | {:error, :not_found}
+  def load(key) do
+    case :persistent_term.get({__MODULE__, key}, nil) do
+      nil -> {:error, :not_found}
+      config -> {:ok, config}
+    end
+  end
+
+  @doc """
+  Loads a reasoning configuration from `:persistent_term`, returning default if not found.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - The stored configuration or a default configuration
+
+  ## Examples
+
+      config = ReasoningConfig.load!("/path/to/store")
+  """
+  @spec load!(term()) :: t()
+  def load!(key) do
+    case load(key) do
+      {:ok, config} -> config
+      {:error, :not_found} -> new!()
+    end
+  end
+
+  @doc """
+  Removes a reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = ReasoningConfig.delete("/path/to/store")
+  """
+  @spec delete(term()) :: :ok
+  def delete(key) do
+    :persistent_term.erase({__MODULE__, key})
+    :ok
+  end
+
+  @doc """
+  Checks if a reasoning configuration exists in `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier to check
+
+  ## Returns
+
+  - `true` if stored, `false` otherwise
+
+  ## Examples
+
+      exists? = ReasoningConfig.stored?("/path/to/store")
+  """
+  @spec stored?(term()) :: boolean()
+  def stored?(key) do
+    case :persistent_term.get({__MODULE__, key}, nil) do
+      nil -> false
+      _config -> true
+    end
+  end
+
+  @doc """
+  Lists all keys for stored reasoning configurations.
+
+  ## Returns
+
+  - List of keys for which configurations are stored
+
+  ## Examples
+
+      keys = ReasoningConfig.list_stored()
+  """
+  @spec list_stored() :: [term()]
+  def list_stored do
+    # Get all persistent_term keys and filter for this module
+    :persistent_term.get()
+    |> Enum.filter(fn
+      {{__MODULE__, _key}, _val} -> true
+      _ -> false
+    end)
+    |> Enum.map(fn {{__MODULE__, key}, _val} -> key end)
+  end
+
+  @doc """
+  Clears all stored reasoning configurations from `:persistent_term`.
+
+  Use with caution - this removes all stored configurations.
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = ReasoningConfig.clear_all()
+  """
+  @spec clear_all() :: :ok
+  def clear_all do
+    Enum.each(list_stored(), fn key ->
+      :persistent_term.erase({__MODULE__, key})
+    end)
+
+    :ok
+  end
 
   # ============================================================================
   # Private Functions

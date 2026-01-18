@@ -233,4 +233,207 @@ defmodule TripleStore.Reasoner.GraphReasoningConfigTest do
       assert summary.tbox_source == :shared
     end
   end
+
+  # ============================================================================
+  # Tests: Persistent Term Storage (Section 7.7.1.5)
+  # ============================================================================
+
+  describe "persistent_term storage" do
+    # These tests cannot be async because they share persistent_term storage
+    # and need sequential execution for correct cleanup
+
+    setup do
+      # Clean up all entries from previous test runs
+      GraphReasoningConfig.clear_store(:test_store_key)
+      GraphReasoningConfig.clear_store(:store1)
+      GraphReasoningConfig.clear_store(:store2)
+
+      on_exit(fn ->
+        GraphReasoningConfig.clear_store(:test_store_key)
+        GraphReasoningConfig.clear_store(:store1)
+        GraphReasoningConfig.clear_store(:store2)
+      end)
+
+      :ok
+    end
+
+    test "stores configuration in persistent_term" do
+      config = GraphReasoningConfig.new!(graph_id: 99, scope: :local)
+      assert :ok = GraphReasoningConfig.store(config, :test_store_key)
+      assert GraphReasoningConfig.stored?(:test_store_key, 99)
+    end
+
+    test "loads stored configuration from persistent_term" do
+      original = GraphReasoningConfig.new!(graph_id: 98, scope: :global)
+      :ok = GraphReasoningConfig.store(original, :test_store_key)
+
+      assert {:ok, loaded} = GraphReasoningConfig.load(:test_store_key, 98)
+      assert loaded.graph_id == original.graph_id
+      assert loaded.scope == original.scope
+    end
+
+    test "returns error for non-existent configuration" do
+      assert {:error, :not_found} = GraphReasoningConfig.load(:test_store_key, 999)
+    end
+
+    test "load! returns default for non-existent configuration" do
+      loaded = GraphReasoningConfig.load!(:test_store_key, 999)
+      assert loaded.graph_id == 999
+      assert loaded.scope == :local
+      assert loaded.enabled == true
+    end
+
+    test "load! returns stored config if it exists" do
+      original = GraphReasoningConfig.new!(graph_id: 97, scope: :none)
+      :ok = GraphReasoningConfig.store(original, :test_store_key)
+
+      loaded = GraphReasoningConfig.load!(:test_store_key, 97)
+      assert loaded.graph_id == 97
+      assert loaded.scope == :none
+    end
+
+    test "stored? checks if configuration exists" do
+      refute GraphReasoningConfig.stored?(:test_store_key, 96)
+
+      config = GraphReasoningConfig.new!(graph_id: 96, scope: :local)
+      :ok = GraphReasoningConfig.store(config, :test_store_key)
+
+      assert GraphReasoningConfig.stored?(:test_store_key, 96)
+    end
+
+    test "delete removes configuration from persistent_term" do
+      config = GraphReasoningConfig.new!(graph_id: 95, scope: :local)
+      :ok = GraphReasoningConfig.store(config, :test_store_key)
+      assert GraphReasoningConfig.stored?(:test_store_key, 95)
+
+      :ok = GraphReasoningConfig.delete(:test_store_key, 95)
+      refute GraphReasoningConfig.stored?(:test_store_key, 95)
+    end
+
+    test "list_stored_for_store returns all graph IDs for a store" do
+      # Store multiple graph configs
+      config1 = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+      config2 = GraphReasoningConfig.new!(graph_id: 2, scope: :global)
+      config3 = GraphReasoningConfig.new!(graph_id: 3, scope: :local)
+
+      :ok = GraphReasoningConfig.store(config1, :test_store_key)
+      :ok = GraphReasoningConfig.store(config2, :test_store_key)
+      :ok = GraphReasoningConfig.store(config3, :test_store_key)
+
+      graph_ids = GraphReasoningConfig.list_stored_for_store(:test_store_key)
+      assert 1 in graph_ids
+      assert 2 in graph_ids
+      assert 3 in graph_ids
+    end
+
+    test "clear_store removes all configurations for a store" do
+      # Store multiple graph configs
+      config1 = GraphReasoningConfig.new!(graph_id: 10, scope: :local)
+      config2 = GraphReasoningConfig.new!(graph_id: 20, scope: :global)
+
+      :ok = GraphReasoningConfig.store(config1, :test_clear_store_key)
+      :ok = GraphReasoningConfig.store(config2, :test_clear_store_key)
+
+      assert GraphReasoningConfig.stored?(:test_clear_store_key, 10)
+      assert GraphReasoningConfig.stored?(:test_clear_store_key, 20)
+
+      :ok = GraphReasoningConfig.clear_store(:test_clear_store_key)
+
+      refute GraphReasoningConfig.stored?(:test_clear_store_key, 10)
+      refute GraphReasoningConfig.stored?(:test_clear_store_key, 20)
+    end
+
+    test "overwrites existing configuration with same store_key and graph_id" do
+      config1 = GraphReasoningConfig.new!(graph_id: 94, scope: :local)
+      config2 = GraphReasoningConfig.new!(graph_id: 94, scope: :none)
+
+      :ok = GraphReasoningConfig.store(config1, :test_store_key)
+      :ok = GraphReasoningConfig.store(config2, :test_store_key)
+
+      assert {:ok, loaded} = GraphReasoningConfig.load(:test_store_key, 94)
+      assert loaded.scope == :none
+    end
+
+    test "separates configurations by store_key" do
+      config1 = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+      config2 = GraphReasoningConfig.new!(graph_id: 1, scope: :global)
+
+      :ok = GraphReasoningConfig.store(config1, :store1)
+      :ok = GraphReasoningConfig.store(config2, :store2)
+
+      assert {:ok, loaded1} = GraphReasoningConfig.load(:store1, 1)
+      assert {:ok, loaded2} = GraphReasoningConfig.load(:store2, 1)
+
+      assert loaded1.scope == :local
+      assert loaded2.scope == :global
+    end
+  end
+
+  # ============================================================================
+  # Tests: TBox and Storage Configuration
+  # ============================================================================
+
+  describe "tbox_source configuration" do
+    test "accepts :self tbox_source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: :self)
+      assert config.tbox_source == :self
+      assert GraphReasoningConfig.tbox_graph_id(config) == :self
+    end
+
+    test "accepts :shared tbox_source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: :shared)
+      assert config.tbox_source == :shared
+      assert GraphReasoningConfig.tbox_graph_id(config) == 0
+    end
+
+    test "accepts graph_id as tbox_source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: 5)
+      assert config.tbox_source == 5
+      assert GraphReasoningConfig.tbox_graph_id(config) == 5
+    end
+
+    test "returns error for invalid tbox_source" do
+      {:error, reason} = GraphReasoningConfig.new(graph_id: 1, tbox_source: :invalid)
+      assert reason == :invalid_tbox_source
+    end
+
+    test "returns error for tbox_source equal to graph_id" do
+      {:error, reason} = GraphReasoningConfig.new(graph_id: 1, tbox_source: 1)
+      assert reason == :invalid_tbox_source
+    end
+
+    test "shared_tbox? returns true for shared source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: :shared)
+      assert GraphReasoningConfig.shared_tbox?(config)
+    end
+
+    test "shared_tbox? returns true for graph_id source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: 5)
+      assert GraphReasoningConfig.shared_tbox?(config)
+    end
+
+    test "shared_tbox? returns false for self source" do
+      config = GraphReasoningConfig.new!(graph_id: 1, tbox_source: :self)
+      refute GraphReasoningConfig.shared_tbox?(config)
+    end
+  end
+
+  describe "store_inferred configuration" do
+    test "accepts :self store_inferred" do
+      config = GraphReasoningConfig.new!(graph_id: 1, store_inferred: :self)
+      assert config.store_inferred == :self
+      refute GraphReasoningConfig.separate_inferred_graph?(config)
+    end
+
+    test "accepts :separate store_inferred" do
+      config = GraphReasoningConfig.new!(graph_id: 1, store_inferred: :separate)
+      assert config.store_inferred == :separate
+      assert GraphReasoningConfig.separate_inferred_graph?(config)
+    end
+
+    test "returns error for invalid store_inferred" do
+      {:error, reason} = GraphReasoningConfig.new(graph_id: 1, store_inferred: :invalid)
+      assert reason == :invalid_store_inferred
+    end
+  end
 end
