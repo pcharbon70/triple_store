@@ -680,17 +680,32 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
   - `db` - Database reference
   - `graph_id` - Graph identifier to scope the query
-  - `pattern` - Triple pattern with bound/var elements
+  - `pattern` - Triple pattern with bound/var elements (or :var for all)
 
   ## Returns
 
-  - `{:ok, Stream.t()}` with matching quads
+  - `{:ok, [triple]}` with matching triples (without graph component)
   - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, triples} = DerivedStore.lookup_explicit_quads(db, 1, {{:bound, 100}, :var, :var})
+      # => [{100, 200, 300}, {100, 400, 500}]
+
+      {:ok, all} = DerivedStore.lookup_explicit_quads(db, 1, :var)
+      # => All triples in graph 1
   """
-  @spec lookup_explicit_quads(db_ref(), non_neg_integer(), pattern()) ::
-          {:ok, Enumerable.t()} | {:error, term()}
+  @spec lookup_explicit_quads(db_ref(), non_neg_integer(), pattern() | :var) ::
+          {:ok, [id_triple()]} | {:error, term()}
   def lookup_explicit_quads(db, graph_id, pattern) do
-    QuadIndex.lookup(db, graph_id, pattern)
+    # Normalize :var to {:var, :var, :var} for lookup
+    normalized_pattern =
+      case pattern do
+        :var -> {:var, :var, :var}
+        {_, _, _} = p -> p
+      end
+
+    QuadIndex.lookup_all_fold(db, graph_id, normalized_pattern)
   end
 
   @doc """
@@ -712,8 +727,10 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec lookup_all_quads(db_ref(), non_neg_integer(), pattern()) ::
           {:ok, Enumerable.t()} | {:error, term()}
   def lookup_all_quads(db, graph_id, pattern) do
-    with {:ok, explicit_stream} <- lookup_explicit_quads(db, graph_id, pattern),
+    with {:ok, explicit_list} <- lookup_explicit_quads(db, graph_id, pattern),
          {:ok, derived_stream} <- lookup_derived_quads(db, graph_id, pattern) do
+      # Convert explicit list to stream for concatenation
+      explicit_stream = Stream.map(explicit_list, fn triple -> triple end)
       combined = Stream.concat(explicit_stream, derived_stream)
       {:ok, combined}
     end
@@ -918,6 +935,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
   # Convert from Rule pattern format {:pattern, [s, p, o]} to Index pattern format
   # Rule patterns use {:var, name}, {:const, value}, or raw values
   # Index patterns use :var or {:bound, value}
+  defp convert_rule_pattern(:var), do: {:var, :var, :var}
+
   defp convert_rule_pattern({:pattern, [s, p, o]}) do
     {convert_term(s), convert_term(p), convert_term(o)}
   end
@@ -970,7 +989,14 @@ defmodule TripleStore.Reasoner.DerivedStore do
   end
 
   defp triple_matches_pattern?(triple, pattern) do
-    PatternMatcher.matches_index_pattern?(triple, pattern)
+    # Normalize :var to {:var, :var, :var} for pattern matching
+    normalized_pattern =
+      case pattern do
+        :var -> {:var, :var, :var}
+        {_, _, _} = p -> p
+      end
+
+    PatternMatcher.matches_index_pattern?(triple, normalized_pattern)
   end
 
   # ===========================================================================

@@ -290,10 +290,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert length(results) == 0
     end
 
-    @tag :skip
     test "returns empty stream for non-existent graph", %{db: db} do
-      # Skipping because DerivedStore doesn't convert :var to {:var, :var, :var}
-      # before calling triple_matches_pattern?
       quads = [id_quad(1, 100, 200, 300)]
       :ok = DerivedStore.insert_derived_quads(db, quads)
 
@@ -320,10 +317,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert length(results) == 2
     end
 
-    @tag :skip
     test "handles all variables pattern", %{db: db} do
-      # Skipping because DerivedStore doesn't convert :var to {:var, :var, :var}
-      # before calling triple_matches_pattern?
       quads = [
         id_quad(1, 100, 200, 300),
         id_quad(1, 101, 201, 301)
@@ -352,10 +346,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert length(results) == 1
     end
 
-    @tag :skip
     test "returns empty list for no matches", %{db: db} do
-      # Skipping because DerivedStore doesn't convert :var to {:var, :var, :var}
-      # before calling triple_matches_pattern?
       {:ok, results} = DerivedStore.lookup_derived_quads_all(db, 1, :var)
 
       assert results == []
@@ -500,37 +491,23 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
   end
 
   describe "lookup_explicit_quads/3" do
-    @tag :skip
     test "function exists and expects correct parameters" do
-      # This test verifies the function exists and has the correct arity
-      # The actual implementation delegates to QuadIndex which may not have lookup/3
-      # So we just test that the function can be called
-
-      # Note: lookup_explicit_quads delegates to QuadIndex.lookup which may not exist
-      # This test documents the expected API contract
       assert function_exported?(DerivedStore, :lookup_explicit_quads, 3)
     end
 
-    @tag :skip
     test "pattern matching works for explicit quads", %{db: db} do
       # Verify the function accepts pattern arguments
-      # Skipping until QuadIndex.lookup/3 is implemented
       {:ok, _stream} = DerivedStore.lookup_explicit_quads(db, 1, {{:bound, 100}, :var, :var})
       {:ok, _stream} = DerivedStore.lookup_explicit_quads(db, 1, :var)
     end
   end
 
   describe "lookup_all_quads/3" do
-    @tag :skip
     test "function exists and has correct arity" do
-      # This test verifies the function exists - full testing depends on QuadIndex.lookup
       assert function_exported?(DerivedStore, :lookup_all_quads, 3)
     end
 
-    @tag :skip
     test "combines explicit and derived quads", %{db: db} do
-      # This test depends on lookup_explicit_quads which delegates to QuadIndex.lookup
-      # Skipping until QuadIndex.lookup/3 is implemented
       derived_quads = [id_quad(1, 100, 200, 300)]
       :ok = DerivedStore.insert_derived_quads(db, derived_quads)
 
@@ -539,10 +516,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert is_function(stream)
     end
 
-    @tag :skip
     test "returns stream that can be consumed", %{db: db} do
-      # This test depends on lookup_explicit_quads which delegates to QuadIndex.lookup
-      # Skipping until QuadIndex.lookup/3 is implemented
       derived_quads = [id_quad(1, 100, 200, 300)]
       :ok = DerivedStore.insert_derived_quads(db, derived_quads)
 
@@ -579,19 +553,13 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert length(results) >= 1
     end
 
-    @tag :skip
     test "creates lookup function for both sources", %{db: db} do
-      # This test depends on lookup_explicit_quads which delegates to QuadIndex.lookup
-      # Skipping until QuadIndex.lookup/3 is implemented
       lookup_fn = DerivedStore.make_graph_lookup_fn(db, 1, :both)
 
       assert is_function(lookup_fn, 1)
     end
 
-    @tag :skip
     test "lookup function handles variable pattern", %{db: db} do
-      # Skipping because DerivedStore doesn't convert :var to {:var, :var, :var}
-      # before calling triple_matches_pattern?
       lookup_fn = DerivedStore.make_graph_lookup_fn(db, 1, :derived)
 
       quads = [id_quad(1, 100, 200, 300)]
