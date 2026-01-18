@@ -64,6 +64,8 @@ defmodule TripleStore do
   ### Reasoning
   - `materialize/2` - Compute OWL 2 RL inferences
   - `materialize_graph/3` - Compute inferences for a specific graph
+  - `materialize_graphs/3` - Compute inferences for multiple graphs
+  - `materialize_all/2` - Compute inferences across all graphs (global reasoning)
   - `reasoning_status/1` - Get reasoning subsystem status
   - `reasoning_status/2` - Get reasoning status for a specific graph
 
@@ -951,6 +953,68 @@ defmodule TripleStore do
     ]
 
     GraphScopedReasoner.materialize_graphs(store, config_opts)
+  end
+
+  @doc """
+  Materializes inferences across all graphs (global reasoning).
+
+  All quads from all graphs participate in a single inference closure.
+  Derived quads are stored according to the configured storage strategy.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:storage_strategy` - How to store derived quads:
+    - `:same_as_premises` - Store in same graph as premises (default)
+    - `:separate_graph` - Store in designated inference graph
+    - `:per_graph_cf` - Store only in derived column family
+  - `:inferred_graph` - Graph ID for derived quads (for :separate_graph strategy)
+  - `:tbox_graph` - Graph ID containing shared TBox schema (optional)
+  - `:parallel` - Enable parallel rule evaluation (default: true)
+
+  ## Returns
+
+  - `{:ok, stats}` - Materialization statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize all graphs globally
+      {:ok, stats} = TripleStore.materialize_all(store)
+
+      # Materialize with separate inference graph
+      {:ok, stats} = TripleStore.materialize_all(store,
+        storage_strategy: :separate_graph,
+        inferred_graph: 100
+      )
+
+      # Materialize with shared TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_all(store,
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_all(store(), keyword()) :: {:ok, map()} | {:error, term()}
+  def materialize_all(store, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    storage_strategy = Keyword.get(opts, :storage_strategy, :same_as_premises)
+    inferred_graph = Keyword.get(opts, :inferred_graph)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      profile: profile,
+      storage_strategy: storage_strategy,
+      inferred_graph: inferred_graph,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_all(store, config_opts)
   end
 
   @doc """

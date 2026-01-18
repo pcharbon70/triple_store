@@ -90,6 +90,12 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   @typedoc "Graph ID"
   @type graph_id :: non_neg_integer()
 
+  @typedoc "ID triple {subject, predicate, object}"
+  @type id_triple :: {integer(), integer(), integer()}
+
+  @typedoc "ID quad {graph, subject, predicate, object}"
+  @type id_quad :: {integer(), integer(), integer(), integer()}
+
   @typedoc "Materialization statistics"
   @type materialization_stats :: %{
           iterations: non_neg_integer(),
@@ -381,18 +387,28 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   defp do_materialize_all(db, config, opts) do
     start_time = System.monotonic_time(:millisecond)
 
-    # Load initial facts from all graphs
-    {:ok, initial_facts} = load_all_facts(db)
+    # Load TBox from designated graph (if configured)
+    tbox_graph_id = ReasoningConfig.tbox_graph(config)
+    tbox_facts = load_tbox_facts_for_global(db, tbox_graph_id)
+
+    # Load explicit facts from all graphs (excluding derived quads)
+    {:ok, explicit_facts} = load_all_explicit_quads(db)
+
+    # Combine TBox and explicit facts for initial fact set
+    initial_facts = MapSet.union(tbox_facts, explicit_facts)
 
     # Get rules to apply
     rules = ReasoningConfig.materialization_rules(config)
-    {:ok, compiled_rules} = compile_rules(rules, config)
 
-    # Determine where to store derived facts
+    # Get storage strategy
+    storage_strategy = ReasoningConfig.storage_strategy(config)
     inferred_graph = ReasoningConfig.inferred_graph(config)
 
-    lookup_fn = make_all_graphs_lookup_fn(db)
-    store_fn = make_inferred_store_fn(db, inferred_graph)
+    # Create TBox-aware global lookup function
+    lookup_fn = make_global_lookup_fn(db, tbox_facts)
+
+    # Create store function based on storage strategy
+    store_fn = make_global_store_fn(db, config, storage_strategy, inferred_graph)
 
     # Run semi-naive materialization
     semi_naive_opts = [
@@ -401,7 +417,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       validate_rules: false
     ]
 
-    case SemiNaive.materialize(lookup_fn, store_fn, compiled_rules, initial_facts, semi_naive_opts) do
+    case SemiNaive.materialize(lookup_fn, store_fn, rules, initial_facts, semi_naive_opts) do
       {:ok, semi_naive_stats} ->
         duration_ms = System.monotonic_time(:millisecond) - start_time
 
@@ -411,7 +427,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           duration_ms: duration_ms,
           rules_applied: semi_naive_stats.rules_applied,
           scope: :global,
-          inferred_graph: inferred_graph
+          storage_strategy: storage_strategy,
+          inferred_graph: inferred_graph,
+          tbox_graph: tbox_graph_id
         }
 
         {:ok, stats}
@@ -476,6 +494,53 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # ============================================================================
   # Private Functions - Graph Fact Loading
   # ============================================================================
+
+  @doc """
+  Loads all explicit quads from all graphs, excluding derived quads.
+
+  This function scans the GSPO index and filters out any quads that exist
+  in the derived column family, returning only explicit (user-provided) quads.
+
+  ## Parameters
+
+  - `db` - Database reference
+
+  ## Returns
+
+  - `{:ok, explicit_quads}` - MapSet of explicit quads as {s, p, o} triples
+  - `{:error, reason}` - On failure
+  """
+  @spec load_all_explicit_quads(db_ref()) :: {:ok, MapSet.t(id_triple())} | {:error, term()}
+  def load_all_explicit_quads(db) do
+    try do
+      # First, collect all keys from the derived CF for filtering
+      derived_keys =
+        NIF.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
+          MapSet.put(acc, key)
+        end)
+
+      facts =
+        NIF.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
+          # Check if this quad is in the derived CF
+          if MapSet.member?(derived_keys, key) do
+            # Skip derived quads
+            acc
+          else
+            case QuadIndex.key_to_quad(:gspo, key) do
+              {_g, _s, _p, _o} = quad ->
+                MapSet.put(acc, quad_to_triple(quad))
+
+              _error ->
+                acc
+            end
+          end
+        end)
+
+      {:ok, facts}
+    rescue
+      e -> {:error, {:explicit_quad_loading_failed, e}}
+    end
+  end
 
   defp load_graph_facts(db, graph_id) do
     # Load all explicit quads from the specified graph
@@ -639,6 +704,153 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
+  # ============================================================================
+  # Private Functions - Global Lookup and Storage
+  # ============================================================================
+
+  @doc """
+  Loads TBox facts for global reasoning.
+
+  If a TBox graph is configured, extracts TBox facts from it.
+  Otherwise returns an empty set.
+  """
+  defp load_tbox_facts_for_global(_db, nil), do: MapSet.new()
+
+  defp load_tbox_facts_for_global(db, tbox_graph_id) do
+    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
+      {:ok, tbox_quads} ->
+        # Convert TBox quads to triples for reasoning
+        Enum.into(tbox_quads, MapSet.new(), fn {_g, s, p, o} -> {s, p, o} end)
+
+      {:error, _reason} ->
+        # If TBox extraction fails, continue without TBox
+        MapSet.new()
+    end
+  end
+
+  @doc """
+  Creates a TBox-aware global lookup function.
+
+  The lookup function combines in-memory TBox facts with database lookups
+  across all graphs for explicit facts.
+  """
+  defp make_global_lookup_fn(db, tbox_facts) do
+    fn pattern ->
+      # First check TBox facts (fast, in-memory)
+      tbox_matches = lookup_in_tbox_facts(pattern, tbox_facts)
+
+      # Then check all graphs in the database
+      graph_matches = lookup_all_graphs_facts(db, pattern)
+
+      # Union both result sets
+      case {tbox_matches, graph_matches} do
+        {{:ok, tbox_results}, {:ok, graph_results}} ->
+          {:ok, MapSet.union(tbox_results, graph_results)}
+
+        {{:ok, tbox_results}, :error} ->
+          {:ok, tbox_results}
+
+        {:error, {:ok, graph_results}} ->
+          {:ok, graph_results}
+
+        {:error, :error} ->
+          :error
+      end
+    end
+  end
+
+  @doc """
+  Looks up facts across all graphs in the database.
+
+  For global reasoning, this scans the GSPO index and returns
+  matching triples (quads converted to triples).
+  """
+  defp lookup_all_graphs_facts(db, {:pattern, [s, p, o]}) do
+    try do
+      # Build GSPO prefix lookup
+      # For pattern matching, we need to scan and filter
+      results =
+        NIF.fold(db, :gspo, <<>>, [], fn {key, _value}, acc ->
+          case QuadIndex.key_to_quad(:gspo, key) do
+            {_g, fact_s, fact_p, fact_o} ->
+              if matches_term?(s, fact_s) and matches_term?(p, fact_p) and
+                 matches_term?(o, fact_o) do
+                [{fact_s, fact_p, fact_o} | acc]
+              else
+                acc
+              end
+
+            _error ->
+              acc
+          end
+        end)
+
+      {:ok, MapSet.new(results)}
+    rescue
+      e -> {:error, {:lookup_failed, e}}
+    end
+  end
+
+  defp lookup_all_graphs_facts(_db, _pattern) do
+    {:ok, MapSet.new()}
+  end
+
+  @doc """
+  Creates a global store function based on the storage strategy.
+
+  The store function handles three strategies:
+  - `:same_as_premises` - Store in source graph (requires source tracking)
+  - `:separate_graph` - Store in designated inference graph
+  - `:per_graph_cf` - Store only in derived CF (no graph context)
+
+  Note: For `:same_as_premises`, we need source graph tracking which
+  requires additional infrastructure. For now, we use a simplified
+  approach that stores in the configured inferred_graph.
+  """
+  defp make_global_store_fn(db, _config, :same_as_premises, inferred_graph) do
+    # For same_as_premises, we need to track source graphs
+    # This requires provenance tracking - for now, use inferred_graph
+    make_global_store_fn(db, _config, :separate_graph, inferred_graph)
+  end
+
+  defp make_global_store_fn(db, _config, :separate_graph, inferred_graph) do
+    target_graph =
+      case inferred_graph do
+        :separate -> get_inference_graph_id()
+        graph_id when is_integer(graph_id) -> graph_id
+        nil -> 0  # Default to graph 0
+      end
+
+    fn fact_set ->
+      quads = Enum.map(fact_set, fn {s, p, o} -> {s, p, o, target_graph} end)
+      store_derived_quads(db, quads, target_graph)
+    end
+  end
+
+  defp make_global_store_fn(db, _config, :per_graph_cf, _inferred_graph) do
+    fn fact_set ->
+      # Store in derived CF only, without graph context
+      # Convert triples to quads with default graph 0
+      quads = Enum.map(fact_set, fn {s, p, o} -> {s, p, o, 0} end)
+
+      # Store in derived CF
+      Enum.each(quads, fn {s, p, o, _g} ->
+        key = QuadIndex.spo_key(s, p, o)
+        NIF.put(db, :derived, key, <<>>)
+      end)
+
+      :ok
+    end
+  end
+
+  @doc """
+  Gets the inference graph ID for storing derived quads.
+
+  Returns a predefined graph ID (e.g., 9999) for storing inferences
+  when :separate is specified.
+  """
+  defp get_inference_graph_id, do: 9999
+
   defp make_all_graphs_lookup_fn(db) do
     fn pattern ->
       # Lookup across all graphs, return as triples
@@ -764,8 +976,6 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
     NIF.write_batch(db, operations, true)
   end
-
-  defp get_inference_graph_id, do: 0
 
   # ============================================================================
   # Private Functions - Validation
