@@ -427,3 +427,12 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
     end
   end
 end
+
+# Protocol implementation for polymorphic Leapfrog support
+defimpl TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol, for: TripleStore.SPARQL.Leapfrog.TrieIterator do
+  def current(iter), do: TripleStore.SPARQL.Leapfrog.TrieIterator.current(iter)
+  def seek(iter, target), do: TripleStore.SPARQL.Leapfrog.TrieIterator.seek(iter, target)
+  def next(iter), do: TripleStore.SPARQL.Leapfrog.TrieIterator.next(iter)
+  def exhausted?(iter), do: TripleStore.SPARQL.Leapfrog.TrieIterator.exhausted?(iter)
+  def close(iter), do: TripleStore.SPARQL.Leapfrog.TrieIterator.close(iter)
+end

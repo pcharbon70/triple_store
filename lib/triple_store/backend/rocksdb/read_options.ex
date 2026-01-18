@@ -13,6 +13,8 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
   | `default/0` | General queries | Balanced settings for most queries |
   | `point_lookup/0` | Dictionary lookups | Optimized for single key lookups |
   | `prefix_scan/0` | Index prefix scans | Optimized for prefix iteration |
+  | `quad_prefix_scan/0` | Quad graph-scoped queries | Optimized for GSPO/GPOS scans |
+  | `cross_graph_scan/0` | Quad cross-graph queries | Optimized for SPOG/POSG scans |
   | `full_scan/0` | Bulk scans | Optimized for full table scans |
   | `cached_scan/0` | Repeated queries | Maximizes cache usage |
   | `uncached_scan/0` | Large one-time scans | Bypasses cache to avoid pollution |
@@ -27,6 +29,14 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
   # For prefix scans over indices
   opts = ReadOptions.prefix_scan()
   {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix, opts)
+
+  # For graph-scoped quad queries (GSPO/GPOS)
+  opts = ReadOptions.quad_prefix_scan()
+  {:ok, iter} = NIF.prefix_iterator(db, :gspo, prefix, opts)
+
+  # For cross-graph quad queries (SPOG/POSG)
+  opts = ReadOptions.cross_graph_scan()
+  {:ok, iter} = NIF.prefix_iterator(db, :spog, prefix, opts)
 
   # For large bulk scans that shouldn't pollute cache
   opts = ReadOptions.uncached_scan()
@@ -54,6 +64,21 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
   ### `tailing`
   - `true`: Iterator can read future updates
   - `false`: Iterator sees snapshot only (default)
+
+  ## Quad Store Read Strategy
+
+  Quad stores (schema v2) use 32-byte keys with four indices:
+
+  | Index | Key Ordering | Read Preset | Use Case |
+  |-------|--------------|-------------|----------|
+  | `gspo` | Graph-Subject-Predicate-Object | `quad_prefix_scan/0` | All quads in specific graph |
+  | `gpos` | Graph-Predicate-Object-Subject | `quad_prefix_scan/0` | All predicates in specific graph |
+  | `spog` | Subject-Predicate-Object-Graph | `cross_graph_scan/0` | Subject-scoped queries across graphs |
+  | `posg` | Predicate-Object-Subject-Graph | `cross_graph_scan/0` | Predicate-scoped queries across graphs |
+
+  The quad-specific presets optimize for the different access patterns:
+  - `quad_prefix_scan/0`: For graph-scoped queries (prefix on graph ID)
+  - `cross_graph_scan/0`: For cross-graph queries (prefix on subject/predicate)
   """
 
   @type read_option ::
@@ -141,6 +166,68 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
   """
   @spec prefix_scan() :: read_options()
   def prefix_scan do
+    [
+      fill_cache: true,
+      total_order_seek: false,
+      prefix_same_as_start: true
+    ]
+  end
+
+  @doc """
+  Read options optimized for quad graph-scoped queries.
+
+  Used for GSPO and GPOS index queries where we scan all quads within
+  a specific graph. The graph ID is the first component of the key,
+  making prefix scans very efficient.
+
+  ## Returns
+
+  Read options keyword list.
+
+  ## Examples
+
+      iex> opts = ReadOptions.quad_prefix_scan()
+      iex> Keyword.get(opts, :fill_cache)
+      true
+      iex> Keyword.get(opts, :total_order_seek)
+      false
+      iex> Keyword.get(opts, :prefix_same_as_start)
+      true
+
+  """
+  @spec quad_prefix_scan() :: read_options()
+  def quad_prefix_scan do
+    [
+      fill_cache: true,
+      total_order_seek: false,
+      prefix_same_as_start: true
+    ]
+  end
+
+  @doc """
+  Read options optimized for quad cross-graph queries.
+
+  Used for SPOG and POSG index queries where we scan across multiple graphs
+  based on subject or predicate prefix. These queries access data from
+  all graphs matching a subject or predicate pattern.
+
+  ## Returns
+
+  Read options keyword list.
+
+  ## Examples
+
+      iex> opts = ReadOptions.cross_graph_scan()
+      iex> Keyword.get(opts, :fill_cache)
+      true
+      iex> Keyword.get(opts, :total_order_seek)
+      false
+      iex> Keyword.get(opts, :prefix_same_as_start)
+      true
+
+  """
+  @spec cross_graph_scan() :: read_options()
+  def cross_graph_scan do
     [
       fill_cache: true,
       total_order_seek: false,
@@ -365,14 +452,29 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
       iex> Keyword.get(opts, :total_order_seek)
       false
 
+      iex> opts = ReadOptions.for_cf(:gspo)
+      iex> Keyword.get(opts, :prefix_same_as_start)
+      true
+
+      iex> opts = ReadOptions.for_cf(:spog)
+      iex> Keyword.get(opts, :prefix_same_as_start)
+      true
+
   """
   @spec for_cf(TripleStore.Backend.RocksDB.ColumnFamilyConfig.column_family()) ::
           read_options()
   def for_cf(:id2str), do: point_lookup()
   def for_cf(:str2id), do: point_lookup()
+  # Triple store indices
   def for_cf(:spo), do: prefix_scan()
   def for_cf(:pos), do: prefix_scan()
   def for_cf(:osp), do: prefix_scan()
+  # Quad store indices (schema v2)
+  def for_cf(:gspo), do: quad_prefix_scan()
+  def for_cf(:gpos), do: quad_prefix_scan()
+  def for_cf(:spog), do: cross_graph_scan()
+  def for_cf(:posg), do: cross_graph_scan()
+  # Other column families
   def for_cf(:derived), do: full_scan()
   def for_cf(:numeric_range), do: prefix_scan()
   def for_cf(:default), do: default()

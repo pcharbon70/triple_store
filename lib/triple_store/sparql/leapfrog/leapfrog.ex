@@ -44,7 +44,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   the invariant that index 0 has the smallest value.
   """
 
-  alias TripleStore.SPARQL.Leapfrog.TrieIterator
+  alias TripleStore.SPARQL.Leapfrog.{TrieIterator, TrieIteratorProtocol}
 
   # ===========================================================================
   # Types
@@ -124,8 +124,8 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   def new(iterators, opts) when is_list(iterators) do
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
 
-    # Check if any iterator is exhausted
-    if Enum.any?(iterators, &TrieIterator.exhausted?/1) do
+    # Check if any iterator is exhausted (using protocol for polymorphism)
+    if Enum.any?(iterators, &TrieIteratorProtocol.exhausted?/1) do
       {:exhausted,
        %__MODULE__{iterators: iterators, exhausted: true, max_iterations: max_iterations}}
     else
@@ -170,7 +170,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   def search(%__MODULE__{iterators: [single]} = lf) do
     # Single iterator case - always matches itself
-    case TrieIterator.current(single) do
+    case TrieIteratorProtocol.current(single) do
       {:ok, value} ->
         {:ok, %{lf | current_value: value, at_match: true}}
 
@@ -220,7 +220,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   def next(%__MODULE__{iterators: [first | rest]} = lf) do
     # Advance the first iterator past the current value
-    case TrieIterator.next(first) do
+    case TrieIteratorProtocol.next(first) do
       {:ok, advanced} ->
         # Re-sort and search for next common value
         new_iterators = sort_iterators([advanced | rest])
@@ -299,7 +299,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   """
   @spec close(t()) :: :ok
   def close(%__MODULE__{iterators: iterators}) do
-    Enum.each(iterators, &TrieIterator.close/1)
+    Enum.each(iterators, &TrieIteratorProtocol.close/1)
     :ok
   end
 
@@ -351,7 +351,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   # Sort iterators by their current value (ascending)
   defp sort_iterators(iterators) do
     Enum.sort_by(iterators, fn iter ->
-      case TrieIterator.current(iter) do
+      case TrieIteratorProtocol.current(iter) do
         {:ok, value} -> value
         :exhausted -> :infinity
       end
@@ -360,7 +360,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   # Get current value of an iterator, returning infinity for exhausted
   defp get_value(iter) do
-    case TrieIterator.current(iter) do
+    case TrieIteratorProtocol.current(iter) do
       {:ok, value} -> value
       :exhausted -> :infinity
     end
@@ -394,7 +394,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
         true ->
           # min < max: seek min iterator to max value
-          case TrieIterator.seek(first, max_val) do
+          case TrieIteratorProtocol.seek(first, max_val) do
             {:ok, advanced} ->
               # Re-sort and continue searching
               new_iterators = sort_iterators([advanced | tl(iterators)])

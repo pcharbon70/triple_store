@@ -1122,7 +1122,9 @@ defmodule TripleStore.SPARQL.Query do
       {:union, left, right} ->
         with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
              {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
-          {:ok, Executor.union(left_stream, right_stream)}
+          # SPARQL UNION returns distinct results (like SQL UNION, not UNION ALL)
+          # Apply distinct to remove duplicate bindings from the combined streams
+          {:ok, left_stream |> Stream.concat(right_stream) |> Executor.distinct()}
         end
 
       {:minus, left, right} ->
@@ -1222,6 +1224,10 @@ defmodule TripleStore.SPARQL.Query do
           path_expr,
           object
         )
+
+      # GRAPH clause - execute in graph context
+      {:graph, graph_spec, inner_pattern} ->
+        Executor.execute_graph(ctx, graph_spec, inner_pattern, %{})
 
       nil ->
         # Empty pattern - return unit stream

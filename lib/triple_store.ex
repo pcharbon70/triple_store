@@ -63,7 +63,9 @@ defmodule TripleStore do
 
   ### Reasoning
   - `materialize/2` - Compute OWL 2 RL inferences
+  - `materialize_graph/3` - Compute inferences for a specific graph
   - `reasoning_status/1` - Get reasoning subsystem status
+  - `reasoning_status/2` - Get reasoning status for a specific graph
 
   ### Operations
   - `backup/2` - Create a backup of the store
@@ -194,7 +196,23 @@ defmodule TripleStore do
   @typedoc "Options for materialization"
   @type materialize_opts :: [
           profile: :rdfs | :owl2rl | :all,
-          parallel: boolean()
+          parallel: boolean(),
+          scope: :local | :global | :hybrid,
+          graph_configs: %{non_neg_integer() => keyword()},
+          tbox_graph: non_neg_integer() | nil,
+          inferred_graph: non_neg_integer() | nil
+        ]
+
+  @typedoc "Options for graph-specific materialization"
+  @type materialize_graph_opts :: [
+          profile: :rdfs | :owl2rl | :all,
+          parallel: boolean(),
+          tbox_graph: non_neg_integer() | nil
+        ]
+
+  @typedoc "Options for reasoning status"
+  @type reasoning_status_opts :: [
+          graph_id: non_neg_integer() | nil
         ]
 
   @typedoc "Health status"
@@ -713,6 +731,13 @@ defmodule TripleStore do
     - `:owl2rl` - OWL 2 RL profile (includes RDFS)
     - `:all` - All available rules
   - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:scope` - Graph-aware reasoning scope (default: :local)
+    - `:local` - Each graph materializes independently
+    - `:global` - All graphs in single inference closure
+    - `:hybrid` - Per-graph configuration
+  - `:graph_configs` - Per-graph reasoning configs (for :hybrid scope)
+  - `:tbox_graph` - Graph ID containing shared TBox
+  - `:inferred_graph` - Graph ID to store inferences (for :global)
 
   ## Returns
 
@@ -729,10 +754,35 @@ defmodule TripleStore do
 
       {:ok, stats} = TripleStore.materialize(store, profile: :rdfs)
 
+      # Global reasoning across all graphs
+      {:ok, stats} = TripleStore.materialize(store, scope: :global)
+
+      # Hybrid with per-graph configuration
+      {:ok, stats} = TripleStore.materialize(store,
+        scope: :hybrid,
+        graph_configs: %{1 => [scope: :local], 2 => [scope: :local]}
+      )
+
   """
   @spec materialize(store(), materialize_opts()) ::
           {:ok, map()} | {:error, term()}
-  def materialize(%{db: db, dict_manager: _dict_manager}, opts \\ []) do
+  def materialize(store, opts \\ []) do
+    scope = Keyword.get(opts, :scope, :local)
+
+    case scope do
+      :local ->
+        materialize_triples(store, opts)
+
+      :global ->
+        materialize_global(store, opts)
+
+      :hybrid ->
+        materialize_hybrid(store, opts)
+    end
+  end
+
+  # Legacy triple materialization
+  defp materialize_triples(%{db: db, dict_manager: _dict_manager}, opts) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     _parallel = Keyword.get(opts, :parallel, true)
 
@@ -759,6 +809,91 @@ defmodule TripleStore do
     # Convert internal triple list to MapSet of tuples
     facts = MapSet.new(triples)
     {:ok, facts}
+  end
+
+  # Global reasoning using GraphScopedReasoner
+  defp materialize_global(store, opts) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    inferred_graph = Keyword.get(opts, :inferred_graph)
+
+    config_opts = [
+      profile: profile,
+      tbox_graph: tbox_graph,
+      inferred_graph: inferred_graph
+    ]
+
+    GraphScopedReasoner.materialize_all(store, config_opts)
+  end
+
+  # Hybrid reasoning using GraphScopedReasoner
+  defp materialize_hybrid(store, opts) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    graph_configs = Keyword.get(opts, :graph_configs, %{})
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      profile: profile,
+      graph_configs: graph_configs,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_hybrid(store, config_opts)
+  end
+
+  @doc """
+  Computes inferences for a specific graph using graph-local reasoning.
+
+  This function materializes inferences for a single graph, keeping all
+  derived quads within that graph. Use this for per-graph reasoning
+  without cross-graph inference.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Graph identifier to materialize
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:tbox_graph` - Graph ID containing shared TBox (optional)
+
+  ## Returns
+
+  - `{:ok, stats}` - Materialization statistics for the graph
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize graph 1
+      {:ok, stats} = TripleStore.materialize_graph(store, 1)
+
+      # Materialize graph 2 with TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_graph(store, 2,
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_graph(store(), non_neg_integer(), materialize_graph_opts()) ::
+          {:ok, map()} | {:error, term()}
+  def materialize_graph(store, graph_id, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      graph_id: graph_id,
+      profile: profile,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_graph(store, config_opts)
   end
 
   @doc """
@@ -839,6 +974,100 @@ defmodule TripleStore do
            error: nil
          }}
     end
+  end
+
+  @doc """
+  Returns reasoning status for a specific graph or with graph filtering.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `opts` - Options for filtering
+    - `:graph_id` - Get status for a specific graph
+
+  ## Returns
+
+  - `{:ok, status}` - Reasoning status map
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Get status for graph 1
+      {:ok, status} = TripleStore.reasoning_status(store, graph_id: 1)
+
+  """
+  @spec reasoning_status(store(), reasoning_status_opts()) :: {:ok, map()} | {:error, term()}
+  def reasoning_status(%{db: db} = _store, opts) when is_list(opts) do
+    graph_id = Keyword.get(opts, :graph_id)
+
+    if graph_id do
+      reasoning_status_for_graph(db, graph_id)
+    else
+      # Return aggregate status for all graphs
+      reasoning_status_all_graphs(db)
+    end
+  end
+
+  # Get reasoning status for a specific graph
+  defp reasoning_status_for_graph(_db, graph_id) do
+    alias TripleStore.Reasoner.GraphReasoningStatus
+
+    key = {:graph, graph_id}
+
+    case GraphReasoningStatus.load(key) do
+      {:ok, status} ->
+        {:ok, GraphReasoningStatus.summary(status)}
+
+      {:error, :not_found} ->
+        # No status for this graph - return default
+        {:ok,
+         %{
+           graph_id: graph_id,
+           state: :initialized,
+           scope: nil,
+           enabled: true,
+           derived_count: 0,
+           explicit_count: 0,
+           total_count: 0,
+           last_materialization: nil,
+           materialization_count: 0,
+           needs_rematerialization: false,
+           error: nil
+         }}
+    end
+  end
+
+  # Get aggregate reasoning status for all graphs
+  defp reasoning_status_all_graphs(_db) do
+    alias TripleStore.Reasoner.GraphReasoningStatus
+
+    # List all stored graph statuses
+    stored_keys = GraphReasoningStatus.list_stored()
+
+    # Load all statuses
+    statuses =
+      Enum.map(stored_keys, fn key ->
+        case GraphReasoningStatus.load(key) do
+          {:ok, status} -> status
+          {:error, _} -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    # Get aggregate stats
+    aggregate = GraphReasoningStatus.aggregate(statuses)
+
+    {:ok,
+     %{
+       total_graphs: aggregate.total_graphs,
+       materialized: aggregate.materialized,
+       stale: aggregate.stale,
+       error: aggregate.error,
+       initialized: aggregate.initialized,
+       total_derived: aggregate.total_derived,
+       total_explicit: aggregate.total_explicit,
+       total_quads: aggregate.total_quads
+     }}
   end
 
   # ===========================================================================

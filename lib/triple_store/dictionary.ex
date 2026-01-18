@@ -85,6 +85,29 @@ defmodule TripleStore.Dictionary do
   - **Max sequence**: `2^59 - 1` per type (over 576 quadrillion)
   - **Error return**: `{:error, :sequence_overflow}` when exhausted
   - **Telemetry**: Alert when reaching 50% utilization
+
+  ## Graph IDs (Quad Store)
+
+  **ID 0 is reserved** for the default graph in quad stores. This ID is never
+  allocated by the dictionary for any term. Named graphs use the same encoding
+  as regular RDF terms (URIs, blank nodes).
+
+  ### Default Graph
+  - ID: `0`
+  - Reserved, never allocated by dictionary
+  - Represents the unnamed default graph in SPARQL
+
+  ### Named Graphs
+  - Encoded as regular URIs or blank nodes in the dictionary
+  - Use the same type tags and sequence allocation as regular terms
+  - Can be any RDF IRI or blank node
+  - Example: `http://example.org/graph1` → URI type ID
+
+  ### ID Allocation Safety
+  The dictionary will never allocate ID 0 because:
+  - All term IDs have a type tag (1-6) in the high 4 bits
+  - Smallest allocated ID is `1 <<< 60 = 0x1000_0000_0000_0000`
+  - ID 0 is only used as the default graph identifier
   """
 
   import Bitwise
@@ -484,6 +507,148 @@ defmodule TripleStore.Dictionary do
   def dictionary_allocated?(id) when is_integer(id) and id >= 0 do
     type_tag = id >>> 60
     type_tag in [@type_uri, @type_bnode, @type_literal]
+  end
+
+  # ===========================================================================
+  # Graph ID Functions (Section 1.3)
+  # ===========================================================================
+
+  @doc """
+  Checks if a term ID represents the default graph.
+
+  The default graph is represented by ID 0, which is reserved and never
+  allocated by the dictionary for regular terms.
+
+  ## Arguments
+
+  - `id` - Term ID to check
+
+  ## Returns
+
+  - `true` if ID is 0 (default graph)
+  - `false` for any other ID (including named graphs)
+
+  ## Examples
+
+      iex> Dictionary.is_default_graph?(0)
+      true
+
+      iex> Dictionary.is_default_graph?(100)
+      false
+
+      iex> # Named graph IDs are regular term IDs, not 0
+      iex> Dictionary.is_default_graph?(Dictionary.encode_id(1, 42))
+      false
+  """
+  @spec is_default_graph?(term_id()) :: boolean()
+  def is_default_graph?(0), do: true
+  def is_default_graph?(id) when is_integer(id) and id > 0, do: false
+
+  @doc """
+  Checks if a term ID is a valid named graph ID.
+
+  A valid named graph ID is:
+  - A dictionary-allocated term (URI, blank node, or literal)
+  - NOT the default graph (ID 0)
+
+  ## Arguments
+
+  - `id` - Term ID to check
+
+  ## Returns
+
+  - `true` if ID could be a named graph
+  - `false` if ID is the default graph (0)
+
+  ## Examples
+
+      iex> Dictionary.is_named_graph?(0)
+      false
+
+      iex> uri_id = Dictionary.encode_id(1, 42)
+      iex> Dictionary.is_named_graph?(uri_id)
+      true
+  """
+  @spec is_named_graph?(term_id()) :: boolean()
+  def is_named_graph?(id) when is_integer(id) and id > 0 do
+    dictionary_allocated?(id)
+  end
+
+  def is_named_graph?(0), do: false
+
+  @doc """
+  Validates if a term ID is a valid graph ID.
+
+  A valid graph ID is any positive integer. ID 0 is reserved for the default
+  graph and is not considered a valid named graph ID for validation purposes.
+
+  ## Arguments
+
+  - `id` - Term ID to validate
+
+  ## Returns
+
+  - `true` if ID is a positive integer (valid named graph ID)
+  - `false` if ID is 0 (reserved for default graph)
+
+  ## Examples
+
+      iex> Dictionary.valid_graph_id?(0)
+      false
+
+      iex> uri_id = Dictionary.encode_id(1, 42)
+      iex> Dictionary.valid_graph_id?(uri_id)
+      true
+
+      iex> Dictionary.valid_graph_id?(12345)
+      true
+  """
+  @spec valid_graph_id?(term_id()) :: boolean()
+  def valid_graph_id?(0), do: false
+  def valid_graph_id?(id) when is_integer(id) and id > 0, do: true
+
+  @doc """
+  Gets or creates a graph ID for an RDF term.
+
+  This is a convenience function for encoding graph terms. Graphs are encoded
+  as regular RDF terms (URIs or blank nodes) in the dictionary.
+
+  ## Arguments
+
+  - `manager` - Dictionary Manager process (GenServer pid or name)
+  - `graph_term` - RDF term representing a graph (IRI or blank node)
+
+  ## Returns
+
+  - `{:ok, graph_id}` - The term ID for the graph
+  - `{:error, reason}` - If encoding fails
+
+  ## Graph Encoding
+
+  - **Named graphs (URIs)**: Encoded as regular URI terms
+  - **Blank node graphs**: Encoded as regular blank node terms
+  - **Default graph**: Use ID 0 directly (not created through dictionary)
+
+  ## Examples
+
+      # Named graph (IRI)
+      iex> {:ok, manager} = Manager.start_link(db: db)
+      iex> graph_iri = RDF.iri("http://example.org/graph1")
+      iex> {:ok, graph_id} = Dictionary.get_or_create_graph_id(manager, graph_iri)
+
+      # Blank node graph
+      iex> graph_bnode = RDF.bnode("g1")
+      iex> {:ok, graph_id} = Dictionary.get_or_create_graph_id(manager, graph_bnode)
+
+      # Default graph (use ID 0 directly)
+      iex> default_graph_id = 0
+  """
+  @spec get_or_create_graph_id(GenServer.server(), rdf_term()) ::
+          {:ok, term_id()} | {:error, term()}
+  def get_or_create_graph_id(manager, graph_term) do
+    # Graph terms use the same encoding as regular terms
+    # Delegates to the Manager's get_or_create_id function
+    TripleStore.Dictionary.Manager.get_or_create_id(manager, graph_term)
   end
 
   # ===========================================================================

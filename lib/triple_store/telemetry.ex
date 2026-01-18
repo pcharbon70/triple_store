@@ -27,6 +27,12 @@ defmodule TripleStore.Telemetry do
   - `[:triple_store, :insert, :start | :stop | :exception]`
   - `[:triple_store, :delete, :start | :stop | :exception]`
 
+  ### Quad Events (Phase 1)
+
+  - `[:triple_store, :quad, :insert, :start | :stop | :exception]`
+  - `[:triple_store, :quad, :delete, :start | :stop | :exception]`
+  - `[:triple_store, :quad, :lookup, :start | :stop]`
+
   ### Cache Events
 
   - `[:triple_store, :cache, :plan, :hit | :miss]`
@@ -284,6 +290,7 @@ defmodule TripleStore.Telemetry do
     query_events() ++
       insert_events() ++
       delete_events() ++
+      quad_events() ++
       cache_events() ++
       load_events() ++
       backup_events() ++
@@ -326,6 +333,25 @@ defmodule TripleStore.Telemetry do
       @prefix ++ [:delete, :start],
       @prefix ++ [:delete, :stop],
       @prefix ++ [:delete, :exception]
+    ]
+  end
+
+  @doc """
+  Returns quad-related event names.
+
+  Quad store operations for Phase 1 (Quad Storage Foundation).
+  """
+  @spec quad_events() :: [[atom()]]
+  def quad_events do
+    [
+      @prefix ++ [:quad, :insert, :start],
+      @prefix ++ [:quad, :insert, :stop],
+      @prefix ++ [:quad, :insert, :exception],
+      @prefix ++ [:quad, :delete, :start],
+      @prefix ++ [:quad, :delete, :stop],
+      @prefix ++ [:quad, :delete, :exception],
+      @prefix ++ [:quad, :lookup, :start],
+      @prefix ++ [:quad, :lookup, :stop]
     ]
   end
 
@@ -494,6 +520,14 @@ defmodule TripleStore.Telemetry do
 
       # Delete events
       {handler_id(handler_prefix, :delete), [[:triple_store, :delete, :stop]]},
+
+      # Quad events (Phase 1)
+      {handler_id(handler_prefix, :quad),
+       [
+         [:triple_store, :quad, :insert, :stop],
+         [:triple_store, :quad, :delete, :stop],
+         [:triple_store, :quad, :lookup, :stop]
+       ]},
 
       # Load events
       {handler_id(handler_prefix, :load), [[:triple_store, :load, :stop]]},

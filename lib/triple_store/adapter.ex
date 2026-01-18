@@ -59,6 +59,12 @@ defmodule TripleStore.Adapter do
   @typedoc "Internal triple as 3-tuple of term IDs"
   @type internal_triple :: {term_id(), term_id(), term_id()}
 
+  @typedoc "RDF quad as 4-tuple of RDF terms"
+  @type rdf_quad :: {RDF.IRI.t() | RDF.BlankNode.t(), RDF.IRI.t(), rdf_term(), RDF.IRI.t() | RDF.BlankNode.t() | nil}
+
+  @typedoc "Internal quad as 4-tuple of term IDs"
+  @type internal_quad :: {term_id(), term_id(), term_id(), term_id()}
+
   @typedoc "64-bit term ID from dictionary encoding"
   @type term_id :: Dictionary.term_id()
 
@@ -576,6 +582,180 @@ defmodule TripleStore.Adapter do
   defp results_to_triple(_), do: :not_found
 
   # ===========================================================================
+  # Quad Conversion
+  # ===========================================================================
+
+  @doc """
+  Converts an RDF quad to internal representation.
+
+  Converts each term in the quad `{s, p, o, g}` to its dictionary-encoded ID.
+  The subject must be an IRI or BlankNode, predicate must be an IRI,
+  object can be any RDF term, and graph can be an IRI, BlankNode, or nil
+  (for the default graph).
+
+  When the graph is nil, it is converted to the default graph ID (0).
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `quad` - RDF quad as `{subject, predicate, object, graph}` tuple
+
+  ## Returns
+
+  - `{:ok, {s_id, p_id, o_id, g_id}}` - Internal quad with term IDs
+  - `{:error, reason}` - On validation or allocation failure
+
+  ## Examples
+
+      iex> quad = {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"),
+      ...>         RDF.literal("o"), RDF.iri("http://ex.org/g")}
+      iex> {:ok, {s_id, p_id, o_id, g_id}} = Adapter.from_rdf_quad(manager, quad)
+      iex> is_integer(s_id) and is_integer(p_id) and is_integer(o_id) and is_integer(g_id)
+      true
+
+      iex> # Default graph (nil graph becomes ID 0)
+      iex> quad = {RDF.iri("http://ex.org/s"), RDF.iri("http://ex.org/p"),
+      ...>         RDF.literal("o"), nil}
+      iex> {:ok, {_, _, _, g_id}} = Adapter.from_rdf_quad(manager, quad)
+      iex> g_id
+      0
+  """
+  @spec from_rdf_quad(manager(), rdf_quad()) ::
+          {:ok, internal_quad()} | {:error, term()}
+  def from_rdf_quad(manager, {subject, predicate, object, graph}) do
+    with {:ok, s_id} <- term_to_id(manager, subject),
+         {:ok, p_id} <- term_to_id(manager, predicate),
+         {:ok, o_id} <- term_to_id(manager, object),
+         {:ok, g_id} <- graph_to_id(manager, graph) do
+      {:ok, {s_id, p_id, o_id, g_id}}
+    end
+  end
+
+  @doc """
+  Converts an internal quad to RDF representation.
+
+  Looks up each term ID in the dictionary and returns the corresponding
+  RDF terms as a quad tuple.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `quad` - Internal quad as `{s_id, p_id, o_id, g_id}` tuple
+
+  ## Returns
+
+  - `{:ok, {subject, predicate, object, graph}}` - RDF quad
+  - `:not_found` - One or more IDs not found in dictionary
+  - `{:error, reason}` - On database error
+
+  ## Examples
+
+      iex> {:ok, {s, p, o, g}} = Adapter.to_rdf_quad(db, {s_id, p_id, o_id, g_id})
+      iex> s
+      %RDF.IRI{value: "http://ex.org/s"}
+
+      iex> # Default graph (ID 0 becomes nil)
+      iex> {:ok, {_, _, _, g}} = Adapter.to_rdf_quad(db, {s_id, p_id, o_id, 0})
+      iex> g
+      nil
+  """
+  @spec to_rdf_quad(db_ref(), internal_quad()) ::
+          {:ok, rdf_quad()} | :not_found | {:error, term()}
+  def to_rdf_quad(db, {s_id, p_id, o_id, g_id}) do
+    with {:ok, s} <- id_to_term(db, s_id),
+         {:ok, p} <- id_to_term(db, p_id),
+         {:ok, o} <- id_to_term(db, o_id),
+         {:ok, g} <- id_to_graph(db, g_id) do
+      {:ok, {s, p, o, g}}
+    end
+  end
+
+  @doc """
+  Converts multiple RDF quads to internal representation.
+
+  Batch conversion for efficiency - processes all terms together.
+
+  ## Arguments
+
+  - `manager` - Dictionary manager process
+  - `quads` - List of RDF quads
+
+  ## Returns
+
+  - `{:ok, [internal_quad]}` - List of internal quads
+  - `{:error, reason}` - On first validation or allocation failure
+
+  ## Examples
+
+      iex> quads = [quad1, quad2, quad3]
+      iex> {:ok, internal_quads} = Adapter.from_rdf_quads(manager, quads)
+      iex> length(internal_quads)
+      3
+  """
+  @spec from_rdf_quads(manager(), [rdf_quad()]) ::
+          {:ok, [internal_quad()]} | {:error, term()}
+  def from_rdf_quads(_manager, []), do: {:ok, []}
+
+  def from_rdf_quads(manager, quads) when is_list(quads) do
+    # Process each quad individually since nil graphs need special handling
+    # This could be optimized by collecting non-nil terms and tracking nil positions
+    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
+      case from_rdf_quad(manager, quad) do
+        {:ok, internal_quad} ->
+          {:cont, {:ok, [internal_quad | acc]}}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, quads_reversed} -> {:ok, Enum.reverse(quads_reversed)}
+      error -> error
+    end
+  end
+
+  @doc """
+  Converts multiple internal quads to RDF representation.
+
+  Batch conversion for efficiency.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `quads` - List of internal quads
+
+  ## Returns
+
+  - `{:ok, [rdf_quad]}` - List of RDF quads
+  - `{:error, reason}` - On database error
+
+  Note: Individual quads with missing IDs will have `:not_found` in their position.
+  """
+  @spec to_rdf_quads(db_ref(), [internal_quad()]) ::
+          {:ok, [rdf_quad() | :not_found]} | {:error, term()}
+  def to_rdf_quads(_db, []), do: {:ok, []}
+
+  def to_rdf_quads(db, quads) when is_list(quads) do
+    # Process each quad individually since graph ID 0 (default graph) needs special handling
+    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
+      case to_rdf_quad(db, quad) do
+        {:ok, rdf_quad} ->
+          {:cont, {:ok, [rdf_quad | acc]}}
+
+        :not_found ->
+          {:cont, {:ok, [:not_found | acc]}}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, quads_reversed} -> {:ok, Enum.reverse(quads_reversed)}
+      error -> error
+    end
+  end
+
+  # ===========================================================================
   # Graph Conversion
   # ===========================================================================
 
@@ -756,6 +936,19 @@ defmodule TripleStore.Adapter do
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
+
+  # Converts an RDF graph term to a graph ID.
+  # Handles IRI, BlankNode, and nil (for default graph).
+  # Nil graph converts to ID 0 (default graph).
+  defp graph_to_id(_manager, nil), do: {:ok, 0}
+  defp graph_to_id(manager, %RDF.IRI{} = iri), do: from_rdf_iri(manager, iri)
+  defp graph_to_id(manager, %RDF.BlankNode{} = bnode), do: from_rdf_bnode(manager, bnode)
+
+  # Converts a graph ID to an RDF graph term.
+  # ID 0 converts to nil (default graph).
+  # IDs > 0 convert to IRI or BlankNode.
+  defp id_to_graph(_db, 0), do: {:ok, nil}
+  defp id_to_graph(db, id) when is_integer(id) and id > 0, do: id_to_term(db, id)
 
   # Encode an inline-encodable literal to its ID
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}})

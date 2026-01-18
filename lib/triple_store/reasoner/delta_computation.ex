@@ -35,14 +35,24 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   1. `head :- delta(body1), full(body2)` - Find matches with new body1 facts
   2. `head :- full(body1), delta(body2)` - Find matches with new body2 facts
 
+  ## Quad Support
+
+  This module supports both triple and quad patterns for graph-aware reasoning:
+
+  - **Triple patterns**: `{:pattern, [subject, predicate, object]}`
+  - **Quad patterns**: `{:quad_pattern, [graph, subject, predicate, object]}`
+
+  When working with quads, the graph component is included in all operations
+  including indexing, pattern matching, and unification.
+
   ## Usage
 
       # Apply a rule using delta facts
       {:ok, new_facts} = DeltaComputation.apply_rule_delta(
-        database,       # Triple store or fact set
-        rule,           # The reasoning rule
-        delta_facts,    # Facts from previous iteration
-        existing_facts  # All known facts (for filtering duplicates)
+        lookup_fn,     # Function to look up facts matching a pattern
+        rule,          # The reasoning rule
+        delta_facts,   # Facts from previous iteration
+        existing_facts # All known facts (for filtering duplicates)
       )
 
   ## Performance Considerations
@@ -64,11 +74,17 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   @typedoc "A ground triple as a tuple of three terms"
   @type triple :: {Rule.rule_term(), Rule.rule_term(), Rule.rule_term()}
 
-  @typedoc "A set of facts (triples)"
+  @typedoc "A ground quad as a tuple of four terms (graph, subject, predicate, object)"
+  @type quad :: {Rule.rule_term(), Rule.rule_term(), Rule.rule_term(), Rule.rule_term()}
+
+  @typedoc "A fact (triple or quad)"
+  @type fact :: triple() | quad()
+
+  @typedoc "A set of facts (triples or quads)"
   @type fact_set :: MapSet.t()
 
   @typedoc "Index mapping predicates to facts with that predicate"
-  @type predicate_index :: %{Rule.rule_term() => [triple()]}
+  @type predicate_index :: %{Rule.rule_term() => [fact()]}
 
   @typedoc "Options for delta computation"
   @type delta_opts :: [
@@ -229,7 +245,10 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   end
 
   @doc """
-  Instantiates a rule head pattern with a binding to produce a ground triple.
+  Instantiates a rule head pattern with a binding to produce a ground fact.
+
+  Supports both triple patterns `{:pattern, [s, p, o]}` and quad patterns
+  `{:quad_pattern, [g, s, p, o]}`.
 
   ## Parameters
 
@@ -238,7 +257,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
   ## Returns
 
-  A ground triple if all variables are bound, or nil if unbound variables remain.
+  A ground triple or quad if all variables are bound, or nil if unbound variables remain.
 
   ## Examples
 
@@ -246,8 +265,13 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       binding = %{"x" => {:iri, "alice"}, "c" => {:iri, "Person"}}
       instantiate_head(head, binding)
       # => {{:iri, "alice"}, {:iri, "type"}, {:iri, "Person"}}
+
+      head = {:quad_pattern, [{:var, "g"}, {:var, "x"}, {:iri, "type"}, {:var, "c"}]}
+      binding = %{"g" => {:iri, "graph1"}, "x" => {:iri, "alice"}, "c" => {:iri, "Person"}}
+      instantiate_head(head, binding)
+      # => {{:iri, "graph1"}, {:iri, "alice"}, {:iri, "type"}, {:iri, "Person"}}
   """
-  @spec instantiate_head(Rule.pattern(), Rule.binding()) :: triple() | nil
+  @spec instantiate_head(Rule.pattern() | Rule.quad_pattern(), Rule.binding()) :: fact() | nil
   def instantiate_head({:pattern, [s, p, o]}, binding) do
     s_sub = Rule.substitute(s, binding)
     p_sub = Rule.substitute(p, binding)
@@ -261,11 +285,29 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     end
   end
 
+  def instantiate_head({:quad_pattern, [g, s, p, o]}, binding) do
+    g_sub = Rule.substitute(g, binding)
+    s_sub = Rule.substitute(s, binding)
+    p_sub = Rule.substitute(p, binding)
+    o_sub = Rule.substitute(o, binding)
+
+    # Check all terms are ground (no remaining variables)
+    if ground_term?(g_sub) and ground_term?(s_sub) and ground_term?(p_sub) and ground_term?(o_sub) do
+      {g_sub, s_sub, p_sub, o_sub}
+    else
+      nil
+    end
+  end
+
   @doc """
   Creates an index of facts organized by predicate for efficient lookup.
 
+  Supports both triples and quads. For triples, extracts the predicate from
+  position 1. For quads, extracts the predicate from position 2.
+
   ## Examples
 
+      # Triple facts
       facts = MapSet.new([
         {{:iri, "a"}, {:iri, "type"}, {:iri, "Person"}},
         {{:iri, "b"}, {:iri, "type"}, {:iri, "Animal"}},
@@ -277,11 +319,32 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       #   {:iri, "type"} => [fact1, fact2],
       #   {:iri, "knows"} => [fact3]
       # }
+
+      # Quad facts
+      quad_facts = MapSet.new([
+        {{:iri, "g1"}, {:iri, "a"}, {:iri, "type"}, {:iri, "Person"}},
+        {{:iri, "g1"}, {:iri, "b"}, {:iri, "type"}, {:iri, "Animal"}}
+      ])
+
+      index = index_by_predicate(quad_facts)
+      # => %{
+      #   {:iri, "type"} => [fact1, fact2]
+      # }
   """
   @spec index_by_predicate(fact_set()) :: predicate_index()
   def index_by_predicate(facts) do
-    Enum.group_by(facts, fn {_s, p, _o} -> p end)
+    Enum.group_by(facts, &predicate_of/1)
   end
+
+  @doc """
+  Extracts the predicate from a fact (triple or quad).
+
+  For triples `{s, p, o}`, returns `p`.
+  For quads `{g, s, p, o}`, returns `p`.
+  """
+  @spec predicate_of(fact()) :: Rule.rule_term()
+  def predicate_of({_s, p, _o}), do: p
+  def predicate_of({_g, _s, p, _o}), do: p
 
   @doc """
   Checks if a term is ground (contains no variables).
@@ -392,7 +455,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       {:var, _} ->
         # Variable predicate - scan all delta facts
         Enum.filter(delta, fn fact ->
-          matches_pattern?(fact, s, p, o)
+          matches_pattern?(fact, {:pattern, [s, p, o]})
         end)
 
       ground_predicate ->
@@ -400,13 +463,35 @@ defmodule TripleStore.Reasoner.DeltaComputation do
         delta_index
         |> Map.get(ground_predicate, [])
         |> Enum.filter(fn fact ->
-          matches_pattern?(fact, s, p, o)
+          matches_pattern?(fact, {:pattern, [s, p, o]})
         end)
     end
   end
 
-  defp matches_pattern?(fact, s, p, o) do
-    PatternMatcher.matches_triple?(fact, {:pattern, [s, p, o]})
+  defp match_pattern_against_facts({:quad_pattern, [g, s, p, o]}, delta, delta_index) do
+    # If predicate is ground, use the index
+    case p do
+      {:var, _} ->
+        # Variable predicate - scan all delta facts
+        Enum.filter(delta, fn fact ->
+          matches_pattern?(fact, {:quad_pattern, [g, s, p, o]})
+        end)
+
+      ground_predicate ->
+        # Use predicate index for efficiency
+        delta_index
+        |> Map.get(ground_predicate, [])
+        |> Enum.filter(fn fact ->
+          matches_pattern?(fact, {:quad_pattern, [g, s, p, o]})
+        end)
+    end
+  end
+
+  defp matches_pattern?(fact, pattern) do
+    case pattern do
+      {:pattern, _} -> PatternMatcher.matches_triple?(fact, pattern)
+      {:quad_pattern, _} -> PatternMatcher.matches_quad?(fact, pattern)
+    end
   end
 
   defp pattern_to_lookup({:pattern, [s, p, o]}) do
@@ -423,6 +508,21 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     end
   end
 
+  defp pattern_to_lookup({:quad_pattern, [g, s, p, o]}) do
+    g_bound = pattern_element(g)
+    s_bound = pattern_element(s)
+    p_bound = pattern_element(p)
+    o_bound = pattern_element(o)
+
+    if g_bound != :var and s_bound != :var and p_bound != :var and o_bound != :var do
+      # All ground - exact quad check
+      {:ground, {g, s, p, o}}
+    else
+      # Need to look up
+      {:lookup, {:quad_pattern, [g, s, p, o]}}
+    end
+  end
+
   defp pattern_element({:var, _}), do: :var
   defp pattern_element(_), do: :bound
 
@@ -431,6 +531,17 @@ defmodule TripleStore.Reasoner.DeltaComputation do
          {:ok, b2} <- unify_term(pp, fp, b1),
          {:ok, b3} <- unify_term(po, fo, b2) do
       {:ok, b3}
+    else
+      :no_match -> :no_match
+    end
+  end
+
+  defp unify_pattern_with_fact({:quad_pattern, [pg, ps, pp, po]}, {fg, fs, fp, fo}, binding) do
+    with {:ok, b1} <- unify_term(pg, fg, binding),
+         {:ok, b2} <- unify_term(ps, fs, b1),
+         {:ok, b3} <- unify_term(pp, fp, b2),
+         {:ok, b4} <- unify_term(po, fo, b3) do
+      {:ok, b4}
     else
       :no_match -> :no_match
     end
