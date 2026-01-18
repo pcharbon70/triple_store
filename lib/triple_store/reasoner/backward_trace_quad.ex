@@ -248,6 +248,9 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   defp matches_term_pattern?({:const, value}, term), do: value == term
   defp matches_term_pattern?({:var, _name}, _term), do: true
   defp matches_term_pattern?(:var, _term), do: true
+  # Raw IRI and literal terms are treated as constants
+  defp matches_term_pattern?({:iri, _} = iri, term), do: iri == term
+  defp matches_term_pattern?({:literal, _, _} = literal, term), do: literal == term
   defp matches_term_pattern?(_other, _term), do: false
 
   defp get_all_graphs_with_derivations(db) do

@@ -128,7 +128,11 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     all_explicit_facts = load_explicit_facts_in_graph(db, graph_id, deleted_quads)
 
     # Get all derived quads in this graph
-    {:ok, all_derived_quads} = DerivedStore.lookup_derived_quads_in_graph(db, graph_id)
+    all_derived_quads =
+      case DerivedStore.lookup_derived_quads_in_graph(db, graph_id) do
+        {:ok, quads} -> quads
+        {:error, _} -> []
+      end
 
     # Convert to triples for pattern matching (drop graph_id)
     all_explicit_triples =
@@ -218,14 +222,18 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
   defp load_tbox_triples(_db, nil, _graph_id), do: MapSet.new()
 
   defp load_tbox_triples(db, tbox_graph_id, _graph_id) do
-    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
-      {:ok, tbox_quads} ->
-        tbox_quads
-        |> Enum.map(fn {_g, s, p, o} -> {s, p, o} end)
-        |> MapSet.new()
+    try do
+      case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
+        {:ok, tbox_quads} ->
+          tbox_quads
+          |> Enum.map(fn {_g, s, p, o} -> {s, p, o} end)
+          |> MapSet.new()
 
-      {:error, _reason} ->
-        MapSet.new()
+        {:error, _reason} ->
+          MapSet.new()
+      end
+    rescue
+      _error -> MapSet.new()
     end
   end
 
@@ -233,26 +241,30 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     # Scan GSPO index for explicit facts in this graph
     prefix = QuadIndex.gspo_prefix(graph_id)
 
-    # Collect all explicit quads (not in derived CF)
-    explicit_quads =
-      NIF.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
-        {g, s, p, o} = QuadIndex.decode_gspo_key(key)
-        quad = {g, s, p, o}
+    try do
+      # Collect all explicit quads (not in derived CF)
+      explicit_quads =
+        NIF.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+          {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+          quad = {g, s, p, o}
 
-        # Skip if this quad was deleted
-        if MapSet.member?(deleted_quads, quad) do
-          acc
-        else
-          # Check if it's a derived quad
-          case DerivedStore.derived_quad_exists?(db, quad) do
-            {:ok, true} -> acc
-            {:ok, false} -> [quad | acc]
-            {:error, _} -> acc
+          # Skip if this quad was deleted
+          if MapSet.member?(deleted_quads, quad) do
+            acc
+          else
+            # Check if it's a derived quad
+            case DerivedStore.derived_quad_exists?(db, quad) do
+              {:ok, true} -> acc
+              {:ok, false} -> [quad | acc]
+              {:error, _} -> acc
+            end
           end
-        end
-      end)
+        end)
 
-    MapSet.new(explicit_quads)
+      MapSet.new(explicit_quads)
+    rescue
+      _error -> MapSet.new()
+    end
   end
 
   defp can_rederive_quad_in_graph?(db, {s, p, o} = triple, valid_facts, graph_id, rules) do

@@ -998,13 +998,17 @@ defmodule TripleStore.Reasoner.DerivedStore do
   def lookup_derived_quads_in_graph(db, graph_id) do
     prefix = <<graph_id::64-big>>
 
-    results =
-      NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
-        {g, s, p, o} = QuadIndex.decode_gspo_key(key)
-        [{g, s, p, o} | acc]
-      end)
+    try do
+      results =
+        NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+          {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+          [{g, s, p, o} | acc]
+        end)
 
-    {:ok, Enum.reverse(results)}
+      {:ok, Enum.reverse(results)}
+    rescue
+      error -> {:error, error}
+    end
   end
 
   @doc """

@@ -1356,13 +1356,15 @@ defmodule TripleStore.Reasoner.Rule do
       true  # If predicate_id corresponds to the IRI in the rule
   """
   @spec could_derive?(t(), id_triple()) :: boolean()
-  def could_derive?(%__MODULE__{head: {:pattern, [_s, p_pat, _o]}}, {_s, p, _o}) do
+  def could_derive?(%__MODULE__{head: {:pattern, [_s, p_pat, _o]}}, {_s2, _p, _o2}) do
     # For a rule to derive a triple, the predicate must match
     # Variables in the head mean the rule could derive any predicate
+    # Keyword list items like {key, value} are 2-tuples
     case p_pat do
       {:var, _name} -> true
       :var -> true
-      _ -> true  # Conservative: assume match for concrete predicates
+      {_, _} -> true  # Any keyword list item (var, iri, literal)
+      _ -> true  # Conservative: assume match
     end
   end
 

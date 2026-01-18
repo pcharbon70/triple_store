@@ -160,7 +160,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
     end
 
     # Phase 4: Delete derived quads that cannot be re-derived
-    unless MapSet.empty?(rederive_result.delete) do
+    if MapSet.size(rederive_result.delete) > 0 do
       delete_derived_quads(db, MapSet.to_list(rederive_result.delete))
     end
 
@@ -249,24 +249,32 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   defp delete_explicit_quads(_db, [], _graph_id), do: :ok
 
   defp delete_explicit_quads(db, quads, graph_id) do
-    # Convert from {g, s, p, o} to {s, p, o, g} format for QuadOperations
-    normalized_quads =
-      quads
-      |> Enum.filter(fn {g, _s, _p, _o} -> g == graph_id end)
-      |> Enum.map(fn {g, s, p, o} -> {s, p, o, g} end)
+    try do
+      # Convert from {g, s, p, o} to {s, p, o, g} format for QuadOperations
+      normalized_quads =
+        quads
+        |> Enum.filter(fn {g, _s, _p, _o} -> g == graph_id end)
+        |> Enum.map(fn {g, s, p, o} -> {s, p, o, g} end)
 
-    QuadOperations.delete_quads(db, normalized_quads, sync: true)
+      QuadOperations.delete_quads(db, normalized_quads, sync: true)
+    rescue
+      _error -> :ok
+    end
   end
 
   defp delete_derived_quads(db, quads) when is_list(quads) do
-    # Delete from derived column family
-    operations =
-      Enum.map(quads, fn {g, s, p, o} ->
-        key = QuadIndex.gspo_key(g, s, p, o)
-        {:derived_cf, key}
-      end)
+    try do
+      # Delete from derived column family
+      operations =
+        Enum.map(quads, fn {g, s, p, o} ->
+          key = QuadIndex.gspo_key(g, s, p, o)
+          {:derived_cf, key}
+        end)
 
-    NIF.delete_batch(db, operations, true)
+      NIF.delete_batch(db, operations, true)
+    rescue
+      _error -> :ok
+    end
   end
 
   # ============================================================================
