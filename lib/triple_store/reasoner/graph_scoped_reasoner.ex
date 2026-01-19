@@ -1347,28 +1347,44 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Get all graphs in the database
     all_graph_ids = get_all_graph_ids(db)
 
-    {local, global} =
-      Enum.reduce(all_graph_ids, {%{}, %{}}, fn graph_id, {local_acc, global_acc} ->
+    # Track whether we're in hybrid mode for warning
+    hybrid_mode? = ReasoningConfig.scope(config) == :hybrid
+
+    # First pass: partition graphs and collect unconfigured ones
+    {local, global, unconfigured_graphs} =
+      Enum.reduce(all_graph_ids, {%{}, %{}, []}, fn graph_id, {local_acc, global_acc, unconf_acc} ->
         case ReasoningConfig.graph_config(config, graph_id) do
           {:ok, %GraphReasoningConfig{scope: :local} = gc} ->
-            {Map.put(local_acc, graph_id, gc), global_acc}
+            {Map.put(local_acc, graph_id, gc), global_acc, unconf_acc}
 
           {:ok, %GraphReasoningConfig{scope: :global} = gc} ->
-            {local_acc, Map.put(global_acc, graph_id, gc)}
+            {local_acc, Map.put(global_acc, graph_id, gc), unconf_acc}
 
           {:ok, %GraphReasoningConfig{scope: :none}} ->
             # Graph doesn't participate in reasoning
-            {local_acc, global_acc}
+            {local_acc, global_acc, unconf_acc}
 
           :error ->
-            # Use default scope from config
-            case ReasoningConfig.scope(config) do
-              :local -> {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
-              :global -> {local_acc, Map.put(global_acc, graph_id, GraphReasoningConfig.default(graph_id))}
-              :hybrid -> {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
+            # Graph has no explicit configuration - use default
+            default_gc = GraphReasoningConfig.default(graph_id)
+            if hybrid_mode? do
+              # Track unconfigured graphs for warning
+              {Map.put(local_acc, graph_id, default_gc), global_acc, [graph_id | unconf_acc]}
+            else
+              {Map.put(local_acc, graph_id, default_gc), global_acc, unconf_acc}
             end
         end
       end)
+
+    # Emit warning if hybrid mode has unconfigured graphs
+    if hybrid_mode? and length(unconfigured_graphs) > 0 do
+      Logger.warning("""
+      Hybrid reasoning mode: #{length(unconfigured_graphs)} graphs have no explicit configuration.
+      Using local scope as default for graphs: #{inspect(Enum.reverse(unconfigured_graphs))}
+
+      To silence this warning, configure each graph explicitly using ReasoningConfig.set_graph_config/3.
+      """)
+    end
 
     {local, global}
   end
