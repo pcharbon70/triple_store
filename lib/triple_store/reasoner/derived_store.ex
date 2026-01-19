@@ -10,6 +10,38 @@ defmodule TripleStore.Reasoner.DerivedStore do
   2. **Provenance tracking**: Distinguish explicit from inferred knowledge
   3. **Query optimization**: Query only explicit, only derived, or both
 
+  ## API Design: Triple vs Quad
+
+  This module provides both **triple** and **quad** APIs to support different
+  reasoning modes:
+
+  ### Triple API (Legacy, Single Graph)
+
+  For single-graph reasoning (no named graphs), use the triple functions:
+
+  - `insert_derived/2` - Store `{s, p, o}` triples
+  - `delete_derived/2` - Delete `{s, p, o}` triples
+  - `lookup_derived/2` - Query derived triples
+  - `make_lookup_fn/2` - Create lookup function for SemiNaive
+  - `make_store_fn/1` - Create store function for SemiNaive
+
+  **Use when**: You don't need graph tracking or are working with legacy
+  triple-only code.
+
+  ### Quad API (Graph-Aware Reasoning)
+
+  For multi-graph reasoning, use the quad functions:
+
+  - `insert_derived_quads/2` - Store `{g, s, p, o}` quads
+  - `insert_derived_quads_batch/3` - Store quads in specific graph
+  - `delete_derived_quads/2` - Delete `{g, s, p, o}` quads
+  - `lookup_derived_quads/3` - Query derived quads for a graph
+  - `make_graph_lookup_fn/2` - Create graph-scoped lookup function
+  - `make_graph_store_fn/2` - Create graph-scoped store function
+
+  **Use when**: You need graph-scoped reasoning, multi-tenant isolation,
+  or want to track which graph each derived fact belongs to.
+
   ## Storage Design
 
   ### Triple Store (Legacy)
@@ -46,12 +78,21 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
       {:ok, stats} = SemiNaive.materialize(lookup_fn, store_fn, rules, initial)
 
+  ## Migration Path
+
+  When migrating from triple to quad reasoning:
+
+  1. Replace triple functions with quad equivalents
+  2. Add `graph_id` parameter to all reasoning operations
+  3. Use `insert_derived_quads/2` instead of `insert_derived/2`
+  4. Update lookup functions to use graph-scoped variants
+
   ## Usage Examples
 
-      # Store derived facts (triple mode)
+      # Store derived facts (triple mode - legacy)
       DerivedStore.insert_derived(db, [{s1, p1, o1}, {s2, p2, o2}])
 
-      # Store derived quads (quad mode)
+      # Store derived quads (quad mode - recommended)
       DerivedStore.insert_derived_quads(db, [{g, s1, p1, o1}, {g, s2, p2, o2}])
 
       # Query derived facts only
