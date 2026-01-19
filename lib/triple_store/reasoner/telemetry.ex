@@ -34,6 +34,32 @@ defmodule TripleStore.Reasoner.Telemetry do
   - `:batch_count` - Number of batches created (stop only)
   - `:dead_rule_count` - Number of dead rules detected (stop only)
 
+  ### TBox Extraction (Graph-Scoped Reasoning)
+
+  - `[:triple_store, :reasoner, :tbox_extract, :start]` - TBox extraction started
+  - `[:triple_store, :reasoner, :tbox_extract, :stop]` - TBox extraction completed successfully
+  - `[:triple_store, :reasoner, :tbox_extract, :error]` - TBox extraction failed
+
+  Measurements (stop):
+  - `:duration` - Time in native units
+
+  Measurements (error):
+  - `:duration` - Time until failure
+
+  Metadata (start):
+  - `:graph_id` - Target graph ID
+  - `:tbox_graph_id` - TBox graph ID to extract from
+
+  Metadata (stop):
+  - `:graph_id` - Target graph ID
+  - `:tbox_graph_id` - TBox graph ID
+  - `:tbox_fact_count` - Number of TBox facts extracted
+
+  Metadata (error):
+  - `:graph_id` - Target graph ID
+  - `:tbox_graph_id` - TBox graph ID
+  - `:reason` - Error reason atom
+
   ### Schema Extraction
 
   - `[:triple_store, :reasoner, :extract_schema, :start]` - Schema extraction started
@@ -265,6 +291,46 @@ defmodule TripleStore.Reasoner.Telemetry do
     :telemetry.execute(@prefix ++ [:extract_schema, :complete], %{}, metadata)
   end
 
+  # ============================================================================
+  # TBox Extraction Events (Graph-Scoped Reasoning)
+  # ============================================================================
+
+  @doc """
+  Emits a TBox extraction start event.
+  """
+  @spec emit_tbox_extract_start(non_neg_integer() | :global, non_neg_integer()) :: :ok
+  def emit_tbox_extract_start(graph_id, tbox_graph_id) do
+    :telemetry.execute(
+      @prefix ++ [:tbox_extract, :start],
+      %{system_time: System.system_time()},
+      %{graph_id: graph_id, tbox_graph_id: tbox_graph_id}
+    )
+  end
+
+  @doc """
+  Emits a TBox extraction stop event (success).
+  """
+  @spec emit_tbox_extract_stop(non_neg_integer() | :global, non_neg_integer(), non_neg_integer(), integer()) :: :ok
+  def emit_tbox_extract_stop(graph_id, tbox_graph_id, tbox_fact_count, duration) do
+    :telemetry.execute(
+      @prefix ++ [:tbox_extract, :stop],
+      %{duration: duration},
+      %{graph_id: graph_id, tbox_graph_id: tbox_graph_id, tbox_fact_count: tbox_fact_count}
+    )
+  end
+
+  @doc """
+  Emits a TBox extraction error event.
+  """
+  @spec emit_tbox_extract_error(non_neg_integer() | :global, non_neg_integer(), atom(), integer()) :: :ok
+  def emit_tbox_extract_error(graph_id, tbox_graph_id, reason, duration) do
+    :telemetry.execute(
+      @prefix ++ [:tbox_extract, :error],
+      %{duration: duration},
+      %{graph_id: graph_id, tbox_graph_id: tbox_graph_id, reason: reason}
+    )
+  end
+
   @doc """
   Returns the event prefix for the reasoner.
   """
@@ -284,6 +350,9 @@ defmodule TripleStore.Reasoner.Telemetry do
       @prefix ++ [:optimize, :start],
       @prefix ++ [:optimize, :stop],
       @prefix ++ [:optimize, :complete],
+      @prefix ++ [:tbox_extract, :start],
+      @prefix ++ [:tbox_extract, :stop],
+      @prefix ++ [:tbox_extract, :error],
       @prefix ++ [:extract_schema, :start],
       @prefix ++ [:extract_schema, :stop],
       @prefix ++ [:extract_schema, :complete],
