@@ -17,6 +17,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   | `pos` | Predicate-Object-Subject index | Prefix scans (predicate, predicate-object) |
   | `osp` | Object-Subject-Predicate index | Prefix scans (object, object-subject) |
   | `derived` | Inferred triples from reasoning | Sequential bulk writes, batch scans |
+  | `derivation_provenance` | Derivation tracking for provenance | Point lookups and scans |
   | `numeric_range` | Numeric range indices | Range queries |
 
   ## Quad Store Column Families (Schema v2)
@@ -82,6 +83,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
           | :pos
           | :osp
           | :derived
+          | :derivation_provenance
           | :numeric_range
           | :gspo
           | :gpos
@@ -141,10 +143,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   ## Examples
 
       iex> length(ColumnFamilyConfig.cf_descriptors())
-      7
+      8
 
       iex> length(ColumnFamilyConfig.cf_descriptors(:quad))
-      8
+      9
 
   """
   @spec cf_descriptors(:triple | :quad) :: [cf_descriptor()]
@@ -159,6 +161,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"pos", index_cf_options()},
       {"osp", index_cf_options()},
       {"derived", derived_cf_options()},
+      {"derivation_provenance", derivation_provenance_cf_options()},
       {"numeric_range", numeric_range_cf_options()}
     ]
   end
@@ -173,6 +176,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"spog", quad_index_cf_options()},
       {"posg", quad_index_cf_options()},
       {"derived", derived_cf_options()},
+      {"derivation_provenance", derivation_provenance_cf_options()},
       {"numeric_range", numeric_range_cf_options()},
       {"acl", acl_cf_options()}
     ]
@@ -217,11 +221,11 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def column_family_names(schema \\ :triple)
 
   def column_family_names(:triple) do
-    ["default", "id2str", "str2id", "spo", "pos", "osp", "derived", "numeric_range"]
+    ["default", "id2str", "str2id", "spo", "pos", "osp", "derived", "derivation_provenance", "numeric_range"]
   end
 
   def column_family_names(:quad) do
-    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "numeric_range", "acl"]
+    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "derivation_provenance", "numeric_range", "acl"]
   end
 
   @doc """
@@ -247,6 +251,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def get_cf_options(:spog), do: quad_index_cf_options()
   def get_cf_options(:posg), do: quad_index_cf_options()
   def get_cf_options(:derived), do: derived_cf_options()
+  def get_cf_options(:derivation_provenance), do: derivation_provenance_cf_options()
   def get_cf_options(:numeric_range), do: numeric_range_cf_options()
   def get_cf_options(:acl), do: acl_cf_options()
   def get_cf_options(_), do: nil
@@ -284,6 +289,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
              :pos,
              :osp,
              :derived,
+             :derivation_provenance,
              :numeric_range,
              :default,
              :gspo,
@@ -567,6 +573,29 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     )
   end
 
+  # Derivation Provenance CF options
+  # Optimized for mixed point lookups and scans of derivation records
+  # Similar to derived CF but with moderate bloom filter for point lookups
+  defp derivation_provenance_cf_options do
+    base_options()
+    |> Keyword.merge(index_compaction_options())
+    |> Keyword.merge(
+      # Medium bloom filter (balances point lookups and scans)
+      block_based_table_options: [
+        bloom_filter_policy: @bloom_index_bits,
+        block_size: @block_size_index,
+        cache_index_and_filter_blocks: true,
+        pin_l0_filter_and_index_blocks_in_cache: false,
+        # No whole key filtering (need prefix scans on graph ID)
+        whole_key_filtering: false
+      ],
+      # No prefix extractor (custom key encoding)
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    )
+  end
+
   # Base options shared by all column families (minimal common settings)
   defp base_options do
     [
@@ -604,6 +633,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_name_to_string(:spog), do: "spog"
   def cf_name_to_string(:posg), do: "posg"
   def cf_name_to_string(:derived), do: "derived"
+  def cf_name_to_string(:derivation_provenance), do: "derivation_provenance"
   def cf_name_to_string(:numeric_range), do: "numeric_range"
   def cf_name_to_string(:acl), do: "acl"
 
@@ -630,6 +660,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_string_to_name("spog"), do: :spog
   def cf_string_to_name("posg"), do: :posg
   def cf_string_to_name("derived"), do: :derived
+  def cf_string_to_name("derivation_provenance"), do: :derivation_provenance
   def cf_string_to_name("numeric_range"), do: :numeric_range
   def cf_string_to_name("acl"), do: :acl
   def cf_string_to_name(_), do: nil
@@ -657,6 +688,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def bloom_bits(:spog), do: @bloom_index_bits
   def bloom_bits(:posg), do: @bloom_index_bits
   def bloom_bits(:derived), do: @bloom_derived_bits
+  def bloom_bits(:derivation_provenance), do: @bloom_index_bits
   def bloom_bits(:numeric_range), do: @bloom_index_bits
   def bloom_bits(:acl), do: @bloom_dict_bits
 
@@ -683,6 +715,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def block_size(:spog), do: @block_size_index
   def block_size(:posg), do: @block_size_index
   def block_size(:derived), do: @block_size_derived
+  def block_size(:derivation_provenance), do: @block_size_index
   def block_size(:numeric_range), do: @block_size_index
   def block_size(:acl), do: @block_size_dict
 
@@ -722,6 +755,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def has_prefix_extractor?(:id2str), do: false
   def has_prefix_extractor?(:str2id), do: false
   def has_prefix_extractor?(:derived), do: false
+  def has_prefix_extractor?(:derivation_provenance), do: false
   def has_prefix_extractor?(:numeric_range), do: false
+  def has_prefix_extractor?(:acl), do: false
   def has_prefix_extractor?(:default), do: false
 end
