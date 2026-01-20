@@ -96,6 +96,7 @@ defmodule TripleStore.Reasoner.PatternMatcher do
   """
   @spec matches_term?(term(), rule_term()) :: boolean()
   def matches_term?(_fact_term, {:var, _}), do: true
+  def matches_term?(fact_term, {:const, value}), do: fact_term == value
   def matches_term?(fact_term, pattern_term), do: fact_term == pattern_term
 
   @doc """

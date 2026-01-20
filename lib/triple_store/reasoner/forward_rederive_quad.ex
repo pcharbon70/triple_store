@@ -339,32 +339,22 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     p_sub = PatternMatcher.substitute_if_bound(pp, bindings)
     o_sub = PatternMatcher.substitute_if_bound(po, bindings)
 
-    # Find matching facts and extend bindings
+    # Find matching facts and extend bindings using PatternMatcher
     valid_facts
-    |> Enum.filter(fn fact ->
-      PatternMatcher.triple_matches_pattern?(fact, {s_sub, p_sub, o_sub})
+    |> Enum.filter(fn {fs, fp, fo} ->
+      PatternMatcher.matches_term?(fs, s_sub) and
+        PatternMatcher.matches_term?(fp, p_sub) and
+        PatternMatcher.matches_term?(fo, o_sub)
     end)
-    |> Enum.flat_map(fn {s, p, o} ->
-      # Create new binding set with matched values
-      new_bindings =
-        bindings
-        |> maybe_bind(ps, s)
-        |> maybe_bind(pp, p)
-        |> maybe_bind(po, o)
-
-      if new_bindings != nil do
-        [new_bindings]
-      else
-        []
-      end
+    |> Enum.map(fn {fs, fp, fo} ->
+      # Extend bindings with matched values using PatternMatcher
+      bindings
+      |> PatternMatcher.maybe_bind(ps, fs)
+      |> PatternMatcher.maybe_bind(pp, fp)
+      |> PatternMatcher.maybe_bind(po, fo)
     end)
+    |> Enum.reject(&is_nil/1)
   end
-
-  defp maybe_bind(bindings, {:var, name}, value) do
-    Map.put(bindings, name, {:bound, value})
-  end
-
-  defp maybe_bind(bindings, _pattern, _value), do: bindings
 
   defp satisfies_conditions?([], _bindings), do: true
 

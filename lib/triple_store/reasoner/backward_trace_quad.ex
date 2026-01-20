@@ -34,6 +34,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
+  alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
 
   # ===========================================================================
@@ -153,7 +154,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   def could_satisfy_rule?({_g, s, p, o}, rule) do
     Rule.body_patterns(rule)
     |> Enum.any?(fn pattern ->
-      matches_pattern?(pattern, {s, p, o})
+      PatternMatcher.matches_triple?({s, p, o}, pattern)
     end)
   end
 
@@ -237,21 +238,8 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
 
     Rule.could_derive?(rule, derived_triple) and
       Rule.body_patterns(rule)
-      |> Enum.any?(fn pattern -> matches_pattern?(pattern, premise_triple) end)
+      |> Enum.any?(fn pattern -> PatternMatcher.matches_triple?(premise_triple, pattern) end)
   end
-
-  defp matches_pattern?({:pattern, [s_pat, p_pat, o_pat]}, {s, p, o}) do
-    matches_term_pattern?(s_pat, s) and
-      matches_term_pattern?(p_pat, p) and matches_term_pattern?(o_pat, o)
-  end
-
-  defp matches_term_pattern?({:const, value}, term), do: value == term
-  defp matches_term_pattern?({:var, _name}, _term), do: true
-  defp matches_term_pattern?(:var, _term), do: true
-  # Raw IRI and literal terms are treated as constants
-  defp matches_term_pattern?({:iri, _} = iri, term), do: iri == term
-  defp matches_term_pattern?({:literal, _, _} = literal, term), do: literal == term
-  defp matches_term_pattern?(_other, _term), do: false
 
   defp get_all_graphs_with_derivations(db) do
     # Scan the derived column family for all graph IDs
