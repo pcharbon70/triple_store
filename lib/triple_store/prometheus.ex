@@ -285,6 +285,38 @@ defmodule TripleStore.Prometheus do
         type: :gauge,
         help: "Number of entries in each index",
         labels: [:index]
+      },
+
+      # Quad store / Graph metrics
+      %{
+        name: "triple_store_graph_quads",
+        type: :gauge,
+        help: "Number of quads per graph",
+        labels: [:graph_id]
+      },
+      %{
+        name: "triple_store_graph_queries_total",
+        type: :counter,
+        help: "Total queries per graph",
+        labels: [:graph_id]
+      },
+      %{
+        name: "triple_store_graph_query_duration_seconds",
+        type: :histogram,
+        help: "Query latency per graph in seconds",
+        labels: [:graph_id]
+      },
+      %{
+        name: "triple_store_graphs",
+        type: :gauge,
+        help: "Total number of graphs in the store",
+        labels: []
+      },
+      %{
+        name: "triple_store_cross_graph_queries_total",
+        type: :counter,
+        help: "Total cross-graph queries",
+        labels: []
       }
     ]
   end

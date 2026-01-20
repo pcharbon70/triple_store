@@ -278,6 +278,7 @@ defmodule TripleStore do
   def open(path, opts \\ []) do
     create_if_missing = Keyword.get(opts, :create_if_missing, true)
     dictionary_shards = Keyword.get(opts, :dictionary_shards)
+    schema = Keyword.get(opts, :schema, :triple)
 
     with :ok <- validate_path(path) do
       Telemetry.span(:store, :open, %{path: Path.basename(path)}, fn ->
@@ -285,13 +286,14 @@ defmodule TripleStore do
         if not create_if_missing and not File.exists?(path) do
           {{:error, :database_not_found}, %{}}
         else
-          with {:ok, db} <- NIF.open(path),
+          with {:ok, db} <- NIF.open(path, schema: schema),
                {:ok, dict_manager} <- start_dict_manager(db, dictionary_shards) do
             store = %{
               db: db,
               dict_manager: dict_manager,
               transaction: nil,
-              path: path
+              path: path,
+              schema: schema
             }
 
             {{:ok, store}, %{}}
