@@ -1,12 +1,15 @@
 # TripleStore
 
-A high-performance RDF triple store implementation in Elixir with RocksDB storage, full SPARQL 1.1 support, and OWL 2 RL reasoning.
+A high-performance RDF store implementation in Elixir with RocksDB storage, full SPARQL 1.1 support, and OWL 2 RL reasoning. Supports both triple and quad (named graph) storage schemas.
 
 ## Features
 
-- **Persistent Storage**: RocksDB backend via erlang-rocksdb with dictionary encoding and optimized triple indices (SPO, POS, OSP)
-- **SPARQL 1.1**: Full query support including SELECT, CONSTRUCT, ASK, DESCRIBE, and UPDATE operations
-- **OWL 2 RL Reasoning**: Forward-chaining materialization with semi-naive evaluation and incremental maintenance
+- **Persistent Storage**: RocksDB backend via erlang-rocksdb with dictionary encoding and optimized indices
+  - Triple store (v1): SPO, POS, OSP indices
+  - Quad store (v2): GSPO, GPOS, SPOG, POSG indices with named graphs
+- **Named Graphs**: Quad store support for data isolation, multi-tenancy, and provenance tracking
+- **SPARQL 1.1**: Full query support including SELECT, CONSTRUCT, ASK, DESCRIBE, UPDATE, and GRAPH clauses
+- **OWL 2 RL Reasoning**: Forward-chaining materialization with semi-naive evaluation and graph-scoped reasoning
 - **Query Optimization**: Cost-based optimizer with Leapfrog Triejoin for complex BGP queries
 
 ## Architecture
@@ -39,8 +42,10 @@ end
 
 ## Usage
 
+### Triple Store (Default)
+
 ```elixir
-# Open a store
+# Open a triple store
 {:ok, store} = TripleStore.open("./data")
 
 # Load RDF data
@@ -61,6 +66,39 @@ TripleStore.materialize(store, profile: :owl2rl)
 # Clean up
 TripleStore.close(store)
 ```
+
+### Quad Store (Named Graphs)
+
+```elixir
+# Open a quad store for named graphs
+{:ok, store} = TripleStore.open("./data", schema: :quad)
+
+# Load data into named graphs
+TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  INSERT DATA {
+    GRAPH ex:source1 {
+      ex:alice a foaf:Person ;
+               foaf:name "Alice" .
+    }
+  }
+""")
+
+# Query with GRAPH clause
+results = TripleStore.query(store, """
+  PREFIX ex: <http://example.org/>
+
+  SELECT ?g ?name
+  WHERE {
+    GRAPH ?g {
+      ?s foaf:name ?name .
+    }
+  }
+""")
+```
+
+See [Named Graphs](guides/user/07-named-graphs.md) for more details on quad store usage.
 
 ## Requirements
 

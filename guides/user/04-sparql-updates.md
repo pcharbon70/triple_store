@@ -280,6 +280,274 @@ Remove all triples:
 
 > **Warning**: CLEAR operations remove all triples. Use with caution!
 
+## Named Graph Updates
+
+The `GRAPH` keyword allows you to modify data in specific named graphs when using a quad store.
+
+> **Note**: Named graphs require opening the store with `schema: :quad`. See [Named Graphs](07-named-graphs.md) for details.
+
+### INSERT DATA into Named Graph
+
+```elixir
+# Open quad store first
+{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+
+# Insert into default graph
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  INSERT DATA {
+    ex:alice ex:name "Alice" .
+  }
+""")
+
+# Insert into named graph
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  INSERT DATA {
+    GRAPH ex:source1 {
+      ex:bob ex:name "Bob" ;
+             ex:email "bob@example.org" .
+    }
+  }
+""")
+```
+
+### DELETE DATA from Named Graph
+
+```elixir
+# Delete from a specific graph
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  DELETE DATA {
+    GRAPH ex:source1 {
+      ex:bob ex:email "bob@example.org" .
+    }
+  }
+""")
+```
+
+### INSERT ... WHERE with GRAPH
+
+```elixir
+# Copy triples that match a pattern into a named graph
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+  INSERT {
+    GRAPH ex:managers {
+      ?person ex:isManager true .
+    }
+  }
+  WHERE {
+    GRAPH ex:employees {
+      ?person foaf:holdsPosition "Manager" .
+    }
+  }
+""")
+```
+
+### DELETE ... WHERE with GRAPH
+
+```elixir
+# Delete triples from a specific graph matching a pattern
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  DELETE {
+    GRAPH ex:temp {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:temp {
+      ?s ex:createdAt ?ts .
+      ?s ?p ?o .
+      FILTER (?ts < "2024-01-01T00:00:00Z"^^xsd:dateTime)
+    }
+  }
+""")
+```
+
+### DELETE/INSERT ... WHERE with GRAPH
+
+```elixir
+# Move data between graphs atomically
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  DELETE {
+    GRAPH ex:staging {
+      ?s ?p ?o
+    }
+  }
+  INSERT {
+    GRAPH ex:production {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:staging {
+      ?s ex:approved true .
+      ?s ?p ?o
+    }
+  }
+""")
+```
+
+### DELETE Entire Graph
+
+To clear all data from a specific graph:
+
+```elixir
+# Method 1: DELETE all triples in the graph
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  DELETE {
+    GRAPH ex:graph1 {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:graph1 {
+      ?s ?p ?o
+    }
+  }
+""")
+
+# Method 2: CLEAR specific graph
+{:ok, _} = TripleStore.update(store, "CLEAR GRAPH ex:graph1")
+```
+
+### COPY Graphs
+
+Copy all triples from one graph to another:
+
+```elixir
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  INSERT {
+    GRAPH ex:graph_backup {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:graph1 {
+      ?s ?p ?o
+    }
+  }
+""")
+```
+
+### MOVE Graphs
+
+Move all triples from one graph to another (source is cleared):
+
+```elixir
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  DELETE {
+    GRAPH ex:graph1 {
+      ?s ?p ?o
+    }
+  }
+  INSERT {
+    GRAPH ex:graph_archive {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:graph1 {
+      ?s ?p ?o
+    }
+  }
+""")
+```
+
+### INSERT into Multiple Graphs
+
+```elixir
+# Distribute data to multiple graphs
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+  INSERT {
+    GRAPH ?targetGraph {
+      ?person foaf:name ?name .
+    }
+  }
+  WHERE {
+    ?person foaf:name ?name ;
+            ex:role ?role .
+
+    BIND(
+      IF(?role = "admin", ex:admin_users,
+        IF(?role = "manager", ex:manager_users, ex:regular_users))
+      AS ?targetGraph
+    )
+  }
+""")
+```
+
+### Graph-Scoped Update Patterns
+
+**Archive old data by date:**
+
+```elixir
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+  PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+  DELETE {
+    GRAPH ex:active {
+      ?log ?p ?o
+    }
+  }
+  INSERT {
+    GRAPH ex:archive {
+      ?log ?p ?o
+    }
+  }
+  WHERE {
+    GRAPH ex:active {
+      ?log a ex:LogEntry ;
+           ex:timestamp ?ts ;
+           ?p ?o .
+      FILTER (?ts < "2023-01-01T00:00:00Z"^^xsd:dateTime)
+    }
+  }
+""")
+```
+
+**Merge data from multiple graphs:**
+
+```elixir
+# Combine data from multiple source graphs
+{:ok, count} = TripleStore.update(store, """
+  PREFIX ex: <http://example.org/>
+
+  INSERT {
+    GRAPH ex:merged {
+      ?s ?p ?o
+    }
+  }
+  WHERE {
+    { GRAPH ex:source1 { ?s ?p ?o } }
+    UNION
+    { GRAPH ex:source2 { ?s ?p ?o } }
+    UNION
+    { GRAPH ex:source3 { ?s ?p ?o } }
+  }
+""")
+```
+
 ## Shorthand: DELETE WHERE
 
 When DELETE and WHERE patterns are identical:

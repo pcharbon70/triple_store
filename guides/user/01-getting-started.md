@@ -2,6 +2,20 @@
 
 This guide will help you get up and running with TripleStore quickly.
 
+## Triple Store vs Quad Store
+
+TripleStore supports two storage schemas:
+
+| Feature | Triple Store (v1) | Quad Store (v2) |
+|---------|-------------------|-----------------|
+| **Data Model** | `{subject, predicate, object}` | `{graph, subject, predicate, object}` |
+| **Named Graphs** | No (implicit default) | Yes (explicit graphs) |
+| **Use Case** | Simple datasets | Multi-tenant, provenance |
+
+**Default**: If you don't specify a schema, TripleStore uses triple store (v1).
+
+**For named graphs**: Use `schema: :quad` when opening the store (see [Named Graphs](07-named-graphs.md)).
+
 ## Installation
 
 Add `triple_store` to your dependencies in `mix.exs`:
@@ -33,13 +47,16 @@ mix compile
 ### Opening a Store
 
 ```elixir
-# Open or create a store
+# Open or create a triple store (default schema)
 {:ok, store} = TripleStore.open("./my_database")
 
-# The store is now ready for use
+# Open or create a quad store (for named graphs)
+{:ok, store} = TripleStore.open("./my_database", schema: :quad)
 ```
 
 The database directory will be created if it doesn't exist.
+
+> **Note**: Once a database is created with a schema, it cannot be changed. Choose the correct schema when first opening the database.
 
 ### Loading Data
 
@@ -169,14 +186,14 @@ end
 
 TripleStore supports these formats for loading and exporting:
 
-| Format | Extension | Description |
-|--------|-----------|-------------|
-| Turtle | `.ttl` | Human-readable, compact notation |
-| N-Triples | `.nt` | Simple line-based format, good for streaming |
-| N-Quads | `.nq` | N-Triples with named graphs |
-| TriG | `.trig` | Turtle with named graphs |
-| RDF/XML | `.rdf` | XML-based (requires optional dependency) |
-| JSON-LD | `.jsonld` | JSON-based (requires optional dependency) |
+| Format | Extension | Description | Quad Store Support |
+|--------|-----------|-------------|-------------------|
+| Turtle | `.ttl` | Human-readable, compact notation | Yes (default graph) |
+| N-Triples | `.nt` | Simple line-based format, good for streaming | Yes (default graph) |
+| N-Quads | `.nq` | N-Triples with named graphs | Yes (full quad support) |
+| TriG | `.trig` | Turtle with named graphs | Yes (full quad support) |
+| RDF/XML | `.rdf` | XML-based (requires optional dependency) | Yes (default graph) |
+| JSON-LD | `.jsonld` | JSON-based (requires optional dependency) | Yes (default graph) |
 
 The format is auto-detected from the file extension, or you can specify it explicitly:
 
@@ -309,6 +326,7 @@ end
 
 ## Next Steps
 
+- [Named Graphs](07-named-graphs.md) - Using quad store with named graphs
 - [Data Management](02-data-management.md) - Loading, exporting, and backing up data
 - [SPARQL Queries](03-sparql-queries.md) - Query syntax and examples
 - [SPARQL Updates](04-sparql-updates.md) - Modifying data with SPARQL
