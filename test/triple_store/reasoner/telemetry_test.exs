@@ -60,16 +60,25 @@ defmodule TripleStore.Reasoner.TelemetryTest do
       assert [:triple_store, :reasoner, :compile, :exception] in events
     end
 
-    test "returns total of 17 events" do
+    test "returns total of 20 events" do
       # compile: start, stop, exception, complete = 4
       # optimize: start, stop, complete = 3
+      # tbox_extract: start, stop, error = 3 (graph-scoped reasoning)
       # extract_schema: start, stop, complete = 3
       # materialize: start, stop, iteration = 3
       # delete: start, stop = 2
       # backward_trace: complete = 1
       # forward_rederive: complete = 1
-      # Total = 17
-      assert length(Telemetry.event_names()) == 17
+      # Total = 20
+      assert length(Telemetry.event_names()) == 20
+    end
+
+    test "includes TBox extraction events" do
+      events = Telemetry.event_names()
+
+      assert [:triple_store, :reasoner, :tbox_extract, :start] in events
+      assert [:triple_store, :reasoner, :tbox_extract, :stop] in events
+      assert [:triple_store, :reasoner, :tbox_extract, :error] in events
     end
   end
 

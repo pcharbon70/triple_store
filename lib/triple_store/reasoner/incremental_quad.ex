@@ -171,7 +171,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
 
     graph_id = Keyword.fetch!(opts, :graph_id)
     tbox_graph_id = Keyword.get(opts, :tbox_graph_id)
-    _scope = Keyword.get(opts, :scope, :local)
+    scope = Keyword.get(opts, :scope, :local)
 
     # Build semi-naive options
     semi_naive_opts = [
@@ -179,7 +179,8 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
       max_concurrency: Keyword.get(opts, :max_concurrency, System.schedulers_online()),
       max_iterations: Keyword.get(opts, :max_iterations, 1000),
       max_facts: Keyword.get(opts, :max_facts, 10_000_000),
-      emit_telemetry: Keyword.get(opts, :emit_telemetry, true)
+      emit_telemetry: Keyword.get(opts, :emit_telemetry, true),
+      scope: scope
     ]
 
     # Normalize quads to ensure graph_id consistency
@@ -325,7 +326,8 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
       max_concurrency: Keyword.get(opts, :max_concurrency, System.schedulers_online()),
       max_iterations: Keyword.get(opts, :max_iterations, 1000),
       max_facts: Keyword.get(opts, :max_facts, 10_000_000),
-      emit_telemetry: Keyword.get(opts, :emit_telemetry, true)
+      emit_telemetry: Keyword.get(opts, :emit_telemetry, true),
+      scope: scope
     ]
 
     with {:ok, novel_quads} <- filter_existing_db_quads(db, quads, graph_id),
