@@ -1,6 +1,8 @@
 # Reasoning
 
-This guide covers using OWL 2 RL reasoning to infer new knowledge from your data.
+This guide covers using OWL 2 RL reasoning to infer new knowledge from your data, with emphasis on graph-scoped reasoning for quad stores.
+
+> **Note**: Graph-scoped reasoning requires opening the store with `schema: :quad`. See [Named Graphs](07-named-graphs.md) for details.
 
 ## What is Reasoning?
 

@@ -1,6 +1,8 @@
 # Configuration & Performance
 
-This guide covers configuring and tuning TripleStore for optimal performance.
+This guide covers configuring and tuning TripleStore for optimal performance, with emphasis on quad store configuration.
+
+> **Note**: Quad stores have different memory and performance requirements. See [Quad Store Configuration](#quad-store-configuration) for details.
 
 ## RocksDB Configuration
 
