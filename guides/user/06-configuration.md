@@ -48,6 +48,68 @@ config = TripleStore.Config.RocksDB.recommended()
 IO.puts(TripleStore.Config.RocksDB.format_summary(config))
 ```
 
+### Quad Store Configuration
+
+Quad stores have different performance characteristics and memory requirements compared to triple stores. When using `schema: :quad`, consider these adjustments:
+
+| Metric | Triple Store | Quad Store | Change |
+|--------|--------------|------------|--------|
+| **Key Size** | 24 bytes | 32 bytes | +33% |
+| **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) | +33% |
+| **Write Amplification** | 3x | 4x | +33% |
+| **Block Size** | 8 KB | 16 KB | +100% |
+| **Memtable** | 64 MB | 128 MB | +100% |
+| **Bloom Filter** | 12 bits/key | 10 bits/key | -17% |
+
+#### Memory Budget for Quad Stores
+
+Quad stores require approximately 1.5-2x more memory for the same data size:
+
+```elixir
+# For quad stores, allocate more memory
+config = TripleStore.Config.RocksDB.for_memory_budget(
+  16 * 1024 * 1024 * 1024  # 16 GB recommended for quad (vs 8 GB for triple)
+)
+
+# Or use quad-specific presets
+config = TripleStore.Config.RocksDB.preset(:quad_production)
+config = TripleStore.Config.RocksDB.preset(:quad_write_heavy)
+```
+
+#### Quad Store Presets
+
+| Preset | Block Cache | Write Buffer | Best For |
+|--------|-------------|--------------|----------|
+| `quad_development` | 256 MB | 64 MB × 2 | Local development with named graphs |
+| `quad_production` | 8 GB | 256 MB × 4 | Production quad stores |
+| `quad_write_heavy` | 2 GB | 512 MB × 4 | Bulk loading quads |
+
+#### When to Use Quad vs Triple Configuration
+
+**Use triple store configuration when:**
+- You don't need named graphs (`schema: :triple` or default)
+- Maximum performance is critical
+- Your data is in a single context
+
+**Use quad store configuration when:**
+- You need named graphs (`schema: :quad`)
+- Multi-tenancy or data isolation is required
+- You need provenance tracking
+
+#### Quad Store Performance Tips
+
+```elixir
+# 1. Increase block cache for quad stores
+config = TripleStore.Config.RocksDB.recommended()
+config = %{config | block_cache_size_mb: 8192}  # 8 GB for quad
+
+# 2. Increase memtable for better write performance
+config = %{config | write_buffer_size_mb: 128}  # 128 MB per column family
+
+# 3. Use larger bloom filters for quad keys
+config = %{config | bloom_bits_per_key: 10}  # Slightly lower for quad
+```
+
 ## Query Performance
 
 ### Query Timeouts
