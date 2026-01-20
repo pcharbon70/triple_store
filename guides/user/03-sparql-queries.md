@@ -1,12 +1,18 @@
 # SPARQL Queries
 
-This guide covers querying data with SPARQL, including syntax, patterns, and examples.
+This guide covers querying data with SPARQL in TripleStore, with emphasis on quad store and named graphs.
+
+> **Note**: This guide assumes you're using a quad store (`schema: :quad`). For basic triple store usage, see [Getting Started](01-getting-started.md).
 
 ## Query Basics
 
 ### Executing Queries
 
 ```elixir
+# Open quad store
+{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+
+# Execute query
 {:ok, results} = TripleStore.query(store, """
   SELECT ?subject ?predicate ?object
   WHERE {

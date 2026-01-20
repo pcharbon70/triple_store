@@ -2,16 +2,18 @@
 
 This guide covers TripleStore's support for RDF named graphs (quads), also known as the quad store.
 
+> **Recommendation**: Quad store is the recommended format for new projects. It supports everything triple store does plus named graphs for data isolation and provenance tracking.
+
 ## Overview
 
 TripleStore supports both traditional triple stores and quad stores with named graphs:
 
-| Feature | Triple Store | Quad Store |
-|---------|--------------|-------------|
+| Feature | Triple Store (v1) | Quad Store (v2) |
+|---------|-------------------|-----------------|
 | **Data Model** | `{subject, predicate, object}` | `{graph, subject, predicate, object}` |
-| **Schema** | v1 | v2 |
 | **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) |
 | **Graph Support** | Implicit default graph | Explicit named graphs |
+| **Default Graph ID** | N/A | 0 |
 | **Use Case** | Simple datasets | Multi-tenant, provenance, data isolation |
 
 ## When to Use Named Graphs

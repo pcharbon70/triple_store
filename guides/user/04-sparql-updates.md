@@ -1,21 +1,29 @@
 # SPARQL Updates
 
-This guide covers modifying data using SPARQL UPDATE operations.
+This guide covers modifying data using SPARQL UPDATE operations, with emphasis on quad store and named graphs.
+
+> **Note**: This guide assumes you're using a quad store (`schema: :quad`). For basic triple store usage, see [Getting Started](01-getting-started.md).
 
 ## Update Basics
 
 ### Executing Updates
 
 ```elixir
+# Open quad store
+{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+
+# Execute update
 {:ok, count} = TripleStore.update(store, """
   PREFIX ex: <http://example.org/>
 
   INSERT DATA {
-    ex:alice ex:name "Alice" .
+    GRAPH ex:people {
+      ex:alice ex:name "Alice" .
+    }
   }
 """)
 
-IO.puts("Modified #{count} triples")
+IO.puts("Modified #{count} quads")
 ```
 
 ### Update Types
