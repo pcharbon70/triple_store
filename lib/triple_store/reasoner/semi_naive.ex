@@ -93,7 +93,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
           total_derived: non_neg_integer(),
           derivations_per_iteration: [non_neg_integer()],
           duration_ms: non_neg_integer(),
-          rules_applied: non_neg_integer()
+          rules_applied: non_neg_integer(),
+          scope: :local | :global | :hybrid
         }
 
   @typedoc "Options for materialization"
@@ -105,7 +106,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
           parallel: boolean(),
           max_concurrency: pos_integer(),
           task_timeout: timeout(),
-          validate_rules: boolean()
+          validate_rules: boolean(),
+          scope: :local | :global | :hybrid
         ]
 
   @typedoc "Stratum definition for rule ordering"
@@ -152,6 +154,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
   - `:max_concurrency` - Maximum parallel tasks when parallel is true (default: schedulers_online)
   - `:task_timeout` - Timeout per rule evaluation task in milliseconds (default: #{@default_task_timeout})
   - `:validate_rules` - Validate rules before materialization (default: false)
+  - `:scope` - Reasoning scope: `:local`, `:global`, or `:hybrid` (default: `:local`)
 
   ## Returns
 
@@ -180,6 +183,7 @@ defmodule TripleStore.Reasoner.SemiNaive do
     max_concurrency = Keyword.get(opts, :max_concurrency, @default_max_concurrency)
     task_timeout = Keyword.get(opts, :task_timeout, @default_task_timeout)
     validate_rules = Keyword.get(opts, :validate_rules, false)
+    scope = Keyword.get(opts, :scope, :local)
 
     # Optionally validate rules before materialization
     if validate_rules do
@@ -195,7 +199,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
             emit_telemetry,
             parallel,
             max_concurrency,
-            task_timeout
+            task_timeout,
+            scope
           )
 
         {:error, _} = error ->
@@ -212,7 +217,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
         emit_telemetry,
         parallel,
         max_concurrency,
-        task_timeout
+        task_timeout,
+        scope
       )
     end
   end
@@ -237,7 +243,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
          emit_telemetry,
          parallel,
          max_concurrency,
-         task_timeout
+         task_timeout,
+         scope
        ) do
     start_time = System.monotonic_time(:millisecond)
 
@@ -251,7 +258,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
       iterations: 0,
       total_derived: 0,
       derivations_per_iteration: [],
-      rules_applied: 0
+      rules_applied: 0,
+      scope: scope
     }
 
     # Parallel options
@@ -293,7 +301,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
           total_derived: final_state.total_derived,
           derivations_per_iteration: Enum.reverse(final_state.derivations_per_iteration),
           duration_ms: duration_ms,
-          rules_applied: final_state.rules_applied
+          rules_applied: final_state.rules_applied,
+          scope: final_state.scope
         }
 
         if emit_telemetry do
@@ -530,7 +539,8 @@ defmodule TripleStore.Reasoner.SemiNaive do
               iterations: state.iterations + 1,
               total_derived: state.total_derived + iteration_count,
               derivations_per_iteration: [iteration_count | state.derivations_per_iteration],
-              rules_applied: state.rules_applied + rules_applied
+              rules_applied: state.rules_applied + rules_applied,
+              scope: state.scope
             }
 
             run_fixpoint(
