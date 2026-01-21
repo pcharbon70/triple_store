@@ -180,8 +180,8 @@ defmodule TripleStore.SPARQL.QueryCache do
     entries = :ets.tab2list(@table_name)
 
     Enum.each(entries, fn
-      {{_hash, ^db_version}, _entry} ->
-        :ets.delete(@table_name, {_hash, db_version})
+      {{hash, ^db_version}, _entry} ->
+        :ets.delete(@table_name, {hash, db_version})
 
       _ ->
         :ok

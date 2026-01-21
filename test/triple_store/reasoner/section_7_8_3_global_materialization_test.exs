@@ -103,12 +103,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
   defp count_quads_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold_count(db, :spo, prefix)
+    NIF.fold(db, :spo, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   defp count_derived_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold_count(db, :derived_cf, prefix)
+    NIF.fold(db, :derived_cf, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   # ============================================================================

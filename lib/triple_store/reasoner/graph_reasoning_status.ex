@@ -437,6 +437,12 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
   end
 
   @doc """
+  Deletes a status from `:persistent_term` (alias for remove/1).
+  """
+  @spec delete(atom()) :: :ok
+  def delete(key) when is_atom(key), do: remove(key)
+
+  @doc """
   Checks if a status exists in `:persistent_term`.
   """
   @spec exists?(atom()) :: boolean()

@@ -731,9 +731,6 @@ defmodule TripleStore.Health do
           |> filter_empty_graphs(include_empty)
 
         {:ok, graphs}
-
-      {:error, _reason} ->
-        {:ok, %{}}
     end
   end
 

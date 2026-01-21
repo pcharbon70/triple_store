@@ -242,10 +242,8 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
       funs
       |> Enum.chunk_every(batch_size)
       |> Enum.map(fn batch ->
-        case do_execute_parallel(batch, timeout, threshold) do
-          {:ok, results} -> results
-          {:error, _} -> []
-        end
+        {:ok, batch_results} = do_execute_parallel(batch, timeout, threshold)
+        batch_results
       end)
 
     {:ok, List.flatten(results)}

@@ -48,10 +48,7 @@ defmodule TripleStore.SPARQL.InputValidator do
 
       true ->
         # Check for basic injection patterns
-        case detect_injection(query) do
-          :ok -> :ok
-          {:error, _} = error -> error
-        end
+        detect_injection(query)
     end
   end
 

@@ -853,10 +853,6 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
             needs_filter,
             filter_positions
           )
-
-        :no_match ->
-          # Fallback to GSPO full scan
-          lookup_facts_full_scan(db, s, p, o)
       end
     rescue
       e -> {:error, {:lookup_failed, e}}
@@ -895,26 +891,6 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
               end
             else
               [{s, p, o} | acc]
-            end
-
-          _error ->
-            acc
-        end
-      end)
-
-    {:ok, MapSet.new(results)}
-  end
-
-  # Fallback full scan (should rarely be used with proper index selection)
-  defp lookup_facts_full_scan(db, s, p, o) do
-    results =
-      NIF.fold(db, :gspo, <<>>, [], fn {key, _value}, acc ->
-        case QuadIndex.key_to_quad(:gspo, key) do
-          {_g, fact_s, fact_p, fact_o} ->
-            if matches_term?(s, fact_s) and matches_term?(p, fact_p) and matches_term?(o, fact_o) do
-              [{fact_s, fact_p, fact_o} | acc]
-            else
-              acc
             end
 
           _error ->
@@ -1108,10 +1084,6 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           needs_filter,
           filter_positions
         )
-
-      :no_match ->
-        # Fallback to GSPO full scan
-        _lookup_full_scan_gspo(db, s, p, o)
     end
   end
 
@@ -1328,10 +1300,10 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       end
 
     # Attach graph metadata to rules for quad-aware reasoning
-    with_graph_metadata(filtered_rules, config)
+    _with_graph_metadata(filtered_rules, config)
   end
 
-  defp with_graph_metadata(rules, config) do
+  defp _with_graph_metadata(rules, config) do
     graph_id = Map.get(config, :graph_id)
     tbox_graph = Map.get(config, :tbox_graph)
 

@@ -533,7 +533,7 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           )
 
         # Clear derived quads
-        NIF.delete_fold(db, :derived_cf, <<>>, fn {key, _}, acc ->
+        NIF.fold_keys(db, :derived_cf, <<>>, [], fn key, acc ->
           [key | acc]
         end)
         |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)
@@ -589,7 +589,7 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           end)
 
         # Clear derived
-        NIF.delete_fold(db, :derived_cf, <<>>, fn {key, _}, acc ->
+        NIF.fold_keys(db, :derived_cf, <<>>, [], fn key, acc ->
           [key | acc]
         end)
         |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)

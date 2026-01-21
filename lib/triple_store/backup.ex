@@ -673,20 +673,16 @@ defmodule TripleStore.Backup do
   defp write_graph_stats_metadata(backup_path, store, include_reasoning) do
     alias TripleStore.Statistics
 
-    stats =
-      case Statistics.build_per_graph_histograms(store.db, []) do
-        {:ok, histograms} ->
-          %{
-            graph_count: map_size(histograms),
-            graphs:
-              Enum.into(histograms, %{}, fn {gid, hist} ->
-                {gid, %{predicate_count: map_size(hist)}}
-              end)
-          }
+    {:ok, histograms} = Statistics.build_per_graph_histograms(store.db, [])
 
-        {:error, _} ->
-          %{graph_count: 0, graphs: %{}}
-      end
+    stats =
+      %{
+        graph_count: map_size(histograms),
+        graphs:
+          Enum.into(histograms, %{}, fn {gid, hist} ->
+            {gid, %{predicate_count: map_size(hist)}}
+          end)
+      }
 
     stats =
       if include_reasoning do
@@ -709,14 +705,9 @@ defmodule TripleStore.Backup do
   defp get_reasoning_state_summary(store) do
     alias TripleStore.Reasoner.DerivedStore
 
-    # Try to get derived quad count
-    case DerivedStore.count(store.db) do
-      {:ok, count} ->
-        %{derived_quad_count: count}
-
-      {:error, _} ->
-        %{derived_quad_count: 0}
-    end
+    # Get derived quad count
+    {:ok, count} = DerivedStore.count(store.db)
+    %{derived_quad_count: count}
   rescue
     _ -> %{derived_quad_count: :unknown}
   end

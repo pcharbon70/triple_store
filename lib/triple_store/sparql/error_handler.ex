@@ -101,7 +101,6 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       }
     end
 
-    @impl true
     def exception(message, args) when is_binary(message) and is_list(args) do
       timeout_ms = Keyword.get(args, :timeout_ms)
       query = Keyword.get(args, :query)
@@ -135,7 +134,6 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       }
     end
 
-    @impl true
     def exception(message, args) when is_binary(message) and is_list(args) do
       field = Keyword.get(args, :field)
       value = Keyword.get(args, :value)
@@ -169,7 +167,6 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       }
     end
 
-    @impl true
     def exception(message, args) when is_binary(message) and is_list(args) do
       resource = Keyword.get(args, :resource)
       operation = Keyword.get(args, :operation)

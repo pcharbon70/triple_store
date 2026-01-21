@@ -59,7 +59,6 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
         # Convert pattern to quads with bindings
         case pattern_to_quads(ctx, pattern, bindings) do
           {:ok, quads} -> delete_quads(ctx, quads)
-          {:error, _} = error -> error
         end
 
       {:error, _} = error ->

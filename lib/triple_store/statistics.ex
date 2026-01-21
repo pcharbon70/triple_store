@@ -774,9 +774,6 @@ defmodule TripleStore.Statistics do
           {:ok, summary} ->
             # Use insert_new to avoid overwriting a more recent cache entry
             :ets.insert_new(@quad_cache_table, {cache_key, summary})
-
-          :error ->
-            :ok
         end
 
         duration = System.monotonic_time() - start_time

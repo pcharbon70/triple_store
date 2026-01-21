@@ -263,9 +263,6 @@ defmodule TripleStore.GraphBackup do
             error ->
               {error, %{}}
           end
-
-        {:error, _} ->
-          {{:error, :graph_not_found}, %{}}
       end
     end)
   end
@@ -480,10 +477,7 @@ defmodule TripleStore.GraphBackup do
 
   defp get_graph_quad_count(store, graph_id) do
     # Use Statistics module to get graph quad count
-    case TripleStore.Statistics.graph_quad_count(store.db, graph_id) do
-      {:ok, count} -> {:ok, count}
-      {:error, _} -> {:ok, 0}
-    end
+    TripleStore.Statistics.graph_quad_count(store.db, graph_id)
   end
 
   defp export_graph_to_file(store, graph_id, path, batch_size) do
@@ -584,9 +578,6 @@ defmodule TripleStore.GraphBackup do
             # For now, skip clearing to avoid complexity
             :ok
         end
-
-      {:error, _} ->
-        :ok
     end
   end
 
