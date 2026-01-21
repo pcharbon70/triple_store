@@ -20,7 +20,8 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
 
   @type pattern_result :: {:ok, list()} | {:error, term()}
 
-  @default_threshold 1000  # Only parallelize if estimated cost >= 1000
+  # Only parallelize if estimated cost >= 1000
+  @default_threshold 1000
   @max_parallel 4
   @default_timeout 30_000
 
@@ -77,9 +78,6 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
           combined = List.flatten(results)
 
           {:ok, combined}
-
-        {:error, reason} ->
-          {:error, reason}
       end
     else
       # Execute sequentially
@@ -103,7 +101,7 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
   - Configured threshold
   """
   @spec should_parallelize?(list(term()), non_neg_integer()) :: boolean()
-  def should_parallelize?(patterns, threshold \\ @default_threshold) do
+  def should_parallelize?(patterns, _threshold \\ @default_threshold) do
     length(patterns) >= 2
   end
 
@@ -118,7 +116,7 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
   # GenServer Callbacks
 
   @impl true
-  def init(opts) do
+  def init(_opts) do
     state = %{
       total_parallel: 0,
       total_sequential: 0,
@@ -143,6 +141,7 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
     {:reply, stats, state}
   end
 
+  @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
     {:noreply, state}
   end
@@ -170,9 +169,9 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
       end)
 
     if Enum.all?(results, fn
-      {:ok, _} -> true
-      _ -> false
-    end) do
+         {:ok, _} -> true
+         _ -> false
+       end) do
       {:ok, Enum.map(results, fn {:ok, r} -> r end)}
     else
       {:error, :sequential_execution_failed}
@@ -224,16 +223,17 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
         Enum.map(pending, fn {_task, _} -> {:error, :timeout} end)
 
     if Enum.all?(final_results, fn
-      {:ok, _} -> true
-      _ -> false
-    end) do
+         {:ok, _} -> true
+         _ -> false
+       end) do
       {:ok, Enum.map(final_results, fn {:ok, r} -> r end)}
     else
       # Return results even if some failed
-      {:ok, Enum.map(final_results, fn
-        {:ok, r} -> r
-        {:error, _} -> []
-      end)}
+      {:ok,
+       Enum.map(final_results, fn
+         {:ok, r} -> r
+         {:error, _} -> []
+       end)}
     end
   end
 
@@ -242,10 +242,8 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
       funs
       |> Enum.chunk_every(batch_size)
       |> Enum.map(fn batch ->
-        case do_execute_parallel(batch, timeout, threshold) do
-          {:ok, results} -> results
-          {:error, _} -> []
-        end
+        {:ok, batch_results} = do_execute_parallel(batch, timeout, threshold)
+        batch_results
       end)
 
     {:ok, List.flatten(results)}

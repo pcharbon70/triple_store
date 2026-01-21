@@ -57,11 +57,13 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
       catch
         _, _ -> :ok
       end
+
       try do
         NIF.close(db)
       catch
         _, _ -> :ok
       end
+
       cleanup_path(db_path)
     end)
 
@@ -131,6 +133,7 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
       nquads = """
       <http://example.org/subject1> <http://example.org/predicate> "object1" <http://example.org/test-graph> .
       """
+
       assert {:ok, _count} = Loader.load_nquads_string(db, manager, nquads)
 
       :ok
@@ -138,7 +141,8 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
 
     test "6.6.2.1 INSERT duplicate quad is idempotent", %{ctx: ctx} do
       # Insert the same quad twice
-      update = "PREFIX ex: <#{@ex}> INSERT DATA { GRAPH ex:test-graph { ex:subject1 ex:predicate \"object1\" . } }"
+      update =
+        "PREFIX ex: <#{@ex}> INSERT DATA { GRAPH ex:test-graph { ex:subject1 ex:predicate \"object1\" . } }"
 
       assert {:ok, ast} = Parser.parse_update(update)
       assert {:ok, _count} = UpdateExecutor.execute(ctx, ast)
@@ -163,7 +167,8 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
 
     test "6.6.2.2 DELETE non-existent quad is no-op", %{ctx: ctx} do
       # Delete a quad that doesn't exist
-      update = "PREFIX ex: <#{@ex}> DELETE DATA { GRAPH ex:test-graph { ex:nonexistent ex:predicate \"value\" . } }"
+      update =
+        "PREFIX ex: <#{@ex}> DELETE DATA { GRAPH ex:test-graph { ex:nonexistent ex:predicate \"value\" . } }"
 
       # Should succeed without error
       assert {:ok, ast} = Parser.parse_update(update)
@@ -252,7 +257,11 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
     end
 
     @tag :slow
-    test "6.6.3.4 query timeout with large cross-graph scan", %{db: db, manager: manager, ctx: ctx} do
+    test "6.6.3.4 query timeout with large cross-graph scan", %{
+      db: db,
+      manager: manager,
+      ctx: ctx
+    } do
       # Create a large dataset with many graphs
       for i <- 1..50 do
         graph_name = "#{@ex}graph#{i}"

@@ -144,8 +144,11 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
   @spec new!(keyword()) :: t()
   def new!(opts) when is_list(opts) do
     case new(opts) do
-      {:ok, status} -> status
-      {:error, reason} -> raise ArgumentError, "Invalid graph reasoning status: #{inspect(reason)}"
+      {:ok, status} ->
+        status
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid graph reasoning status: #{inspect(reason)}"
     end
   end
 
@@ -256,7 +259,8 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
   def reset(%__MODULE__{} = status) do
     now = DateTime.utc_now()
 
-    %{status
+    %{
+      status
       | state: :initialized,
         derived_count: 0,
         last_materialization: nil,
@@ -431,6 +435,12 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
     :persistent_term.erase({__MODULE__, key})
     :ok
   end
+
+  @doc """
+  Deletes a status from `:persistent_term` (alias for remove/1).
+  """
+  @spec delete(atom()) :: :ok
+  def delete(key) when is_atom(key), do: remove(key)
 
   @doc """
   Checks if a status exists in `:persistent_term`.

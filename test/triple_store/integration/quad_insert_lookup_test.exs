@@ -96,7 +96,8 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
       {:ok, p_id} = Manager.get_or_create_id(manager, predicate)
       {:ok, o_id} = Manager.get_or_create_id(manager, object)
 
-      quad = {s_id, p_id, o_id, 0}  # Default graph ID
+      # Default graph ID
+      quad = {s_id, p_id, o_id, 0}
 
       :ok = QuadOperations.insert_quad(db, quad)
 

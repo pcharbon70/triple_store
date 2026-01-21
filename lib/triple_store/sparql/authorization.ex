@@ -66,11 +66,11 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @typedoc "User object with id and optional roles"
   @type user :: %{
-            optional(:id) => user_id(),
-            optional(:roles) => [atom()],
-            optional(:name) => String.t(),
-            optional(atom()) => term()
-          }
+          optional(:id) => user_id(),
+          optional(:roles) => [atom()],
+          optional(:name) => String.t(),
+          optional(atom()) => term()
+        }
 
   @typedoc "Permission type"
   @type permission :: :read | :write | :admin | :owner
@@ -363,7 +363,13 @@ defmodule TripleStore.SPARQL.Authorization do
         # Filter by permission
         accessible =
           Enum.filter(all_graphs, fn graph_term ->
-            case check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission) do
+            case check_permission_for_term(
+                   db,
+                   dict_manager,
+                   graph_term,
+                   user_or_public,
+                   permission
+                 ) do
               {:ok, true} -> true
               {:ok, false} -> false
               {:error, _} -> false
@@ -372,7 +378,8 @@ defmodule TripleStore.SPARQL.Authorization do
 
         graph_iris =
           Enum.map(accessible, fn
-            :default -> nil  # Don't include default in IRIs
+            # Don't include default in IRIs
+            :default -> nil
             %RDF.IRI{value: iri} -> iri
             %RDF.BlankNode{value: id} -> "_:#{id}"
             {:named_node, iri} -> iri
@@ -544,6 +551,7 @@ defmodule TripleStore.SPARQL.Authorization do
           case get_acl_entry(db, graph_id, "user:#{user_id}") do
             {:ok, acl_entry} ->
               permissions = Map.get(acl_entry, "user:#{user_id}", [])
+
               if permission in permissions do
                 {:ok, true}
               else
@@ -707,6 +715,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp term_to_graph_id(_db, dict_manager, {:named_node, iri}) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error
@@ -724,6 +733,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp graph_name_to_id(dict_manager, graph_iri) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(graph_iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error
@@ -741,27 +751,21 @@ defmodule TripleStore.SPARQL.Authorization do
   # Telemetry Functions
   # ===========================================================================
 
-  @doc """
-  Emits a telemetry event for authorization denial.
-
-  ## Telemetry Event
-
-  Event: `[:triple_store, :sparql, :authorization, :denied]`
-
-  Measurements:
-  - `%{system_time: integer()}` - Timestamp of the denial
-
-  Metadata:
-  - `%{graph: String.t() | atom, user: String.t() | :public | nil, permission: atom(), reason: atom()}`
-
-  ## Parameters
-
-  - graph_iri - The graph IRI being accessed
-  - user - The user object or :public
-  - permission - The permission requested (:read, :write, :admin)
-  - reason - The reason for denial (:no_public_access, :not_owner, :no_user_permission, :no_role_permission)
-
-  """
+  # Emits a telemetry event for authorization denial.
+  #
+  # Telemetry Event: `[:triple_store, :sparql, :authorization, :denied]`
+  #
+  # Measurements:
+  # - `%{system_time: integer()}` - Timestamp of the denial
+  #
+  # Metadata:
+  # - `%{graph: String.t() | atom, user: String.t() | :public | nil, permission: atom(), reason: atom()}`
+  #
+  # Parameters:
+  # - graph_iri - The graph IRI being accessed
+  # - user - The user object or :public
+  # - permission - The permission requested (:read, :write, :admin)
+  # - reason - The reason for denial (:no_public_access, :not_owner, :no_user_permission, :no_role_permission)
   @spec emit_auth_denied_telemetry(String.t() | atom, user() | :public, atom(), atom()) :: :ok
   defp emit_auth_denied_telemetry(graph_iri, user_or_public, permission, reason) do
     user_id =

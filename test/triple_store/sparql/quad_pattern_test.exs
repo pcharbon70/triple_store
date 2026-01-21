@@ -22,10 +22,8 @@ defmodule TripleStore.SPARQL.QuadPatternTest do
 
     test "returns true for quad patterns with bound values" do
       quad =
-        {:quad,
-         {:named_node, "http://example.org/Alice"},
-         {:named_node, "http://example.org/name"},
-         {:literal, :simple, "Alice"},
+        {:quad, {:named_node, "http://example.org/Alice"},
+         {:named_node, "http://example.org/name"}, {:literal, :simple, "Alice"},
          {:named_node, "http://example.org/graph1"}}
 
       assert Executor.is_quad_pattern?(quad)
@@ -33,9 +31,7 @@ defmodule TripleStore.SPARQL.QuadPatternTest do
 
     test "returns true for quad patterns with default graph" do
       quad =
-        {:quad,
-         {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
-         :default_graph}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
 
       assert Executor.is_quad_pattern?(quad)
     end
@@ -61,10 +57,8 @@ defmodule TripleStore.SPARQL.QuadPatternTest do
 
     test "returns true for triple patterns with bound values" do
       triple =
-        {:triple,
-         {:named_node, "http://example.org/Alice"},
-         {:named_node, "http://example.org/name"},
-         {:literal, :simple, "Alice"}}
+        {:triple, {:named_node, "http://example.org/Alice"},
+         {:named_node, "http://example.org/name"}, {:literal, :simple, "Alice"}}
 
       assert Executor.is_triple_pattern?(triple)
     end
@@ -116,7 +110,8 @@ defmodule TripleStore.SPARQL.QuadPatternTest do
       graph_var = {:variable, "g"}
       quad = Executor.triple_pattern_to_quad(triple, graph_var)
 
-      assert quad == {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+      assert quad ==
+               {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
     end
 
     test "converts triple to quad with nil graph context (unbound)" do
@@ -125,40 +120,32 @@ defmodule TripleStore.SPARQL.QuadPatternTest do
 
       # Should add a default graph variable
       assert quad ==
-               {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "_graph"}}
+               {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
+                {:variable, "_graph"}}
     end
 
     test "preserves bound values in conversion" do
       triple =
-        {:triple,
-         {:named_node, "http://example.org/Alice"},
-         {:named_node, "http://example.org/name"},
-         {:literal, :simple, "Alice"}}
+        {:triple, {:named_node, "http://example.org/Alice"},
+         {:named_node, "http://example.org/name"}, {:literal, :simple, "Alice"}}
 
       quad = Executor.triple_pattern_to_quad(triple, :default)
 
       assert quad ==
-               {:quad,
-                {:named_node, "http://example.org/Alice"},
-                {:named_node, "http://example.org/name"},
-                {:literal, :simple, "Alice"}, :default_graph}
+               {:quad, {:named_node, "http://example.org/Alice"},
+                {:named_node, "http://example.org/name"}, {:literal, :simple, "Alice"},
+                :default_graph}
     end
 
     test "preserves mixed bound/unbound values in conversion" do
       triple =
-        {:triple,
-         {:named_node, "http://example.org/Alice"},
-         {:variable, "p"},
-         {:variable, "o"}}
+        {:triple, {:named_node, "http://example.org/Alice"}, {:variable, "p"}, {:variable, "o"}}
 
       quad = Executor.triple_pattern_to_quad(triple, {:variable, "g"})
 
       assert quad ==
-               {:quad,
-                {:named_node, "http://example.org/Alice"},
-                {:variable, "p"},
-                {:variable, "o"},
-                {:variable, "g"}}
+               {:quad, {:named_node, "http://example.org/Alice"}, {:variable, "p"},
+                {:variable, "o"}, {:variable, "g"}}
     end
   end
 

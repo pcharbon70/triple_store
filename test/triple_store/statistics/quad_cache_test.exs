@@ -294,7 +294,15 @@ defmodule TripleStore.Statistics.QuadCacheTest do
 
   describe "cache integration" do
     test "cache persists across multiple calls" do
-      stats = %{graph_id: 0, quad_count: 1000, distinct_subjects: 50, distinct_predicates: 10, distinct_objects: 200, predicate_counts: %{}, accuracy: :exact}
+      stats = %{
+        graph_id: 0,
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_counts: %{},
+        accuracy: :exact
+      }
 
       key = Statistics.quad_cache_key(0)
       :ets.insert(@cache_table, {key, stats})
@@ -306,8 +314,25 @@ defmodule TripleStore.Statistics.QuadCacheTest do
     end
 
     test "overwrites existing cache entry" do
-      stats1 = %{graph_id: 0, quad_count: 1000, distinct_subjects: 50, distinct_predicates: 10, distinct_objects: 200, predicate_counts: %{}, accuracy: :exact}
-      stats2 = %{graph_id: 0, quad_count: 2000, distinct_subjects: 100, distinct_predicates: 20, distinct_objects: 400, predicate_counts: %{}, accuracy: :exact}
+      stats1 = %{
+        graph_id: 0,
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_counts: %{},
+        accuracy: :exact
+      }
+
+      stats2 = %{
+        graph_id: 0,
+        quad_count: 2000,
+        distinct_subjects: 100,
+        distinct_predicates: 20,
+        distinct_objects: 400,
+        predicate_counts: %{},
+        accuracy: :exact
+      }
 
       key = Statistics.quad_cache_key(0)
 
@@ -348,9 +373,9 @@ defmodule TripleStore.Statistics.QuadCacheTest do
 
       # Verify telemetry was emitted (with timeout)
       # The event is passed as a list of atoms
-      assert_receive {:telemetry, [:triple_store, :statistics, :quad_cache, :invalidate], _measurements,
-                       _metadata},
-                   1000
+      assert_receive {:telemetry, [:triple_store, :statistics, :quad_cache, :invalidate],
+                      _measurements, _metadata},
+                     1000
 
       :telemetry.detach("test-invalid-handler")
     end
@@ -370,15 +395,24 @@ defmodule TripleStore.Statistics.QuadCacheTest do
 
       Statistics.invalidate_all_quad_cache(:db)
 
-      assert_receive {:telemetry, [:triple_store, :statistics, :quad_cache, :invalidate_all], _measurements,
-                       _metadata},
-                   1000
+      assert_receive {:telemetry, [:triple_store, :statistics, :quad_cache, :invalidate_all],
+                      _measurements, _metadata},
+                     1000
 
       :telemetry.detach("test-invalidate-all-handler")
     end
 
     test "emits cache hit telemetry when graph stats are cached" do
-      stats = %{graph_id: 0, quad_count: 1000, distinct_subjects: 50, distinct_predicates: 10, distinct_objects: 200, predicate_counts: %{}, accuracy: :exact}
+      stats = %{
+        graph_id: 0,
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_counts: %{},
+        accuracy: :exact
+      }
+
       key = Statistics.quad_cache_key(0)
       :ets.insert(@cache_table, {key, stats})
 
@@ -399,7 +433,8 @@ defmodule TripleStore.Statistics.QuadCacheTest do
       {:ok, _stats} = Statistics.get_cached_graph_stats(nil, 0)
 
       # Should receive telemetry event
-      assert_receive {:telemetry_event, [:triple_store, :statistics, :quad_cache, :hit], measurements, _metadata}
+      assert_receive {:telemetry_event, [:triple_store, :statistics, :quad_cache, :hit],
+                      measurements, _metadata}
 
       assert measurements.graph_id == 0
 
@@ -428,7 +463,9 @@ defmodule TripleStore.Statistics.QuadCacheTest do
       {:ok, _summary} = Statistics.get_cached_all_graphs_summary(nil)
 
       # Should receive telemetry event
-      assert_receive {:telemetry_event, [:triple_store, :statistics, :quad_cache, :all_graphs_hit], _measurements, _metadata}
+      assert_receive {:telemetry_event,
+                      [:triple_store, :statistics, :quad_cache, :all_graphs_hit], _measurements,
+                      _metadata}
 
       :telemetry.detach(handler_id)
     end
@@ -440,7 +477,16 @@ defmodule TripleStore.Statistics.QuadCacheTest do
 
   describe "concurrent access" do
     test "handles concurrent reads safely" do
-      stats = %{graph_id: 0, quad_count: 1000, distinct_subjects: 50, distinct_predicates: 10, distinct_objects: 200, predicate_counts: %{}, accuracy: :exact}
+      stats = %{
+        graph_id: 0,
+        quad_count: 1000,
+        distinct_subjects: 50,
+        distinct_predicates: 10,
+        distinct_objects: 200,
+        predicate_counts: %{},
+        accuracy: :exact
+      }
+
       key = Statistics.quad_cache_key(0)
       :ets.insert(@cache_table, {key, stats})
 
@@ -465,7 +511,16 @@ defmodule TripleStore.Statistics.QuadCacheTest do
       tasks =
         for i <- 1..10 do
           Task.async(fn ->
-            stats = %{graph_id: 0, quad_count: i * 100, distinct_subjects: i, distinct_predicates: 1, distinct_objects: i, predicate_counts: %{}, accuracy: :exact}
+            stats = %{
+              graph_id: 0,
+              quad_count: i * 100,
+              distinct_subjects: i,
+              distinct_predicates: 1,
+              distinct_objects: i,
+              predicate_counts: %{},
+              accuracy: :exact
+            }
+
             :ets.insert(@cache_table, {key, stats})
           end)
         end

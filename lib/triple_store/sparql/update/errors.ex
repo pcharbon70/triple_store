@@ -277,7 +277,15 @@ defmodule TripleStore.SPARQL.Update.Errors do
   Returns a human-readable error message for any error.
   """
   @spec message(Exception.t() | term()) :: String.t()
-  def message(%module{} = error) when module in [UnauthorizedError, GraphNotFoundError, InvalidOperationError, QuotaExceededError, ConflictError, SourceGraphNotFoundError] do
+  def message(%module{} = error)
+      when module in [
+             UnauthorizedError,
+             GraphNotFoundError,
+             InvalidOperationError,
+             QuotaExceededError,
+             ConflictError,
+             SourceGraphNotFoundError
+           ] do
     Exception.message(error)
   end
 

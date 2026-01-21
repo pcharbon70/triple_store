@@ -35,10 +35,14 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
     test "full histogram (sample_rate: 1.0) produces exact counts", %{db: db} do
       # Insert known quads
       quads = [
-        {1, 10, 100, 0},  # graph 0, pred 10
-        {2, 10, 101, 0},  # graph 0, pred 10
-        {3, 11, 102, 0},  # graph 0, pred 11
-        {4, 10, 103, 1}   # graph 1, pred 10
+        # graph 0, pred 10
+        {1, 10, 100, 0},
+        # graph 0, pred 10
+        {2, 10, 101, 0},
+        # graph 0, pred 11
+        {3, 11, 102, 0},
+        # graph 1, pred 10
+        {4, 10, 103, 1}
       ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -184,10 +188,14 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
       # Insert quads to both default and named graph
       quads =
         [
-          {1, 10, 100, 0},   # default graph
-          {2, 10, 101, 0},   # default graph
-          {3, 11, 102, 1},   # named graph
-          {4, 11, 103, 1}    # named graph
+          # default graph
+          {1, 10, 100, 0},
+          # default graph
+          {2, 10, 101, 0},
+          # named graph
+          {3, 11, 102, 1},
+          # named graph
+          {4, 11, 103, 1}
         ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)

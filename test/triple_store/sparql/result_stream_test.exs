@@ -36,7 +36,9 @@ defmodule TripleStore.SPARQL.ResultStreamTest do
 
     test "applies transform to each batch" do
       transform = fn batch -> Enum.map(batch, &(&1 * 2)) end
-      batches = ResultStream.stream_batches(1..5, batch_size: 2, transform: transform) |> Enum.to_list()
+
+      batches =
+        ResultStream.stream_batches(1..5, batch_size: 2, transform: transform) |> Enum.to_list()
 
       assert batches == [[2, 4], [6, 8], [10]]
     end

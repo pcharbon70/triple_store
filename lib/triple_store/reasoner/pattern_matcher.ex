@@ -344,8 +344,12 @@ defmodule TripleStore.Reasoner.PatternMatcher do
   @spec index_to_quad_pattern(quad_index_pattern()) :: quad_pattern()
   def index_to_quad_pattern({g, s, p, o}) do
     {:quad_pattern,
-     [convert_graph_from_index(g, :g), convert_from_index(s, :s), convert_from_index(p, :p),
-      convert_from_index(o, :o)]}
+     [
+       convert_graph_from_index(g, :g),
+       convert_from_index(s, :s),
+       convert_from_index(p, :p),
+       convert_from_index(o, :o)
+     ]}
   end
 
   # ============================================================================
@@ -530,7 +534,8 @@ defmodule TripleStore.Reasoner.PatternMatcher do
       iex> PatternMatcher.unify_graph_term(1, {:bound, 2}, %{})
       :no_match
   """
-  @spec unify_graph_term(non_neg_integer(), graph_term(), bindings()) :: {:ok, bindings()} | :no_match
+  @spec unify_graph_term(non_neg_integer(), graph_term(), bindings()) ::
+          {:ok, bindings()} | :no_match
   def unify_graph_term(graph_id, {:var, name}, bindings) do
     case Map.get(bindings, name) do
       nil -> {:ok, Map.put(bindings, name, graph_id)}

@@ -155,7 +155,8 @@ defmodule TripleStore.Quad.CacheWarmer do
       quad_count: quad_count,
       duration_ms: duration_ms,
       indices: indices,
-      bytes_scanned: quad_count * 32 # Each quad key is 32 bytes
+      # Each quad key is 32 bytes
+      bytes_scanned: quad_count * 32
     }
 
     :telemetry.execute(
@@ -273,7 +274,7 @@ defmodule TripleStore.Quad.CacheWarmer do
 
     with {:ok, quad_count} <- {:ok, count_quads_in_graph(db, graph_id)} do
       # Estimate: 4 indices * quad_count / scan_rate
-      estimate_seconds = (4 * quad_count) / quads_per_second
+      estimate_seconds = 4 * quad_count / quads_per_second
       estimate_ms = round(estimate_seconds * 1000)
       {:ok, estimate_ms}
     end

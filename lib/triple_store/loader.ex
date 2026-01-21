@@ -330,9 +330,6 @@ defmodule TripleStore.Loader do
   # Resource limits to prevent DoS
   # Maximum number of triples/quads that can be loaded in a single operation
   @max_triples 1_000_000_000
-  # Maximum concurrent batches for parallel loading (reserved for future use)
-  # The unused warning is expected - this constant is reserved for future use
-  @max_concurrent_batches 1000
   # Progress callback timeout in milliseconds (5 seconds)
   @progress_callback_timeout 5000
 
@@ -398,6 +395,7 @@ defmodule TripleStore.Loader do
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
 
   def load_graph(db, manager, graph_or_dataset, opts \\ [])
+
   def load_graph(db, manager, %RDF.Dataset{} = dataset, opts) do
     batch_size = resolve_batch_size(opts)
 
@@ -1354,18 +1352,30 @@ defmodule TripleStore.Loader do
   # The graph term is used directly (IRI or BlankNode), and will be
   # converted to graph_id by Adapter.from_rdf_quads during encoding
   # :default is converted to nil which RDF.ex uses for the default graph
-  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t() | :default) :: Enumerable.t()
+  @spec triples_to_quads(Enumerable.t(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+          Enumerable.t()
   defp triples_to_quads(triples, :default) do
     Stream.map(triples, fn
-      {s, p, o} -> RDF.Quad.new(s, p, o, nil)
-      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, nil)
+      {s, p, o} ->
+        RDF.Quad.new(s, p, o, nil)
+
+      rdf_statement ->
+        RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, nil)
     end)
   end
 
   defp triples_to_quads(triples, graph_term) do
     Stream.map(triples, fn
-      {s, p, o} -> RDF.Quad.new(s, p, o, graph_term)
-      rdf_statement -> RDF.Quad.new(rdf_statement.subject, rdf_statement.predicate, rdf_statement.object, graph_term)
+      {s, p, o} ->
+        RDF.Quad.new(s, p, o, graph_term)
+
+      rdf_statement ->
+        RDF.Quad.new(
+          rdf_statement.subject,
+          rdf_statement.predicate,
+          rdf_statement.object,
+          graph_term
+        )
     end)
   end
 
@@ -2256,7 +2266,8 @@ defmodule TripleStore.Loader do
   # Private - Path Validation
   # ===========================================================================
 
-  @spec validate_file_path(Path.t(), [Path.t()] | nil) :: {:ok, Path.t()} | {:error, :invalid_path}
+  @spec validate_file_path(Path.t(), [Path.t()] | nil) ::
+          {:ok, Path.t()} | {:error, :invalid_path}
   defp validate_file_path(path, allowed_dirs \\ nil) do
     # Check for path traversal in the original path before expansion
     # This catches attempts like "../", "..\\", "%2e%2e", etc.
@@ -2286,14 +2297,22 @@ defmodule TripleStore.Loader do
   defp has_path_traversal?(path) when is_binary(path) do
     # Check for literal dot-dot-slash sequences
     dot_dot_checks = [
-      "..",           # Literal ".."
-      "%2e%2e",       # URL encoded ".."
-      "%2e.",         # Partially encoded
-      ".%2e",         # Partially encoded
-      "..\\",         # Windows backslash separator (if on Unix, this is safe check)
-      "%252e",        # Double-encoded "."
-      "%c0%ae",       # Unicode bypass (UTF-8)
-      "%e0%80%af"     # Unicode bypass (overlong)
+      # Literal ".."
+      "..",
+      # URL encoded ".."
+      "%2e%2e",
+      # Partially encoded
+      "%2e.",
+      # Partially encoded
+      ".%2e",
+      # Windows backslash separator (if on Unix, this is safe check)
+      "..\\",
+      # Double-encoded "."
+      "%252e",
+      # Unicode bypass (UTF-8)
+      "%c0%ae",
+      # Unicode bypass (overlong)
+      "%e0%80%af"
     ]
 
     # Normalize path for checking (lowercase for case-insensitive checks)
@@ -2419,7 +2438,8 @@ defmodule TripleStore.Loader do
     RDF.NQuads.read_file(path)
   end
 
-  @spec parse_nquads_string_full(String.t(), keyword()) :: {:ok, RDF.Dataset.t()} | {:error, term()}
+  @spec parse_nquads_string_full(String.t(), keyword()) ::
+          {:ok, RDF.Dataset.t()} | {:error, term()}
   defp parse_nquads_string_full(content, opts) do
     RDF.NQuads.read_string(content, opts)
   end

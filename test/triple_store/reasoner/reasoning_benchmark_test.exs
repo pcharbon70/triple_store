@@ -58,7 +58,10 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
           end)
         end)
 
-      IO.puts("\n  [Benchmark] GraphProvenance.add_source 10K operations: #{time_us}μs (#{div(time_us, 1000)}ms)")
+      IO.puts(
+        "\n  [Benchmark] GraphProvenance.add_source 10K operations: #{time_us}μs (#{div(time_us, 1000)}ms)"
+      )
+
       IO.puts("  [Benchmark] Throughput: #{Float.round(10_000_000.0 / time_us, 2)} ops/sec")
 
       # Should complete in under 500ms
@@ -82,7 +85,9 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
       # Measure merge time
       {time_us, _merged} = :timer.tc(fn -> GraphProvenance.merge(tracker1, tracker2) end)
 
-      IO.puts("\n  [Benchmark] GraphProvenance.merge 5K + 5K quads: #{time_us}μs (#{div(time_us, 1000)}ms)")
+      IO.puts(
+        "\n  [Benchmark] GraphProvenance.merge 5K + 5K quads: #{time_us}μs (#{div(time_us, 1000)}ms)"
+      )
 
       # Should complete in under 200ms
       assert time_us < 200_000
@@ -185,6 +190,7 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
         end)
 
       IO.puts("\n  [Benchmark] PatternMatcher.matches_triple? per pattern complexity:")
+
       Enum.zip([:all_vars, :one_bound, :two_bound, :all_bound], times)
       |> Enum.each(fn {complexity, time_us} ->
         IO.puts("    #{complexity}: #{time_us}μs")
@@ -308,7 +314,10 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
           )
         end)
 
-      IO.puts("\n  [Benchmark] SemiNaive materialization (99 facts, 1 rule): #{time_us}μs (#{div(time_us, 1000)}ms)")
+      IO.puts(
+        "\n  [Benchmark] SemiNaive materialization (99 facts, 1 rule): #{time_us}μs (#{div(time_us, 1000)}ms)"
+      )
+
       IO.puts("  [Benchmark] Iterations: #{stats.iterations}")
       IO.puts("  [Benchmark] Derived: #{stats.total_derived}")
 
@@ -363,7 +372,10 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
           )
         end)
 
-      IO.puts("\n  [Benchmark] SemiNaive materialization (100 facts, 2 rules): #{time_us}μs (#{div(time_us, 1000)}ms)")
+      IO.puts(
+        "\n  [Benchmark] SemiNaive materialization (100 facts, 2 rules): #{time_us}μs (#{div(time_us, 1000)}ms)"
+      )
+
       IO.puts("  [Benchmark] Iterations: #{stats.iterations}")
       IO.puts("  [Benchmark] Derived: #{stats.total_derived}")
 

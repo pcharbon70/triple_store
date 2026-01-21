@@ -59,7 +59,6 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
         # Convert pattern to quads with bindings
         case pattern_to_quads(ctx, pattern, bindings) do
           {:ok, quads} -> delete_quads(ctx, quads)
-          {:error, _} = error -> error
         end
 
       {:error, _} = error ->
@@ -81,8 +80,10 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
         existing_quads =
           Enum.filter(internal_quads, fn quad ->
             case quad do
-              {s, p, o, g} when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g) ->
+              {s, p, o, g}
+              when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g) ->
                 QuadOperations.quad_exists?(ctx.db, {s, p, o, g})
+
               _ ->
                 false
             end
@@ -96,7 +97,9 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
               # Invalidate statistics cache for affected graphs
               invalidate_graphs_cache(ctx.db, existing_quads)
               {:ok, length(existing_quads)}
-            {:error, _} = error -> error
+
+            {:error, _} = error ->
+              error
           end
         end
       end
@@ -138,10 +141,11 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
 
   defp quads_to_rdf_triples(quads) do
     # Convert AST quads to RDF triples (extract from default graph quads)
-    triples = Enum.map(quads, fn
-      {:quad, s, p, o, _g} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
-      quad -> ast_to_triple(quad)
-    end)
+    triples =
+      Enum.map(quads, fn
+        {:quad, s, p, o, _g} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
+        quad -> ast_to_triple(quad)
+      end)
 
     {:ok, triples}
   end
@@ -309,9 +313,16 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
   defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
   defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :language_tagged, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :typed, value, datatype}), do: RDF.literal(value, datatype: RDF.iri(datatype))
-  defp ast_to_rdf({:variable, _name}), do: raise(ArgumentError, "Variables not allowed in DELETE DATA")
+
+  defp ast_to_rdf({:literal, :language_tagged, value, lang}),
+    do: RDF.literal(value, language: lang)
+
+  defp ast_to_rdf({:literal, :typed, value, datatype}),
+    do: RDF.literal(value, datatype: RDF.iri(datatype))
+
+  defp ast_to_rdf({:variable, _name}),
+    do: raise(ArgumentError, "Variables not allowed in DELETE DATA")
+
   defp ast_to_rdf(term), do: term
 
   defp ast_graph_to_rdf(:default), do: :default

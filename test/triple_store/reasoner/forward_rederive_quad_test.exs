@@ -108,7 +108,10 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuadTest do
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]
 
-      result = ForwardRederiveQuad.partition_invalid_quads(:mock_db, potentially_invalid, deleted, rules, graph_id: 1)
+      result =
+        ForwardRederiveQuad.partition_invalid_quads(:mock_db, potentially_invalid, deleted, rules,
+          graph_id: 1
+        )
 
       assert {keep, delete} = result
       assert is_map(keep)
@@ -136,10 +139,11 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuadTest do
 
   describe "return values" do
     test "quads_checked equals size of potentially invalid set" do
-      potentially_invalid = MapSet.new([
-        quad(1, iri("alice"), rdf_type(), iri("Person")),
-        quad(1, iri("bob"), rdf_type(), iri("Person"))
-      ])
+      potentially_invalid =
+        MapSet.new([
+          quad(1, iri("alice"), rdf_type(), iri("Person")),
+          quad(1, iri("bob"), rdf_type(), iri("Person"))
+        ])
 
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]
@@ -153,9 +157,10 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuadTest do
     end
 
     test "rederivation_count equals size of keep set" do
-      potentially_invalid = MapSet.new([
-        quad(1, iri("alice"), rdf_type(), iri("Person"))
-      ])
+      potentially_invalid =
+        MapSet.new([
+          quad(1, iri("alice"), rdf_type(), iri("Person"))
+        ])
 
       deleted = MapSet.new()
       rules = [Rules.cax_sco()]

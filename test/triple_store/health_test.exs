@@ -551,7 +551,10 @@ defmodule TripleStore.HealthTest do
       # For empty store, returns empty map (no graphs with quads)
       # Add a test quad via Loader and verify graph appears
       nquads = "<http://example.org/s> <http://example.org/p> \"o\" ."
-      assert {:ok, 1} = TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
+
+      assert {:ok, 1} =
+               TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
+
       assert {:ok, graphs} = Health.all_graphs_health(store)
       # Now default graph (0) should exist with the added quad
       assert Map.has_key?(graphs, 0)
@@ -564,7 +567,9 @@ defmodule TripleStore.HealthTest do
       <http://example.org/s> <http://example.org/p> "o" .
       <http://example.org/s2> <http://example.org/p2> "o2" <http://example.org/g> .
       """
-      assert {:ok, 2} = TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
+
+      assert {:ok, 2} =
+               TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
 
       assert {:ok, graphs} = Health.all_graphs_health(store, include_empty: false)
       # Should have non-empty graphs only

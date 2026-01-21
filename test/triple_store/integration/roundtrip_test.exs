@@ -73,7 +73,11 @@ defmodule TripleStore.Integration.RoundtripTest do
   # ===========================================================================
 
   describe "6.2.3.1 N-Quads load/export roundtrip" do
-    test "loading and exporting N-Quads preserves all quads", %{db: db, manager: manager, db_path: db_path} do
+    test "loading and exporting N-Quads preserves all quads", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "input.nq")
       output_file = Path.join(db_path, "output.nq")
 
@@ -146,7 +150,11 @@ defmodule TripleStore.Integration.RoundtripTest do
   # ===========================================================================
 
   describe "6.2.3.2 TriG load/export roundtrip" do
-    test "loading and exporting TriG preserves all quads", %{db: db, manager: manager, db_path: db_path} do
+    test "loading and exporting TriG preserves all quads", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "input.trig")
       output_file = Path.join(db_path, "output.trig")
 
@@ -182,7 +190,11 @@ defmodule TripleStore.Integration.RoundtripTest do
       assert String.contains?(exported_content, "#{@ex}g2")
     end
 
-    test "roundtrip preserves default and named graphs", %{db: db, manager: manager, db_path: db_path} do
+    test "roundtrip preserves default and named graphs", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "default_trig.trig")
       output_file = Path.join(db_path, "output.trig")
 
@@ -236,7 +248,11 @@ defmodule TripleStore.Integration.RoundtripTest do
       assert String.contains?(output, "#{@ex}g1") or String.contains?(output, "g1")
     end
 
-    test "conversion preserves all graph structures", %{db: db, manager: manager, db_path: db_path} do
+    test "conversion preserves all graph structures", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "multi.nq")
       output_file = Path.join(db_path, "output.trig")
 
@@ -316,7 +332,11 @@ defmodule TripleStore.Integration.RoundtripTest do
   # ===========================================================================
 
   describe "6.2.3.5 roundtrip preserves all graphs" do
-    test "N-Quads roundtrip preserves multiple graphs", %{db: db, manager: manager, db_path: db_path} do
+    test "N-Quads roundtrip preserves multiple graphs", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "multi.nq")
       output_file = Path.join(db_path, "output.nq")
 
@@ -388,7 +408,11 @@ defmodule TripleStore.Integration.RoundtripTest do
   # ===========================================================================
 
   describe "6.2.3.6 roundtrip preserves blank node IDs" do
-    test "N-Quads roundtrip preserves blank node labels", %{db: db, manager: manager, db_path: db_path} do
+    test "N-Quads roundtrip preserves blank node labels", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "blank.nq")
       output_file = Path.join(db_path, "output.nq")
 
@@ -436,7 +460,11 @@ defmodule TripleStore.Integration.RoundtripTest do
       assert String.contains?(output, "#{@ex}p2")
     end
 
-    test "preserves distinction between different blank nodes", %{db: db, manager: manager, db_path: db_path} do
+    test "preserves distinction between different blank nodes", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "multi_blank.nq")
       output_file = Path.join(db_path, "output.nq")
 

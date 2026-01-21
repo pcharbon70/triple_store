@@ -38,7 +38,6 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
   alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
-  alias TripleStore.Reasoner.ForwardRederive
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
   alias TripleStore.Reasoner.TBoxExtractor
@@ -128,7 +127,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     all_explicit_facts = load_explicit_facts_in_graph(db, graph_id, deleted_quads)
 
     # Get all derived quads in this graph
-    all_derived_quads =
+    _all_derived_quads =
       case DerivedStore.lookup_derived_quads_in_graph(db, graph_id) do
         {:ok, quads} -> quads
         {:error, _} -> []
@@ -146,7 +145,8 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     # Process each potentially invalid quad
     {keep_quads, delete_quads} =
       potentially_invalid_quads
-      |> Enum.reduce({MapSet.new(), MapSet.new()}, fn {g, s, p, o} = quad, {keep_acc, delete_acc} ->
+      |> Enum.reduce({MapSet.new(), MapSet.new()}, fn {g, s, p, o} = quad,
+                                                      {keep_acc, delete_acc} ->
         # Valid triples for checking this specific quad:
         # - Start with base_valid_triples
         # - Exclude potentially invalid quads we haven't processed yet (as triples)
@@ -267,14 +267,14 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     end
   end
 
-  defp can_rederive_quad_in_graph?(db, {s, p, o} = triple, valid_facts, graph_id, rules) do
+  defp can_rederive_quad_in_graph?(db, {_s, _p, _o} = triple, valid_facts, graph_id, rules) do
     # Try each rule to see if it can derive this triple
     Enum.any?(rules, fn rule ->
       can_derive_quad_with_rule?(db, triple, valid_facts, graph_id, rule)
     end)
   end
 
-  defp can_derive_quad_with_rule?(db, {s, p, o} = triple, valid_facts, graph_id, rule) do
+  defp can_derive_quad_with_rule?(db, {_s, _p, _o} = triple, valid_facts, graph_id, rule) do
     # First, check if the triple matches the rule's head pattern
     case PatternMatcher.match_rule_head(triple, rule.head) do
       {:ok, head_bindings} ->

@@ -34,6 +34,7 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
         {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}},
         {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}}
       ]
+
       refute Executor.is_quad_bgp?(patterns)
     end
 
@@ -42,21 +43,26 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
         {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}},
         {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
       ]
+
       assert Executor.is_quad_bgp?(patterns)
     end
 
     test "returns true for all-quad BGP" do
       patterns = [
         {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph},
-        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}, {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"},
+         {:variable, "g"}}
       ]
+
       assert Executor.is_quad_bgp?(patterns)
     end
 
     test "returns true for BGP with named graph quad" do
       patterns = [
-        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/graph1"}}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
+         {:named_node, "http://example.org/graph1"}}
       ]
+
       assert Executor.is_quad_bgp?(patterns)
     end
 
@@ -64,6 +70,7 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
       patterns = [
         {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
       ]
+
       assert Executor.is_quad_bgp?(patterns)
     end
   end
@@ -88,7 +95,10 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
     end
 
     test "accepts quad pattern with named graph", %{ctx: ctx} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/g1"}}
+      pattern =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
+         {:named_node, "http://example.org/g1"}}
+
       binding_stream = Stream.iterate(%{}, & &1) |> Stream.take(1)
 
       assert_code_is_executor_call(fn ->
@@ -106,7 +116,10 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
     end
 
     test "accepts quad pattern with bound subject", %{ctx: ctx} do
-      pattern = {:quad, {:named_node, "http://example.org/Alice"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
+      pattern =
+        {:quad, {:named_node, "http://example.org/Alice"}, {:variable, "p"}, {:variable, "o"},
+         :default_graph}
+
       binding_stream = Stream.iterate(%{}, & &1) |> Stream.take(1)
 
       assert_code_is_executor_call(fn ->
@@ -150,6 +163,6 @@ defmodule TripleStore.SPARQL.QuadBGPTest do
     # This function verifies that the code compiles and the function exists
     # In actual integration tests, we would have a real database
     assert is_function(fun, 0) or is_function(fun, 1) or is_function(fun, 2) or
-           is_function(fun, 3) or is_function(fun, 4) or is_function(fun, 5)
+             is_function(fun, 3) or is_function(fun, 4) or is_function(fun, 5)
   end
 end

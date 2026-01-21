@@ -948,6 +948,7 @@ defmodule TripleStore.StatisticsTest do
         collected_at: DateTime.utc_now(),
         version: 1
       }
+
       assert {:error, {:invalid_types, _}} = Statistics.validate_stats_structure(stats)
     end
 

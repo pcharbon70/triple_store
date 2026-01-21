@@ -275,7 +275,8 @@ defmodule TripleStore.Backend.RocksDB.SchemaVersioningTest do
         db_path_charlist = String.to_charlist(db_path)
 
         # Create minimal database with triple CFs
-        {:ok, db, [default_cf]} = :rocksdb.open_with_cf(db_path_charlist, db_opts, [{~c"default", []}])
+        {:ok, db, [default_cf]} =
+          :rocksdb.open_with_cf(db_path_charlist, db_opts, [{~c"default", []}])
 
         {:ok, _id2str_cf} = :rocksdb.create_column_family(db, ~c"id2str", [])
         {:ok, _str2id_cf} = :rocksdb.create_column_family(db, ~c"str2id", [])

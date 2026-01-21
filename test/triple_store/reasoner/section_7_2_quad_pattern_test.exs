@@ -35,23 +35,36 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "7.2.1.2 instantiate_head/2 works with quad patterns" do
       rule =
-        Rule.new_quad(:test_rule,
+        Rule.new_quad(
+          :test_rule,
           [{:quad_pattern, [{:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
-          Rule.head_quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c"))
+          Rule.head_quad_pattern(
+            {:var, "g"},
+            Rule.var("x"),
+            Rule.iri("#{@rdf}type"),
+            Rule.var("c")
+          )
         )
 
       binding = %{"g" => {:bound, 1}, "x" => {:iri, "#{@ex}alice"}, "c" => {:iri, "#{@ex}Person"}}
 
       result = Rule.instantiate_head(rule, binding)
 
-      assert result == {{:bound, 1}, {:iri, "#{@ex}alice"}, {:iri, "#{@rdf}type"}, {:iri, "#{@ex}Person"}}
+      assert result ==
+               {{:bound, 1}, {:iri, "#{@ex}alice"}, {:iri, "#{@rdf}type"}, {:iri, "#{@ex}Person"}}
     end
 
     test "7.2.1.2 instantiate_head/2 substitutes available bindings" do
       rule =
-        Rule.new_quad(:test_rule,
+        Rule.new_quad(
+          :test_rule,
           [{:quad_pattern, [{:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
-          Rule.head_quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c"))
+          Rule.head_quad_pattern(
+            {:var, "g"},
+            Rule.var("x"),
+            Rule.iri("#{@rdf}type"),
+            Rule.var("c")
+          )
         )
 
       binding = %{"x" => {:iri, "#{@ex}alice"}}
@@ -65,7 +78,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "7.2.1.3 Rule has graph_id in metadata" do
       rule =
-        Rule.new(:test_rule,
+        Rule.new(
+          :test_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
           {:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("y")]},
           metadata: %{graph_id: 1}
@@ -76,7 +90,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "7.2.1.4 Rule has scope in metadata" do
       rule =
-        Rule.new(:test_rule,
+        Rule.new(
+          :test_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
           {:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("y")]},
           metadata: %{scope: :local}
@@ -87,7 +102,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "7.2.1.5 triple rules default to local scope" do
       rule =
-        Rule.new(:test_rule,
+        Rule.new(
+          :test_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
           {:pattern, [Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("y")]}
         )
@@ -99,9 +115,15 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "new_quad/5 creates quad-aware rule with metadata" do
       rule =
-        Rule.new_quad(:quad_rule,
+        Rule.new_quad(
+          :quad_rule,
           [{:quad_pattern, [{:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")]}],
-          Rule.head_quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("#{@rdf}type"), Rule.var("c")),
+          Rule.head_quad_pattern(
+            {:var, "g"},
+            Rule.var("x"),
+            Rule.iri("#{@rdf}type"),
+            Rule.var("c")
+          ),
           graph_id: 1,
           scope: :local
         )
@@ -113,7 +135,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "quad_rule?/1 returns true for quad rules" do
       rule =
-        Rule.new_quad(:quad_rule,
+        Rule.new_quad(
+          :quad_rule,
           [{:quad_pattern, [{:var, "g"}, Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           Rule.head_quad_pattern({:var, "g"}, Rule.var("x"), Rule.iri("p"), Rule.var("y"))
         )
@@ -123,7 +146,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "quad_rule?/1 returns false for triple rules" do
       rule =
-        Rule.new(:triple_rule,
+        Rule.new(
+          :triple_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           {:pattern, [Rule.var("x"), Rule.iri("q"), Rule.var("y")]}
         )
@@ -133,7 +157,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "put_graph_id/2 updates graph_id in metadata" do
       rule =
-        Rule.new(:test_rule,
+        Rule.new(
+          :test_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           {:pattern, [Rule.var("x"), Rule.iri("q"), Rule.var("y")]}
         )
@@ -145,7 +170,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "put_scope/2 updates scope in metadata" do
       rule =
-        Rule.new(:test_rule,
+        Rule.new(
+          :test_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           {:pattern, [Rule.var("x"), Rule.iri("q"), Rule.var("y")]}
         )
@@ -158,7 +184,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
     test "applies_to_graph?/2 checks rule applicability" do
       # Local rule for graph 1
       rule =
-        Rule.new(:local_rule,
+        Rule.new(
+          :local_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           {:pattern, [Rule.var("x"), Rule.iri("q"), Rule.var("y")]},
           metadata: %{graph_id: 1, scope: :local}
@@ -170,7 +197,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
 
     test "applies_to_graph?/2 global rule applies to all graphs" do
       rule =
-        Rule.new(:global_rule,
+        Rule.new(
+          :global_rule,
           [{:pattern, [Rule.var("x"), Rule.iri("p"), Rule.var("y")]}],
           {:pattern, [Rule.var("x"), Rule.iri("q"), Rule.var("y")]},
           metadata: %{scope: :global}
@@ -441,12 +469,20 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
     test "create and compile a quad rule" do
       # Create a quad rule
       quad_rule =
-        Rule.new_quad(:custom_subclass,
+        Rule.new_quad(
+          :custom_subclass,
           [
-            {:quad_pattern, [{:var, "g"}, Rule.var("c1"), Rule.iri("#{@rdfs}subClassOf"), Rule.var("c2")]},
-            {:quad_pattern, [{:var, "g"}, Rule.var("c2"), Rule.iri("#{@rdfs}subClassOf"), Rule.var("c3")]}
+            {:quad_pattern,
+             [{:var, "g"}, Rule.var("c1"), Rule.iri("#{@rdfs}subClassOf"), Rule.var("c2")]},
+            {:quad_pattern,
+             [{:var, "g"}, Rule.var("c2"), Rule.iri("#{@rdfs}subClassOf"), Rule.var("c3")]}
           ],
-          Rule.head_quad_pattern({:var, "g"}, Rule.var("c1"), Rule.iri("#{@rdfs}subClassOf"), Rule.var("c3")),
+          Rule.head_quad_pattern(
+            {:var, "g"},
+            Rule.var("c1"),
+            Rule.iri("#{@rdfs}subClassOf"),
+            Rule.var("c3")
+          ),
           graph_id: 1,
           scope: :local
         )
@@ -459,7 +495,8 @@ defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
       binding = %{"g" => {:bound, 1}, "c1" => {:iri, "#{@ex}A"}, "c3" => {:iri, "#{@ex}C"}}
       result = Rule.instantiate_head(quad_rule, binding)
 
-      assert result == {{:bound, 1}, {:iri, "#{@ex}A"}, {:iri, "#{@rdfs}subClassOf"}, {:iri, "#{@ex}C"}}
+      assert result ==
+               {{:bound, 1}, {:iri, "#{@ex}A"}, {:iri, "#{@rdfs}subClassOf"}, {:iri, "#{@ex}C"}}
     end
   end
 end

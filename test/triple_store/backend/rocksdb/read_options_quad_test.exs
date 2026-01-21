@@ -144,6 +144,7 @@ defmodule TripleStore.Backend.RocksDB.ReadOptionsQuadTest do
     test "quad indices enable cache for query performance" do
       for cf <- [:gspo, :gpos, :spog, :posg] do
         opts = ReadOptions.for_cf(cf)
+
         assert Keyword.get(opts, :fill_cache) == true,
                "Column family #{cf} should have cache enabled"
       end

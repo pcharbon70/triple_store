@@ -106,6 +106,7 @@ defmodule TripleStore.SPARQL.Update.RateLimiterTest do
 
       # User2 should have full capacity
       assert :ok = RateLimiter.allow?(user2, operation)
+
       for _i <- 1..10 do
         assert :ok = RateLimiter.allow?(user2, operation)
       end
@@ -202,7 +203,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiterTest do
 
       # Check stats
       assert {:ok, stats} = RateLimiter.stats(user_id, operation)
-      assert stats.count == 1  # One operation from the allow? call above
+      # One operation from the allow? call above
+      assert stats.count == 1
     end
 
     test "does not affect other operations for same user" do
@@ -233,6 +235,7 @@ defmodule TripleStore.SPARQL.Update.RateLimiterTest do
       for _i <- 1..5 do
         :ok = RateLimiter.record(user_id, :insert_data)
       end
+
       for _i <- 1..3 do
         :ok = RateLimiter.record(user_id, :delete_data)
       end
@@ -336,7 +339,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiterTest do
 
       assert {:ok, stats} = RateLimiter.stats(user_id, :insert_data)
       assert stats.count == 10
-      assert stats.remaining == 90  # 100 - 10
+      # 100 - 10
+      assert stats.remaining == 90
       assert stats.reset_at > System.system_time(:second)
     end
   end

@@ -111,7 +111,8 @@ defmodule TripleStore.AlertThresholdsTest do
       all = AlertThresholds.all()
 
       assert all[:slow_query_ms] == 2000
-      assert all[:graph_size_warning] == 1_000_000  # default
+      # default
+      assert all[:graph_size_warning] == 1_000_000
     end
 
     test "includes all configured and default values" do
@@ -141,7 +142,8 @@ defmodule TripleStore.AlertThresholdsTest do
 
       assert AlertThresholds.get(:slow_query_ms) == 500
       assert AlertThresholds.get(:graph_size_warning) == 500_000
-      assert AlertThresholds.get(:graph_size_critical) == 10_000_000  # default
+      # default
+      assert AlertThresholds.get(:graph_size_critical) == 10_000_000
     end
 
     test "can override default value" do
@@ -206,6 +208,7 @@ defmodule TripleStore.AlertThresholdsTest do
 
       assert {:error, warnings} = AlertThresholds.validate()
       assert is_list(warnings)
+
       assert Enum.any?(warnings, fn msg ->
                String.contains?(msg, "graph_size_warning")
              end)
@@ -218,6 +221,7 @@ defmodule TripleStore.AlertThresholdsTest do
       )
 
       assert {:error, warnings} = AlertThresholds.validate()
+
       assert Enum.any?(warnings, fn msg ->
                String.contains?(msg, "graph_size_critical")
              end)
@@ -227,6 +231,7 @@ defmodule TripleStore.AlertThresholdsTest do
       Application.put_env(:triple_store, :alert_thresholds, slow_query_ms: 5)
 
       assert {:error, warnings} = AlertThresholds.validate()
+
       assert Enum.any?(warnings, fn msg ->
                String.contains?(msg, "slow_query_ms")
              end)
@@ -244,8 +249,10 @@ defmodule TripleStore.AlertThresholdsTest do
 
     test "returns multiple warnings for multiple invalid thresholds" do
       Application.put_env(:triple_store, :alert_thresholds,
-        graph_size_warning: 500,  # too low
-        slow_query_ms: 5          # too low
+        # too low
+        graph_size_warning: 500,
+        # too low
+        slow_query_ms: 5
       )
 
       assert {:error, warnings} = AlertThresholds.validate()

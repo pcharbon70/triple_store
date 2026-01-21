@@ -583,6 +583,7 @@ defmodule TripleStore.Backup do
           NIF.close(db)
           # Re-check with list_column_families
           indices = NIF.list_column_families(backup_path)
+
           if "gspo" in indices do
             {:ok, :quad}
           else
@@ -653,7 +654,7 @@ defmodule TripleStore.Backup do
   # ===========================================================================
 
   # Gets the list of column families in a database
-  defp get_column_families(db) do
+  defp _get_column_families(db) do
     # The NIF doesn't expose a direct way to list CFs, but we can infer from
     # successful operations or check the backup metadata
     case NIF.list_column_families(db) do
@@ -672,19 +673,16 @@ defmodule TripleStore.Backup do
   defp write_graph_stats_metadata(backup_path, store, include_reasoning) do
     alias TripleStore.Statistics
 
-    stats =
-      case Statistics.build_per_graph_histograms(store.db, []) do
-        {:ok, histograms} ->
-          %{
-            graph_count: map_size(histograms),
-            graphs: Enum.into(histograms, %{}, fn {gid, hist} ->
-              {gid, %{predicate_count: map_size(hist)}}
-            end)
-          }
+    {:ok, histograms} = Statistics.build_per_graph_histograms(store.db, [])
 
-        {:error, _} ->
-          %{graph_count: 0, graphs: %{}}
-      end
+    stats =
+      %{
+        graph_count: map_size(histograms),
+        graphs:
+          Enum.into(histograms, %{}, fn {gid, hist} ->
+            {gid, %{predicate_count: map_size(hist)}}
+          end)
+      }
 
     stats =
       if include_reasoning do
@@ -707,14 +705,9 @@ defmodule TripleStore.Backup do
   defp get_reasoning_state_summary(store) do
     alias TripleStore.Reasoner.DerivedStore
 
-    # Try to get derived quad counts per graph
-    case DerivedStore.stats(store.db) do
-      {:ok, stats} ->
-        stats
-
-      {:error, _} ->
-        %{derived_quad_count: 0}
-    end
+    # Get derived quad count
+    {:ok, count} = DerivedStore.count(store.db)
+    %{derived_quad_count: count}
   rescue
     _ -> %{derived_quad_count: :unknown}
   end
@@ -735,6 +728,7 @@ defmodule TripleStore.Backup do
 
     # Try to read graph stats if they exist
     stats_path = Path.join(backup_path, ".graph_stats")
+
     if File.exists?(stats_path) do
       case File.read(stats_path) do
         {:ok, content} ->

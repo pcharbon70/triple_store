@@ -137,27 +137,27 @@ defmodule TripleStore.DictionaryQuadCompatibilityTest do
     test "all term types are in separate ID ranges" do
       # URI type: 0x1xxx...
       uri_id = Dictionary.encode_id(1, 0)
-      assert (uri_id >>> 60) == 1
+      assert uri_id >>> 60 == 1
 
       # BNode type: 0x2xxx...
       bnode_id = Dictionary.encode_id(2, 0)
-      assert (bnode_id >>> 60) == 2
+      assert bnode_id >>> 60 == 2
 
       # Literal type: 0x3xxx...
       literal_id = Dictionary.encode_id(3, 0)
-      assert (literal_id >>> 60) == 3
+      assert literal_id >>> 60 == 3
 
       # Integer type: 0x4xxx...
       int_id = Dictionary.encode_id(4, 0)
-      assert (int_id >>> 60) == 4
+      assert int_id >>> 60 == 4
 
       # Decimal type: 0x5xxx...
       decimal_id = Dictionary.encode_id(5, 0)
-      assert (decimal_id >>> 60) == 5
+      assert decimal_id >>> 60 == 5
 
       # DateTime type: 0x6xxx...
       datetime_id = Dictionary.encode_id(6, 0)
-      assert (datetime_id >>> 60) == 6
+      assert datetime_id >>> 60 == 6
     end
 
     test "no term type can produce ID 0" do

@@ -1155,21 +1155,23 @@ defmodule TripleStore.Index do
   def lookup_fold(db, pattern, acc, fun) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun = if needs_filter do
-      fn {key, _value}, inner_acc ->
-        triple = key_to_triple(index, key)
-        if triple_matches_pattern?(triple, pattern) do
+    fold_fun =
+      if needs_filter do
+        fn {key, _value}, inner_acc ->
+          triple = key_to_triple(index, key)
+
+          if triple_matches_pattern?(triple, pattern) do
+            fun.(triple, inner_acc)
+          else
+            inner_acc
+          end
+        end
+      else
+        fn {key, _value}, inner_acc ->
+          triple = key_to_triple(index, key)
           fun.(triple, inner_acc)
-        else
-          inner_acc
         end
       end
-    else
-      fn {key, _value}, inner_acc ->
-        triple = key_to_triple(index, key)
-        fun.(triple, inner_acc)
-      end
-    end
 
     NIF.fold(db, index, prefix, acc, fold_fun)
   end
@@ -1299,21 +1301,23 @@ defmodule TripleStore.Index do
   def lookup_keys_fold(db, pattern) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun = if needs_filter do
-      fn key, inner_acc ->
-        triple = key_to_triple(index, key)
-        if triple_matches_pattern?(triple, pattern) do
+    fold_fun =
+      if needs_filter do
+        fn key, inner_acc ->
+          triple = key_to_triple(index, key)
+
+          if triple_matches_pattern?(triple, pattern) do
+            [triple | inner_acc]
+          else
+            inner_acc
+          end
+        end
+      else
+        fn key, inner_acc ->
+          triple = key_to_triple(index, key)
           [triple | inner_acc]
-        else
-          inner_acc
         end
       end
-    else
-      fn key, inner_acc ->
-        triple = key_to_triple(index, key)
-        [triple | inner_acc]
-      end
-    end
 
     results = NIF.fold_keys(db, index, prefix, [], fold_fun)
     {:ok, Enum.reverse(results)}

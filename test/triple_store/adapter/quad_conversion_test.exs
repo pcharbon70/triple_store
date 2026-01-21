@@ -54,7 +54,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       assert is_integer(p_id)
       assert is_integer(o_id)
       assert is_integer(g_id)
-      assert g_id > 0  # Named graph has ID > 0
+      # Named graph has ID > 0
+      assert g_id > 0
     end
 
     test "converts quad with blank node graph", %{manager: manager} do
@@ -70,7 +71,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       assert is_integer(p_id)
       assert is_integer(o_id)
       assert is_integer(g_id)
-      assert g_id > 0  # Named graph has ID > 0
+      # Named graph has ID > 0
+      assert g_id > 0
     end
 
     test "converts quad with nil graph to default graph ID 0", %{manager: manager} do
@@ -84,7 +86,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       assert is_integer(s_id)
       assert is_integer(p_id)
       assert is_integer(o_id)
-      assert g_id == 0  # Default graph is ID 0
+      # Default graph is ID 0
+      assert g_id == 0
     end
 
     test "converts quad with blank node subject and named graph", %{manager: manager} do
@@ -173,7 +176,10 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       assert g == graph
     end
 
-    test "converts internal quad with default graph ID (0) to nil graph", %{db: db, manager: manager} do
+    test "converts internal quad with default graph ID (0) to nil graph", %{
+      db: db,
+      manager: manager
+    } do
       subject = RDF.iri("http://example.org/subject")
       predicate = RDF.iri("http://example.org/predicate")
       object = RDF.literal("value")
@@ -186,7 +192,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       assert s == subject
       assert p == predicate
       assert RDF.Literal.value(o) == "value"
-      assert g == nil  # Default graph ID 0 becomes nil
+      # Default graph ID 0 becomes nil
+      assert g == nil
     end
 
     test "converts quad with blank node subject and object", %{db: db, manager: manager} do
@@ -230,7 +237,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       object = RDF.literal("value")
       graph = RDF.iri("http://example.org/graph")
 
-      {:ok, {s_id, p_id, o_id, _g_id}} = Adapter.from_rdf_quad(manager, {subject, predicate, object, graph})
+      {:ok, {s_id, p_id, o_id, _g_id}} =
+        Adapter.from_rdf_quad(manager, {subject, predicate, object, graph})
 
       # Use a made-up graph ID that doesn't exist
       result = Adapter.to_rdf_quad(db, {s_id, p_id, o_id, 9_999_999})
@@ -250,12 +258,17 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
     test "converts multiple quads with mixed graph types", %{manager: manager} do
       quads = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
-         RDF.literal("o1"), RDF.iri("http://example.org/g1")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"),
-         RDF.literal("o2"), RDF.bnode("g2")},
-        {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"),
-         RDF.literal("o3"), nil}  # Default graph
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("o1"),
+         RDF.iri("http://example.org/g1")},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2"),
+         RDF.bnode("g2")},
+        {
+          RDF.iri("http://example.org/s3"),
+          RDF.iri("http://example.org/p"),
+          # Default graph
+          RDF.literal("o3"),
+          nil
+        }
       ]
 
       {:ok, internal_quads} = Adapter.from_rdf_quads(manager, quads)
@@ -308,12 +321,12 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
     test "converts multiple internal quads back to RDF", %{db: db, manager: manager} do
       quads = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
-         RDF.literal("o1"), RDF.iri("http://example.org/g1")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"),
-         RDF.literal("o2"), RDF.bnode("g2")},
-        {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"),
-         RDF.literal("o3"), nil}
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("o1"),
+         RDF.iri("http://example.org/g1")},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2"),
+         RDF.bnode("g2")},
+        {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"), RDF.literal("o3"),
+         nil}
       ]
 
       {:ok, internal_quads} = Adapter.from_rdf_quads(manager, quads)
@@ -342,12 +355,12 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
     test "handles quads with inline-encoded values in batch", %{db: db, manager: manager} do
       quads = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
-         RDF.literal(1), RDF.iri("http://example.org/g1")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"),
-         RDF.literal(2), RDF.iri("http://example.org/g2")},
-        {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"),
-         RDF.literal(3), RDF.iri("http://example.org/g3")}
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal(1),
+         RDF.iri("http://example.org/g1")},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal(2),
+         RDF.iri("http://example.org/g2")},
+        {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/p"), RDF.literal(3),
+         RDF.iri("http://example.org/g3")}
       ]
 
       {:ok, internal_quads} = Adapter.from_rdf_quads(manager, quads)
@@ -369,8 +382,9 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
   describe "roundtrip conversion" do
     test "quad with IRI graph converts back and forth", %{db: db, manager: manager} do
-      original = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
-                  RDF.literal("o"), RDF.iri("http://example.org/g")}
+      original =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o"),
+         RDF.iri("http://example.org/g")}
 
       {:ok, internal} = Adapter.from_rdf_quad(manager, original)
       {:ok, result} = Adapter.to_rdf_quad(db, internal)
@@ -379,8 +393,9 @@ defmodule TripleStore.Adapter.QuadConversionTest do
     end
 
     test "quad with blank node graph converts back and forth", %{db: db, manager: manager} do
-      original = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
-                  RDF.literal("o"), RDF.bnode("g1")}
+      original =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o"),
+         RDF.bnode("g1")}
 
       {:ok, internal} = Adapter.from_rdf_quad(manager, original)
       {:ok, result} = Adapter.to_rdf_quad(db, internal)
@@ -389,8 +404,8 @@ defmodule TripleStore.Adapter.QuadConversionTest do
     end
 
     test "quad with nil graph converts back and forth", %{db: db, manager: manager} do
-      original = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
-                  RDF.literal("o"), nil}
+      original =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o"), nil}
 
       {:ok, internal} = Adapter.from_rdf_quad(manager, original)
       {:ok, result} = Adapter.to_rdf_quad(db, internal)
@@ -400,12 +415,11 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
     test "batch quads roundtrip correctly", %{db: db, manager: manager} do
       original_quads = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
-         RDF.literal("o1"), RDF.iri("http://example.org/g1")},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"),
-         RDF.literal(42), RDF.bnode("g2")},
-        {RDF.bnode("b1"), RDF.iri("http://example.org/p"),
-         RDF.iri("http://example.org/o"), nil}
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("o1"),
+         RDF.iri("http://example.org/g1")},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal(42),
+         RDF.bnode("g2")},
+        {RDF.bnode("b1"), RDF.iri("http://example.org/p"), RDF.iri("http://example.org/o"), nil}
       ]
 
       {:ok, internal_quads} = Adapter.from_rdf_quads(manager, original_quads)
@@ -431,10 +445,11 @@ defmodule TripleStore.Adapter.QuadConversionTest do
       g1 = RDF.iri("http://example.org/graph1")
       g2 = RDF.iri("http://example.org/graph2")
 
-      quad1 = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
-               RDF.literal("o"), g1}
-      quad2 = {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"),
-               RDF.literal("o"), g2}
+      quad1 =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o"), g1}
+
+      quad2 =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal("o"), g2}
 
       {:ok, {_, _, _, g1_id}} = Adapter.from_rdf_quad(manager, quad1)
       {:ok, {_, _, _, g2_id}} = Adapter.from_rdf_quad(manager, quad2)
@@ -447,10 +462,13 @@ defmodule TripleStore.Adapter.QuadConversionTest do
     test "same graph name gets same ID across quads", %{manager: manager} do
       graph = RDF.iri("http://example.org/shared_graph")
 
-      quad1 = {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"),
-               RDF.literal("o1"), graph}
-      quad2 = {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"),
-               RDF.literal("o2"), graph}
+      quad1 =
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("o1"),
+         graph}
+
+      quad2 =
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2"),
+         graph}
 
       {:ok, {_, _, _, g1_id}} = Adapter.from_rdf_quad(manager, quad1)
       {:ok, {_, _, _, g2_id}} = Adapter.from_rdf_quad(manager, quad2)
@@ -460,12 +478,11 @@ defmodule TripleStore.Adapter.QuadConversionTest do
 
     test "default graph ID is always 0 regardless of content", %{manager: manager} do
       quads = [
-        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"),
-         RDF.literal("o1"), nil},
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p2"),
-         RDF.literal("o2"), nil},
-        {RDF.bnode("b1"), RDF.iri("http://example.org/p3"),
-         RDF.iri("http://example.org/o"), nil}
+        {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p1"), RDF.literal("o1"),
+         nil},
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p2"), RDF.literal("o2"),
+         nil},
+        {RDF.bnode("b1"), RDF.iri("http://example.org/p3"), RDF.iri("http://example.org/o"), nil}
       ]
 
       {:ok, internal_quads} = Adapter.from_rdf_quads(manager, quads)

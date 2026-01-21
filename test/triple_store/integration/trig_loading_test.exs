@@ -161,7 +161,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
       assert count3 == 1
     end
 
-    test "handles graphs with interleaved declarations", %{db: db, manager: manager, db_path: db_path} do
+    test "handles graphs with interleaved declarations", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "interleaved.trig")
 
       content = """
@@ -196,7 +200,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.3 load TriG with default graph block" do
-    test "loads default graph triples (outside GRAPH blocks)", %{db: db, manager: manager, db_path: db_path} do
+    test "loads default graph triples (outside GRAPH blocks)", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "default_graph.trig")
 
       content = """
@@ -228,7 +236,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
       assert named_count == 1
     end
 
-    test "handles file with only default graph content", %{db: db, manager: manager, db_path: db_path} do
+    test "handles file with only default graph content", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "only_default.trig")
 
       content = """
@@ -253,7 +265,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.4 load TriG with multiple graphs in one file" do
-    test "handles multiple GRAPH blocks for the same graph", %{db: db, manager: manager, db_path: db_path} do
+    test "handles multiple GRAPH blocks for the same graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "same_graph_multiple.trig")
 
       content = """
@@ -332,7 +348,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.5 load large TriG file" do
-    test "handles large files efficiently (10k+ quads)", %{db: db, manager: manager, db_path: db_path} do
+    test "handles large files efficiently (10k+ quads)", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "large.trig")
 
       # Generate 10,000 quads across 10 graphs

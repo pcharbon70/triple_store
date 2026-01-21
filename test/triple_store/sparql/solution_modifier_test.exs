@@ -113,9 +113,20 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
 
     test "groups by graph and other variable" do
       # Create bindings with different graphs and subjects
-      b1 = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/g1"}}
-      b2 = %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/g1"}}
-      b3 = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/g2"}}
+      b1 = %{
+        "s" => {:named_node, "http://example.org/Alice"},
+        "g" => {:named_node, "http://example.org/g1"}
+      }
+
+      b2 = %{
+        "s" => {:named_node, "http://example.org/Bob"},
+        "g" => {:named_node, "http://example.org/g1"}
+      }
+
+      b3 = %{
+        "s" => {:named_node, "http://example.org/Alice"},
+        "g" => {:named_node, "http://example.org/g2"}
+      }
 
       stream = to_stream([b1, b2, b3])
 
@@ -149,8 +160,11 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
 
       # Verify counts: graph1 should have 2, graph2 should have 1
       counts = Enum.map(results, fn r -> Map.get(r, "count") end) |> Enum.sort()
-      assert counts == [{:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"},
-                       {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}]
+
+      assert counts == [
+               {:literal, :typed, "1", "http://www.w3.org/2001/XMLSchema#integer"},
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+             ]
     end
   end
 
@@ -161,9 +175,20 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
   describe "order_by with graph variable" do
     test "sorts by graph IRI" do
       # Create bindings with different graphs
-      binding1 = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/Z"}}
-      binding2 = %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/A"}}
-      binding3 = %{"s" => {:named_node, "http://example.org/Carol"}, "g" => {:named_node, "http://example.org/M"}}
+      binding1 = %{
+        "s" => {:named_node, "http://example.org/Alice"},
+        "g" => {:named_node, "http://example.org/Z"}
+      }
+
+      binding2 = %{
+        "s" => {:named_node, "http://example.org/Bob"},
+        "g" => {:named_node, "http://example.org/A"}
+      }
+
+      binding3 = %{
+        "s" => {:named_node, "http://example.org/Carol"},
+        "g" => {:named_node, "http://example.org/M"}
+      }
 
       stream = to_stream([binding1, binding2, binding3])
 
@@ -175,16 +200,27 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
 
       # Should be ordered: A, M, Z
       assert [
-        %{"g" => {:named_node, "http://example.org/A"}},
-        %{"g" => {:named_node, "http://example.org/M"}},
-        %{"g" => {:named_node, "http://example.org/Z"}}
-      ] = results
+               %{"g" => {:named_node, "http://example.org/A"}},
+               %{"g" => {:named_node, "http://example.org/M"}},
+               %{"g" => {:named_node, "http://example.org/Z"}}
+             ] = results
     end
 
     test "sorts by graph descending" do
-      binding1 = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/Z"}}
-      binding2 = %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/A"}}
-      binding3 = %{"s" => {:named_node, "http://example.org/Carol"}, "g" => {:named_node, "http://example.org/M"}}
+      binding1 = %{
+        "s" => {:named_node, "http://example.org/Alice"},
+        "g" => {:named_node, "http://example.org/Z"}
+      }
+
+      binding2 = %{
+        "s" => {:named_node, "http://example.org/Bob"},
+        "g" => {:named_node, "http://example.org/A"}
+      }
+
+      binding3 = %{
+        "s" => {:named_node, "http://example.org/Carol"},
+        "g" => {:named_node, "http://example.org/M"}
+      }
 
       stream = to_stream([binding1, binding2, binding3])
 
@@ -195,16 +231,27 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
 
       # Should be ordered: Z, M, A
       assert [
-        %{"g" => {:named_node, "http://example.org/Z"}},
-        %{"g" => {:named_node, "http://example.org/M"}},
-        %{"g" => {:named_node, "http://example.org/A"}}
-      ] = results
+               %{"g" => {:named_node, "http://example.org/Z"}},
+               %{"g" => {:named_node, "http://example.org/M"}},
+               %{"g" => {:named_node, "http://example.org/A"}}
+             ] = results
     end
 
     test "sorts by graph then subject" do
-      binding1 = %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/A"}}
-      binding2 = %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/A"}}
-      binding3 = %{"s" => {:named_node, "http://example.org/Carol"}, "g" => {:named_node, "http://example.org/B"}}
+      binding1 = %{
+        "s" => {:named_node, "http://example.org/Bob"},
+        "g" => {:named_node, "http://example.org/A"}
+      }
+
+      binding2 = %{
+        "s" => {:named_node, "http://example.org/Alice"},
+        "g" => {:named_node, "http://example.org/A"}
+      }
+
+      binding3 = %{
+        "s" => {:named_node, "http://example.org/Carol"},
+        "g" => {:named_node, "http://example.org/B"}
+      }
 
       stream = to_stream([binding1, binding2, binding3])
 
@@ -213,15 +260,25 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
         {"g", :asc},
         {"s", :asc}
       ]
+
       result_stream = Executor.order_by(stream, comparators)
       results = Enum.to_list(result_stream)
 
       # Alice/A, Bob/A, Carol/B
       assert [
-        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/A"}},
-        %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/A"}},
-        %{"s" => {:named_node, "http://example.org/Carol"}, "g" => {:named_node, "http://example.org/B"}}
-      ] = results
+               %{
+                 "s" => {:named_node, "http://example.org/Alice"},
+                 "g" => {:named_node, "http://example.org/A"}
+               },
+               %{
+                 "s" => {:named_node, "http://example.org/Bob"},
+                 "g" => {:named_node, "http://example.org/A"}
+               },
+               %{
+                 "s" => {:named_node, "http://example.org/Carol"},
+                 "g" => {:named_node, "http://example.org/B"}
+               }
+             ] = results
     end
   end
 
@@ -239,11 +296,26 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
 
       # Create input bindings with different graphs
       bindings = [
-        %{"s" => {:named_node, "http://example.org/Alice1"}, "g" => {:named_node, "http://example.org/g1"}},
-        %{"s" => {:named_node, "http://example.org/Alice2"}, "g" => {:named_node, "http://example.org/g1"}},
-        %{"s" => {:named_node, "http://example.org/Bob1"}, "g" => {:named_node, "http://example.org/g2"}},
-        %{"s" => {:named_node, "http://example.org/Bob2"}, "g" => {:named_node, "http://example.org/g2"}},
-        %{"s" => {:named_node, "http://example.org/Carol"}, "g" => {:named_node, "http://example.org/g1"}}
+        %{
+          "s" => {:named_node, "http://example.org/Alice1"},
+          "g" => {:named_node, "http://example.org/g1"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Alice2"},
+          "g" => {:named_node, "http://example.org/g1"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Bob1"},
+          "g" => {:named_node, "http://example.org/g2"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Bob2"},
+          "g" => {:named_node, "http://example.org/g2"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Carol"},
+          "g" => {:named_node, "http://example.org/g1"}
+        }
       ]
 
       stream = to_stream(bindings)
@@ -269,9 +341,14 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
       # g1 should come before g2 (lexicographic)
       [first, second] = results
       assert Map.get(first, "g") == {:named_node, "http://example.org/g1"}
-      assert Map.get(first, "count") == {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(first, "count") ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
       assert Map.get(second, "g") == {:named_node, "http://example.org/g2"}
-      assert Map.get(second, "count") == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert Map.get(second, "count") ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
   end
 end

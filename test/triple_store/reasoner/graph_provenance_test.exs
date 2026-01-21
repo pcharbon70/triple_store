@@ -357,8 +357,10 @@ defmodule TripleStore.Reasoner.GraphProvenanceTest do
 
       tracker =
         tracker
-        |> GraphProvenance.add_source(q1, [1, 0])  # Depends on TBox (0)
-        |> GraphProvenance.add_source(q2, [1])     # Only depends on itself
+        # Depends on TBox (0)
+        |> GraphProvenance.add_source(q1, [1, 0])
+        # Only depends on itself
+        |> GraphProvenance.add_source(q2, [1])
 
       deps = GraphProvenance.detect_cross_graph_deps(tracker, 1)
 

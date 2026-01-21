@@ -47,14 +47,10 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
   # Helper to insert test data
   defp insert_test_data(ctx) do
     quads = [
-      {:quad, {:named_node, "http://example.org/s1"},
-              {:named_node, "http://example.org/p"},
-              {:literal, :simple, "old"},
-              :default_graph},
-      {:quad, {:named_node, "http://example.org/s2"},
-              {:named_node, "http://example.org/p"},
-              {:literal, :simple, "value"},
-              :default_graph}
+      {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+       {:literal, :simple, "old"}, :default_graph},
+      {:quad, {:named_node, "http://example.org/s2"}, {:named_node, "http://example.org/p"},
+       {:literal, :simple, "value"}, :default_graph}
     ]
 
     {:ok, _} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -62,10 +58,8 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
 
   defp insert_named_graph_data(ctx, graph_iri) do
     quads = [
-      {:quad, {:named_node, "http://example.org/s"},
-              {:named_node, "http://example.org/p"},
-              {:literal, :simple, "old"},
-              {:named_node, graph_iri}}
+      {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+       {:literal, :simple, "old"}, {:named_node, graph_iri}}
     ]
 
     {:ok, _} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -81,23 +75,20 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_named_graph_data(ctx, graph_iri)
 
       delete_template = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "old"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}, {:named_node, graph_iri}}
       ]
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "new"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}, {:named_node, graph_iri}}
       ]
 
       # Empty pattern (no WHERE clause)
       pattern = nil
 
-      assert {:ok, 2} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      assert {:ok, 2} =
+               UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Verify the graph still has 1 quad (deleted old, inserted new)
       {:ok, count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
@@ -109,22 +100,19 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_named_graph_data(ctx, graph_iri)
 
       delete_template = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "old"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}, {:named_node, graph_iri}}
       ]
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "new"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}, :default_graph}
       ]
 
       pattern = nil
 
-      assert {:ok, 2} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      assert {:ok, 2} =
+               UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Verify named graph is now empty
       {:ok, count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
@@ -145,20 +133,19 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:triple, {:named_node, "http://example.org/s1"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
+        {:triple, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}}
       ]
 
       insert_template = [
-        {:triple, {:named_node, "http://example.org/s1"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "new"}}
+        {:triple, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}}
       ]
 
       pattern = nil
 
-      assert {:ok, 2} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      assert {:ok, 2} =
+               UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
 
       # Verify default graph still has 2 quads (s1 with new value, s2 unchanged)
       {:ok, count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
@@ -169,9 +156,8 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:triple, {:named_node, "http://example.org/s1"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
+        {:triple, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_modify(ctx, delete_template, [], nil)
@@ -185,9 +171,8 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       insert_template = [
-        {:triple, {:named_node, "http://example.org/new"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "value"}}
+        {:triple, {:named_node, "http://example.org/new"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_modify(ctx, [], insert_template, nil)
@@ -233,7 +218,9 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       assert count == 2
 
       # Verify the named graph has the new value
-      {:ok, count_after} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      {:ok, count_after} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+
       assert count_after == 1
     end
 
@@ -295,25 +282,26 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:triple, {:variable, "s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}}
       ]
 
       insert_template = [
-        {:triple, {:variable, "s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "updated"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "updated"}}
       ]
 
       # WHERE pattern that matches s1 with "old" and binds s
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/p"},
+            {:literal, :simple, "old"}}
+         ]}
 
-      assert {:ok, count} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+      assert {:ok, count} =
+               UpdateExecutor.execute_modify(ctx, delete_template, insert_template, pattern)
+
       # Should delete 1 and insert 1, so count is 2
       assert count == 2
 
@@ -326,17 +314,15 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:triple, {:variable, "s"},
-                 {:variable, "p"},
-                 {:literal, :simple, "old"}}
+        {:triple, {:variable, "s"}, {:variable, "p"}, {:literal, :simple, "old"}}
       ]
 
       # WHERE pattern that matches s1 with "old" and binds both s and p
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"},
-                 {:variable, "p"},
-                 {:literal, :simple, "old"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:literal, :simple, "old"}}
+         ]}
 
       assert {:ok, count} = UpdateExecutor.execute_modify(ctx, delete_template, [], pattern)
       # Should delete 1 (s1)
@@ -351,17 +337,17 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       insert_template = [
-        {:triple, {:variable, "s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "new"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}}
       ]
 
       # WHERE pattern that matches s1 and binds s
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:named_node, "http://example.org/p"},
+            {:literal, :simple, "old"}}
+         ]}
 
       assert {:ok, count} = UpdateExecutor.execute_modify(ctx, [], insert_template, pattern)
       # Should insert 1 (s1 with new value)
@@ -385,16 +371,12 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
     test "handles non-existent data gracefully", %{ctx: ctx} do
       delete_template = [
         {:quad, {:named_node, "http://example.org/nonexistent"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}, :default_graph}
       ]
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/new"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/new"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       # Delete fails (not found), insert succeeds
@@ -409,16 +391,13 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:triple, {:named_node, "http://example.org/s1"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "old"}}
+        {:triple, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}}
       ]
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/s3"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "new"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s3"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}, :default_graph}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, nil)
@@ -438,34 +417,29 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       delete_template = [
-        {:quad, {:named_node, "http://example.org/s1"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "old"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}, :default_graph}
       ]
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/s1"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "new"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}, :default_graph}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_modify(ctx, delete_template, insert_template, nil)
 
       # Verify both operations completed
       {:ok, count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
-      assert count == 2  # s2 (unchanged) + s1 with new value
+      # s2 (unchanged) + s1 with new value
+      assert count == 2
     end
 
     test "DELETE only removes specified quads", %{ctx: ctx} do
       insert_test_data(ctx)
 
       delete_template = [
-        {:quad, {:named_node, "http://example.org/s1"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "old"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "old"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_modify(ctx, delete_template, [], nil)
@@ -479,10 +453,8 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
       insert_test_data(ctx)
 
       insert_template = [
-        {:quad, {:named_node, "http://example.org/s3"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "new"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s3"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "new"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_modify(ctx, [], insert_template, nil)

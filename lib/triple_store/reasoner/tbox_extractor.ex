@@ -36,30 +36,30 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
 
   # TBox predicates - these identify schema triples (as IRIs for comparison)
   @tbox_predicates MapSet.new([
-    # RDFS schema predicates
-    Namespaces.rdf_type(),
-    Namespaces.rdfs_sub_class_of(),
-    Namespaces.rdfs_sub_property_of(),
-    Namespaces.rdfs_domain(),
-    Namespaces.rdfs_range(),
-    # OWL class expressions
-    Namespaces.owl_equivalent_class(),
-    Namespaces.owl_disjoint_with(),
-    # OWL property characteristics
-    Namespaces.owl_transitive_property(),
-    Namespaces.owl_symmetric_property(),
-    Namespaces.owl_reflexive_property(),
-    Namespaces.owl_irreflexive_property(),
-    Namespaces.owl_functional_property(),
-    Namespaces.owl_inverse_functional_property(),
-    Namespaces.owl_asymmetric_property(),
-    # OWL property restrictions
-    Namespaces.owl_inverse_of(),
-    Namespaces.owl_has_value(),
-    Namespaces.owl_some_values_from(),
-    Namespaces.owl_all_values_from(),
-    Namespaces.owl_on_property()
-  ])
+                     # RDFS schema predicates
+                     Namespaces.rdf_type(),
+                     Namespaces.rdfs_sub_class_of(),
+                     Namespaces.rdfs_sub_property_of(),
+                     Namespaces.rdfs_domain(),
+                     Namespaces.rdfs_range(),
+                     # OWL class expressions
+                     Namespaces.owl_equivalent_class(),
+                     Namespaces.owl_disjoint_with(),
+                     # OWL property characteristics
+                     Namespaces.owl_transitive_property(),
+                     Namespaces.owl_symmetric_property(),
+                     Namespaces.owl_reflexive_property(),
+                     Namespaces.owl_irreflexive_property(),
+                     Namespaces.owl_functional_property(),
+                     Namespaces.owl_inverse_functional_property(),
+                     Namespaces.owl_asymmetric_property(),
+                     # OWL property restrictions
+                     Namespaces.owl_inverse_of(),
+                     Namespaces.owl_has_value(),
+                     Namespaces.owl_some_values_from(),
+                     Namespaces.owl_all_values_from(),
+                     Namespaces.owl_on_property()
+                   ])
 
   # Cache for predicate ID -> IRI mappings to avoid repeated lookups
   @predicate_cache_table :tbox_predicate_cache
@@ -181,8 +181,9 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
         |> Enum.sort()
 
       # Compute hash of sorted TBox quads
-      fingerprint = :crypto.hash(:sha256, :erlang.term_to_binary(tbox_data))
-               |> Base.encode16(case: :lower)
+      fingerprint =
+        :crypto.hash(:sha256, :erlang.term_to_binary(tbox_data))
+        |> Base.encode16(case: :lower)
 
       {:ok, fingerprint}
     rescue
@@ -195,24 +196,20 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
     end
   end
 
-  @doc """
-  Checks if a predicate ID is a TBox (schema) predicate.
-
-  This function performs a dictionary lookup to get the predicate IRI,
-  then checks if it's in the built-in TBox predicate set. Results are
-  cached in an ETS table to avoid repeated lookups.
-
-  ## Parameters
-
-  - `db` - Database reference
-  - `predicate_id` - Predicate term ID to check
-  - `cache_ref` - ETS table reference for caching results
-
-  ## Returns
-
-  - `true` if the predicate is a TBox predicate
-  - `false` otherwise
-  """
+  # Checks if a predicate ID is a TBox (schema) predicate.
+  #
+  # This function performs a dictionary lookup to get the predicate IRI,
+  # then checks if it's in the built-in TBox predicate set. Results are
+  # cached in an ETS table to avoid repeated lookups.
+  #
+  # Parameters:
+  # - `db` - Database reference
+  # - `predicate_id` - Predicate term ID to check
+  # - `cache_ref` - ETS table reference for caching results
+  #
+  # Returns:
+  # - `true` if the predicate is a TBox predicate
+  # - `false` otherwise
   @spec tbox_predicate?(db_ref(), integer(), :ets.tid()) :: boolean()
   defp tbox_predicate?(db, predicate_id, cache_ref) do
     case :ets.lookup(cache_ref, predicate_id) do

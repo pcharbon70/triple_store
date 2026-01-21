@@ -863,25 +863,20 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
   end
 
-  @doc """
-  Adds graph metadata to rules based on compilation context.
-
-  This function annotates each rule with:
-  - `:graph_id` - Which graph the rule applies to (nil for global)
-  - `:scope` - :local (single graph) or :global (all graphs)
-  - `:tbox_rule` - true if the rule derives to the TBox graph
-
-  ## Parameters
-
-  - `rules` - List of rules to annotate
-  - `graph_id` - Target graph ID (nil means global)
-  - `tbox_graph` - Graph ID containing TBox axioms
-
-  ## Returns
-
-  List of rules with updated metadata.
-
-  """
+  # Adds graph metadata to rules based on compilation context.
+  #
+  # This function annotates each rule with:
+  # - `:graph_id` - Which graph the rule applies to (nil for global)
+  # - `:scope` - :local (single graph) or :global (all graphs)
+  # - `:tbox_rule` - true if the rule derives to the TBox graph
+  #
+  # Parameters:
+  # - `rules` - List of rules to annotate
+  # - `graph_id` - Target graph ID (nil means global)
+  # - `tbox_graph` - Graph ID containing TBox axioms
+  #
+  # Returns:
+  # List of rules with updated metadata.
   defp add_graph_metadata(rules, graph_id, tbox_graph) do
     scope = if is_nil(graph_id), do: :global, else: :local
 
@@ -927,17 +922,15 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     end
   end
 
-  @doc """
-  Copies graph-related metadata from a rule for specialized rules.
-
-  Preserves the following metadata fields:
-  - :graph_id - Which graph the rule applies to
-  - :scope - :local or :global scope
-  - :tbox_rule - Whether this is a TBox rule
-
-  Other metadata like delta_positions are not copied as they may
-  not apply to specialized rules.
-  """
+  # Copies graph-related metadata from a rule for specialized rules.
+  #
+  # Preserves the following metadata fields:
+  # - :graph_id - Which graph the rule applies to
+  # - :scope - :local or :global scope
+  # - :tbox_rule - Whether this is a TBox rule
+  #
+  # Other metadata like delta_positions are not copied as they may
+  # not apply to specialized rules.
   defp copy_graph_metadata(nil), do: %{}
 
   defp copy_graph_metadata(metadata) when is_map(metadata) do

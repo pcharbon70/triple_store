@@ -63,8 +63,17 @@ defmodule TripleStore.MixProject do
 
   defp docs do
     [
-      main: "TripleStore",
-      extras: ["README.md"]
+      main: "readme",
+      extras: [
+        "README.md",
+        "guides/user/README.md",
+        "guides/developer/README.md"
+      ],
+      groups_for_extras: [
+        "User Guides": Path.wildcard("guides/user/*.md") -- ["guides/user/README.md"],
+        "Developer Guides":
+          Path.wildcard("guides/developer/*.md") -- ["guides/developer/README.md"]
+      ]
     ]
   end
 end

@@ -89,25 +89,26 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
   end
 
   defp insert_facts(db, facts, graph_id) do
-    operations = Enum.map(facts, fn {s, p, o} ->
-      {s_id, _} = NIF.get_or_put_str2id(db, s)
-      {p_id, _} = NIF.get_or_put_str2id(db, p)
-      {o_id, _} = NIF.get_or_put_str2id(db, o)
-      key = QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
-      {:spo, key, <<>>}
-    end)
+    operations =
+      Enum.map(facts, fn {s, p, o} ->
+        {s_id, _} = NIF.get_or_put_str2id(db, s)
+        {p_id, _} = NIF.get_or_put_str2id(db, p)
+        {o_id, _} = NIF.get_or_put_str2id(db, o)
+        key = QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
+        {:spo, key, <<>>}
+      end)
 
     :ok = NIF.write_batch(db, operations, true)
   end
 
   defp count_quads_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold_count(db, :spo, prefix)
+    NIF.fold(db, :spo, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   defp count_derived_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold_count(db, :derived_cf, prefix)
+    NIF.fold(db, :derived_cf, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   # ============================================================================
@@ -124,12 +125,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0,
-          storage_strategy: :same_as_premises
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0,
+            storage_strategy: :same_as_premises
+          )
 
         # Materialize all graphs globally
         result = GraphScopedReasoner.materialize_all(db, config: config)
@@ -152,11 +154,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -180,11 +183,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -211,12 +215,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0,
-          storage_strategy: :same_as_premises
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0,
+            storage_strategy: :same_as_premises
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -241,12 +246,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
         inferred_graph = 99
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0,
-          inferred_graph: inferred_graph
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0,
+            inferred_graph: inferred_graph
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -271,12 +277,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0,
-          storage_strategy: :per_graph_cf
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0,
+            storage_strategy: :per_graph_cf
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -308,17 +315,19 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
         # Both graphs should derive Student->Person and Professor->Person
         # This proves TBox from graph 0 is used
-        assert stats.total_derived >= 4  # At least 2 per graph
+        # At least 2 per graph
+        assert stats.total_derived >= 4
       after
         cleanup_db(db, path)
       end
@@ -338,18 +347,20 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, complex_tbox, 0)
         insert_facts(db, [{ex_iri("x"), rdf_type(), ex_iri("A")}], 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
         # Should derive x type B, x type C (transitive through A->B->C)
         # Verify by counting derived quads in graph 1
         derived_1 = count_derived_in_graph(db, 1)
-        assert derived_1 >= 2  # At least A->B and A->C
+        # At least A->B and A->C
+        assert derived_1 >= 2
       after
         cleanup_db(db, path)
       end
@@ -362,11 +373,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, tbox_facts(), 0)
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -389,11 +401,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0  # All graphs use TBox from graph 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            # All graphs use TBox from graph 0
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -439,11 +453,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts, 1)
         insert_facts(db, graph2_facts, 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -466,12 +481,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
         inferred_graph = 99
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0,
-          inferred_graph: inferred_graph
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0,
+            inferred_graph: inferred_graph
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -498,12 +514,13 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
           2 => GraphReasoningConfig.new!(graph_id: 2, scope: :local)
         }
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :hybrid,
-          graph_configs: graph_configs,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :hybrid,
+            graph_configs: graph_configs,
+            tbox_graph: 0
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -528,11 +545,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -558,11 +576,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -589,11 +608,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global,
+            tbox_graph: 0
+          )
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -623,10 +643,11 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
       {db, path} = create_test_db()
 
       try do
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :global
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :global
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -645,10 +666,12 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
       try do
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :none,  # No reasoning
-          scope: :global
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            # No reasoning
+            profile: :none,
+            scope: :global
+          )
 
         {:ok, stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
@@ -663,10 +686,11 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
       try do
         # Invalid scope
-        {:error, _reason} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :invalid
-        )
+        {:error, _reason} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :invalid
+          )
 
         # Should return error when trying to materialize
         result = GraphScopedReasoner.materialize_all(db, config: :invalid_config)

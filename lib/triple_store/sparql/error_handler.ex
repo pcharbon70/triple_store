@@ -17,32 +17,30 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   defmodule SyntaxError do
     defexception [:message, :position, :query]
 
-    @impl true
     def exception(message) when is_binary(message) do
       %__MODULE__{message: message}
     end
 
-    @impl true
-    def exception(message, args) when is_binary(message) and is_list(args) do
-      position = Keyword.get(args, :position)
-      query = Keyword.get(args, :query)
-
-      %__MODULE__{
-        message: message,
-        position: position,
-        query: query
-      }
-    end
-
-    @impl true
     def exception(args) when is_list(args) do
       message = Keyword.get(args, :message)
       position = Keyword.get(args, :position)
       query = Keyword.get(args, :query)
 
       msg = message || "SPARQL syntax error"
+
       %__MODULE__{
         message: msg,
+        position: position,
+        query: query
+      }
+    end
+
+    def exception(message, args) when is_binary(message) and is_list(args) do
+      position = Keyword.get(args, :position)
+      query = Keyword.get(args, :query)
+
+      %__MODULE__{
+        message: message,
         position: position,
         query: query
       }
@@ -52,32 +50,30 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   defmodule ExecutionError do
     defexception [:message, :step, :algebra]
 
-    @impl true
     def exception(message) when is_binary(message) do
       %__MODULE__{message: message}
     end
 
-    @impl true
-    def exception(message, args) when is_binary(message) and is_list(args) do
-      step = Keyword.get(args, :step)
-      algebra = Keyword.get(args, :algebra)
-
-      %__MODULE__{
-        message: message,
-        step: step,
-        algebra: algebra
-      }
-    end
-
-    @impl true
     def exception(args) when is_list(args) do
       message = Keyword.get(args, :message)
       step = Keyword.get(args, :step)
       algebra = Keyword.get(args, :algebra)
 
       msg = message || "Query execution error"
+
       %__MODULE__{
         message: msg,
+        step: step,
+        algebra: algebra
+      }
+    end
+
+    def exception(message, args) when is_binary(message) and is_list(args) do
+      step = Keyword.get(args, :step)
+      algebra = Keyword.get(args, :algebra)
+
+      %__MODULE__{
+        message: message,
         step: step,
         algebra: algebra
       }
@@ -87,32 +83,30 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   defmodule TimeoutError do
     defexception [:message, :timeout_ms, :query]
 
-    @impl true
     def exception(message) when is_binary(message) do
       %__MODULE__{message: message}
     end
 
-    @impl true
-    def exception(message, args) when is_binary(message) and is_list(args) do
-      timeout_ms = Keyword.get(args, :timeout_ms)
-      query = Keyword.get(args, :query)
-
-      %__MODULE__{
-        message: message,
-        timeout_ms: timeout_ms,
-        query: query
-      }
-    end
-
-    @impl true
     def exception(args) when is_list(args) do
       message = Keyword.get(args, :message)
       timeout_ms = Keyword.get(args, :timeout_ms)
       query = Keyword.get(args, :query)
 
       msg = message || "Query execution timeout"
+
       %__MODULE__{
         message: msg,
+        timeout_ms: timeout_ms,
+        query: query
+      }
+    end
+
+    def exception(message, args) when is_binary(message) and is_list(args) do
+      timeout_ms = Keyword.get(args, :timeout_ms)
+      query = Keyword.get(args, :query)
+
+      %__MODULE__{
+        message: message,
         timeout_ms: timeout_ms,
         query: query
       }
@@ -122,32 +116,30 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   defmodule ValidationError do
     defexception [:message, :field, :value]
 
-    @impl true
     def exception(message) when is_binary(message) do
       %__MODULE__{message: message}
     end
 
-    @impl true
-    def exception(message, args) when is_binary(message) and is_list(args) do
-      field = Keyword.get(args, :field)
-      value = Keyword.get(args, :value)
-
-      %__MODULE__{
-        message: message,
-        field: field,
-        value: value
-      }
-    end
-
-    @impl true
     def exception(args) when is_list(args) do
       message = Keyword.get(args, :message)
       field = Keyword.get(args, :field)
       value = Keyword.get(args, :value)
 
       msg = message || "Validation error"
+
       %__MODULE__{
         message: msg,
+        field: field,
+        value: value
+      }
+    end
+
+    def exception(message, args) when is_binary(message) and is_list(args) do
+      field = Keyword.get(args, :field)
+      value = Keyword.get(args, :value)
+
+      %__MODULE__{
+        message: message,
         field: field,
         value: value
       }
@@ -157,32 +149,30 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   defmodule ResourceError do
     defexception [:message, :resource, :operation]
 
-    @impl true
     def exception(message) when is_binary(message) do
       %__MODULE__{message: message}
     end
 
-    @impl true
-    def exception(message, args) when is_binary(message) and is_list(args) do
-      resource = Keyword.get(args, :resource)
-      operation = Keyword.get(args, :operation)
-
-      %__MODULE__{
-        message: message,
-        resource: resource,
-        operation: operation
-      }
-    end
-
-    @impl true
     def exception(args) when is_list(args) do
       message = Keyword.get(args, :message)
       resource = Keyword.get(args, :resource)
       operation = Keyword.get(args, :operation)
 
       msg = message || "Resource error"
+
       %__MODULE__{
         message: msg,
+        resource: resource,
+        operation: operation
+      }
+    end
+
+    def exception(message, args) when is_binary(message) and is_list(args) do
+      resource = Keyword.get(args, :resource)
+      operation = Keyword.get(args, :operation)
+
+      %__MODULE__{
+        message: message,
         resource: resource,
         operation: operation
       }

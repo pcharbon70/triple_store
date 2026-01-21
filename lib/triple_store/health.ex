@@ -638,16 +638,14 @@ defmodule TripleStore.Health do
 
   """
   @spec graph_health(store(), non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
-  def graph_health(%{db: db} = store, graph_id, opts \\ [])
+  def graph_health(%{db: db}, graph_id, opts \\ [])
       when is_integer(graph_id) and graph_id >= 0 do
-
     include_query_stats = Keyword.get(opts, :include_query_stats, false)
     include_predicate_counts = Keyword.get(opts, :include_predicate_counts, false)
     size_threshold = Keyword.get(opts, :size_alert_threshold, 10_000_000)
 
     with {:ok, quad_count} <- Statistics.graph_quad_count(db, graph_id),
          {:ok, summary} <- Statistics.graph_summary(db, graph_id) do
-
       # Determine status based on quad count and summary
       status = determine_graph_health_status(quad_count, summary, size_threshold)
 
@@ -733,9 +731,6 @@ defmodule TripleStore.Health do
           |> filter_empty_graphs(include_empty)
 
         {:ok, graphs}
-
-      {:error, _reason} ->
-        {:ok, %{}}
     end
   end
 
@@ -767,11 +762,11 @@ defmodule TripleStore.Health do
 
   """
   @spec graph_health_alerts(store(), keyword()) :: {:ok, [map()]}
-  def graph_health_alerts(%{db: db} = _store, opts \\ []) do
+  def graph_health_alerts(%{db: db}, opts \\ []) do
     large_threshold = Keyword.get(opts, :large_graph_threshold, 1_000_000)
     empty_threshold = Keyword.get(opts, :empty_threshold, 0)
 
-    alerts = []
+    _alerts = []
 
     with {:ok, histograms} <- Statistics.build_per_graph_histograms(db, []) do
       alerts =
@@ -919,7 +914,8 @@ defmodule TripleStore.Health do
         # Extract graph-specific query stats if available
         %{
           query_count: Map.get(metrics, :graph_queries, %{}) |> Map.get(graph_id, 0),
-          total_duration_ms: Map.get(metrics, :graph_query_durations, %{}) |> Map.get(graph_id, 0),
+          total_duration_ms:
+            Map.get(metrics, :graph_query_durations, %{}) |> Map.get(graph_id, 0),
           last_query_at: Map.get(metrics, :graph_last_query, %{}) |> Map.get(graph_id, nil)
         }
 

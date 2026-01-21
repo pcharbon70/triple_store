@@ -33,7 +33,7 @@ defmodule TripleStore.SPARQL.QueryLoggerTest do
       query = "SELECT * WHERE { ?s ?p ?o }"
 
       assert {:ok, query_id} =
-        QueryLogger.log_start(query, user: "alice", origin: "api")
+               QueryLogger.log_start(query, user: "alice", origin: "api")
 
       entry = QueryLogger.get_entry(query_id)
 
@@ -127,7 +127,7 @@ defmodule TripleStore.SPARQL.QueryLoggerTest do
       query = "SELECT * WHERE { ?s ?p ?o }"
 
       assert {:ok, query_id} =
-        QueryLogger.log_start(query, user: "bob", origin: "cli")
+               QueryLogger.log_start(query, user: "bob", origin: "cli")
 
       QueryLogger.log_complete(query_id, duration_ms: 50, result_count: 10)
 

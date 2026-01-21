@@ -38,7 +38,6 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   alias TripleStore.Reasoner.BackwardTraceQuad
   alias TripleStore.Reasoner.ForwardRederiveQuad
   alias TripleStore.Reasoner.Rule
-  alias TripleStore.Reasoner.DerivedStore
 
   # ============================================================================
   # Types
@@ -283,6 +282,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
 
   defp emit_start_telemetry(quads, rules) do
     require Logger
+
     Logger.debug(
       "Starting quad deletion with reasoning: #{length(quads)} quads, #{length(rules)} rules"
     )
@@ -290,11 +290,15 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
 
   defp emit_backward_trace_telemetry(potentially_invalid) do
     require Logger
-    Logger.debug("Backward trace found #{MapSet.size(potentially_invalid)} potentially invalid quads")
+
+    Logger.debug(
+      "Backward trace found #{MapSet.size(potentially_invalid)} potentially invalid quads"
+    )
   end
 
   defp emit_forward_rederive_telemetry(rederive_result) do
     require Logger
+
     Logger.debug(
       "Forward re-derivation: #{rederive_result.rederivation_count} kept, #{MapSet.size(rederive_result.delete)} deleted"
     )
@@ -302,6 +306,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
 
   defp emit_stop_telemetry(stats, _duration_ms) do
     require Logger
+
     Logger.debug(
       "Quad deletion completed: explicit=#{stats.explicit_deleted}, derived_deleted=#{stats.derived_deleted}, derived_kept=#{stats.derived_kept}, duration=#{stats.duration_ms}ms"
     )

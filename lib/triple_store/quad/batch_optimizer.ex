@@ -110,8 +110,11 @@ defmodule TripleStore.Quad.BatchOptimizer do
     max_size = Keyword.get(opts, :max_size, @max_quads_per_batch)
     preserve_order = Keyword.get(opts, :preserve_order, false)
 
-    quads_per_batch = normalize_batch_size(target_size, @min_quads_per_batch, @max_quads_per_batch)
-    max_quads_per_batch = normalize_batch_size(max_size, @min_quads_per_batch, @max_quads_per_batch)
+    quads_per_batch =
+      normalize_batch_size(target_size, @min_quads_per_batch, @max_quads_per_batch)
+
+    max_quads_per_batch =
+      normalize_batch_size(max_size, @min_quads_per_batch, @max_quads_per_batch)
 
     if preserve_order do
       # Simple chunking preserving order
@@ -207,7 +210,8 @@ defmodule TripleStore.Quad.BatchOptimizer do
 
   """
   @spec calculate_optimal_batch_size(non_neg_integer()) :: pos_integer()
-  def calculate_optimal_batch_size(total_quads) when is_integer(total_quads) and total_quads > 0 do
+  def calculate_optimal_batch_size(total_quads)
+      when is_integer(total_quads) and total_quads > 0 do
     # Calculate target batch size to get ~10-20 batches total
     target_batches = 20
     target_size = ceil(total_quads / target_batches)

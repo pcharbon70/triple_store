@@ -87,7 +87,7 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
 
       operations =
         for i <- 1..count do
-          {:put, :spo, <<i::64-big>>, <<(i + 1)::64-big, (i + 2)::64-big>>}
+          {:put, :spo, <<i::64-big>>, <<i + 1::64-big, i + 2::64-big>>}
         end
 
       :ok = ErlangAdapter.mixed_batch(adapter, operations, false)
@@ -95,7 +95,7 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
       # Verify all data is accessible
       for i <- 1..count do
         {:ok, value} = ErlangAdapter.get(adapter, :spo, <<i::64-big>>)
-        assert value == <<(i + 1)::64-big, (i + 2)::64-big>>
+        assert value == <<i + 1::64-big, i + 2::64-big>>
       end
     end
   end
@@ -119,7 +119,7 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
               {:ok, _value} = ErlangAdapter.get(adapter, :spo, <<j::64-big>>)
             end
 
-          :ok
+            :ok
           end)
         end
 
@@ -138,8 +138,8 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
 
             operations =
               for i <- 1..100 do
-                key = <<(base + i)::64-big>>
-                value = <<(base + i)::64-big>>
+                key = <<base + i::64-big>>
+                value = <<base + i::64-big>>
                 {:put, :spo, key, value}
               end
 
@@ -331,9 +331,11 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
 
       # Fold with upper bound at key 50
       upper_bound = <<50::64-big>>
-      count = ErlangAdapter.fold(adapter, :spo, <<0::64>>, 0, fn {_k, _v}, acc -> acc + 1 end,
-        iterate_upper_bound: upper_bound
-      )
+
+      count =
+        ErlangAdapter.fold(adapter, :spo, <<0::64>>, 0, fn {_k, _v}, acc -> acc + 1 end,
+          iterate_upper_bound: upper_bound
+        )
 
       # Should only iterate up to (but not including) upper bound
       assert count < 100
@@ -357,10 +359,15 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
 
       # Fold with snapshot should only see original 10 items
       count =
-        ErlangAdapter.fold(adapter, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
-          acc + 1
-        end,
-        snapshot: snapshot
+        ErlangAdapter.fold(
+          adapter,
+          :spo,
+          <<1::64-big>>,
+          0,
+          fn {_k, _v}, acc ->
+            acc + 1
+          end,
+          snapshot: snapshot
         )
 
       # Note: Snapshot isolation may vary based on erlang-rocksdb implementation

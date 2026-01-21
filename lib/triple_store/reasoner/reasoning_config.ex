@@ -445,7 +445,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   """
   @spec graph_config_count(t()) :: non_neg_integer()
   def graph_config_count(%__MODULE__{graph_configs: nil}), do: 0
-  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs), do: map_size(configs)
+
+  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs),
+    do: map_size(configs)
 
   @doc """
   Returns the TBox graph ID if configured.
@@ -471,7 +473,10 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   """
   @spec separate_inferred_graph?(t()) :: boolean()
   def separate_inferred_graph?(%__MODULE__{inferred_graph: :separate}), do: true
-  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id), do: true
+
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id),
+    do: true
+
   def separate_inferred_graph?(%__MODULE__{}), do: false
 
   @doc """
@@ -493,11 +498,17 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   Adds a graph configuration to the reasoning config.
   """
   @spec put_graph_config(t(), GraphReasoningConfig.t()) :: t()
-  def put_graph_config(%__MODULE__{graph_configs: nil} = config, %GraphReasoningConfig{graph_id: graph_id} = graph_config) do
+  def put_graph_config(
+        %__MODULE__{graph_configs: nil} = config,
+        %GraphReasoningConfig{graph_id: graph_id} = graph_config
+      ) do
     %{config | graph_configs: %{graph_id => graph_config}}
   end
 
-  def put_graph_config(%__MODULE__{} = config, %GraphReasoningConfig{graph_id: graph_id} = graph_config) do
+  def put_graph_config(
+        %__MODULE__{} = config,
+        %GraphReasoningConfig{graph_id: graph_id} = graph_config
+      ) do
     updated_configs = Map.put(config.graph_configs, graph_id, graph_config)
     %{config | graph_configs: updated_configs}
   end

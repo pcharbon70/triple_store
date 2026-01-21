@@ -18,17 +18,19 @@ defmodule TripleStore.SPARQL.QueryCache do
 
   @type cache_key :: {binary(), non_neg_integer()}
   @type cache_entry :: %{
-    result: term(),
-    inserted_at: integer(),
-    access_count: non_neg_integer(),
-    last_accessed: integer(),
-    size_bytes: non_neg_integer()
-  }
+          result: term(),
+          inserted_at: integer(),
+          access_count: non_neg_integer(),
+          last_accessed: integer(),
+          size_bytes: non_neg_integer()
+        }
 
   @table_name :triple_store_query_cache
   @max_cache_size 1000
-  @max_cache_bytes 100_000_000  # 100MB
-  @default_ttl 300_000  # 5 minutes
+  # 100MB
+  @max_cache_bytes 100_000_000
+  # 5 minutes
+  @default_ttl 300_000
 
   # Client API
 
@@ -51,10 +53,12 @@ defmodule TripleStore.SPARQL.QueryCache do
         # Check TTL
         if entry_valid?(entry) do
           # Update access stats
-          new_entry = %{entry |
-            access_count: entry.access_count + 1,
-            last_accessed: System.monotonic_time(:millisecond)
+          new_entry = %{
+            entry
+            | access_count: entry.access_count + 1,
+              last_accessed: System.monotonic_time(:millisecond)
           }
+
           :ets.insert(@table_name, {key, new_entry})
           {:ok, entry.result}
         else
@@ -126,25 +130,27 @@ defmodule TripleStore.SPARQL.QueryCache do
     max_size = Keyword.get(opts, :max_size, @max_cache_size)
     max_bytes = Keyword.get(opts, :max_bytes, @max_cache_bytes)
 
-    table = :ets.new(@table_name, [
-      :named_table,
-      :set,
-      :public,
-      read_concurrency: true,
-      write_concurrency: true
-    ])
+    table =
+      :ets.new(@table_name, [
+        :named_table,
+        :set,
+        :public,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
 
     # Start periodic cleanup
     Process.send_after(self(), :cleanup, 60_000)
 
-    {:ok, %{
-      table: table,
-      max_size: max_size,
-      max_bytes: max_bytes,
-      hit_count: 0,
-      miss_count: 0,
-      eviction_count: 0
-    }}
+    {:ok,
+     %{
+       table: table,
+       max_size: max_size,
+       max_bytes: max_bytes,
+       hit_count: 0,
+       miss_count: 0,
+       eviction_count: 0
+     }}
   end
 
   @impl true
@@ -174,8 +180,8 @@ defmodule TripleStore.SPARQL.QueryCache do
     entries = :ets.tab2list(@table_name)
 
     Enum.each(entries, fn
-      {{_hash, ^db_version}, _entry} ->
-        :ets.delete(@table_name, {_hash, db_version})
+      {{hash, ^db_version}, _entry} ->
+        :ets.delete(@table_name, {hash, db_version})
 
       _ ->
         :ok
@@ -194,9 +200,14 @@ defmodule TripleStore.SPARQL.QueryCache do
   def handle_call(:stats, _from, state) do
     entries_count = :ets.info(@table_name, :size)
 
-    total_bytes = :ets.foldl(fn {_key, entry}, acc ->
-      acc + entry.size_bytes
-    end, 0, @table_name)
+    total_bytes =
+      :ets.foldl(
+        fn {_key, entry}, acc ->
+          acc + entry.size_bytes
+        end,
+        0,
+        @table_name
+      )
 
     stats = %{
       entries: entries_count,
@@ -255,9 +266,14 @@ defmodule TripleStore.SPARQL.QueryCache do
         evict_lru(state, new_entry_size)
 
       true ->
-        current_bytes = :ets.foldl(fn {_key, entry}, acc ->
-          acc + entry.size_bytes
-        end, 0, @table_name)
+        current_bytes =
+          :ets.foldl(
+            fn {_key, entry}, acc ->
+              acc + entry.size_bytes
+            end,
+            0,
+            @table_name
+          )
 
         if current_bytes + new_entry_size > state.max_bytes do
           evict_lru(state, new_entry_size)
@@ -273,9 +289,10 @@ defmodule TripleStore.SPARQL.QueryCache do
 
     if entries != [] do
       # Find entry with oldest last_accessed
-      {key, _entry} = Enum.min_by(entries, fn {_key, entry} ->
-        entry.last_accessed
-      end)
+      {key, _entry} =
+        Enum.min_by(entries, fn {_key, entry} ->
+          entry.last_accessed
+        end)
 
       :ets.delete(@table_name, key)
       %{state | eviction_count: state.eviction_count + 1}
@@ -288,17 +305,21 @@ defmodule TripleStore.SPARQL.QueryCache do
   defp estimate_size(term) when is_integer(term), do: 8
   defp estimate_size(term) when is_float(term), do: 8
   defp estimate_size(term) when is_atom(term), do: 8
+
   defp estimate_size(term) when is_list(term) do
     Enum.reduce(term, 0, fn item, acc -> acc + estimate_size(item) end) + 16
   end
+
   defp estimate_size(term) when is_map(term) do
     Enum.reduce(term, 0, fn {k, v}, acc ->
       acc + estimate_size(k) + estimate_size(v)
     end) + 32
   end
+
   defp estimate_size(_), do: 8
 
   defp calculate_hit_rate(0, _), do: 0.0
+
   defp calculate_hit_rate(hits, misses) do
     total = hits + misses
     if total > 0, do: hits / total, else: 0.0

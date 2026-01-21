@@ -34,6 +34,7 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
       catch
         :exit, _ -> :ok
       end
+
       NIF.close(db)
       File.rm_rf!(db_path)
     end)
@@ -59,7 +60,7 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
       end
 
     Enum.each(quads, fn quad -> QuadOperations.insert_quad(ctx.db, quad) end)
-    end
+  end
 
   # Helper to count quads in a graph
   defp count_quads_in_graph(ctx, graph_iri) do
@@ -281,7 +282,8 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
     test "handles invalid graph IRIs", %{ctx: ctx} do
       # Invalid IRIs are normalized to :default graph
       # Since moving from default to a named graph with no data is OK, returns 0
-      assert {:ok, 0} = UpdateExecutor.execute_move(ctx, "not a valid iri", "http://example.org/target")
+      assert {:ok, 0} =
+               UpdateExecutor.execute_move(ctx, "not a valid iri", "http://example.org/target")
     end
   end
 
@@ -314,7 +316,8 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
       # Performance check: should complete in reasonable time
       # (this is more of a smoke test than strict performance requirement)
       # Threshold increased to account for CI/variable system load
-      assert duration < 30_000_000  # Less than 30 seconds for 100 quads
+      # Less than 30 seconds for 100 quads
+      assert duration < 30_000_000
     end
   end
 
@@ -344,10 +347,11 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
         end
 
       # At least one should succeed (the first one from graph1 to graph2)
-      successes = Enum.count(results, fn
-        {:ok, _source, _target, _count} -> true
-        _ -> false
-      end)
+      successes =
+        Enum.count(results, fn
+          {:ok, _source, _target, _count} -> true
+          _ -> false
+        end)
 
       assert successes > 0
     end
@@ -364,7 +368,8 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
 
       # Move empty graph directly
       assert {:ok, 0} = UpdateExecutor.execute_move(ctx, source_graph, target_graph)
-      assert {:ok, 0} = UpdateExecutor.execute_move(ctx, source_graph, target_graph)  # Second call also OK
+      # Second call also OK
+      assert {:ok, 0} = UpdateExecutor.execute_move(ctx, source_graph, target_graph)
     end
 
     test "moving to same graph returns ok (no-op) consistently", %{ctx: ctx} do
@@ -373,7 +378,8 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
       # Execute MOVE directly
       # Source equals target returns ok with 0 count (no-op) consistently
       assert {:ok, 0} = UpdateExecutor.execute_move(ctx, graph_iri, graph_iri)
-      assert {:ok, 0} = UpdateExecutor.execute_move(ctx, graph_iri, graph_iri)  # Consistent
+      # Consistent
+      assert {:ok, 0} = UpdateExecutor.execute_move(ctx, graph_iri, graph_iri)
     end
   end
 end

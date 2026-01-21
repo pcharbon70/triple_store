@@ -857,11 +857,14 @@ defmodule TripleStore.Reasoner.Rule do
   end
 
   defp check_pattern_structure(errors, %__MODULE__{body: body, head: head}) do
-    all_patterns = [head | Enum.filter(body, fn
-      {:pattern, _} -> true
-      {:quad_pattern, _} -> true
-      _ -> false
-    end)]
+    all_patterns = [
+      head
+      | Enum.filter(body, fn
+          {:pattern, _} -> true
+          {:quad_pattern, _} -> true
+          _ -> false
+        end)
+    ]
 
     invalid =
       Enum.any?(all_patterns, fn
@@ -1184,7 +1187,8 @@ defmodule TripleStore.Reasoner.Rule do
       iex> Rule.instantiate_head(rule, binding)
       {{:bound, 1}, {:iri, "s"}, {:iri, "p"}, {:iri, "o"}}
   """
-  @spec instantiate_head(t(), binding()) :: {term(), term(), term()} | {term(), term(), term(), term()}
+  @spec instantiate_head(t(), binding()) ::
+          {term(), term(), term()} | {term(), term(), term(), term()}
   def instantiate_head(%__MODULE__{head: {:pattern, terms}}, binding) do
     terms
     |> Enum.map(&substitute(&1, binding))
@@ -1294,11 +1298,12 @@ defmodule TripleStore.Reasoner.Rule do
 
   @doc false
   def validate_quad_body!(body) when is_list(body) do
-    patterns = Enum.filter(body, fn
-      {:pattern, _} -> true
-      {:quad_pattern, _} -> true
-      _ -> false
-    end)
+    patterns =
+      Enum.filter(body, fn
+        {:pattern, _} -> true
+        {:quad_pattern, _} -> true
+        _ -> false
+      end)
 
     has_triple = Enum.any?(patterns, &triple_pattern?/1)
     has_quad = Enum.any?(patterns, &quad_pattern?/1)
@@ -1363,27 +1368,10 @@ defmodule TripleStore.Reasoner.Rule do
     case p_pat do
       {:var, _name} -> true
       :var -> true
-      {_, _} -> true  # Any keyword list item (var, iri, literal)
-      _ -> true  # Conservative: assume match
+      # Any keyword list item (var, iri, literal)
+      {_, _} -> true
+      # Conservative: assume match
+      _ -> true
     end
-  end
-
-  @doc """
-  Returns the body patterns of a rule (triples patterns only, no conditions).
-
-  ## Parameters
-
-  - `rule` - The reasoning rule
-
-  ## Returns
-
-  - List of `{:pattern, [...]}` patterns from the rule body
-  """
-  @spec body_patterns(t()) :: [pattern()]
-  def body_patterns(%__MODULE__{body: body}) do
-    Enum.filter(body, fn
-      {:pattern, _} -> true
-      _ -> false
-    end)
   end
 end

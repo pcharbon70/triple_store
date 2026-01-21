@@ -136,7 +136,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @type pattern :: {pattern_element(), pattern_element(), pattern_element()}
 
   @typedoc "Quad pattern element for lookups"
-  @type quad_pattern :: {pattern_element(), pattern_element(), pattern_element(), pattern_element()}
+  @type quad_pattern ::
+          {pattern_element(), pattern_element(), pattern_element(), pattern_element()}
 
   @typedoc "Quad pattern with graph binding"
   @type graph_scoped_pattern ::
@@ -434,7 +435,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
       {:ok, 523} = DerivedStore.clear_graph_quads(db, 1)
   """
-  @spec clear_graph_quads(db_ref(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec clear_graph_quads(db_ref(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def clear_graph_quads(db, graph_id) do
     # Create prefix for this graph (graph is first component of GSPO key)
     prefix = <<graph_id::64-big>>
@@ -468,7 +470,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
   - `{:ok, count}` with the count
   - `{:error, reason}` on failure
   """
-  @spec count_graph_quads(db_ref(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec count_graph_quads(db_ref(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def count_graph_quads(db, graph_id) do
     prefix = <<graph_id::64-big>>
     count = NIF.fold(db, @derived_cf, prefix, 0, fn {_key, _value}, acc -> acc + 1 end)
@@ -608,6 +611,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
     results =
       NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
         triple = Index.decode_spo_key(key)
+
         if triple_matches_pattern?(triple, pattern) do
           [triple | acc]
         else

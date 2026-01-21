@@ -260,7 +260,8 @@ defmodule TripleStore.Backend.RocksDB.Phase3ConfigurationTest do
       # Should have size amplification threshold
       assert Keyword.has_key?(opts, :compaction_options_universal_size_amp_percent)
       size_amp = Keyword.get(opts, :compaction_options_universal_size_amp_percent)
-      assert size_amp >= 100  # Should be close to ideal size
+      # Should be close to ideal size
+      assert size_amp >= 100
 
       # Should have target file size
       assert Keyword.has_key?(opts, :target_file_size_base)
@@ -340,7 +341,8 @@ defmodule TripleStore.Backend.RocksDB.Phase3ConfigurationTest do
     test "ColumnFamilyConfig.cf_descriptors returns all 7 CFs" do
       descriptors = ColumnFamilyConfig.cf_descriptors()
 
-      assert length(descriptors) == 8  # 7 CFs + default
+      # 7 CFs + default
+      assert length(descriptors) == 8
 
       cf_names = Enum.map(descriptors, fn {name, _opts} -> name end)
       assert "default" in cf_names

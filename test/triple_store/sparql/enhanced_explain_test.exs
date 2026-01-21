@@ -17,9 +17,11 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
   describe "explain_detailed/2" do
     test "returns detailed explanation with cost breakdown" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -28,9 +30,9 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "includes transformation tracking" do
-      algebra = {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
-        {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}
-      }
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
+         {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -38,9 +40,11 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "includes recommended plan" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -50,14 +54,17 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "formats output as string when format: :string" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
-      {:explain, details} = Optimizer.explain_detailed(algebra,
-        stats: @sample_stats,
-        format: :string
-      )
+      {:explain, details} =
+        Optimizer.explain_detailed(algebra,
+          stats: @sample_stats,
+          format: :string
+        )
 
       assert is_binary(details)
       assert String.contains?(details, "Query Execution Plan")
@@ -65,9 +72,11 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "returns map by default" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -78,9 +87,11 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
   describe "cost breakdown" do
     test "calculates cost for simple BGP" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -88,9 +99,9 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "calculates cost for filter operation" do
-      algebra = {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
-        {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}
-      }
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
+         {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -99,10 +110,9 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "calculates cost for join operation" do
-      algebra = {:join,
-        {:bgp, [{:triple, {:variable, "s"}, 10, {:variable, "o"}}]},
-        {:bgp, [{:triple, {:variable, "s"}, 11, {:variable, "p"}}]}
-      }
+      algebra =
+        {:join, {:bgp, [{:triple, {:variable, "s"}, 10, {:variable, "o"}}]},
+         {:bgp, [{:triple, {:variable, "s"}, 11, {:variable, "p"}}]}}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -113,9 +123,9 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
   describe "transformation tracking" do
     test "detects filter push-down opportunity" do
-      algebra = {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
-        {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}
-      }
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
+         {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -123,10 +133,12 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "detects BGP reordering for multi-pattern BGPs" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}},
-        {:triple, {:variable, "s"}, 11, {:variable, "p"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}},
+           {:triple, {:variable, "s"}, 11, {:variable, "p"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -136,9 +148,11 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
   describe "recommended plan" do
     test "recommends standard join for simple queries" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -147,9 +161,10 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
     test "recommends leapfrog for complex queries" do
       # Create a BGP with 5+ patterns (threshold is > 4)
-      patterns = for i <- 1..5 do
-        {:triple, {:variable, "s"}, i + 10, {:variable, "o"}}
-      end
+      patterns =
+        for i <- 1..5 do
+          {:triple, {:variable, "s"}, i + 10, {:variable, "o"}}
+        end
 
       algebra = {:bgp, patterns}
 
@@ -159,9 +174,9 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
     end
 
     test "includes execution steps" do
-      algebra = {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
-        {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}
-      }
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, 5}},
+         {:bgp, [{:triple, {:variable, "x"}, 10, {:variable, "o"}}]}}
 
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
@@ -172,14 +187,17 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
 
   describe "string format output" do
     test "includes all major sections" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 10, {:variable, "o"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 10, {:variable, "o"}}
+         ]}
 
-      {:explain, output} = Optimizer.explain_detailed(algebra,
-        stats: @sample_stats,
-        format: :string
-      )
+      {:explain, output} =
+        Optimizer.explain_detailed(algebra,
+          stats: @sample_stats,
+          format: :string
+        )
 
       assert String.contains?(output, "Query Execution Plan")
       assert String.contains?(output, "Recommended Strategy")

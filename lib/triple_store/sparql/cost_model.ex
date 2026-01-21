@@ -145,8 +145,10 @@ defmodule TripleStore.SPARQL.CostModel do
 
   # Bounds checking for cost calculations
   # Prevents integer overflow and incorrect cost estimates
-  @max_safe_cardinality 1_000_000_000_000  # 1 trillion
-  @max_cost 1_000_000_000_000_000  # 10^15 (quadrillion)
+  # 1 trillion
+  @max_safe_cardinality 1_000_000_000_000
+  # 10^15 (quadrillion)
+  @max_cost 1_000_000_000_000_000
 
   # ===========================================================================
   # Public API - Configuration (3.3.1)
@@ -257,7 +259,9 @@ defmodule TripleStore.SPARQL.CostModel do
 
   # Validates that a value is a positive integer
   defp validate_positive_integer(value) when is_integer(value) and value > 0, do: :ok
-  defp validate_positive_integer(_value), do: {:error, {:invalid_weight, :must_be_positive_integer}}
+
+  defp validate_positive_integer(_value),
+    do: {:error, {:invalid_weight, :must_be_positive_integer}}
 
   @doc """
   Sets the cost model weights at runtime.
@@ -654,7 +658,7 @@ defmodule TripleStore.SPARQL.CostModel do
   def index_scan_cost(:full_scan, estimated_results, stats, pattern_type) do
     # Full scan: no seek advantage, read everything
     # Use pattern-appropriate count key
-    count_key =
+    _count_key =
       case pattern_type do
         :quad -> :quad_count
         :triple -> :triple_count

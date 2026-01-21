@@ -87,7 +87,9 @@ defmodule TripleStore.SPARQL.ValidationTest do
       assert :ok = Validation.validate_graph_term({:named_node, graph_iri})
 
       blocked_iri = "file:///etc/passwd"
-      assert {:error, :blocked_scheme} = Validation.validate_graph_term({:named_node, blocked_iri})
+
+      assert {:error, :blocked_scheme} =
+               Validation.validate_graph_term({:named_node, blocked_iri})
     end
 
     test "accepts blank node graph terms" do
@@ -96,7 +98,9 @@ defmodule TripleStore.SPARQL.ValidationTest do
     end
 
     test "rejects invalid graph terms" do
-      assert {:error, :invalid_graph_term} = Validation.validate_graph_term({:literal, :simple, "x"})
+      assert {:error, :invalid_graph_term} =
+               Validation.validate_graph_term({:literal, :simple, "x"})
+
       assert {:error, :invalid_graph_term} = Validation.validate_graph_term(%{})
     end
   end
@@ -139,7 +143,12 @@ defmodule TripleStore.SPARQL.ValidationTest do
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
       # Emit validation failure telemetry
-      assert :ok = Validation.emit_validation_telemetry(:path_traversal_detected, "suspicious_iri", %{})
+      assert :ok =
+               Validation.emit_validation_telemetry(
+                 :path_traversal_detected,
+                 "suspicious_iri",
+                 %{}
+               )
 
       # Give telemetry time to process
       Process.sleep(10)

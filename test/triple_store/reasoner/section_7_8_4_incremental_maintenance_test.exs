@@ -50,9 +50,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
   describe "add_with_reasoning - graph-local addition" do
     test "derives facts within target graph only" do
       # Set up TBox in graph 0
-      existing = MapSet.new([
-        quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       # Add data to graph 1
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -75,18 +76,17 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "stores derived quads in same graph" do
       # Set up class hierarchy in graph 1
-      existing = MapSet.new([
-        quad(1, iri("GradStudent"), rdfs_subClassOf(), iri("Student")),
-        quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("GradStudent"), rdfs_subClassOf(), iri("Student")),
+          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       new_quads = [quad(1, iri("bob"), rdf_type(), iri("GradStudent"))]
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # All derived facts should have graph_id = 1
       # Should have: original (GradStudent) + explicit (bob) + 2 derived
@@ -98,9 +98,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "uses graph-local TBox when configured" do
       # TBox in graph 0
-      existing = MapSet.new([
-        quad(0, iri("Employee"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Employee"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       # Data in graph 1 using shared TBox
       new_quads = [quad(1, iri("charlie"), rdf_type(), iri("Employee"))]
@@ -118,17 +119,16 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     end
 
     test "returns per-graph derivation counts" do
-      existing = MapSet.new([
-        quad(1, iri("Teacher"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Teacher"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       new_quads = [quad(1, iri("diana"), rdf_type(), iri("Teacher"))]
       rules = [Rules.cax_sco()]
 
       {:ok, _all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       assert stats.explicit_added == 1
       assert is_integer(stats.derived_count)
@@ -137,19 +137,18 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "handles graph_id option correctly" do
       # Same schema in different graphs
-      existing = MapSet.new([
-        quad(1, iri("Dog"), rdfs_subClassOf(), iri("Animal")),
-        quad(2, iri("Dog"), rdfs_subClassOf(), iri("Animal"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Dog"), rdfs_subClassOf(), iri("Animal")),
+          quad(2, iri("Dog"), rdfs_subClassOf(), iri("Animal"))
+        ])
 
       # Add to graph 1
       new_quads = [quad(1, iri("fido"), rdf_type(), iri("Dog"))]
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, _stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # Derived in graph 1 only
       assert MapSet.member?(all_facts, quad(1, iri("fido"), rdf_type(), iri("Animal")))
@@ -164,19 +163,21 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
   describe "delete_with_reasoning - graph-local deletion concepts" do
     test "graph-local deletion affects only target graph" do
       # Setup: Same hierarchy in two graphs
-      existing = MapSet.new([
-        quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
-        quad(2, iri("Student"), rdfs_subClassOf(), iri("Person")),
-        # Data in both graphs
-        quad(1, iri("eve"), rdf_type(), iri("Student")),
-        quad(2, iri("eve"), rdf_type(), iri("Student"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
+          quad(2, iri("Student"), rdfs_subClassOf(), iri("Person")),
+          # Data in both graphs
+          quad(1, iri("eve"), rdf_type(), iri("Student")),
+          quad(2, iri("eve"), rdf_type(), iri("Student"))
+        ])
 
       # When we "delete" from graph 1 (simulated by filtering), we should
       # not affect graph 2
 
       # Simulate graph 1 state after deletion (remove eve)
-      graph1_quads = Enum.filter(existing, fn {g, _, _, _} -> g == 1 end)
+      graph1_quads =
+        Enum.filter(existing, fn {g, _, _, _} -> g == 1 end)
         |> MapSet.new()
         |> MapSet.delete(quad(1, iri("eve"), rdf_type(), iri("Student")))
 
@@ -190,17 +191,19 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "backward tracing within graph scope" do
       # Setup: 3-level hierarchy in graph 1
-      existing = MapSet.new([
-        quad(1, iri("PostDoc"), rdfs_subClassOf(), iri("Researcher")),
-        quad(1, iri("Researcher"), rdfs_subClassOf(), iri("Academic")),
-        quad(1, iri("frank"), rdf_type(), iri("PostDoc"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("PostDoc"), rdfs_subClassOf(), iri("Researcher")),
+          quad(1, iri("Researcher"), rdfs_subClassOf(), iri("Academic")),
+          quad(1, iri("frank"), rdf_type(), iri("PostDoc"))
+        ])
 
       # Derived facts that would exist after materialization
-      derived_facts = MapSet.new([
-        quad(1, iri("frank"), rdf_type(), iri("Researcher")),
-        quad(1, iri("frank"), rdf_type(), iri("Academic"))
-      ])
+      derived_facts =
+        MapSet.new([
+          quad(1, iri("frank"), rdf_type(), iri("Researcher")),
+          quad(1, iri("frank"), rdf_type(), iri("Academic"))
+        ])
 
       # When deleting base fact (frank rdf:type PostDoc), backward tracing
       # should find both derived facts as potentially invalid
@@ -216,13 +219,14 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "forward rederivation keeps facts with alternative support" do
       # Setup with alternative derivation paths
-      existing = MapSet.new([
-        quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
-        quad(1, iri("Employee"), rdfs_subClassOf(), iri("Person")),
-        # grace is both Student and Employee
-        quad(1, iri("grace"), rdf_type(), iri("Student")),
-        quad(1, iri("grace"), rdf_type(), iri("Employee"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
+          quad(1, iri("Employee"), rdfs_subClassOf(), iri("Person")),
+          # grace is both Student and Employee
+          quad(1, iri("grace"), rdf_type(), iri("Student")),
+          quad(1, iri("grace"), rdf_type(), iri("Employee"))
+        ])
 
       # Derived: grace rdf:type Person (from both paths)
       all_facts = MapSet.put(existing, quad(1, iri("grace"), rdf_type(), iri("Person")))
@@ -233,9 +237,14 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # After rederivation, grace rdf:type Person should be KEPT
       # because she's still an Employee
       # Check if there's still a path to Person
-      has_student_path = MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Student")))
-      has_employee_path = MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Employee")))
-      has_person_derivation = MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Person")))
+      has_student_path =
+        MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Student")))
+
+      has_employee_path =
+        MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Employee")))
+
+      has_person_derivation =
+        MapSet.member?(after_deletion, quad(1, iri("grace"), rdf_type(), iri("Person")))
 
       # Employee path exists, so Person derivation can be kept
       assert has_employee_path
@@ -247,17 +256,16 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Test that the statistics structure has the expected fields
       # (This tests the API contract, not the actual deletion behavior)
 
-      existing = MapSet.new([
-        quad(1, iri("Professor"), rdfs_subClassOf(), iri("Faculty"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Professor"), rdfs_subClassOf(), iri("Faculty"))
+        ])
 
       new_quads = [quad(1, iri("henry"), rdf_type(), iri("Professor"))]
       rules = [Rules.cax_sco()]
 
       {:ok, _all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # Stats should have these fields
       assert Map.has_key?(stats, :explicit_added)
@@ -268,16 +276,18 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "deletion in one graph doesn't affect other graphs" do
       # Same hierarchy in both graphs
-      existing = MapSet.new([
-        quad(1, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
-        quad(2, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
-        # Instances in both graphs
-        quad(1, iri("whiskers"), rdf_type(), iri("Cat")),
-        quad(2, iri("mittens"), rdf_type(), iri("Cat"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
+          quad(2, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
+          # Instances in both graphs
+          quad(1, iri("whiskers"), rdf_type(), iri("Cat")),
+          quad(2, iri("mittens"), rdf_type(), iri("Cat"))
+        ])
 
       # Delete from graph 1 only
-      graph1_quads = Enum.filter(existing, fn {g, _, _, _} -> g == 1 end)
+      graph1_quads =
+        Enum.filter(existing, fn {g, _, _, _} -> g == 1 end)
         |> MapSet.new()
         |> MapSet.delete(quad(1, iri("whiskers"), rdf_type(), iri("Cat")))
 
@@ -302,9 +312,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Graph 1: Data (iris rdf:type Student)
       # Derived: iris rdf:type Person (cross-graph dependency)
 
-      existing = MapSet.new([
-        quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       # Add iris to graph 1, which should derive using TBox from graph 0
       new_quads = [quad(1, iri("iris"), rdf_type(), iri("Student"))]
@@ -323,21 +334,28 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "tracks TBox usage across graphs" do
       # Multiple graphs using the same TBox
-      existing = MapSet.new([
-        quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
+        ])
 
       # Add data in multiple graphs, both using the TBox from graph 0
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts_1, _stats1} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("car"), rdf_type(), iri("Vehicle"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("car"), rdf_type(), iri("Vehicle"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
 
       {:ok, all_facts_2, _stats2} =
-        IncrementalQuad.add_quads_in_memory([quad(2, iri("bike"), rdf_type(), iri("Vehicle"))], all_facts_1, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(2, iri("bike"), rdf_type(), iri("Vehicle"))],
+          all_facts_1,
+          rules,
           graph_id: 2,
           tbox_graph_id: 0
         )
@@ -350,9 +368,11 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "handles shared TBox correctly" do
       # TBox in graph 0
       tbox_graph_id = 0
-      existing = MapSet.new([
-        quad(tbox_graph_id, iri("Mammal"), rdfs_subClassOf(), iri("Animal"))
-      ])
+
+      existing =
+        MapSet.new([
+          quad(tbox_graph_id, iri("Mammal"), rdfs_subClassOf(), iri("Animal"))
+        ])
 
       # Data in graph 1 using shared TBox
       new_quads = [quad(1, iri("dog"), rdf_type(), iri("Mammal"))]
@@ -370,9 +390,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "multiple graphs can share the same TBox" do
       # TBox in graph 0
-      existing = MapSet.new([
-        quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
+        ])
 
       # Multiple data graphs using the same TBox
       new_quads_1 = [quad(1, iri("apple"), rdf_type(), iri("Fruit"))]
@@ -401,9 +422,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # are marked for rematerialization (conceptually)
 
       # Original TBox
-      existing = MapSet.new([
-        quad(0, iri("Undergrad"), rdfs_subClassOf(), iri("Student"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Undergrad"), rdfs_subClassOf(), iri("Student"))
+        ])
 
       new_quads = [quad(1, iri("leo"), rdf_type(), iri("Undergrad"))]
       rules = [Rules.cax_sco()]
@@ -432,10 +454,11 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
   describe "add_with_reasoning - global scope addition" do
     test "derives facts across all participating graphs" do
       # Graph 0: Shared TBox
-      existing = MapSet.new([
-        quad(0, iri("Person"), rdfs_subClassOf(), iri("Agent")),
-        quad(0, iri("Organization"), rdfs_subClassOf(), iri("Agent"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Person"), rdfs_subClassOf(), iri("Agent")),
+          quad(0, iri("Organization"), rdfs_subClassOf(), iri("Agent"))
+        ])
 
       # Add mary as Person - should derive Agent from TBox
       new_quads = [quad(1, iri("mary"), rdf_type(), iri("Person"))]
@@ -454,9 +477,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "finds cross-graph inferences" do
       # Test transitive property across graphs
-      existing = MapSet.new([
-        quad(0, iri("Writer"), rdfs_subClassOf(), iri("Artist"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Writer"), rdfs_subClassOf(), iri("Artist"))
+        ])
 
       # Add novelist to graph 1
       new_quads = [quad(1, iri("novelist"), rdf_type(), iri("Writer"))]
@@ -476,9 +500,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "stores derived quads in same graph as premises" do
       # Test that derived quads follow the storage strategy
 
-      existing = MapSet.new([
-        quad(0, iri("Fish"), rdfs_subClassOf(), iri("Animal"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Fish"), rdfs_subClassOf(), iri("Animal"))
+        ])
 
       new_quads = [quad(1, iri("nemo"), rdf_type(), iri("Fish"))]
       rules = [Rules.cax_sco()]
@@ -497,9 +522,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # When TBox changes, all dependent graphs need rematerialization
 
       # Original TBox
-      existing = MapSet.new([
-        quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
+        ])
 
       # Add new TBox axiom plus data
       new_tbox_and_data = [
@@ -510,9 +536,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_tbox_and_data, existing, rules,
-          graph_id: 0
-        )
+        IncrementalQuad.add_quads_in_memory(new_tbox_and_data, existing, rules, graph_id: 0)
 
       # Should derive new facts
       assert stats.derived_count >= 1
@@ -527,21 +551,28 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
   describe "delete_with_reasoning - global scope deletion concepts" do
     test "global deletion affects all graphs using shared TBox" do
       # Shared TBox
-      existing = MapSet.new([
-        quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
+        ])
 
       # Add same data in multiple graphs
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts_1, _stats1} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("apple"), rdf_type(), iri("Fruit"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("apple"), rdf_type(), iri("Fruit"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
 
       {:ok, all_facts_2, _stats2} =
-        IncrementalQuad.add_quads_in_memory([quad(2, iri("apple"), rdf_type(), iri("Fruit"))], all_facts_1, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(2, iri("apple"), rdf_type(), iri("Fruit"))],
+          all_facts_1,
+          rules,
           graph_id: 2,
           tbox_graph_id: 0
         )
@@ -554,14 +585,18 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "cross-graph backward tracing finds all affected derived facts" do
       # Test that backward tracing considers facts from all graphs
 
-      existing = MapSet.new([
-        quad(0, iri("Gem"), rdfs_subClassOf(), iri("Mineral"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Gem"), rdfs_subClassOf(), iri("Mineral"))
+        ])
 
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, _stats} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("diamond"), rdf_type(), iri("Gem"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("diamond"), rdf_type(), iri("Gem"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
@@ -573,17 +608,21 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "cross-graph rederivation considers alternative support" do
       # Test that rederivation looks at all graphs for alternative support
 
-      existing = MapSet.new([
-        # TBox with two paths
-        quad(0, iri("Reptile"), rdfs_subClassOf(), iri("Animal")),
-        quad(0, iri("Lizard"), rdfs_subClassOf(), iri("Reptile"))
-      ])
+      existing =
+        MapSet.new([
+          # TBox with two paths
+          quad(0, iri("Reptile"), rdfs_subClassOf(), iri("Animal")),
+          quad(0, iri("Lizard"), rdfs_subClassOf(), iri("Reptile"))
+        ])
 
       rules = [Rules.cax_sco()]
 
       # Add data in graph 1
       {:ok, all_facts_1, _stats1} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("iguana"), rdf_type(), iri("Lizard"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("iguana"), rdf_type(), iri("Lizard"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
@@ -596,22 +635,29 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "partial failures don't affect unrelated graphs" do
       # Test that failures in one graph don't affect others
 
-      existing = MapSet.new([
-        quad(0, iri("Color"), rdfs_subClassOf(), iri("Property"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Color"), rdfs_subClassOf(), iri("Property"))
+        ])
 
       rules = [Rules.cax_sco()]
 
       # Process graph 1
       {:ok, all_facts_1, _stats1} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("red"), rdf_type(), iri("Color"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("red"), rdf_type(), iri("Color"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
 
       # Process graph 2
       {:ok, all_facts_2, _stats2} =
-        IncrementalQuad.add_quads_in_memory([quad(2, iri("blue"), rdf_type(), iri("Color"))], all_facts_1, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(2, iri("blue"), rdf_type(), iri("Color"))],
+          all_facts_1,
+          rules,
           graph_id: 2,
           tbox_graph_id: 0
         )
@@ -624,21 +670,28 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "global deletion correctly scopes to participating graphs" do
       # Test that global operations only affect participating graphs
 
-      existing = MapSet.new([
-        quad(0, iri("Sport"), rdfs_subClassOf(), iri("Activity"))
-      ])
+      existing =
+        MapSet.new([
+          quad(0, iri("Sport"), rdfs_subClassOf(), iri("Activity"))
+        ])
 
       rules = [Rules.cax_sco()]
 
       # Process participating graphs
       {:ok, all_facts_1, _stats1} =
-        IncrementalQuad.add_quads_in_memory([quad(1, iri("soccer"), rdf_type(), iri("Sport"))], existing, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(1, iri("soccer"), rdf_type(), iri("Sport"))],
+          existing,
+          rules,
           graph_id: 1,
           tbox_graph_id: 0
         )
 
       {:ok, all_facts_2, _stats2} =
-        IncrementalQuad.add_quads_in_memory([quad(2, iri("tennis"), rdf_type(), iri("Sport"))], all_facts_1, rules,
+        IncrementalQuad.add_quads_in_memory(
+          [quad(2, iri("tennis"), rdf_type(), iri("Sport"))],
+          all_facts_1,
+          rules,
           graph_id: 2,
           tbox_graph_id: 0
         )
@@ -655,9 +708,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
   describe "incremental maintenance edge cases" do
     test "handles empty graph gracefully" do
-      existing = MapSet.new([
-        quad(1, iri("Person"), rdfs_subClassOf(), iri("Agent"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Person"), rdfs_subClassOf(), iri("Agent"))
+        ])
 
       # Add to empty graph 2
       new_quads = [quad(2, iri("alice"), rdf_type(), iri("Person"))]
@@ -676,19 +730,19 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "handles cyclic dependencies correctly" do
       # While RDFS doesn't have true cycles, test handling of complex hierarchies
-      existing = MapSet.new([
-        quad(1, iri("A"), rdfs_subClassOf(), iri("B")),
-        quad(1, iri("B"), rdfs_subClassOf(), iri("C")),
-        quad(1, iri("C"), rdfs_subClassOf(), iri("A"))  # Creates cycle
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("A"), rdfs_subClassOf(), iri("B")),
+          quad(1, iri("B"), rdfs_subClassOf(), iri("C")),
+          # Creates cycle
+          quad(1, iri("C"), rdfs_subClassOf(), iri("A"))
+        ])
 
       new_quads = [quad(1, iri("x"), rdf_type(), iri("A"))]
       rules = [Rules.cax_sco()]
 
       {:ok, _all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # Should handle without infinite loops
       # (iterations count should be reasonable)
@@ -696,9 +750,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     end
 
     test "handles large batches efficiently" do
-      existing = MapSet.new([
-        quad(1, iri("Thing"), rdfs_subClassOf(), iri("Entity"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Thing"), rdfs_subClassOf(), iri("Entity"))
+        ])
 
       # Large batch of quads
       new_quads =
@@ -709,9 +764,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # Should process all efficiently
       assert stats.explicit_added == 50
@@ -722,22 +775,23 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
     test "handles mixed triple and quad inputs" do
       # Test that both triples (no graph) and quads (with graph) work
-      existing = MapSet.new([
-        quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
-      ])
+      existing =
+        MapSet.new([
+          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+        ])
 
       # Mix of triples and quads
       new_quads = [
-        triple(iri("alice"), rdf_type(), iri("Student")),  # Triple (no graph)
-        quad(1, iri("bob"), rdf_type(), iri("Student"))     # Quad (with graph)
+        # Triple (no graph)
+        triple(iri("alice"), rdf_type(), iri("Student")),
+        # Quad (with graph)
+        quad(1, iri("bob"), rdf_type(), iri("Student"))
       ]
 
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, stats} =
-        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules,
-          graph_id: 1
-        )
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       # Both should be added to graph 1
       assert stats.explicit_added == 2

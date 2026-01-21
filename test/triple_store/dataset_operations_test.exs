@@ -70,7 +70,8 @@ defmodule TripleStore.DatasetOperationsTest do
     # Insert quads in g1
     :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})
     :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o2_id, g1_id})
-    :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})  # duplicate, idempotent
+    # duplicate, idempotent
+    :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})
 
     # Insert quads in g2 (different quad so copy adds new quads)
     :ok = QuadOperations.insert_quad(db, {s2_id, p_id, o3_id, g2_id})

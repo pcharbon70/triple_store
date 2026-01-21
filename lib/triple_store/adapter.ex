@@ -60,7 +60,9 @@ defmodule TripleStore.Adapter do
   @type internal_triple :: {term_id(), term_id(), term_id()}
 
   @typedoc "RDF quad as 4-tuple of RDF terms"
-  @type rdf_quad :: {RDF.IRI.t() | RDF.BlankNode.t(), RDF.IRI.t(), rdf_term(), RDF.IRI.t() | RDF.BlankNode.t() | nil}
+  @type rdf_quad ::
+          {RDF.IRI.t() | RDF.BlankNode.t(), RDF.IRI.t(), rdf_term(),
+           RDF.IRI.t() | RDF.BlankNode.t() | nil}
 
   @typedoc "Internal quad as 4-tuple of term IDs"
   @type internal_quad :: {term_id(), term_id(), term_id(), term_id()}
