@@ -48,7 +48,16 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       File.rm_rf!(db_path)
     end)
 
-    {:ok, %{ctx: ctx, admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: viewer_ctx, public_ctx: public_ctx, db: db, manager: manager}}
+    {:ok,
+     %{
+       ctx: ctx,
+       admin_ctx: admin_ctx,
+       editor_ctx: editor_ctx,
+       viewer_ctx: viewer_ctx,
+       public_ctx: public_ctx,
+       db: db,
+       manager: manager
+     }}
   end
 
   # Helper to set up a named graph with ACL
@@ -90,7 +99,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "INSERT DATA authorization" do
-    test "requires write permission on target graph", %{admin_ctx: admin_ctx, viewer_ctx: viewer_ctx, public_ctx: public_ctx} do
+    test "requires write permission on target graph", %{
+      admin_ctx: admin_ctx,
+      viewer_ctx: viewer_ctx,
+      public_ctx: public_ctx
+    } do
       graph_iri = "http://example.org/test_graph"
 
       # Setup: Admin creates graph and grants themselves write access
@@ -133,7 +146,10 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "DELETE DATA authorization" do
-    test "requires write permission on target graph", %{admin_ctx: admin_ctx, viewer_ctx: viewer_ctx} do
+    test "requires write permission on target graph", %{
+      admin_ctx: admin_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       graph_iri = "http://example.org/test_graph"
 
       # Setup: Admin creates graph with data
@@ -162,7 +178,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "CREATE GRAPH authorization" do
-    test "requires admin permission on graph", %{admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: viewer_ctx} do
+    test "requires admin permission on graph", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       graph_iri = "http://example.org/new_graph"
 
       # Admin can CREATE GRAPH
@@ -184,7 +204,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "DROP GRAPH authorization" do
-    test "requires admin permission on graph", %{admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: viewer_ctx} do
+    test "requires admin permission on graph", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       graph_iri = "http://example.org/drop_test"
 
       # Setup: Admin creates graph (setup_graph_with_acl adds 1 quad)
@@ -238,18 +262,36 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "COPY authorization" do
-    test "requires read on source and write on target", %{admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: viewer_ctx} do
+    test "requires read on source and write on target", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       source_graph = "http://example.org/copy_source_auth"
       target_graph = "http://example.org/copy_target_auth"
 
       # Clean up any existing data from previous test runs
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(source_graph)
+      )
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
 
       # Setup: Create source graph with data, target graph empty
       setup_graph_with_acl(admin_ctx, source_graph, :read, admin_ctx.user)
       setup_graph_with_acl(admin_ctx, target_graph, :write, admin_ctx.user)
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
 
       insert_test_data(admin_ctx, source_graph)
 
@@ -258,7 +300,12 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       Authorization.grant(admin_ctx, target_graph, editor_ctx.user.id, :write)
 
       # Verify source count
-      {:ok, source_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
+      {:ok, source_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(source_graph)
+        )
 
       # Admin can COPY - call execute_copy directly to avoid parser issues
       assert {:ok, copied} = UpdateExecutor.execute_copy(admin_ctx, source_graph, target_graph)
@@ -266,8 +313,19 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       assert copied == source_count
 
       # Verify final state
-      {:ok, final_source_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
-      {:ok, final_target_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      {:ok, final_source_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(source_graph)
+        )
+
+      {:ok, final_target_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(target_graph)
+        )
 
       # Source should still have data (COPY doesn't remove)
       assert final_source_count == source_count
@@ -280,7 +338,8 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       assert copied2 == source_count
 
       # Viewer without permissions is denied
-      assert {:error, :unauthorized} = UpdateExecutor.execute_copy(viewer_ctx, source_graph, target_graph)
+      assert {:error, :unauthorized} =
+               UpdateExecutor.execute_copy(viewer_ctx, source_graph, target_graph)
     end
   end
 
@@ -289,23 +348,46 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "MOVE authorization" do
-    test "requires admin permission on both source and target", %{admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: _viewer_ctx} do
+    test "requires admin permission on both source and target", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx,
+      viewer_ctx: _viewer_ctx
+    } do
       source_graph = "http://example.org/move_source_auth_test"
       target_graph = "http://example.org/move_target_auth_test"
 
       # Clean up any existing data from previous test runs
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(source_graph)
+      )
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
 
       # Setup: Create source graph with data, target empty
       setup_graph_with_acl(admin_ctx, source_graph, :admin, admin_ctx.user)
       setup_graph_with_acl(admin_ctx, target_graph, :admin, admin_ctx.user)
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
 
       insert_test_data(admin_ctx, source_graph)
 
       # Verify source count
-      {:ok, source_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
+      {:ok, source_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(source_graph)
+        )
 
       # Admin can MOVE - call execute_move directly to avoid parser issues
       assert {:ok, moved} = UpdateExecutor.execute_move(admin_ctx, source_graph, target_graph)
@@ -313,21 +395,49 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       assert moved == source_count, "Expected to move #{source_count} quads, but moved #{moved}"
 
       # Verify final state
-      {:ok, final_source_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
-      {:ok, final_target_count} = TripleStore.QuadOperations.graph_quad_count(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      {:ok, final_source_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(source_graph)
+        )
+
+      {:ok, final_target_count} =
+        TripleStore.QuadOperations.graph_quad_count(
+          admin_ctx.db,
+          admin_ctx.dict_manager,
+          RDF.iri(target_graph)
+        )
 
       assert final_source_count == 0
       assert final_target_count == source_count
 
       # Re-setup for editor test
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(source_graph))
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(source_graph)
+      )
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
+
       setup_graph_with_acl(admin_ctx, source_graph, :admin, admin_ctx.user)
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
+
       insert_test_data(admin_ctx, source_graph)
 
       # Editor without admin permission is denied
-      assert {:error, :unauthorized} = UpdateExecutor.execute_move(editor_ctx, source_graph, target_graph)
+      assert {:error, :unauthorized} =
+               UpdateExecutor.execute_move(editor_ctx, source_graph, target_graph)
     end
   end
 
@@ -336,7 +446,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "ADD authorization" do
-    test "requires read on source and write on target", %{admin_ctx: admin_ctx, editor_ctx: editor_ctx, viewer_ctx: viewer_ctx} do
+    test "requires read on source and write on target", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       source_graph = "http://example.org/add_source"
       target_graph = "http://example.org/add_target"
 
@@ -345,7 +459,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
       setup_graph_with_acl(admin_ctx, target_graph, :write, admin_ctx.user)
 
       # Clear target graph to remove the setup quad
-      TripleStore.QuadOperations.clear_graph(admin_ctx.db, admin_ctx.dict_manager, RDF.iri(target_graph))
+      TripleStore.QuadOperations.clear_graph(
+        admin_ctx.db,
+        admin_ctx.dict_manager,
+        RDF.iri(target_graph)
+      )
 
       insert_test_data(admin_ctx, source_graph)
 
@@ -372,7 +490,10 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "DELETE/INSERT WHERE authorization" do
-    test "requires write permission on affected graphs", %{admin_ctx: admin_ctx, viewer_ctx: viewer_ctx} do
+    test "requires write permission on affected graphs", %{
+      admin_ctx: admin_ctx,
+      viewer_ctx: viewer_ctx
+    } do
       graph_iri = "http://example.org/modify_test"
 
       # Setup: Create graph with data
@@ -412,7 +533,11 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
   # ===========================================================================
 
   describe "error handling" do
-    test "returns specific error for unauthorized operations", %{viewer_ctx: viewer_ctx, db: db, manager: manager} do
+    test "returns specific error for unauthorized operations", %{
+      viewer_ctx: viewer_ctx,
+      db: db,
+      manager: manager
+    } do
       # Create a graph the viewer can't access
       graph_iri = "http://example.org/private"
       s = RDF.iri("http://example.org/s")

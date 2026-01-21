@@ -247,11 +247,33 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def column_family_names(schema \\ :triple)
 
   def column_family_names(:triple) do
-    ["default", "id2str", "str2id", "spo", "pos", "osp", "derived", "derivation_provenance", "numeric_range"]
+    [
+      "default",
+      "id2str",
+      "str2id",
+      "spo",
+      "pos",
+      "osp",
+      "derived",
+      "derivation_provenance",
+      "numeric_range"
+    ]
   end
 
   def column_family_names(:quad) do
-    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "derivation_provenance", "numeric_range", "acl"]
+    [
+      "default",
+      "id2str",
+      "str2id",
+      "gspo",
+      "gpos",
+      "spog",
+      "posg",
+      "derived",
+      "derivation_provenance",
+      "numeric_range",
+      "acl"
+    ]
   end
 
   @doc """

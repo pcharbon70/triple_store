@@ -191,8 +191,10 @@ defmodule TripleStore.AlertThresholds do
 
   defp validate_threshold(:graph_size_critical, value) do
     graph_size_warning = get(:graph_size_warning)
+
     if value < graph_size_warning do
-      {:warning, "graph_size_critical (#{value}) is less than graph_size_warning (#{graph_size_warning})"}
+      {:warning,
+       "graph_size_critical (#{value}) is less than graph_size_warning (#{graph_size_warning})"}
     else
       :ok
     end
@@ -204,6 +206,7 @@ defmodule TripleStore.AlertThresholds do
 
   defp validate_threshold(:slow_cross_graph_ms, value) do
     slow_query_ms = get(:slow_query_ms)
+
     if value < slow_query_ms do
       {:warning, "slow_cross_graph_ms (#{value}) is less than slow_query_ms (#{slow_query_ms})"}
     else

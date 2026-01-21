@@ -128,11 +128,12 @@ defmodule TripleStore.SPARQL.CostTelemetry do
   Record actual execution cost.
   """
   def cost_actual(algebra, actual_cost, estimated_cost, opts \\ []) do
-    error_ratio = if estimated_cost > 0 do
-      abs(actual_cost - estimated_cost) / estimated_cost
-    else
-      0.0
-    end
+    error_ratio =
+      if estimated_cost > 0 do
+        abs(actual_cost - estimated_cost) / estimated_cost
+      else
+        0.0
+      end
 
     metadata = %{
       algebra_type: algebra_type(algebra),
@@ -171,11 +172,12 @@ defmodule TripleStore.SPARQL.CostTelemetry do
   Record actual cardinality.
   """
   def cardinality_actual(pattern, actual, estimated, opts \\ []) do
-    error_ratio = if estimated > 0 do
-      abs(actual - estimated) / estimated
-    else
-      0.0
-    end
+    error_ratio =
+      if estimated > 0 do
+        abs(actual - estimated) / estimated
+      else
+        0.0
+      end
 
     metadata = %{
       pattern_type: pattern_type(pattern),
@@ -263,7 +265,9 @@ defmodule TripleStore.SPARQL.CostTelemetry do
       actual = duration * result_count
       error_ratio = if estimated > 0, do: abs(actual - estimated) / estimated, else: 0.0
 
-      Logger.debug("Query cost: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}")
+      Logger.debug(
+        "Query cost: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}"
+      )
     end
   end
 
@@ -274,7 +278,9 @@ defmodule TripleStore.SPARQL.CostTelemetry do
     error_ratio = metadata.error_ratio
 
     if error_ratio > 10.0 do
-      Logger.warning("Cost estimate error: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}")
+      Logger.warning(
+        "Cost estimate error: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}"
+      )
     end
   end
 
@@ -285,7 +291,9 @@ defmodule TripleStore.SPARQL.CostTelemetry do
     error_ratio = metadata.error_ratio
 
     if error_ratio > 10.0 do
-      Logger.warning("Cardinality estimate error: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}")
+      Logger.warning(
+        "Cardinality estimate error: estimated=#{estimated}, actual=#{actual}, error_ratio=#{:erlang.float_to_binary(error_ratio, decimals: 2)}"
+      )
     end
   end
 

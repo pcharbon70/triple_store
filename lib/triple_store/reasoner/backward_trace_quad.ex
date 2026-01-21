@@ -32,7 +32,6 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   """
 
   alias TripleStore.Backend.RocksDB.NIF
-  alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
@@ -221,7 +220,8 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
         # and involve the deleted triple as a potential premise
         relevant =
           Enum.filter(derived_quads, fn {dg, ds, dp, dobj} ->
-            dg == graph_id and could_rule_derive_with_premise?(rule, {ds, dp, dobj}, deleted_triple)
+            dg == graph_id and
+              could_rule_derive_with_premise?(rule, {ds, dp, dobj}, deleted_triple)
           end)
 
         {:ok, MapSet.new(relevant)}
@@ -244,11 +244,11 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   defp get_all_graphs_with_derivations(db) do
     # Scan the derived column family for all graph IDs
     case NIF.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
-      case DerivedStore.decode_derived_key(key) do
-        {:ok, {g, _s, _p, _o}} -> MapSet.put(acc, g)
-        _ -> acc
-      end
-    end) do
+           case DerivedStore.decode_derived_key(key) do
+             {:ok, {g, _s, _p, _o}} -> MapSet.put(acc, g)
+             _ -> acc
+           end
+         end) do
       {:ok, graphs} -> graphs
       _error -> MapSet.new()
     end

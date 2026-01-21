@@ -773,19 +773,23 @@ defmodule TripleStore.SPARQL.CostModelTest do
     end
 
     test "rejects negative weights" do
-      assert CostModel.validate_weights(%{hash_cost: -1.0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+      assert CostModel.validate_weights(%{hash_cost: -1.0}) ==
+               {:error, {:invalid_weight, :must_be_positive_float}}
     end
 
     test "rejects zero weights" do
-      assert CostModel.validate_weights(%{index_seek_cost: 0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+      assert CostModel.validate_weights(%{index_seek_cost: 0}) ==
+               {:error, {:invalid_weight, :must_be_positive_float}}
     end
 
     test "rejects invalid type for float weight" do
-      assert CostModel.validate_weights(%{hash_cost: "not_a_number"}) == {:error, {:invalid_weight, :must_be_positive_float}}
+      assert CostModel.validate_weights(%{hash_cost: "not_a_number"}) ==
+               {:error, {:invalid_weight, :must_be_positive_float}}
     end
 
     test "rejects invalid type for integer weight" do
-      assert CostModel.validate_weights(%{hash_join_threshold: "not_a_number"}) == {:error, {:invalid_weight, :must_be_positive_integer}}
+      assert CostModel.validate_weights(%{hash_join_threshold: "not_a_number"}) ==
+               {:error, {:invalid_weight, :must_be_positive_integer}}
     end
 
     test "accepts unknown keys (for extensibility)" do
@@ -810,11 +814,13 @@ defmodule TripleStore.SPARQL.CostModelTest do
     end
 
     test "rejects invalid weights" do
-      assert CostModel.set_weights(%{hash_cost: -1.0}) == {:error, {:invalid_weight, :must_be_positive_float}}
+      assert CostModel.set_weights(%{hash_cost: -1.0}) ==
+               {:error, {:invalid_weight, :must_be_positive_float}}
 
       # Verify the weight was NOT set
       weights = CostModel.get_weights()
-      assert weights.hash_cost == 2.0  # Default value
+      # Default value
+      assert weights.hash_cost == 2.0
     end
 
     test "merges with existing weights" do

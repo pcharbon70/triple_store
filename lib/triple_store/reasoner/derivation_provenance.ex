@@ -44,7 +44,6 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   """
 
   alias TripleStore.Backend.RocksDB.NIF
-  alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.Rule
 
   # ============================================================================

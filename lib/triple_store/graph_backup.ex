@@ -52,16 +52,11 @@ defmodule TripleStore.GraphBackup do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Exporter
   alias TripleStore.Loader
-  alias TripleStore.QuadOperations
   alias TripleStore.Telemetry
 
   require Logger
-
-  # Backup metadata file name
-  @metadata_file ".graph_backup_metadata"
 
   # ===========================================================================
   # Types
@@ -260,6 +255,7 @@ defmodule TripleStore.GraphBackup do
         {:ok, _count} ->
           # Export using Exporter with graph-specific pattern
           pattern = {:var, :var, :var, {:bound, graph_id}}
+
           case Exporter.export_nquads_string(db, pattern: pattern) do
             {:ok, content} ->
               {{:ok, content}, %{}}
@@ -352,6 +348,7 @@ defmodule TripleStore.GraphBackup do
             if valid_nquads_content?(content) do
               # Check for metadata file
               metadata_path = backup_path <> ".meta"
+
               if File.exists?(metadata_path) do
                 {:ok, :valid_with_metadata}
               else
@@ -429,19 +426,23 @@ defmodule TripleStore.GraphBackup do
         |> Enum.filter(&String.ends_with?(&1, ".nq"))
         |> Enum.map(fn file ->
           path = Path.join(backup_dir, file)
+
           case get_backup_metadata(path) do
             {:ok, metadata} -> metadata
             {:error, _} -> nil
           end
         end)
         |> Enum.filter(& &1)
-        |> Enum.sort_by(fn metadata ->
-          # Parse ISO string to DateTime for sorting
-          case DateTime.from_iso8601(metadata.created_at) do
-            {:ok, dt, _} -> dt
-            _ -> DateTime.utc_now()
-          end
-        end, {:desc, DateTime})
+        |> Enum.sort_by(
+          fn metadata ->
+            # Parse ISO string to DateTime for sorting
+            case DateTime.from_iso8601(metadata.created_at) do
+              {:ok, dt, _} -> dt
+              _ -> DateTime.utc_now()
+            end
+          end,
+          {:desc, DateTime}
+        )
 
       {:ok, backups}
     else
@@ -505,11 +506,12 @@ defmodule TripleStore.GraphBackup do
       file_size: File.stat!(path).size
     }
 
-    metadata = if include_stats do
-      Map.put(metadata, :statistics, get_graph_statistics(store, graph_id))
-    else
-      metadata
-    end
+    metadata =
+      if include_stats do
+        Map.put(metadata, :statistics, get_graph_statistics(store, graph_id))
+      else
+        metadata
+      end
 
     metadata_path = path <> ".meta"
     content = :erlang.term_to_binary(metadata)
@@ -574,7 +576,9 @@ defmodule TripleStore.GraphBackup do
     case TripleStore.Statistics.build_per_graph_histograms(store.db, []) do
       {:ok, histograms} when is_map(histograms) ->
         case Map.get(histograms, graph_id) do
-          nil -> :ok
+          nil ->
+            :ok
+
           _pred_map ->
             # Graph has quads, need to clear them
             # For now, skip clearing to avoid complexity
@@ -589,7 +593,7 @@ defmodule TripleStore.GraphBackup do
   defp maybe_clear_graph(_store, _graph_id, _clear_existing, true), do: :ok
   defp maybe_clear_graph(_store, _graph_id, false, false), do: :ok
 
-  defp import_graph_from_file(store, path, graph_id) do
+  defp import_graph_from_file(store, path, _graph_id) do
     Loader.load_nquads_file(store.db, store.dict_manager, path)
   end
 

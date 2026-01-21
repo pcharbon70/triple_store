@@ -64,7 +64,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       # With mock DB, may get error from QuadOperations, but we test the API contract
-      result = DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
+      result =
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       # Result should be either ok or error depending on DB state
       assert elem(result, 0) in [:ok, :error]
@@ -74,7 +75,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
       rules = [Rules.cax_sco()]
 
-      result = DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
+      result =
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       assert elem(result, 0) in [:ok, :error]
     end
@@ -167,9 +169,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       result =
-        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       assert elem(result, 0) in [:ok, :error]
     end
@@ -190,9 +190,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
 
       # Only graph 1 quads should be deleted when graph_id is 1
       result =
-        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       assert elem(result, 0) in [:ok, :error]
     end
@@ -208,9 +206,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       result =
-        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
 
       assert {:ok, {explicit, derived}} = result
       assert is_map(explicit)
@@ -222,9 +218,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       {:ok, {explicit, _derived}} =
-        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
 
       assert MapSet.member?(explicit, quad(1, iri("alice"), rdf_type(), iri("Student")))
     end
@@ -234,9 +228,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       {:ok, {_explicit, derived}} =
-        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
 
       assert is_map(derived)
     end
@@ -252,9 +244,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       assert {:ok, {_explicit, _derived}} =
-               DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-                 graph_id: 1
-               )
+               DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
     end
 
     test "accepts tbox_graph_id option" do
@@ -290,9 +280,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       {:ok, {explicit, derived}} =
-        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
 
       assert MapSet.size(explicit) == 0
       assert MapSet.size(derived) == 0
@@ -341,9 +329,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       assert {:ok, {explicit, derived}} =
-               DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules,
-                 graph_id: 1
-               )
+               DeleteWithReasoningQuad.preview_quad_deletion(:mock_db, quads, rules, graph_id: 1)
 
       assert is_map(explicit)
       assert is_map(derived)
@@ -360,9 +346,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = [Rules.cax_sco()]
 
       result =
-        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       assert elem(result, 0) in [:ok, :error]
     end
@@ -382,9 +366,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuadTest do
       rules = []
 
       result =
-        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules,
-          graph_id: 1
-        )
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(:mock_db, quads, rules, graph_id: 1)
 
       assert elem(result, 0) in [:ok, :error]
     end

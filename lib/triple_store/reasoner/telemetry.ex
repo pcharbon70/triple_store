@@ -310,7 +310,12 @@ defmodule TripleStore.Reasoner.Telemetry do
   @doc """
   Emits a TBox extraction stop event (success).
   """
-  @spec emit_tbox_extract_stop(non_neg_integer() | :global, non_neg_integer(), non_neg_integer(), integer()) :: :ok
+  @spec emit_tbox_extract_stop(
+          non_neg_integer() | :global,
+          non_neg_integer(),
+          non_neg_integer(),
+          integer()
+        ) :: :ok
   def emit_tbox_extract_stop(graph_id, tbox_graph_id, tbox_fact_count, duration) do
     :telemetry.execute(
       @prefix ++ [:tbox_extract, :stop],
@@ -322,7 +327,8 @@ defmodule TripleStore.Reasoner.Telemetry do
   @doc """
   Emits a TBox extraction error event.
   """
-  @spec emit_tbox_extract_error(non_neg_integer() | :global, non_neg_integer(), atom(), integer()) :: :ok
+  @spec emit_tbox_extract_error(non_neg_integer() | :global, non_neg_integer(), atom(), integer()) ::
+          :ok
   def emit_tbox_extract_error(graph_id, tbox_graph_id, reason, duration) do
     :telemetry.execute(
       @prefix ++ [:tbox_extract, :error],

@@ -1259,9 +1259,10 @@ defmodule TripleStore do
   def add_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
     alias TripleStore.Reasoner.IncrementalQuad
     alias TripleStore.Reasoner.ReasoningProfile
-    alias TripleStore.Loader
+    alias TripleStore.Adapter
 
     db = store.db
+    manager = store.dict_manager
 
     # Get options
     profile = Keyword.get(opts, :profile, :owl2rl)
@@ -1273,20 +1274,31 @@ defmodule TripleStore do
     # Get rules for the profile
     {:ok, rules} = ReasoningProfile.rules_for(profile, [])
 
-    # Convert RDF terms to dictionary-encoded IDs
-    {:ok, id_quads, _terms} = Loader.convert_statements_to_id_quads(db, quads, graph_id)
+    # Convert RDF statements to ID quads
+    # Add graph context to each statement for quad conversion
+    quads_with_graph =
+      Enum.map(quads, fn
+        {s, p, o} -> {s, p, o, graph_id}
+        quad -> quad
+      end)
 
-    # Add with reasoning
-    IncrementalQuad.add_quads_with_reasoning(
-      db,
-      id_quads,
-      rules,
-      graph_id: graph_id,
-      tbox_graph_id: tbox_graph,
-      scope: scope,
-      parallel: parallel,
-      max_iterations: max_iterations
-    )
+    case Adapter.from_rdf_quads(manager, quads_with_graph) do
+      {:ok, id_quads} ->
+        # Add with reasoning
+        IncrementalQuad.add_quads_with_reasoning(
+          db,
+          id_quads,
+          rules,
+          graph_id: graph_id,
+          tbox_graph_id: tbox_graph,
+          scope: scope,
+          parallel: parallel,
+          max_iterations: max_iterations
+        )
+
+      {:error, reason} ->
+        {:error, {:conversion_failed, reason}}
+    end
   end
 
   @doc """
@@ -1336,9 +1348,10 @@ defmodule TripleStore do
   def delete_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
     alias TripleStore.Reasoner.DeleteWithReasoningQuad
     alias TripleStore.Reasoner.ReasoningProfile
-    alias TripleStore.Loader
+    alias TripleStore.Adapter
 
     db = store.db
+    manager = store.dict_manager
 
     # Get options
     profile = Keyword.get(opts, :profile, :owl2rl)
@@ -1348,18 +1361,28 @@ defmodule TripleStore do
     # Get rules for the profile
     {:ok, rules} = ReasoningProfile.rules_for(profile, [])
 
-    # Convert RDF terms to dictionary-encoded IDs
-    {:ok, id_quads, _terms} = Loader.convert_statements_to_id_quads(db, quads, graph_id)
+    # Convert RDF statements to ID quads
+    quads_with_graph =
+      Enum.map(quads, fn
+        {s, p, o} -> {s, p, o, graph_id}
+        quad -> quad
+      end)
 
-    # Delete with reasoning
-    DeleteWithReasoningQuad.delete_quads_with_reasoning(
-      db,
-      id_quads,
-      rules,
-      graph_id: graph_id,
-      tbox_graph_id: tbox_graph,
-      scope: scope
-    )
+    case Adapter.from_rdf_quads(manager, quads_with_graph) do
+      {:ok, id_quads} ->
+        # Delete with reasoning
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(
+          db,
+          id_quads,
+          rules,
+          graph_id: graph_id,
+          tbox_graph_id: tbox_graph,
+          scope: scope
+        )
+
+      {:error, reason} ->
+        {:error, {:conversion_failed, reason}}
+    end
   end
 
   # ===========================================================================
@@ -1407,38 +1430,39 @@ defmodule TripleStore do
       {:ok, explanation} = TripleStore.explain_inference(store, quad, 1)
 
       explanation.formatted
-      # => """
+      # => \"""
       #     Derived: [g:1 (alice rdf:type Person)]
       #     Rule: cax_sco
       #     Premises: [g:1 (alice rdf:type Student), g:1 (Student rdfs:subClassOf Person)]
       #     Bindings: {x=alice, c1=Student, c2=Person}
-      #     """
+      #     \"""
   """
   @spec explain_inference(store(), RDF.Statement.t(), non_neg_integer(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def explain_inference(store, quad, graph_id, opts \\ []) do
-    alias TripleStore.Loader
+    alias TripleStore.Adapter
     alias TripleStore.Reasoner.DerivationProvenance
     alias TripleStore.Reasoner.DerivedStore
 
     db = store.db
+    manager = store.dict_manager
     provenance_source = Keyword.get(opts, :provenance_source, :memory)
 
     # Convert RDF terms to dictionary-encoded IDs
-    {s_id, _p_id, _o_id} =
-      case Loader.ensure_term_id(db, elem(quad, 0)) do
+    {s_id, _} =
+      case Adapter.term_to_id(manager, elem(quad, 0)) do
         {:ok, id} -> id
         error -> throw(error)
       end
 
     {p_id, _} =
-      case Loader.ensure_term_id(db, elem(quad, 1)) do
+      case Adapter.term_to_id(manager, elem(quad, 1)) do
         {:ok, id} -> id
         error -> throw(error)
       end
 
     {o_id, _} =
-      case Loader.ensure_term_id(db, elem(quad, 2)) do
+      case Adapter.term_to_id(manager, elem(quad, 2)) do
         {:ok, id} -> id
         error -> throw(error)
       end

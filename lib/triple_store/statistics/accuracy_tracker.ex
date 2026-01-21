@@ -80,10 +80,14 @@ defmodule TripleStore.Statistics.AccuracyTracker do
         relative_error = calculate_relative_error(estimated, actual)
 
         # Get existing samples or initialize empty list
-        samples = case :ets.lookup(@table_name, {pattern_key, :samples}) do
-          [{{^pattern_key, :samples}, existing_samples}] when is_list(existing_samples) -> existing_samples
-          _ -> []
-        end
+        samples =
+          case :ets.lookup(@table_name, {pattern_key, :samples}) do
+            [{{^pattern_key, :samples}, existing_samples}] when is_list(existing_samples) ->
+              existing_samples
+
+            _ ->
+              []
+          end
 
         new_sample = %{estimated: estimated, actual: actual, relative_error: relative_error}
         :ets.insert(@table_name, {{pattern_key, :samples}, [new_sample | samples]})
@@ -134,28 +138,30 @@ defmodule TripleStore.Statistics.AccuracyTracker do
       |> Enum.map(fn {{pattern_key, :samples}, _samples} -> pattern_key end)
 
     # Build stats for each pattern
-    stats = Enum.reduce(pattern_keys, %{}, fn pattern_key, acc ->
-      case :ets.lookup(@table_name, {pattern_key, :samples}) do
-        [{{^pattern_key, :samples}, samples}] when is_list(samples) ->
-          if Enum.empty?(samples) do
+    stats =
+      Enum.reduce(pattern_keys, %{}, fn pattern_key, acc ->
+        case :ets.lookup(@table_name, {pattern_key, :samples}) do
+          [{{^pattern_key, :samples}, samples}] when is_list(samples) ->
+            if Enum.empty?(samples) do
+              acc
+            else
+              total_error =
+                Enum.reduce(samples, 0.0, fn sample, sum ->
+                  sum + sample.relative_error
+                end)
+
+              avg_error = total_error / length(samples)
+
+              Map.put(acc, pattern_key, %{
+                avg_relative_error: avg_error,
+                samples: length(samples)
+              })
+            end
+
+          _ ->
             acc
-          else
-            total_error = Enum.reduce(samples, 0.0, fn sample, sum ->
-              sum + sample.relative_error
-            end)
-
-            avg_error = total_error / length(samples)
-
-            Map.put(acc, pattern_key, %{
-              avg_relative_error: avg_error,
-              samples: length(samples)
-            })
-          end
-
-        _ ->
-          acc
-      end
-    end)
+        end
+      end)
 
     {:ok, stats}
   end
@@ -235,9 +241,12 @@ defmodule TripleStore.Statistics.AccuracyTracker do
       [{:aggregated, stats}] ->
         new_stats = %{
           total_samples: stats.total_samples + 1,
-          avg_relative_error: (stats.avg_relative_error * stats.total_samples + relative_error) / (stats.total_samples + 1),
+          avg_relative_error:
+            (stats.avg_relative_error * stats.total_samples + relative_error) /
+              (stats.total_samples + 1),
           max_relative_error: max(stats.max_relative_error, relative_error)
         }
+
         :ets.insert(@table_name, {:aggregated, new_stats})
 
       [] ->
@@ -246,10 +255,14 @@ defmodule TripleStore.Statistics.AccuracyTracker do
   end
 
   defp initialize_aggregated_stats do
-    :ets.insert(@table_name, {:aggregated, %{
-      total_samples: 0,
-      avg_relative_error: 0.0,
-      max_relative_error: 0.0
-    }})
+    :ets.insert(
+      @table_name,
+      {:aggregated,
+       %{
+         total_samples: 0,
+         avg_relative_error: 0.0,
+         max_relative_error: 0.0
+       }}
+    )
   end
 end

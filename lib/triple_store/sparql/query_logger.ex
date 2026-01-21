@@ -17,24 +17,24 @@ defmodule TripleStore.SPARQL.QueryLogger do
   require Logger
 
   @type log_entry :: %{
-    id: String.t(),
-    query: String.t(),
-    query_hash: String.t(),
-    user: String.t() | nil,
-    origin: String.t() | nil,
-    timestamp: integer(),
-    duration_ms: non_neg_integer() | nil,
-    result_count: non_neg_integer() | nil,
-    status: :executing | :success | :error,
-    error: String.t() | nil
-  }
+          id: String.t(),
+          query: String.t(),
+          query_hash: String.t(),
+          user: String.t() | nil,
+          origin: String.t() | nil,
+          timestamp: integer(),
+          duration_ms: non_neg_integer() | nil,
+          result_count: non_neg_integer() | nil,
+          status: :executing | :success | :error,
+          error: String.t() | nil
+        }
 
   @type opts :: [
-    {:user, String.t()} |
-    {:origin, String.t()} |
-    {:timeout, pos_integer()} |
-    {:max_results, non_neg_integer()}
-  ]
+          {:user, String.t()}
+          | {:origin, String.t()}
+          | {:timeout, pos_integer()}
+          | {:max_results, non_neg_integer()}
+        ]
 
   @default_max_entries 10_000
   @table_name :sparql_query_log
@@ -210,9 +210,10 @@ defmodule TripleStore.SPARQL.QueryLogger do
       max_entries: state.max_entries,
       by_status: state.by_status,
       average_duration_ms: calculate_average_duration(all_entries),
-      total_results: Enum.reduce(all_entries, 0, fn {_id, e}, acc ->
-        acc + (e.result_count || 0)
-      end)
+      total_results:
+        Enum.reduce(all_entries, 0, fn {_id, e}, acc ->
+          acc + (e.result_count || 0)
+        end)
     }
 
     {:reply, stats, state}

@@ -56,12 +56,20 @@ defmodule TripleStore.ExporterRefactoringTest do
       g2 = RDF.iri("http://example.org/graph2")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o1\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o1\" .",
+          :turtle,
           graph: g1
         )
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s2> <http://example.org/p2> \"o2\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s2> <http://example.org/p2> \"o2\" .",
+          :turtle,
           graph: g2
         )
 
@@ -95,17 +103,29 @@ defmodule TripleStore.ExporterRefactoringTest do
       g3 = RDF.iri("http://example.org/graph3")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o1\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o1\" .",
+          :turtle,
           graph: g1
         )
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s2> <http://example.org/p2> \"o2\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s2> <http://example.org/p2> \"o2\" .",
+          :turtle,
           graph: g2
         )
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s3> <http://example.org/p3> \"o3\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s3> <http://example.org/p3> \"o3\" .",
+          :turtle,
           graph: g3
         )
 
@@ -130,13 +150,21 @@ defmodule TripleStore.ExporterRefactoringTest do
 
       # Add to named graph
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o1\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o1\" .",
+          :turtle,
           graph: g1
         )
 
       # Add to default graph
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s2> <http://example.org/p2> \"o2\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s2> <http://example.org/p2> \"o2\" .",
+          :turtle,
           graph: :default
         )
 
@@ -157,7 +185,11 @@ defmodule TripleStore.ExporterRefactoringTest do
       g1 = RDF.iri("http://example.org/graph1")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o1\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o1\" .",
+          :turtle,
           graph: g1
         )
 
@@ -189,7 +221,11 @@ defmodule TripleStore.ExporterRefactoringTest do
       g1 = RDF.iri("http://example.org/graph1")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s3> <http://example.org/p3> \"o3\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s3> <http://example.org/p3> \"o3\" .",
+          :turtle,
           graph: g1
         )
 
@@ -210,7 +246,11 @@ defmodule TripleStore.ExporterRefactoringTest do
 
     test "supports graph options like :name", %{db: db, manager: manager} do
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o\" .",
+          :turtle,
           graph: :default
         )
 
@@ -243,7 +283,11 @@ defmodule TripleStore.ExporterRefactoringTest do
       g2 = RDF.iri("http://example.org/graph2")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s3> <http://example.org/p3> \"o3\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s3> <http://example.org/p3> \"o3\" .",
+          :turtle,
           graph: g2
         )
 
@@ -268,7 +312,11 @@ defmodule TripleStore.ExporterRefactoringTest do
       g1 = RDF.iri("http://example.org/graph1")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o\" .",
+          :turtle,
           graph: g1
         )
 
@@ -291,12 +339,20 @@ defmodule TripleStore.ExporterRefactoringTest do
       g2 = RDF.iri("http://example.org/graph2")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o1\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o1\" .",
+          :turtle,
           graph: g1
         )
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s2> <http://example.org/p2> \"o2\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s2> <http://example.org/p2> \"o2\" .",
+          :turtle,
           graph: g2
         )
 
@@ -317,7 +373,11 @@ defmodule TripleStore.ExporterRefactoringTest do
     test "existing export functions still work", %{db: db, manager: manager} do
       # Load some test data
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o\" .",
+          :turtle,
           graph: :default
         )
 
@@ -340,7 +400,11 @@ defmodule TripleStore.ExporterRefactoringTest do
       g1 = RDF.iri("http://example.org/graph1")
 
       {:ok, _} =
-        Loader.load_string(db, manager, "<http://example.org/s> <http://example.org/p> \"o\" .", :turtle,
+        Loader.load_string(
+          db,
+          manager,
+          "<http://example.org/s> <http://example.org/p> \"o\" .",
+          :turtle,
           graph: g1
         )
 

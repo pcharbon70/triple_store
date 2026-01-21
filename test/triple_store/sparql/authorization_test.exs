@@ -63,7 +63,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       assert {:ok, true} = Authorization.can_access_graph?(ctx, :default_graph, :public, :read)
     end
 
-    test "returns true for public graph when public ACL is set", %{db: db, ctx: ctx, manager: manager} do
+    test "returns true for public graph when public ACL is set", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/public_graph"
       insert_test_quad(db, manager, graph_iri)
 
@@ -72,7 +76,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       assert {:ok, true} = Authorization.can_read?(ctx, graph_iri, :public)
     end
 
-    test "returns false for private graph when no ACL is set", %{db: db, ctx: ctx, manager: manager} do
+    test "returns false for private graph when no ACL is set", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/private_graph"
       insert_test_quad(db, manager, graph_iri)
 
@@ -252,7 +260,8 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       rdf_iri = RDF.iri(graph_iri)
       assert {:ok, true} = Authorization.can_access_graph?(ctx, rdf_iri, :public, :read)
 
-      assert {:ok, true} = Authorization.can_access_graph?(ctx, {:named_node, graph_iri}, :public, :read)
+      assert {:ok, true} =
+               Authorization.can_access_graph?(ctx, {:named_node, graph_iri}, :public, :read)
 
       assert {:ok, true} = Authorization.can_access_graph?(ctx, :default_graph, :public, :read)
 
@@ -321,7 +330,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       :telemetry.detach(handler_id)
     end
 
-    test "emits telemetry when role-based permission is denied", %{db: db, ctx: ctx, manager: manager} do
+    test "emits telemetry when role-based permission is denied", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/restricted"
       insert_test_quad(db, manager, graph_iri)
 

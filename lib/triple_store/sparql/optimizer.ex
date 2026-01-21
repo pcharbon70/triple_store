@@ -468,13 +468,17 @@ defmodule TripleStore.SPARQL.Optimizer do
           max_depth: non_neg_integer()
         }
   def analyze_complexity(algebra) do
-    analyze_complexity_recursive(algebra, %{
-      node_count: 0,
-      bgp_patterns: 0,
-      joins: 0,
-      filters: 0,
-      max_depth: 0
-    }, 0)
+    analyze_complexity_recursive(
+      algebra,
+      %{
+        node_count: 0,
+        bgp_patterns: 0,
+        joins: 0,
+        filters: 0,
+        max_depth: 0
+      },
+      0
+    )
   end
 
   # Recursive complexity analysis
@@ -538,7 +542,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     analyze_complexity_recursive(pattern, acc, depth + 1)
   end
 
-  defp analyze_complexity_recursive(node, acc, depth) do
+  defp analyze_complexity_recursive(_node, acc, depth) do
     %{acc | node_count: acc.node_count + 1, max_depth: max(acc.max_depth, depth)}
   end
 
@@ -729,12 +733,13 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp walk_and_cost(algebra, stats, acc) do
     {cost, op_info} = cost_operation(algebra, stats)
 
-    new_acc = Map.put(acc, make_ref(), %{
-      operation: op_info.type,
-      cost: cost,
-      cardinality: op_info.cardinality,
-      details: op_info.details
-    })
+    new_acc =
+      Map.put(acc, make_ref(), %{
+        operation: op_info.type,
+        cost: cost,
+        cardinality: op_info.cardinality,
+        details: op_info.details
+      })
 
     # Recursively process child operations
     {child_costs, final_acc} = process_children(algebra, stats, new_acc)
@@ -750,14 +755,15 @@ defmodule TripleStore.SPARQL.Optimizer do
         pattern_costs = Enum.map(patterns, &cost_pattern(&1, stats))
         total = Enum.sum(pattern_costs)
 
-        {total, %{
-          type: :bgp,
-          cardinality: total,
-          details: %{
-            pattern_count: length(patterns),
-            patterns: Enum.map(patterns, &summarize_pattern(&1, stats))
-          }
-        }}
+        {total,
+         %{
+           type: :bgp,
+           cardinality: total,
+           details: %{
+             pattern_count: length(patterns),
+             patterns: Enum.map(patterns, &summarize_pattern(&1, stats))
+           }
+         }}
 
       {:filter, _expr, child} ->
         # Filter cost depends on child cardinality
@@ -765,11 +771,12 @@ defmodule TripleStore.SPARQL.Optimizer do
         # Filter is typically 10% of input cost
         cost = child_cost * 0.1
 
-        {cost, %{
-          type: :filter,
-          cardinality: child_cost * 0.5,
-          details: %{selectivity: 0.5}
-        }}
+        {cost,
+         %{
+           type: :filter,
+           cardinality: child_cost * 0.5,
+           details: %{selectivity: 0.5}
+         }}
 
       {:join, left, right} ->
         {left_cost, _} = cost_operation(left, stats)
@@ -777,36 +784,39 @@ defmodule TripleStore.SPARQL.Optimizer do
         # Join cost is product of inputs
         cost = left_cost * right_cost
 
-        {cost, %{
-          type: :join,
-          cardinality: cost,
-          details: %{
-            left_cardinality: left_cost,
-            right_cardinality: right_cost
-          }
-        }}
+        {cost,
+         %{
+           type: :join,
+           cardinality: cost,
+           details: %{
+             left_cardinality: left_cost,
+             right_cardinality: right_cost
+           }
+         }}
 
       {:union, left, right} ->
         {left_cost, _} = cost_operation(left, stats)
         {right_cost, _} = cost_operation(right, stats)
         cost = left_cost + right_cost
 
-        {cost, %{
-          type: :union,
-          cardinality: cost,
-          details: %{}
-        }}
+        {cost,
+         %{
+           type: :union,
+           cardinality: cost,
+           details: %{}
+         }}
 
       {:project, vars, child} ->
         {child_cost, _} = cost_operation(child, stats)
         # Projection is relatively cheap
         cost = child_cost * 1.01
 
-        {cost, %{
-          type: :project,
-          cardinality: child_cost,
-          details: %{variable_count: length(vars)}
-        }}
+        {cost,
+         %{
+           type: :project,
+           cardinality: child_cost,
+           details: %{variable_count: length(vars)}
+         }}
 
       _ ->
         {1.0, %{type: :unknown, cardinality: 1.0, details: %{}}}
@@ -814,30 +824,39 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Calculate cost for a single triple/quad pattern
-  defp cost_pattern(pattern, stats) do
+  defp cost_pattern(_pattern, stats) do
     # Use statistics if available, otherwise default
     case stats do
       %{quad_count: total} when total > 0 ->
-        total / 100  # Simplified: assume 100 predicates
+        # Simplified: assume 100 predicates
+        total / 100
+
       %{triple_count: total} when total > 0 ->
         total / 100
+
       _ ->
-        100.0  # Default estimate
+        # Default estimate
+        100.0
     end
   end
 
   # Summarize a pattern for output
   defp summarize_pattern(pattern, _stats) do
     case pattern do
-      {:triple, s, p, o} -> %{
-        type: :triple,
-        bound_positions: count_bound([s, p, o])
-      }
-      {:quad, s, p, o, g} -> %{
-        type: :quad,
-        bound_positions: count_bound([s, p, o, g])
-      }
-      _ -> %{type: :unknown}
+      {:triple, s, p, o} ->
+        %{
+          type: :triple,
+          bound_positions: count_bound([s, p, o])
+        }
+
+      {:quad, s, p, o, g} ->
+        %{
+          type: :quad,
+          bound_positions: count_bound([s, p, o, g])
+        }
+
+      _ ->
+        %{type: :unknown}
     end
   end
 
@@ -850,14 +869,15 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Process children of algebra operations
   defp process_children(algebra, stats, acc) do
-    children = case algebra do
-      {:join, left, right} -> [left, right]
-      {:union, left, right} -> [left, right]
-      {:left_join, left, _right, _condition} -> [left]
-      {:filter, _expr, child} -> [child]
-      {:project, _vars, child} -> [child]
-      _ -> []
-    end
+    children =
+      case algebra do
+        {:join, left, right} -> [left, right]
+        {:union, left, right} -> [left, right]
+        {:left_join, left, _right, _condition} -> [left]
+        {:filter, _expr, child} -> [child]
+        {:project, _vars, child} -> [child]
+        _ -> []
+      end
 
     Enum.reduce(children, {0, acc}, fn child, {total_cost, current_acc} ->
       {cost, new_acc} = walk_and_cost(child, stats, current_acc)
@@ -873,41 +893,53 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Track transformation steps that would be applied
-  defp track_transformations(algebra, stats) do
+  defp track_transformations(algebra, _stats) do
     transformations = []
 
     # Check for filter push-down
-    transformations = if has_pushable_filters?(algebra) do
-      [%{
-        type: :filter_push_down,
-        description: "Push filters down to reduce intermediate results",
-        impact: :high
-      } | transformations]
-    else
-      transformations
-    end
+    transformations =
+      if has_pushable_filters?(algebra) do
+        [
+          %{
+            type: :filter_push_down,
+            description: "Push filters down to reduce intermediate results",
+            impact: :high
+          }
+          | transformations
+        ]
+      else
+        transformations
+      end
 
     # Check for BGP reordering (multi-pattern BGP)
-    transformations = if has_multi_pattern_bgp?(algebra) do
-      [%{
-        type: :bgp_reordering,
-        description: "Reorder BGP patterns by selectivity",
-        impact: :moderate
-      } | transformations]
-    else
-      transformations
-    end
+    transformations =
+      if has_multi_pattern_bgp?(algebra) do
+        [
+          %{
+            type: :bgp_reordering,
+            description: "Reorder BGP patterns by selectivity",
+            impact: :moderate
+          }
+          | transformations
+        ]
+      else
+        transformations
+      end
 
     # Check for constant folding
-    transformations = if has_constant_expressions?(algebra) do
-      [%{
-        type: :constant_folding,
-        description: "Evaluate constant expressions at compile time",
-        impact: :low
-      } | transformations]
-    else
-      transformations
-    end
+    transformations =
+      if has_constant_expressions?(algebra) do
+        [
+          %{
+            type: :constant_folding,
+            description: "Evaluate constant expressions at compile time",
+            impact: :low
+          }
+          | transformations
+        ]
+      else
+        transformations
+      end
 
     Enum.reverse(transformations)
   end
@@ -928,9 +960,12 @@ defmodule TripleStore.SPARQL.Optimizer do
     case algebra do
       {:filter, _expr, child} ->
         not filter_must_stay?(child)
+
       {:join, left, right} ->
         has_pushable_filters?(left) or has_pushable_filters?(right)
-      _ -> false
+
+      _ ->
+        false
     end
   end
 
@@ -943,18 +978,22 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Count BGP patterns in algebra
-  defp count_bgps(algebra) do
-    count_bgps(algebra, 0)
+  defp _count_bgps(algebra) do
+    _count_bgps(algebra, 0)
   end
 
-  defp count_bgps(algebra, acc) do
+  defp _count_bgps(algebra, acc) do
     case algebra do
-      {:bgp, _patterns} -> {acc + 1, acc + 1}
+      {:bgp, _patterns} ->
+        {acc + 1, acc + 1}
+
       {:join, left, right} ->
-        {left_count, _} = count_bgps(left, 0)
-        {right_count, _} = count_bgps(right, 0)
+        {left_count, _} = _count_bgps(left, 0)
+        {right_count, _} = _count_bgps(right, 0)
         {acc + left_count + right_count, acc + left_count + right_count}
-      _ -> {acc, acc}
+
+      _ ->
+        {acc, acc}
     end
   end
 
@@ -963,9 +1002,12 @@ defmodule TripleStore.SPARQL.Optimizer do
     case algebra do
       {:filter, expr, _child} ->
         has_constants?(expr)
+
       {:join, left, right} ->
         has_constant_expressions?(left) or has_constant_expressions?(right)
-      _ -> false
+
+      _ ->
+        false
     end
   end
 
@@ -973,9 +1015,12 @@ defmodule TripleStore.SPARQL.Optimizer do
     case expr do
       {:binary_op, _op, left, right} ->
         is_constant?(left) and is_constant?(right)
+
       {:unary_op, _op, arg} ->
         is_constant?(arg)
-      _ -> false
+
+      _ ->
+        false
     end
   end
 
@@ -984,7 +1029,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Generate recommended execution plan
   defp generate_recommended_plan(algebra, stats, cost_breakdown) do
-    {steps, _} = generate_execution_steps(algebra, 1, [])
+    {steps, _} = _generate_execution_steps(algebra, 1, [])
 
     %{
       strategy: recommend_strategy(algebra, stats),
@@ -1002,8 +1047,13 @@ defmodule TripleStore.SPARQL.Optimizer do
     cond do
       not has_stats and pattern_count > 3 ->
         %{name: :sequential_join, reason: "No statistics available, use safe sequential joins"}
+
       has_stats and pattern_count > 4 ->
-        %{name: :leapfrog_join, reason: "Complex multi-pattern query benefits from leapfrog triejoin"}
+        %{
+          name: :leapfrog_join,
+          reason: "Complex multi-pattern query benefits from leapfrog triejoin"
+        }
+
       true ->
         %{name: :standard_join, reason: "Standard execution is sufficient"}
     end
@@ -1021,40 +1071,48 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Generate execution steps
-  defp generate_execution_steps(algebra) do
-    {steps, _} = generate_execution_steps(algebra, 1, [])
+  defp _generate_execution_steps(algebra) do
+    {steps, _} = _generate_execution_steps(algebra, 1, [])
     Enum.sort_by(steps, & &1.step)
   end
 
-  defp generate_execution_steps(algebra, index, acc) do
-    step = case algebra do
-      {:bgp, patterns} ->
-        %{step: index, type: :scan_bgp, detail: "Scan #{length(patterns)} pattern(s)"}
-      {:filter, _expr, _child} ->
-        %{step: index, type: :filter, detail: "Apply filter expression"}
-      {:join, _left, _right} ->
-        %{step: index, type: :join, detail: "Join two sub-results"}
-      {:project, _vars, _child} ->
-        %{step: index, type: :project, detail: "Project variables"}
-      {:union, _left, _right} ->
-        %{step: index, type: :union, detail: "Combine results with UNION"}
-      _ ->
-        %{step: index, type: :other, detail: "Other operation"}
-    end
+  defp _generate_execution_steps(algebra, index, acc) do
+    step =
+      case algebra do
+        {:bgp, patterns} ->
+          %{step: index, type: :scan_bgp, detail: "Scan #{length(patterns)} pattern(s)"}
+
+        {:filter, _expr, _child} ->
+          %{step: index, type: :filter, detail: "Apply filter expression"}
+
+        {:join, _left, _right} ->
+          %{step: index, type: :join, detail: "Join two sub-results"}
+
+        {:project, _vars, _child} ->
+          %{step: index, type: :project, detail: "Project variables"}
+
+        {:union, _left, _right} ->
+          %{step: index, type: :union, detail: "Combine results with UNION"}
+
+        _ ->
+          %{step: index, type: :other, detail: "Other operation"}
+      end
 
     # Get child operations
-    children = case algebra do
-      {:join, left, right} -> [left, right]
-      {:filter, _expr, child} -> [child]
-      {:project, _vars, child} -> [child]
-      _ -> []
-    end
+    children =
+      case algebra do
+        {:join, left, right} -> [left, right]
+        {:filter, _expr, child} -> [child]
+        {:project, _vars, child} -> [child]
+        _ -> []
+      end
 
     # Process children and build steps list
-    {child_steps, _} = Enum.reduce(children, {[], index + 1}, fn child, {steps_acc, next_index} ->
-      {new_steps, final_index} = generate_execution_steps(child, next_index, steps_acc)
-      {new_steps, final_index}
-    end)
+    {child_steps, _} =
+      Enum.reduce(children, {[], index + 1}, fn child, {steps_acc, next_index} ->
+        {new_steps, final_index} = _generate_execution_steps(child, next_index, steps_acc)
+        {new_steps, final_index}
+      end)
 
     {[step | child_steps ++ acc], index}
   end
@@ -2550,6 +2608,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   """
   @spec reorder_patterns_with_graph_grouping([term()], map()) :: [term()]
   def reorder_patterns_with_graph_grouping([], _stats), do: []
+
   def reorder_patterns_with_graph_grouping(patterns, stats) do
     # First, group patterns by variable dependencies (shared variables)
     # This ensures patterns that share variables stay together
@@ -2578,6 +2637,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     var_to_patterns =
       Enum.reduce(patterns, %{}, fn pattern, acc ->
         vars = pattern_variables(pattern)
+
         Enum.reduce(vars, acc, fn var, inner_acc ->
           Map.update(inner_acc, var, [pattern], &[pattern | &1])
         end)
@@ -2606,7 +2666,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Find all patterns connected to the given pattern via shared variables
   defp find_connected_component(start_pattern, var_to_patterns, seen) do
-    vars = pattern_variables(start_pattern)
+    _vars = pattern_variables(start_pattern)
 
     # BFS to find all connected patterns
     {connected, _} =
@@ -2749,7 +2809,15 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   def estimate_selectivity({:quad, subject, predicate, object, graph}, bound_vars, stats) do
-    estimate_pattern_selectivity({:quad, subject, predicate, object, graph}, subject, predicate, object, graph, bound_vars, stats)
+    estimate_pattern_selectivity(
+      {:quad, subject, predicate, object, graph},
+      subject,
+      predicate,
+      object,
+      graph,
+      bound_vars,
+      stats
+    )
   end
 
   # Fallback for non-triple/non-quad patterns
@@ -3232,7 +3300,10 @@ defmodule TripleStore.SPARQL.Optimizer do
     MapSet.member?(range_vars, var)
   end
 
-  def binds_range_filtered_variable?({:quad, _subj, _pred, {:variable, var}, _graph}, filter_context) do
+  def binds_range_filtered_variable?(
+        {:quad, _subj, _pred, {:variable, var}, _graph},
+        filter_context
+      ) do
     range_vars = Map.get(filter_context, :range_filtered_vars, MapSet.new())
     MapSet.member?(range_vars, var)
   end

@@ -195,10 +195,12 @@ defmodule TripleStore.SPARQL.Update.Modify do
     # For GRAPH clauses, we need to execute the BGP in the context of the specified graph
     # The graph IRN should be added to the pattern as the graph component
     # Convert triple patterns to quad patterns with the specified graph
-    quad_patterns = Enum.map(patterns, fn
-      {:triple, s, p, o} -> {:quad, s, p, o, graph_irn}
-      quad_pattern -> quad_pattern  # Already a quad pattern
-    end)
+    quad_patterns =
+      Enum.map(patterns, fn
+        {:triple, s, p, o} -> {:quad, s, p, o, graph_irn}
+        # Already a quad pattern
+        quad_pattern -> quad_pattern
+      end)
 
     # Execute with quad patterns
     execute_where_pattern(ctx, {:bgp, quad_patterns})
@@ -254,12 +256,14 @@ defmodule TripleStore.SPARQL.Update.Modify do
   # Substitutes variables in a graph term
   defp substitute_graph(:default_graph, _binding), do: {:ok, :default_graph}
   defp substitute_graph(:default, _binding), do: {:ok, :default}
+
   defp substitute_graph({:variable, name}, binding) do
     case Map.get(binding, name) do
       nil -> :unbound
       value -> {:ok, value}
     end
   end
+
   defp substitute_graph(graph, _binding), do: {:ok, graph}
 
   # Substitutes variables in a term with values from binding
@@ -525,7 +529,10 @@ defmodule TripleStore.SPARQL.Update.Modify do
   defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
   defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
   defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :language_tagged, value, lang}), do: RDF.literal(value, language: lang)
+
+  defp ast_to_rdf({:literal, :language_tagged, value, lang}),
+    do: RDF.literal(value, language: lang)
+
   defp ast_to_rdf({:literal, :typed, value, datatype}),
     do: RDF.literal(value, datatype: RDF.iri(datatype))
 

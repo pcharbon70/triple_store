@@ -73,10 +73,11 @@ defmodule TripleStore.GraphBackupTest do
       nquads = "<http://example.org/s1> <http://example.org/p1> \"o1\" <http://example.org/g2> ."
 
       # Create named graph reference
-      {:ok, graph_id} = TripleStore.Adapter.term_to_id(
-        store.dict_manager,
-        RDF.iri("http://example.org/g2")
-      )
+      {:ok, graph_id} =
+        TripleStore.Adapter.term_to_id(
+          store.dict_manager,
+          RDF.iri("http://example.org/g2")
+        )
 
       assert {:ok, count} = GraphBackup.import_graph(store, nquads, graph_id)
       assert count == 1
@@ -96,6 +97,7 @@ defmodule TripleStore.GraphBackupTest do
           <http://example.org/s1> <http://example.org/p1> "o1" .
           <http://example.org/s2> <http://example.org/p2> "o2" <http://example.org/g1> .
           """
+
           {:ok, _} = Loader.load_nquads_string(store.db, store.dict_manager, nquads)
 
           on_exit(fn -> cleanup_store(store) end)
@@ -142,7 +144,12 @@ defmodule TripleStore.GraphBackupTest do
       File.write!(path, nquads)
 
       # Create metadata file
-      metadata = %{graph_id: 0, quad_count: 1, created_at: DateTime.utc_now() |> DateTime.to_iso8601()}
+      metadata = %{
+        graph_id: 0,
+        quad_count: 1,
+        created_at: DateTime.utc_now() |> DateTime.to_iso8601()
+      }
+
       File.write!(path <> ".meta", :erlang.term_to_binary(metadata))
 
       assert {:ok, :valid_with_metadata} = GraphBackup.validate_backup(path)
@@ -183,6 +190,7 @@ defmodule TripleStore.GraphBackupTest do
         schema: :quad,
         file_size: byte_size(nquads)
       }
+
       File.write!(path <> ".meta", :erlang.term_to_binary(metadata))
 
       assert {:ok, retrieved} = GraphBackup.get_backup_metadata(path)
@@ -224,6 +232,7 @@ defmodule TripleStore.GraphBackupTest do
           quad_count: 1,
           created_at: DateTime.utc_now() |> DateTime.to_iso8601()
         }
+
         File.write!(path <> ".meta", :erlang.term_to_binary(metadata))
       end)
 

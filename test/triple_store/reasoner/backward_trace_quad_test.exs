@@ -119,7 +119,9 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
 
       # Note: This test will need actual DB mocking or test DB setup
       # For now, we test the API contract
-      assert {:ok, affected} = BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+      assert {:ok, affected} =
+               BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+
       assert is_map(affected)
       assert MapSet.size(affected) == 0
     end
@@ -145,7 +147,9 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
       rules = [Rules.cax_sco()]
 
       # With mock DB, errors are caught and empty MapSet is returned
-      assert {:ok, affected} = BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+      assert {:ok, affected} =
+               BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+
       assert is_map(affected)
     end
 
@@ -265,7 +269,9 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
       deleted_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
       rules = [Rules.cax_sco()]
 
-      assert {:ok, affected} = BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+      assert {:ok, affected} =
+               BackwardTraceQuad.trace_affected_quads(:mock_db, deleted_quads, rules, graph_id: 1)
+
       assert is_map(affected)
     end
 

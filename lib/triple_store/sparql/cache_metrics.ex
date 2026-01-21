@@ -362,15 +362,15 @@ defmodule TripleStore.SPARQL.CacheMetrics do
   # Telemetry Event Handlers
   # ===========================================================================
 
-  defp handle_hit_event(_event, measurements, metadata, _config) do
+  defp handle_hit_event(_event, measurements, _metadata, _config) do
     Logger.debug("[CacheMetrics] Hit in cache: #{measurements.cache}")
   end
 
-  defp handle_miss_event(_event, measurements, metadata, _config) do
+  defp handle_miss_event(_event, measurements, _metadata, _config) do
     Logger.debug("[CacheMetrics] Miss in cache: #{measurements.cache}")
   end
 
-  defp handle_eviction_event(_event, measurements, metadata, _config) do
+  defp handle_eviction_event(_event, measurements, _metadata, _config) do
     Logger.debug("[CacheMetrics] Eviction in cache: #{measurements.cache}")
   end
 
@@ -421,7 +421,15 @@ defmodule TripleStore.SPARQL.CacheMetrics do
   For a single cache metrics map, formats those metrics.
   For a map of all cache metrics, formats each cache type.
   """
-  def format_metrics(%{hits: hits, misses: misses, evictions: evictions, size: size, max_size: max_size, hit_rate: hit_rate, memory_mb: memory_mb}) do
+  def format_metrics(%{
+        hits: hits,
+        misses: misses,
+        evictions: evictions,
+        size: size,
+        max_size: max_size,
+        hit_rate: hit_rate,
+        memory_mb: memory_mb
+      }) do
     """
     Cache Metrics:
     - Hits: #{hits}

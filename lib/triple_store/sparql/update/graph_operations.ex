@@ -132,7 +132,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   @doc """
   Executes a COPY GRAPH operation.
   """
-  @spec execute_copy(map(), term(), term(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec execute_copy(map(), term(), term(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def execute_copy(ctx, source_graph, target_graph, opts \\ []) do
     silent = Keyword.get(opts, :silent, false)
 
@@ -174,7 +175,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   @doc """
   Executes a MOVE GRAPH operation.
   """
-  @spec execute_move(map(), term(), term(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec execute_move(map(), term(), term(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def execute_move(ctx, source_graph, target_graph, opts \\ []) do
     silent = Keyword.get(opts, :silent, false)
 
@@ -222,7 +224,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   @doc """
   Executes an ADD GRAPH operation.
   """
-  @spec execute_add(map(), term(), term(), keyword()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec execute_add(map(), term(), term(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def execute_add(ctx, source_graph, target_graph, opts \\ []) do
     silent = Keyword.get(opts, :silent, false)
 
@@ -361,7 +364,9 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
           {:ok, count} ->
             Helpers.invalidate_cache_if_running()
             {:ok, count}
-          {:error, _} = error -> error
+
+          {:error, _} = error ->
+            error
         end
 
       {:ok, false} ->
@@ -395,12 +400,16 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
       {:ok, graphs} ->
         case Helpers.check_multi_graph_authorization(ctx, graphs, :write) do
           :ok ->
-            result = Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
-              case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
-                {:ok, count} -> {:cont, {:ok, total + count}}
-                {:error, _} -> {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
-              end
-            end)
+            result =
+              Enum.reduce_while(graphs, {:ok, 0}, fn graph_iri, {:ok, total} ->
+                case QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_iri) do
+                  {:ok, count} ->
+                    {:cont, {:ok, total + count}}
+
+                  {:error, _} ->
+                    {:halt, if(silent, do: {:ok, total}, else: {:error, :clear_failed})}
+                end
+              end)
 
             case result do
               {:ok, count} when count > 0 -> Helpers.invalidate_cache_if_running()

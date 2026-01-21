@@ -20,9 +20,20 @@ defmodule TripleStore.SPARQL.ParallelExecutorTest do
     end
 
     test "executes multiple patterns in parallel" do
-      fun1 = fn -> Process.sleep(10); [1, 2] end
-      fun2 = fn -> Process.sleep(10); [3, 4] end
-      fun3 = fn -> Process.sleep(10); [5, 6] end
+      fun1 = fn ->
+        Process.sleep(10)
+        [1, 2]
+      end
+
+      fun2 = fn ->
+        Process.sleep(10)
+        [3, 4]
+      end
+
+      fun3 = fn ->
+        Process.sleep(10)
+        [5, 6]
+      end
 
       assert {:ok, results} = ParallelExecutor.execute_parallel([fun1, fun2, fun3])
       assert length(results) == 3
@@ -66,7 +77,11 @@ defmodule TripleStore.SPARQL.ParallelExecutorTest do
 
     test "respects timeout" do
       fun1 = fn -> [1, 2] end
-      fun2 = fn -> Process.sleep(1000); [3, 4] end
+
+      fun2 = fn ->
+        Process.sleep(1000)
+        [3, 4]
+      end
 
       assert {:ok, results} = ParallelExecutor.execute_parallel([fun1, fun2], timeout: 50)
       # fun2 should timeout and return empty
@@ -159,9 +174,20 @@ defmodule TripleStore.SPARQL.ParallelExecutorTest do
 
   describe "error isolation" do
     test "one failing pattern doesn't affect others" do
-      fun1 = fn -> Process.sleep(10); [1] end
-      fun2 = fn -> Process.sleep(10); raise "error" end
-      fun3 = fn -> Process.sleep(10); [3] end
+      fun1 = fn ->
+        Process.sleep(10)
+        [1]
+      end
+
+      fun2 = fn ->
+        Process.sleep(10)
+        raise "error"
+      end
+
+      fun3 = fn ->
+        Process.sleep(10)
+        [3]
+      end
 
       assert {:ok, results} = ParallelExecutor.execute_parallel([fun1, fun2, fun3])
       assert [1] in results
@@ -170,7 +196,12 @@ defmodule TripleStore.SPARQL.ParallelExecutorTest do
 
     test "timeout doesn't affect completed tasks" do
       fun1 = fn -> [1] end
-      fun2 = fn -> Process.sleep(1000); [2] end
+
+      fun2 = fn ->
+        Process.sleep(1000)
+        [2]
+      end
+
       fun3 = fn -> [3] end
 
       assert {:ok, results} = ParallelExecutor.execute_parallel([fun1, fun2, fun3], timeout: 50)
@@ -213,7 +244,10 @@ defmodule TripleStore.SPARQL.ParallelExecutorTest do
   describe "performance characteristics" do
     @tag :benchmark
     test "parallel execution is faster than sequential for slow operations" do
-      slow_fun = fn -> Process.sleep(50); [1] end
+      slow_fun = fn ->
+        Process.sleep(50)
+        [1]
+      end
 
       # Sequential: 3 * 50ms = 150ms
       {time_seq, _} =

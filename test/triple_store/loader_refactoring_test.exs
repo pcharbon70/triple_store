@@ -49,7 +49,9 @@ defmodule TripleStore.LoaderRefactoringTest do
     ex:s3 ex:p "o3" .
     """
 
-    path = Path.join([System.tmp_dir!(), "loader_refactor_#{name}_#{:erlang.unique_integer()}.ttl"])
+    path =
+      Path.join([System.tmp_dir!(), "loader_refactor_#{name}_#{:erlang.unique_integer()}.ttl"])
+
     File.write!(path, content || default_content)
     path
   end
@@ -134,6 +136,7 @@ defmodule TripleStore.LoaderRefactoringTest do
   describe "load_string/5 with :graph option" do
     test "loads Turtle string to named graph", %{db: db, manager: manager} do
       graph = RDF.iri("http://example.org/string_graph")
+
       content = """
       @prefix ex: <http://example.org/> .
       ex:s ex:p "o" .
@@ -301,7 +304,10 @@ defmodule TripleStore.LoaderRefactoringTest do
       assert length(default_quads) == 1
     end
 
-    test "backward compatibility - loads RDF.Graph without graph option", %{db: db, manager: manager} do
+    test "backward compatibility - loads RDF.Graph without graph option", %{
+      db: db,
+      manager: manager
+    } do
       rdf_graph =
         RDF.Graph.new([
           {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), "o"}
@@ -344,7 +350,9 @@ defmodule TripleStore.LoaderRefactoringTest do
       assert count3 == 1
 
       # Load from RDF.Graph
-      rdf_graph = RDF.Graph.new([{RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), "o"}])
+      rdf_graph =
+        RDF.Graph.new([{RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), "o"}])
+
       {:ok, count4} = Loader.load_graph(db, manager, rdf_graph, graph: graph1)
       assert count4 == 1
 

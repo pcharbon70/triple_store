@@ -28,7 +28,8 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       new_quads = []
       rules = []
 
-      {:ok, _all_facts, stats} = IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
+      {:ok, _all_facts, stats} =
+        IncrementalQuad.add_quads_in_memory(new_quads, existing, rules, graph_id: 1)
 
       assert stats.explicit_added == 0
       assert stats.derived_count == 0

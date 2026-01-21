@@ -83,7 +83,8 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
     test "handles invalid input gracefully", %{db: db} do
       # DerivedStore may ignore invalid quad formats
       # Test that the operation doesn't crash
-      invalid_quads = [{1, 100}]  # Missing predicate and object
+      # Missing predicate and object
+      invalid_quads = [{1, 100}]
 
       # The operation should either return :ok or error, but not crash
       result = DerivedStore.insert_derived_quads(db, invalid_quads)
@@ -110,7 +111,8 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
     test "deduplicates quads within batch", %{db: db} do
       quads = [
         id_quad(1, 100, 200, 300),
-        id_quad(1, 100, 200, 300),  # Duplicate
+        # Duplicate
+        id_quad(1, 100, 200, 300),
         id_quad(1, 101, 201, 301)
       ]
 
@@ -199,7 +201,8 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
     test "deletes quads from specific graph only", %{db: db} do
       quads = [
         id_quad(1, 100, 200, 300),
-        id_quad(2, 100, 200, 300),  # Same IDs but different graph
+        # Same IDs but different graph
+        id_quad(2, 100, 200, 300),
         id_quad(3, 100, 200, 300)
       ]
 
@@ -273,7 +276,9 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       :ok = DerivedStore.insert_derived_quads(db, quads)
 
       # Lookup by subject and predicate
-      {:ok, stream} = DerivedStore.lookup_derived_quads(db, 1, {{:bound, 100}, {:bound, 200}, :var})
+      {:ok, stream} =
+        DerivedStore.lookup_derived_quads(db, 1, {{:bound, 100}, {:bound, 200}, :var})
+
       results = Enum.to_list(stream)
 
       assert length(results) == 2
@@ -626,10 +631,11 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       assert is_function(store_fn, 1)
 
       # Store quads (already include graph_id)
-      quads = MapSet.new([
-        id_quad(1, 100, 200, 300),
-        id_quad(1, 101, 201, 301)
-      ])
+      quads =
+        MapSet.new([
+          id_quad(1, 100, 200, 300),
+          id_quad(1, 101, 201, 301)
+        ])
 
       :ok = store_fn.(quads)
 
@@ -641,12 +647,15 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       store_fn = DerivedStore.make_graph_quad_store_fn(db, 1)
 
       # Quads from multiple graphs
-      quads = MapSet.new([
-        id_quad(1, 100, 200, 300),
-        id_quad(1, 101, 201, 301),
-        id_quad(2, 100, 200, 300),  # Different graph - should be filtered
-        id_quad(3, 100, 200, 300)   # Different graph - should be filtered
-      ])
+      quads =
+        MapSet.new([
+          id_quad(1, 100, 200, 300),
+          id_quad(1, 101, 201, 301),
+          # Different graph - should be filtered
+          id_quad(2, 100, 200, 300),
+          # Different graph - should be filtered
+          id_quad(3, 100, 200, 300)
+        ])
 
       :ok = store_fn.(quads)
 
@@ -678,7 +687,8 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
 
     test "handles mixed valid and invalid operations", %{db: db} do
       valid_quads = [id_quad(1, 100, 200, 300)]
-      invalid_quads = [{1, 100}]  # Invalid format
+      # Invalid format
+      invalid_quads = [{1, 100}]
 
       :ok = DerivedStore.insert_derived_quads(db, valid_quads)
 
@@ -706,7 +716,9 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       :ok = DerivedStore.insert_derived_quad_single(db, quad)
 
       # Pattern with all components bound
-      {:ok, stream} = DerivedStore.lookup_derived_quads(db, 1, {{:bound, 100}, {:bound, 200}, {:bound, 300}})
+      {:ok, stream} =
+        DerivedStore.lookup_derived_quads(db, 1, {{:bound, 100}, {:bound, 200}, {:bound, 300}})
+
       results = Enum.to_list(stream)
 
       assert length(results) == 1
@@ -727,12 +739,13 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
     end
 
     test "handles large ID values" do
-      key = <<0xFFFFFFFFFFFFFFFF::64-big, 0x7FFFFFFFFFFFFFFF::64-big,
-              0x7FFFFFFFFFFFFFFF::64-big, 0x7FFFFFFFFFFFFFFF::64-big>>
+      key =
+        <<0xFFFFFFFFFFFFFFFF::64-big, 0x7FFFFFFFFFFFFFFF::64-big, 0x7FFFFFFFFFFFFFFF::64-big,
+          0x7FFFFFFFFFFFFFFF::64-big>>
 
-      assert {:ok, {0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF,
-                    0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF}} =
-        DerivedStore.decode_derived_key(key)
+      assert {:ok,
+              {0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF}} =
+               DerivedStore.decode_derived_key(key)
     end
   end
 end

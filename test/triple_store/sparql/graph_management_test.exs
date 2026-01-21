@@ -120,7 +120,11 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         # Add some quads to the graph using INSERT DATA
         # The quad format is handled by the parser
 
-        {:ok, ast} = Parser.parse_update("INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s> <http://example.org/p> \"value\" } }")
+        {:ok, ast} =
+          Parser.parse_update(
+            "INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s> <http://example.org/p> \"value\" } }"
+          )
+
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Drop the graph
@@ -204,7 +208,11 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
       try do
         # Add some quads to default graph
-        {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s1> <http://example.org/p> \"v1\" }")
+        {:ok, ast} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s1> <http://example.org/p> \"v1\" }"
+          )
+
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Clear default graph
@@ -237,7 +245,10 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
             "INSERT DATA { GRAPH <#{graph2}> { <http://example.org/s> <http://example.org/p> \"v\" } }"
           )
 
-        {:ok, ast3} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }")
+        {:ok, ast3} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }"
+          )
 
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast1)
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)
@@ -269,9 +280,20 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         graph2 = "http://example.org/g2"
 
         # Add quads to multiple graphs and default
-        {:ok, ast1} = Parser.parse_update("INSERT DATA { GRAPH <#{graph1}> { <http://example.org/s> <http://example.org/p> \"v1\" } }")
-        {:ok, ast2} = Parser.parse_update("INSERT DATA { GRAPH <#{graph2}> { <http://example.org/s> <http://example.org/p> \"v2\" } }")
-        {:ok, ast3} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }")
+        {:ok, ast1} =
+          Parser.parse_update(
+            "INSERT DATA { GRAPH <#{graph1}> { <http://example.org/s> <http://example.org/p> \"v1\" } }"
+          )
+
+        {:ok, ast2} =
+          Parser.parse_update(
+            "INSERT DATA { GRAPH <#{graph2}> { <http://example.org/s> <http://example.org/p> \"v2\" } }"
+          )
+
+        {:ok, ast3} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }"
+          )
 
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast1)
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)
@@ -374,10 +396,8 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
         # Add a quad first
         quad = [
-          {:quad, {:named_node, "http://example.org/s"},
-                  {:named_node, "http://example.org/p"},
-                  {:literal, :simple, "value"},
-                  {:named_node, graph_iri}}
+          {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+           {:literal, :simple, "value"}, {:named_node, graph_iri}}
         ]
 
         assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quad)
@@ -423,7 +443,11 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
       try do
         # Add data to default graph
-        {:ok, ast} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> \"value\" }")
+        {:ok, ast} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s> <http://example.org/p> \"value\" }"
+          )
+
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
         # Clear default graph
@@ -440,9 +464,15 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
       try do
         # Add data to default and named graph
-        {:ok, ast1} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }")
+        {:ok, ast1} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }"
+          )
+
         {:ok, ast2} =
-          Parser.parse_update("INSERT DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> \"named\" } }")
+          Parser.parse_update(
+            "INSERT DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> \"named\" } }"
+          )
 
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast1)
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)
@@ -461,9 +491,15 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
       try do
         # Add data to default and named graph
-        {:ok, ast1} = Parser.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }")
+        {:ok, ast1} =
+          Parser.parse_update(
+            "INSERT DATA { <http://example.org/s> <http://example.org/p> \"default\" }"
+          )
+
         {:ok, ast2} =
-          Parser.parse_update("INSERT DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> \"named\" } }")
+          Parser.parse_update(
+            "INSERT DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> \"named\" } }"
+          )
 
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast1)
         assert {:ok, 1} = UpdateExecutor.execute(ctx, ast2)

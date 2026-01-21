@@ -96,16 +96,20 @@ defmodule TripleStore.SPARQL.Validation do
   @spec validate_graph_term(atom() | String.t() | {atom(), String.t()}) :: :ok | {:error, atom()}
   def validate_graph_term(:default_graph), do: :ok
   def validate_graph_term(:default), do: :ok
+
   def validate_graph_term({:named_node, graph_iri}) when is_binary(graph_iri) do
     validate_graph_iri(graph_iri)
   end
+
   def validate_graph_term({:blank_node, _id}) do
     # Blank nodes as graph terms are valid in SPARQL GRAPH clauses
     :ok
   end
+
   def validate_graph_term(graph_iri) when is_binary(graph_iri) do
     validate_graph_iri(graph_iri)
   end
+
   def validate_graph_term(_), do: {:error, :invalid_graph_term}
 
   # ===========================================================================
@@ -122,11 +126,15 @@ defmodule TripleStore.SPARQL.Validation do
   @suspicious_patterns [
     "../",
     "..\\",
-    "%2e%2e",  # URL-encoded ".."
-    "%252e",   # URL-encoded "%2e"
+    # URL-encoded ".."
+    "%2e%2e",
+    # URL-encoded "%2e"
+    "%252e",
     "\\0",
-    "%00",     # Null byte
-    "~0",      # SQL Server null byte alternative
+    # Null byte
+    "%00",
+    # SQL Server null byte alternative
+    "~0",
     "etc/passwd",
     "windows/system32"
   ]
@@ -185,8 +193,8 @@ defmodule TripleStore.SPARQL.Validation do
 
   defp valid_non_uri_iri?(iri) do
     # Check for skippable blank node patterns
+    # Check for valid URN without scheme delimiter
     String.starts_with?(iri, "_:") or
-      # Check for valid URN without scheme delimiter
       Regex.match?(~r/^urn:[a-z0-9][a-z0-9\-]{0,31}:/i, iri)
   end
 
@@ -196,7 +204,8 @@ defmodule TripleStore.SPARQL.Validation do
         # Check if scheme is in allowed list by comparing strings
         scheme_lower = String.downcase(scheme)
 
-        allowed_scheme_strings = @allowed_schemes |> Enum.map(&Atom.to_string/1) |> Enum.map(&String.downcase/1)
+        allowed_scheme_strings =
+          @allowed_schemes |> Enum.map(&Atom.to_string/1) |> Enum.map(&String.downcase/1)
 
         if scheme_lower in allowed_scheme_strings do
           :ok
@@ -218,8 +227,8 @@ defmodule TripleStore.SPARQL.Validation do
     lower_iri = String.downcase(graph_iri)
 
     if Enum.any?(@suspicious_patterns, fn pattern ->
-           String.contains?(lower_iri, String.downcase(pattern))
-         end) do
+         String.contains?(lower_iri, String.downcase(pattern))
+       end) do
       {:error, :path_traversal_detected}
     else
       :ok

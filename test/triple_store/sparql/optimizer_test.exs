@@ -1750,9 +1750,10 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     defp many_filters(filter_count) do
       # Create independent filtered BGPs and join them in a balanced way
       # This keeps depth low (log2(N) + 1) while creating many filters
-      base_bgps = Enum.map(1..filter_count, fn i ->
-        filter(greater(var("x"), int(i)), bgp([triple(var("x"), var("p#{i}"), var("o#{i}"))]))
-      end)
+      base_bgps =
+        Enum.map(1..filter_count, fn i ->
+          filter(greater(var("x"), int(i)), bgp([triple(var("x"), var("p#{i}"), var("o#{i}"))]))
+        end)
 
       # Join all the filtered BGPs in a balanced tree structure
       case base_bgps do
@@ -1765,6 +1766,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     # Helper to balance joins to minimize depth
     defp balance_joins([]), do: bgp([])
     defp balance_joins([single]), do: single
+
     defp balance_joins(list) when length(list) > 1 do
       mid = div(length(list), 2)
       {left, right} = Enum.split(list, mid)
@@ -1849,7 +1851,8 @@ defmodule TripleStore.SPARQL.OptimizerTest do
 
       metrics = Optimizer.analyze_complexity(algebra)
 
-      assert metrics.joins >= 4  # 3 from right + 1 from top join
+      # 3 from right + 1 from top join
+      assert metrics.joins >= 4
       assert metrics.filters >= 1
     end
 
@@ -1950,9 +1953,10 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     test "optimize/2 error message includes all limits" do
       algebra = large_bgp(101)
 
-      error = assert_raise ArgumentError, fn ->
-        Optimizer.optimize(algebra)
-      end
+      error =
+        assert_raise ArgumentError, fn ->
+          Optimizer.optimize(algebra)
+        end
 
       assert error.message =~ "Max nodes"
       assert error.message =~ "Max BGP patterns"
@@ -1963,9 +1967,10 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     test "optimize/2 error message warns about attack" do
       algebra = many_joins(51)
 
-      error = assert_raise ArgumentError, fn ->
-        Optimizer.optimize(algebra)
-      end
+      error =
+        assert_raise ArgumentError, fn ->
+          Optimizer.optimize(algebra)
+        end
 
       assert error.message =~ "malformed query or an attack"
     end
@@ -1979,7 +1984,9 @@ defmodule TripleStore.SPARQL.OptimizerTest do
         |> Enum.chunk_every(5)
         |> Enum.map(&{:bgp, &1})
         |> Enum.reduce(fn bgp, acc -> join(acc, bgp) end)
-        |> then(fn joined -> filter(greater(var("x1"), int(5)), filter(less(var("x2"), int(10)), joined)) end)
+        |> then(fn joined ->
+          filter(greater(var("x1"), int(5)), filter(less(var("x2"), int(10)), joined))
+        end)
 
       # Should not raise
       result = Optimizer.optimize(algebra)
@@ -2016,9 +2023,10 @@ defmodule TripleStore.SPARQL.OptimizerTest do
     defp wide_tree_at_depth(width) do
       # Create a balanced tree with 'width' BGPs at depth 1
       # Each BGP is connected via unions, which all exist at the same depth
-      base_bgps = Enum.map(1..width, fn i ->
-        bgp([triple(var("x#{i}"), var("p#{i}"), var("o#{i}"))])
-      end)
+      base_bgps =
+        Enum.map(1..width, fn i ->
+          bgp([triple(var("x#{i}"), var("p#{i}"), var("o#{i}"))])
+        end)
 
       # Join all BGPs at the same depth using balance_joins
       case base_bgps do
@@ -2109,9 +2117,10 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       # by checking that a depth error (similar validation path) has the right format
       algebra = deeply_nested_joins(101)
 
-      error = assert_raise ArgumentError, fn ->
-        Optimizer.optimize(algebra)
-      end
+      error =
+        assert_raise ArgumentError, fn ->
+          Optimizer.optimize(algebra)
+        end
 
       assert error.message =~ "max"
     end

@@ -313,7 +313,9 @@ defmodule TripleStore.SPARQL.PatternMacros do
       {:quad, s, p, o, :default}
 
   """
-  def to_quad({:triple, s, p, o}, graph \\ :default) do
+  def to_quad(pattern, graph \\ :default)
+
+  def to_quad({:triple, s, p, o}, graph) do
     {:quad, s, p, o, graph}
   end
 

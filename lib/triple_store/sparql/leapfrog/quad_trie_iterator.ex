@@ -130,7 +130,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   """
   @spec new(pid(), :gspo | :gpos | :spog | :posg, binary(), 0 | 1 | 2 | 3) ::
           {:ok, t()} | {:error, term()}
-  def new(db, cf, prefix, level) when cf in [:gspo, :gpos, :spog, :posg] and level in [0, 1, 2, 3] do
+  def new(db, cf, prefix, level)
+      when cf in [:gspo, :gpos, :spog, :posg] and level in [0, 1, 2, 3] do
     case NIF.prefix_iterator(db, cf, prefix) do
       {:ok, iter_ref} ->
         iter = %__MODULE__{
@@ -357,7 +358,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
       {g, s, p, o}
 
   """
-  @spec decode_key(binary()) :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
+  @spec decode_key(binary()) ::
+          {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
   def decode_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>) do
     {first, second, third, fourth}
   end
@@ -384,23 +386,21 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
 
   def extract_binding(%__MODULE__{current_key: key}) do
     values = decode_key(key)
-    {:ok, %{pos0: elem(values, 0), pos1: elem(values, 1), pos2: elem(values, 2), pos3: elem(values, 3)}}
+
+    {:ok,
+     %{pos0: elem(values, 0), pos1: elem(values, 1), pos2: elem(values, 2), pos3: elem(values, 3)}}
   end
 
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
 
-  @doc """
-  Advances the iterator to the first entry and extracts the value.
-
-  ## Returns
-
-  - `{:ok, iterator}` if positioned at a valid entry
-  - `{:exhausted, iterator}` if no entries exist
-  - `{:error, reason}` on failure
-
-  """
+  # Advances the iterator to the first entry and extracts the value.
+  #
+  # Returns:
+  # - `{:ok, iterator}` if positioned at a valid entry
+  # - `{:exhausted, iterator}` if no entries exist
+  # - `{:error, reason}` on failure
   @spec advance_to_first(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   defp advance_to_first(iter) do
     case NIF.iterator_next(iter.iter_ref) do
@@ -420,13 +420,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
     end
   end
 
-  @doc """
-  Builds a seek key by extending the prefix with the target at the given level.
-
-  The seek key is used to position the iterator at the first entry where
-  the value at the specified level is >= target.
-
-  """
+  # Builds a seek key by extending the prefix with the target at the given level.
+  #
+  # The seek key is used to position the iterator at the first entry where
+  # the value at the specified level is >= target.
   @spec build_seek_key(binary(), 0 | 1 | 2 | 3, non_neg_integer()) :: binary()
   defp build_seek_key(prefix, level, target) do
     # The prefix length tells us how many complete IDs are already bound
@@ -451,7 +448,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
 end
 
 # Protocol implementation for polymorphic Leapfrog support
-defimpl TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol, for: TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
+defimpl TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol,
+  for: TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   def current(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current(iter)
   def seek(iter, target), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.seek(iter, target)
   def next(iter), do: TripleStore.SPARQL.Leapfrog.QuadTrieIterator.next(iter)

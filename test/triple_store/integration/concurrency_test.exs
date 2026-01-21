@@ -60,14 +60,15 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
   defp load_test_data(ctx, graph_iris) do
     # Build N-Quads format with full URIs
-    nquads_content = Enum.flat_map(graph_iris, fn graph_iri ->
-      [
-        "<#{@ex}item1> <#{@ex}value> \"1\" <#{graph_iri}> .",
-        "<#{@ex}item2> <#{@ex}value> \"2\" <#{graph_iri}> .",
-        "<#{@ex}item3> <#{@ex}value> \"3\" <#{graph_iri}> ."
-      ]
-    end)
-    |> Enum.join("\n")
+    nquads_content =
+      Enum.flat_map(graph_iris, fn graph_iri ->
+        [
+          "<#{@ex}item1> <#{@ex}value> \"1\" <#{graph_iri}> .",
+          "<#{@ex}item2> <#{@ex}value> \"2\" <#{graph_iri}> .",
+          "<#{@ex}item3> <#{@ex}value> \"3\" <#{graph_iri}> ."
+        ]
+      end)
+      |> Enum.join("\n")
 
     {:ok, _count} = Loader.load_nquads_string(ctx.db, ctx.dict_manager, nquads_content)
 
@@ -154,9 +155,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All queries should succeed and return same results
       assert Enum.all?(results, fn
-        {:ok, r} -> length(r) == 3
-        _ -> false
-      end)
+               {:ok, r} -> length(r) == 3
+               _ -> false
+             end)
     end
 
     test "6.7.1.3 concurrent reads during load", %{ctx: ctx} do
@@ -166,10 +167,11 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       # Start loading data in background
       load_task =
         Task.async(fn ->
-          large_data = Enum.map(1..100, fn i ->
-            "<#{@ex}item#{i}> <#{@ex}value> \"#{i}\" <#{graph}> ."
-          end)
-          |> Enum.join("\n")
+          large_data =
+            Enum.map(1..100, fn i ->
+              "<#{@ex}item#{i}> <#{@ex}value> \"#{i}\" <#{graph}> ."
+            end)
+            |> Enum.join("\n")
 
           Loader.load_nquads_string(ctx.db, ctx.dict_manager, large_data)
         end)
@@ -190,6 +192,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
               }
               LIMIT 10
             """
+
             Query.query(ctx, query)
           end)
         end)
@@ -202,9 +205,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       # Queries during load should either succeed or return partial results
       # but should not crash
       assert Enum.all?(query_results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+               {:ok, _} -> true
+               _ -> false
+             end)
     end
 
     test "6.7.1.4 concurrent graph enumeration", %{ctx: ctx} do
@@ -223,9 +226,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All enumerations should succeed
       assert Enum.all?(results, fn
-        {:ok, graphs} -> is_list(graphs) and length(graphs) >= 5
-        _ -> false
-      end)
+               {:ok, graphs} -> is_list(graphs) and length(graphs) >= 5
+               _ -> false
+             end)
     end
 
     test "6.7.1.5 concurrent statistics access", %{ctx: ctx} do
@@ -250,9 +253,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All statistics queries should succeed
       assert Enum.all?(results, fn
-        {:ok, _stats} -> true
-        _ -> false
-      end)
+               {:ok, _stats} -> true
+               _ -> false
+             end)
     end
   end
 
@@ -272,11 +275,11 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       # Insert to different graphs concurrently using N-Quads
       tasks =
         for {graph, suffix} <- [{graph1, "a"}, {graph2, "b"}] do
-        Task.async(fn ->
-          nquads = "<#{@ex}item> <#{@ex}value> \"#{suffix}\" <#{graph}> ."
-          Loader.load_nquads_string(ctx.db, ctx.dict_manager, nquads)
-        end)
-      end
+          Task.async(fn ->
+            nquads = "<#{@ex}item> <#{@ex}value> \"#{suffix}\" <#{graph}> ."
+            Loader.load_nquads_string(ctx.db, ctx.dict_manager, nquads)
+          end)
+        end
 
       # Wait for all inserts
       results = Task.await_many(tasks, 10_000)
@@ -314,9 +317,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All should succeed
       assert Enum.all?(results, fn
-        {:ok, _count} -> true
-        _ -> false
-      end)
+               {:ok, _count} -> true
+               _ -> false
+             end)
 
       # Verify all data was inserted (should be 10 items)
       query = """
@@ -357,25 +360,29 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       # Concurrent updates to different graphs
       tasks = [
         Task.async(fn ->
-          {:ok, ast} = Parser.parse_update("""
-            PREFIX ex: <#{@ex}>
-            INSERT DATA {
-              GRAPH <#{graph1}> {
-                ex:item ex:value "1" .
+          {:ok, ast} =
+            Parser.parse_update("""
+              PREFIX ex: <#{@ex}>
+              INSERT DATA {
+                GRAPH <#{graph1}> {
+                  ex:item ex:value "1" .
+                }
               }
-            }
-          """)
+            """)
+
           UpdateExecutor.execute(ctx, ast)
         end),
         Task.async(fn ->
-          {:ok, ast} = Parser.parse_update("""
-            PREFIX ex: <#{@ex}>
-            INSERT DATA {
-              GRAPH <#{graph2}> {
-                ex:item ex:value "2" .
+          {:ok, ast} =
+            Parser.parse_update("""
+              PREFIX ex: <#{@ex}>
+              INSERT DATA {
+                GRAPH <#{graph2}> {
+                  ex:item ex:value "2" .
+                }
               }
-            }
-          """)
+            """)
+
           UpdateExecutor.execute(ctx, ast)
         end)
       ]
@@ -385,9 +392,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # Both should succeed
       assert Enum.all?(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+               {:ok, _} -> true
+               _ -> false
+             end)
     end
 
     test "6.7.2.4 concurrent CREATE GRAPH with data", %{ctx: ctx} do
@@ -395,6 +402,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       tasks =
         Enum.map(1..10, fn i ->
           graph = "#{@ex}concurrent-create-#{i}"
+
           Task.async(fn ->
             # Insert data to create the graph
             nquads = "<#{@ex}item#{i}> <#{@ex}value> \"#{i}\" <#{graph}> ."
@@ -406,9 +414,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All should succeed
       assert Enum.all?(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+               {:ok, _} -> true
+               _ -> false
+             end)
 
       # Verify all graphs exist
       {:ok, graphs} = QuadOperations.list_graphs(ctx.db, include_default: false)
@@ -427,6 +435,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
         <#{@ex}item2> <#{@ex}value> "2" <#{graph}> .
         <#{@ex}item3> <#{@ex}value> "3" <#{graph}> .
       """
+
       {:ok, _} = Loader.load_nquads_string(ctx.db, ctx.dict_manager, trig)
 
       # Concurrent deletes of different items from same graph
@@ -448,9 +457,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # All should succeed
       assert Enum.all?(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+               {:ok, _} -> true
+               _ -> false
+             end)
 
       # Verify only remaining items exist
       query = graph_query(graph)
@@ -534,6 +543,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
         <#{@ex}item1> <#{@ex}value> "1" <#{graph}> .
         <#{@ex}item2> <#{@ex}value> "2" <#{graph}> .
       """
+
       {:ok, _} = Loader.load_nquads_string(ctx.db, ctx.dict_manager, nquads)
       :ok = Authorization.set_public(ctx, graph)
 

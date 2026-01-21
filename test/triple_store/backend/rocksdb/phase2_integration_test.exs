@@ -65,7 +65,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
 
       results =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, key, value} -> {{key, value}, iter}
@@ -133,8 +135,10 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       test_data = [
         {<<1::64-big, 1::64-big, 1::64-big>>, "v1"},
         {<<1::64-big, 1::64-big, 2::64-big>>, "v2"},
-        {<<1::64-big, 2::64-big, 1::64-big>>, "v3"},  # Different predicate
-        {<<2::64-big, 1::64-big, 1::64-big>>, "v4"}   # Different subject
+        # Different predicate
+        {<<1::64-big, 2::64-big, 1::64-big>>, "v3"},
+        # Different subject
+        {<<2::64-big, 1::64-big, 1::64-big>>, "v4"}
       ]
 
       Enum.each(test_data, fn {key, value} ->
@@ -146,7 +150,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
 
       results =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, _key, _value} = result -> {result, iter}
@@ -257,7 +263,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
 
       results =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, key, value} -> {{key, value}, iter}
@@ -360,7 +368,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
 
       count =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, _key, _value} -> {1, iter}
@@ -534,7 +544,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
 
       count =
         Stream.unfold(iter, fn
-          :iterator_end -> nil
+          :iterator_end ->
+            nil
+
           iter ->
             case NIF.iterator_next(iter) do
               {:ok, _key, _value} -> {1, iter}

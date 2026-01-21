@@ -252,7 +252,8 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Should get distinct graph names
-      graphs = Enum.map(results, fn r -> r["g"] end)
+      graphs =
+        Enum.map(results, fn r -> r["g"] end)
         |> Enum.uniq()
 
       assert length(graphs) >= 3
@@ -517,11 +518,14 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       # Verify we get results from both graphs
       graph_names = Enum.map(results, fn r -> r["g"] end)
-      graph_iris = Enum.map(graph_names, fn
-        {:named_node, iri} -> iri
-        %RDF.IRI{} = iri -> RDF.IRI.to_string(iri)
-        iri when is_binary(iri) -> iri
-      end)
+
+      graph_iris =
+        Enum.map(graph_names, fn
+          {:named_node, iri} -> iri
+          %RDF.IRI{} = iri -> RDF.IRI.to_string(iri)
+          iri when is_binary(iri) -> iri
+        end)
+
       assert "http://example.org/graph1" in graph_iris
       assert "http://example.org/graph2" in graph_iris
     end

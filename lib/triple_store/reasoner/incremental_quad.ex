@@ -184,10 +184,11 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     ]
 
     # Normalize quads to ensure graph_id consistency
-    normalized_quads = Enum.map(new_quads, fn
-      {g, s, p, o} -> {g || graph_id, s, p, o}
-      {s, p, o} -> {graph_id, s, p, o}
-    end)
+    normalized_quads =
+      Enum.map(new_quads, fn
+        {g, s, p, o} -> {g || graph_id, s, p, o}
+        {s, p, o} -> {graph_id, s, p, o}
+      end)
 
     # Filter out quads that already exist in the target graph
     novel_quads = filter_existing_quads(normalized_quads, existing, graph_id)
@@ -227,6 +228,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
 
         MapSet.union(current, new_quads_with_graph)
       end)
+
       :ok
     end
 
@@ -333,7 +335,15 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     with {:ok, novel_quads} <- filter_existing_db_quads(db, quads, graph_id),
          :ok <- insert_explicit_quads(db, novel_quads),
          {:ok, stats} <-
-           run_db_reasoning(db, novel_quads, rules, graph_id, tbox_graph_id, scope, semi_naive_opts) do
+           run_db_reasoning(
+             db,
+             novel_quads,
+             rules,
+             graph_id,
+             tbox_graph_id,
+             scope,
+             semi_naive_opts
+           ) do
       duration_ms = System.monotonic_time(:millisecond) - start_time
 
       {:ok,
@@ -366,7 +376,8 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
 
     # Create lookup function combining TBox with graph facts
     lookup_fn = fn pattern ->
-      with {:ok, graph_facts} <- QuadIndex.lookup_all_fold(db, graph_id, convert_rule_pattern(pattern)) do
+      with {:ok, graph_facts} <-
+             QuadIndex.lookup_all_fold(db, graph_id, convert_rule_pattern(pattern)) do
         all_facts = MapSet.union(MapSet.new(graph_facts), tbox_facts)
         {:ok, match_quad_pattern(pattern, all_facts)}
       end

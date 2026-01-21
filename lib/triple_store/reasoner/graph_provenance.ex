@@ -205,7 +205,8 @@ defmodule TripleStore.Reasoner.GraphProvenance do
   """
   @spec merge(t(), t()) :: t()
   def merge(%__MODULE__{} = tracker1, %__MODULE__{} = tracker2) do
-    merged_tracking = Map.merge(tracker1.tracking, tracker2.tracking, fn _k, v1, v2 -> MapSet.union(v1, v2) end)
+    merged_tracking =
+      Map.merge(tracker1.tracking, tracker2.tracking, fn _k, v1, v2 -> MapSet.union(v1, v2) end)
 
     %__MODULE__{
       tracking: merged_tracking,
@@ -262,7 +263,7 @@ defmodule TripleStore.Reasoner.GraphProvenance do
           [term()],
           [id_quad()]
         ) :: t()
-  def build_provenance(db, graph_id, tbox_graph_id, _rules, derived_quads) do
+  def build_provenance(_db, graph_id, tbox_graph_id, _rules, derived_quads) do
     # For each derived quad, determine its source graphs
     # This is a simplified version that assumes:
     # - Derived quads in graph_id depend on graph_id

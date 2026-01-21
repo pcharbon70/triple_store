@@ -42,7 +42,7 @@ defmodule TripleStore.SPARQL.ErrorHandlerTest do
   describe "wrap/2" do
     test "wraps error with context" do
       assert {:error, %{error: "test", context: "value"}} ==
-        ErrorHandler.wrap("test", context: "value")
+               ErrorHandler.wrap("test", context: "value")
     end
 
     test "wraps error with multiple context fields" do
@@ -83,8 +83,8 @@ defmodule TripleStore.SPARQL.ErrorHandlerTest do
 
     test "calls handler function for errors" do
       assert ErrorHandler.handle_or({:error, "failed"}, :default, fn error ->
-        "handled: #{error}"
-      end) == "handled: failed"
+               "handled: #{error}"
+             end) == "handled: failed"
     end
   end
 
@@ -169,7 +169,9 @@ defmodule TripleStore.SPARQL.ErrorHandlerTest do
     end
 
     test "TimeoutError has message and context" do
-      exception = ErrorHandler.TimeoutError.exception("timeout", timeout_ms: 5000, query: "SELECT *")
+      exception =
+        ErrorHandler.TimeoutError.exception("timeout", timeout_ms: 5000, query: "SELECT *")
+
       assert Exception.message(exception) == "timeout"
       assert exception.timeout_ms == 5000
       assert exception.query == "SELECT *"
@@ -181,7 +183,12 @@ defmodule TripleStore.SPARQL.ErrorHandlerTest do
     end
 
     test "ResourceError has message and resource info" do
-      exception = ErrorHandler.ResourceError.exception("out of memory", resource: :memory, operation: :query)
+      exception =
+        ErrorHandler.ResourceError.exception("out of memory",
+          resource: :memory,
+          operation: :query
+        )
+
       assert Exception.message(exception) == "out of memory"
     end
   end

@@ -8,8 +8,8 @@ defmodule TripleStore.Reasoner.PropertiesTest do
   @property_iterations 100
 
   # ============================================================================
-# GraphProvenance Properties
-# ============================================================================
+  # GraphProvenance Properties
+  # ============================================================================
 
   describe "GraphProvenance properties" do
     test "merge is associative" do
@@ -61,7 +61,9 @@ defmodule TripleStore.Reasoner.PropertiesTest do
 
     test "add_source and remove_quad maintain count" do
       Enum.each(1..@property_iterations, fn _ ->
-        quad = {Enum.random(0..100), Enum.random(0..100), Enum.random(0..100), Enum.random(0..100)}
+        quad =
+          {Enum.random(0..100), Enum.random(0..100), Enum.random(0..100), Enum.random(0..100)}
+
         tracker = GraphProvenance.new()
 
         initial_count = GraphProvenance.count(tracker)
@@ -76,7 +78,7 @@ defmodule TripleStore.Reasoner.PropertiesTest do
   end
 
   # ============================================================================
-# GraphHelpers Properties
+  # GraphHelpers Properties
   # ============================================================================
 
   describe "GraphHelpers properties" do
@@ -142,7 +144,7 @@ defmodule TripleStore.Reasoner.PropertiesTest do
   end
 
   # ============================================================================
-# Helper Generators and Functions
+  # Helper Generators and Functions
   # ============================================================================
 
   defp generate_quads(count) do

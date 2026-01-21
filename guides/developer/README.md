@@ -12,6 +12,9 @@ Technical documentation for TripleStore internals and implementation details.
 | [03-reasoning-engine.md](03-reasoning-engine.md) | OWL 2 RL rules, semi-naive evaluation, TBox caching |
 | [04-query-optimization.md](04-query-optimization.md) | Cost model, cardinality estimation, join enumeration |
 | [05-telemetry-monitoring.md](05-telemetry-monitoring.md) | Telemetry events, metrics collection, Prometheus |
+| [06-quad-store-architecture.md](06-quad-store-architecture.md) | Quad store indices, named graphs, graph-scoped reasoning |
+| [07-otp-concurrency.md](07-otp-concurrency.md) | GenServers, supervision trees, process architecture |
+| [08-data-flow.md](08-data-flow.md) | End-to-end request flows and data pipelines |
 
 ## Reading Order
 
@@ -22,7 +25,9 @@ For new developers:
 3. Continue with **SPARQL Engine** for query processing
 4. Explore **Reasoning Engine** for OWL 2 RL inference
 5. Review **Query Optimization** for performance considerations
-6. Finish with **Telemetry & Monitoring** for observability
+6. Read **Quad Store Architecture** for named graph support
+7. Study **OTP & Concurrency** for process architecture
+8. Finish with **Telemetry & Monitoring** for observability
 
 ## Key Concepts
 

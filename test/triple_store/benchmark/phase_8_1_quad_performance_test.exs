@@ -133,7 +133,10 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
       time_ms = time_us / 1000
       result_count = length(results)
 
-      IO.puts("\n  [Benchmark] Graph-scoped query (graph 0, predicate=1): #{Float.round(time_ms, 2)}ms")
+      IO.puts(
+        "\n  [Benchmark] Graph-scoped query (graph 0, predicate=1): #{Float.round(time_ms, 2)}ms"
+      )
+
       IO.puts("  [Benchmark] Results: #{result_count} quads")
 
       # Target: <15ms for typical graph-scoped query
@@ -294,9 +297,7 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
       Enum.each(test_cases, fn {quad_count, expected_ops} ->
         ops = BatchOptimizer.estimate_operations(quad_count)
 
-        IO.puts(
-          "\n  [Benchmark] Estimate operations for #{quad_count} quads: #{ops} operations"
-        )
+        IO.puts("\n  [Benchmark] Estimate operations for #{quad_count} quads: #{ops} operations")
 
         assert ops == expected_ops,
                "Expected #{expected_ops} operations for #{quad_count} quads, got #{ops}"
@@ -343,7 +344,10 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
       IO.puts("\n  [Benchmark] Cold cache query: #{Float.round(cold_time_ms, 2)}ms")
       IO.puts("  [Benchmark] Warm cache query: #{Float.round(warm_time_ms, 2)}ms")
       IO.puts("  [Benchmark] Speedup: #{speedup}x")
-      IO.puts("  [Benchmark] Warmed #{warm_stats.quad_count} quads in #{warm_stats.duration_ms}ms")
+
+      IO.puts(
+        "  [Benchmark] Warmed #{warm_stats.quad_count} quads in #{warm_stats.duration_ms}ms"
+      )
 
       # Warm query should be faster (or at least not significantly slower)
       # Note: In some cases, the OS may have already cached the data,

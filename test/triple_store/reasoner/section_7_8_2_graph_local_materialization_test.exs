@@ -73,23 +73,26 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
 
         # Create reasoning config
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          mode: :materialized,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            mode: :materialized,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize graph 1
-        result = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        result =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
         assert {:ok, stats} = result
         assert stats.graph_id == 1
         assert stats.explicit_count == 3
-        assert stats.derived_count >= 2  # Student->Person, Professor->Person
+        # Student->Person, Professor->Person
+        assert stats.derived_count >= 2
         assert is_integer(stats.duration_ms)
       after
         cleanup_db(db, path)
@@ -104,16 +107,18 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, tbox_facts(), 0)
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, _stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        {:ok, _stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
         # Verify derived quads are in graph 1
         derived_count = count_derived_quads(db, 1)
@@ -130,16 +135,18 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, tbox_facts(), 0)
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        {:ok, stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
         # Verify statistics structure
         assert Map.has_key?(stats, :graph_id)
@@ -170,17 +177,19 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize only graph 1
-        {:ok, _stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        {:ok, _stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
         # Verify graph 2 has no derived quads
         graph2_derived = count_derived_quads(db, 2)
@@ -198,22 +207,25 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize both graphs separately
-        {:ok, stats1} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        {:ok, stats1} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
-        {:ok, stats2} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 2,
-          config: config
-        )
+        {:ok, stats2} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 2,
+            config: config
+          )
 
         # Both should have derived quads
         assert stats1.derived_count > 0
@@ -234,11 +246,12 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize only graph 1
         GraphScopedReasoner.materialize_graph(db,
@@ -274,18 +287,20 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize both graphs
-        {:ok, stats_map} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config,
-          parallel: false
-        )
+        {:ok, stats_map} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config,
+            parallel: false
+          )
 
         assert is_map(stats_map)
         assert Map.has_key?(stats_map, 1)
@@ -310,16 +325,18 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, stats_map} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config
-        )
+        {:ok, stats_map} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config
+          )
 
         # Verify each stats map has required fields
         Enum.each([1, 2], fn graph_id ->
@@ -341,17 +358,19 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, tbox_facts(), 0)
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Materialize single graph using multi-graph API
-        {:ok, stats_map} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1],
-          config: config
-        )
+        {:ok, stats_map} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1],
+            config: config
+          )
 
         assert map_size(stats_map) == 1
         assert stats_map[1].derived_count > 0
@@ -366,10 +385,11 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
       try do
         {:ok, config} = ReasoningConfig.new(profile: :rdfs, scope: :local)
 
-        {:ok, stats_map} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [],
-          config: config
-        )
+        {:ok, stats_map} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [],
+            config: config
+          )
 
         assert stats_map == %{}
       after
@@ -395,15 +415,17 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
 
         insert_facts(db, default_facts, 0)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local
+          )
 
-        {:ok, stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 0,
-          config: config
-        )
+        {:ok, stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 0,
+            config: config
+          )
 
         assert stats.graph_id == 0
         assert stats.explicit_count == 2
@@ -433,10 +455,11 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         {:ok, config} = ReasoningConfig.new(profile: :rdfs, scope: :local)
 
         # Materialize only default graph
-        {:ok, _stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 0,
-          config: config
-        )
+        {:ok, _stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 0,
+            config: config
+          )
 
         # Verify graph 1 has no derived quads
         graph1_derived = count_derived_quads(db, 1)
@@ -467,10 +490,11 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
 
         {:ok, config} = ReasoningConfig.new(profile: :rdfs, scope: :local)
 
-        {:ok, stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 0,
-          config: config
-        )
+        {:ok, stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 0,
+            config: config
+          )
 
         # Should derive x type B and x type C via transitive subclass
         assert stats.derived_count >= 2
@@ -493,18 +517,20 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # First: sequential materialization
-        {:ok, seq_stats} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config,
-          parallel: false
-        )
+        {:ok, seq_stats} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config,
+            parallel: false
+          )
 
         # Clear derived quads
         NIF.delete_fold(db, :derived_cf, <<>>, fn {key, _}, acc ->
@@ -513,11 +539,12 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)
 
         # Second: parallel materialization
-        {:ok, par_stats} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config,
-          parallel: true
-        )
+        {:ok, par_stats} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config,
+            parallel: true
+          )
 
         # Results should be equivalent
         assert seq_stats[1].derived_count == par_stats[1].derived_count
@@ -536,27 +563,30 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           facts = [
             {ex_iri("p#{graph_id}"), rdf_type(), ex_iri("Person")}
           ]
+
           insert_facts(db, facts, graph_id)
         end)
 
         insert_facts(db, tbox_facts(), 0)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         graph_ids = Enum.to_list(1..5)
 
         # Measure sequential time
-        {seq_duration, _} = :timer.tc(fn ->
-          GraphScopedReasoner.materialize_graphs(db,
-            graph_ids: graph_ids,
-            config: config,
-            parallel: false
-          )
-        end)
+        {seq_duration, _} =
+          :timer.tc(fn ->
+            GraphScopedReasoner.materialize_graphs(db,
+              graph_ids: graph_ids,
+              config: config,
+              parallel: false
+            )
+          end)
 
         # Clear derived
         NIF.delete_fold(db, :derived_cf, <<>>, fn {key, _}, acc ->
@@ -565,13 +595,14 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)
 
         # Measure parallel time
-        {par_duration, _} = :timer.tc(fn ->
-          GraphScopedReasoner.materialize_graphs(db,
-            graph_ids: graph_ids,
-            config: config,
-            parallel: true
-          )
-        end)
+        {par_duration, _} =
+          :timer.tc(fn ->
+            GraphScopedReasoner.materialize_graphs(db,
+              graph_ids: graph_ids,
+              config: config,
+              parallel: true
+            )
+          end)
 
         # Parallel should be faster (or at least not significantly slower)
         # Allow for some variance but generally parallel should be beneficial
@@ -589,18 +620,20 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
         # Parallel with valid graphs should succeed
-        {:ok, stats_map} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config,
-          parallel: true
-        )
+        {:ok, stats_map} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config,
+            parallel: true
+          )
 
         assert map_size(stats_map) == 2
         assert stats_map[1].derived_count > 0
@@ -622,10 +655,12 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
       try do
         {:ok, config} = ReasoningConfig.new(profile: :rdfs, scope: :local)
 
-        result = GraphScopedReasoner.materialize_graph(db,
-          graph_id: -1,  # Invalid graph_id
-          config: config
-        )
+        result =
+          GraphScopedReasoner.materialize_graph(db,
+            # Invalid graph_id
+            graph_id: -1,
+            config: config
+          )
 
         assert {:error, _reason} = result
       after
@@ -639,10 +674,12 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
       try do
         {:ok, config} = ReasoningConfig.new(profile: :rdfs, scope: :local)
 
-        result = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [-1, 1],  # Contains invalid graph_id
-          config: config
-        )
+        result =
+          GraphScopedReasoner.materialize_graphs(db,
+            # Contains invalid graph_id
+            graph_ids: [-1, 1],
+            config: config
+          )
 
         assert {:error, _reason} = result
       after
@@ -657,16 +694,19 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         # TBox only, no ABox in graph 1
         insert_facts(db, tbox_facts(), 0)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,  # Empty graph
-          config: config
-        )
+        {:ok, stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            # Empty graph
+            graph_id: 1,
+            config: config
+          )
 
         # Should succeed with zero derived quads
         assert stats.explicit_count == 0
@@ -689,16 +729,18 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, tbox_facts(), 0)
         insert_facts(db, graph1_facts(), 1)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, _stats} = GraphScopedReasoner.materialize_graph(db,
-          graph_id: 1,
-          config: config
-        )
+        {:ok, _stats} =
+          GraphScopedReasoner.materialize_graph(db,
+            graph_id: 1,
+            config: config
+          )
 
         # Check status was stored
         {:ok, status} = GraphReasoningStatus.load({:graph, 1})
@@ -719,16 +761,18 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
         insert_facts(db, graph1_facts(), 1)
         insert_facts(db, graph2_facts(), 2)
 
-        {:ok, config} = ReasoningConfig.new(
-          profile: :rdfs,
-          scope: :local,
-          tbox_graph: 0
-        )
+        {:ok, config} =
+          ReasoningConfig.new(
+            profile: :rdfs,
+            scope: :local,
+            tbox_graph: 0
+          )
 
-        {:ok, _stats} = GraphScopedReasoner.materialize_graphs(db,
-          graph_ids: [1, 2],
-          config: config
-        )
+        {:ok, _stats} =
+          GraphScopedReasoner.materialize_graphs(db,
+            graph_ids: [1, 2],
+            config: config
+          )
 
         # Both graphs should have status
         {:ok, status1} = GraphReasoningStatus.load({:graph, 1})

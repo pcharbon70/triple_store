@@ -23,29 +23,29 @@ defmodule TripleStore.SPARQL.Benchmark do
   """
 
   @type measurement :: %{
-    iterations: pos_integer(),
-    total_us: integer(),
-    avg_us: float(),
-    min_us: integer(),
-    max_us: integer(),
-    median_us: float(),
-    p95_us: float(),
-    p99_us: float(),
-    memory_mb: float()
-  }
+          iterations: pos_integer(),
+          total_us: integer(),
+          avg_us: float(),
+          min_us: integer(),
+          max_us: integer(),
+          median_us: float(),
+          p95_us: float(),
+          p99_us: float(),
+          memory_mb: float()
+        }
 
   @type comparison :: %{
-    a: measurement(),
-    b: measurement(),
-    speedup: float(),
-    winner: :a | :b | :tie
-  }
+          a: measurement(),
+          b: measurement(),
+          speedup: float(),
+          winner: :a | :b | :tie
+        }
 
   @type report :: %{
-    name: String.t(),
-    measurement: measurement(),
-    timestamp: integer()
-  }
+          name: String.t(),
+          measurement: measurement(),
+          timestamp: integer()
+        }
 
   @doc """
   Measures the execution time of a function once.
@@ -136,11 +136,12 @@ defmodule TripleStore.SPARQL.Benchmark do
 
     speedup = avg_a / avg_b
 
-    winner = cond do
-      speedup > 1.05 -> :b
-      speedup < 0.95 -> :a
-      true -> :tie
-    end
+    winner =
+      cond do
+        speedup > 1.05 -> :b
+        speedup < 0.95 -> :a
+        true -> :tie
+      end
 
     %{
       a: measure_a,
@@ -239,11 +240,22 @@ defmodule TripleStore.SPARQL.Benchmark do
   """
   @spec export_csv([report()], String.t()) :: :ok
   def export_csv(reports, path) when is_list(reports) and is_binary(path) do
-    headers = ["Name", "Iterations", "Avg (μs)", "Min (μs)", "Max (μs)", "Median (μs)", "P95 (μs)", "P99 (μs)", "Memory (MB)"]
+    headers = [
+      "Name",
+      "Iterations",
+      "Avg (μs)",
+      "Min (μs)",
+      "Max (μs)",
+      "Median (μs)",
+      "P95 (μs)",
+      "P99 (μs)",
+      "Memory (MB)"
+    ]
 
     rows =
       Enum.map(reports, fn report ->
         m = report.measurement
+
         [
           report.name,
           to_string(m.iterations),
@@ -307,7 +319,11 @@ defmodule TripleStore.SPARQL.Benchmark do
   @doc """
   Profiles memory usage over multiple runs.
   """
-  @spec memory_profile((-> any()), keyword()) :: %{samples: [float()], avg_mb: float(), max_mb: float()}
+  @spec memory_profile((-> any()), keyword()) :: %{
+          samples: [float()],
+          avg_mb: float(),
+          max_mb: float()
+        }
   def memory_profile(fun, opts \\ []) when is_function(fun, 0) do
     samples = Keyword.get(opts, :samples, 10)
 

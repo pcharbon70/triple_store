@@ -256,12 +256,6 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     execute_clear(ctx, graph: normalized)
   end
 
-  # Normalize parser target atoms to internal atoms
-  defp normalize_clear_target(:all_graphs), do: :all
-  defp normalize_clear_target(:default_graph), do: :default
-  defp normalize_clear_target(:all_named), do: :named
-  defp normalize_clear_target(other), do: other
-
   def execute_operation(ctx, {:create, props}) when is_list(props) do
     execute_create_graph(ctx, props)
   end
@@ -294,6 +288,12 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   def execute_operation(_ctx, op) do
     {:error, {:unsupported_operation, op}}
   end
+
+  # Normalize parser target atoms to internal atoms
+  defp normalize_clear_target(:all_graphs), do: :all
+  defp normalize_clear_target(:default_graph), do: :default
+  defp normalize_clear_target(:all_named), do: :named
+  defp normalize_clear_target(other), do: other
 
   # Helper to get value from parser properties (which use charlist keys)
   defp get_prop_value(props, key, default \\ nil) do

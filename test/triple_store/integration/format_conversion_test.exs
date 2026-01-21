@@ -62,7 +62,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
   # ===========================================================================
 
   describe "6.2.4.1 load Turtle to named graph" do
-    test "loads Turtle file content to specified named graph", %{db: db, manager: manager, db_path: db_path} do
+    test "loads Turtle file content to specified named graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       turtle_file = Path.join(db_path, "data.ttl")
 
       content = """
@@ -90,7 +94,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
       refute QuadOperations.default_graph_exists?(db)
     end
 
-    test "loads same Turtle file to different graphs", %{db: db, manager: manager, db_path: db_path} do
+    test "loads same Turtle file to different graphs", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       turtle_file = Path.join(db_path, "shared.ttl")
 
       content = """
@@ -234,7 +242,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
   # ===========================================================================
 
   describe "6.2.4.4 convert N-Quads to Turtle (per graph)" do
-    test "converts N-Quads dataset to RDF.Graph for specific graph", %{db: db, manager: manager, db_path: db_path} do
+    test "converts N-Quads dataset to RDF.Graph for specific graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "input.nq")
 
       # Create N-Quads with multiple graphs
@@ -310,7 +322,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
       assert String.contains?(content, "#{@ex}g1")
     end
 
-    test "conversion preserves all graphs from TriG", %{db: db, manager: manager, db_path: db_path} do
+    test "conversion preserves all graphs from TriG", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "complex.trig")
       output_file = Path.join(db_path, "output.nq")
 
