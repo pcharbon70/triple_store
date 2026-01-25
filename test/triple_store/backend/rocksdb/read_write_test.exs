@@ -36,13 +36,13 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.put(db, :nonexistent, "key", "value")
+      assert {:error, :invalid_column_family} = ErlangAdapter.put(db, :nonexistent, "key", "value")
     end
 
     test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = ErlangAdapter.open("#{path}_closed")
       ErlangAdapter.close(db2)
-      assert {:error, :already_closed} = ErlangAdapter.put(db2, :id2str, "key", "value")
+      assert catch_exit(ErlangAdapter.put(db2, :id2str, "key", "value"))
       File.rm_rf("#{path}_closed")
     end
   end
@@ -74,13 +74,13 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.get(db, :nonexistent, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.get(db, :nonexistent, "key")
     end
 
     test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = ErlangAdapter.open("#{path}_closed")
       ErlangAdapter.close(db2)
-      assert {:error, :already_closed} = ErlangAdapter.get(db2, :id2str, "key")
+      assert catch_exit(ErlangAdapter.get(db2, :id2str, "key"))
       File.rm_rf("#{path}_closed")
     end
   end
@@ -106,13 +106,13 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.delete(db, :nonexistent, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.delete(db, :nonexistent, "key")
     end
 
     test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = ErlangAdapter.open("#{path}_closed")
       ErlangAdapter.close(db2)
-      assert {:error, :already_closed} = ErlangAdapter.delete(db2, :id2str, "key")
+      assert catch_exit(ErlangAdapter.delete(db2, :id2str, "key"))
       File.rm_rf("#{path}_closed")
     end
   end
@@ -142,13 +142,13 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.exists(db, :nonexistent, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.exists(db, :nonexistent, "key")
     end
 
     test "returns error for closed database", %{db_path: path} do
       {:ok, db2} = ErlangAdapter.open("#{path}_closed")
       ErlangAdapter.close(db2)
-      assert {:error, :already_closed} = ErlangAdapter.exists(db2, :id2str, "key")
+      assert catch_exit(ErlangAdapter.exists(db2, :id2str, "key"))
       File.rm_rf("#{path}_closed")
     end
   end

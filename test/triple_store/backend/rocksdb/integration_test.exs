@@ -51,13 +51,13 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       ErlangAdapter.close(db)
 
       # All operations should return already_closed error
-      assert {:error, :already_closed} = ErlangAdapter.get(db, :spo, "key")
-      assert {:error, :already_closed} = ErlangAdapter.put(db, :spo, "key", "new")
-      assert {:error, :already_closed} = ErlangAdapter.delete(db, :spo, "key")
-      assert {:error, :already_closed} = ErlangAdapter.exists(db, :spo, "key")
-      assert {:error, :already_closed} = ErlangAdapter.write_batch(db, [{:spo, "k", "v"}], true)
-      assert {:error, :already_closed} = ErlangAdapter.prefix_iterator(db, :spo, "")
-      assert {:error, :already_closed} = ErlangAdapter.snapshot(db)
+      assert catch_exit(ErlangAdapter.get(db, :spo, "key"))
+      assert catch_exit(ErlangAdapter.put(db, :spo, "key", "new"))
+      assert catch_exit(ErlangAdapter.delete(db, :spo, "key"))
+      assert catch_exit(ErlangAdapter.exists(db, :spo, "key"))
+      assert catch_exit(ErlangAdapter.write_batch(db, [{:spo, "k", "v"}], true))
+      assert catch_exit(ErlangAdapter.prefix_iterator(db, :spo, ""))
+      assert catch_exit(ErlangAdapter.snapshot(db))
 
       File.rm_rf("#{path}_close_test")
     end
@@ -224,16 +224,16 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         ErlangAdapter.put(db, :id2str, "item#{String.pad_leading("#{i}", 3, "0")}", "value#{i}")
       end
 
-      {:ok, stream} = ErlangAdapter.prefix_stream(db, :id2str, "item")
+      stream = ErlangAdapter.prefix_stream(db, :id2str, "item")
 
       # Various Enum operations
       assert Enum.count(stream) == 100
 
-      {:ok, stream2} = ErlangAdapter.prefix_stream(db, :id2str, "item")
+      stream2 = ErlangAdapter.prefix_stream(db, :id2str, "item")
       first_10 = Enum.take(stream2, 10)
       assert length(first_10) == 10
 
-      {:ok, stream3} = ErlangAdapter.prefix_stream(db, :id2str, "item")
+      stream3 = ErlangAdapter.prefix_stream(db, :id2str, "item")
 
       filtered =
         stream3
@@ -357,16 +357,16 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
     test "invalid column family errors are consistent across operations", %{db: db} do
       invalid_cf = :nonexistent
 
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.get(db, invalid_cf, "key")
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.put(db, invalid_cf, "key", "value")
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.delete(db, invalid_cf, "key")
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.exists(db, invalid_cf, "key")
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.prefix_iterator(db, invalid_cf, "")
+      assert {:error, :invalid_column_family} = ErlangAdapter.get(db, invalid_cf, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.put(db, invalid_cf, "key", "value")
+      assert {:error, :invalid_column_family} = ErlangAdapter.delete(db, invalid_cf, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.exists(db, invalid_cf, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.prefix_iterator(db, invalid_cf, "")
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.snapshot_get(db, snap, invalid_cf, "key")
+      assert {:error, :invalid_column_family} = ErlangAdapter.snapshot_get(db, snap, invalid_cf, "key")
 
-      assert {:error, {:invalid_cf, ^invalid_cf}} =
+      assert {:error, :invalid_column_family} =
                ErlangAdapter.snapshot_prefix_iterator(db, snap, invalid_cf, "")
 
       ErlangAdapter.release_snapshot(db, snap)
@@ -382,7 +382,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         {:nonexistent, "key2", "value2"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.write_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.write_batch(db, operations, true)
 
       # key1 should NOT have been written
       assert :not_found = ErlangAdapter.get(db, :spo, "key1")

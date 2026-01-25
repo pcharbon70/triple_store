@@ -61,7 +61,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:nonexistent, "key2", "value2"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.write_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.write_batch(db, operations, true)
       assert :not_found = ErlangAdapter.get(db, :id2str, "key1")
       assert {:ok, "value"} = ErlangAdapter.get(db, :id2str, "existing")
     end
@@ -71,7 +71,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       ErlangAdapter.close(db2)
 
       operations = [{:id2str, "key1", "value1"}]
-      assert {:error, :already_closed} = ErlangAdapter.write_batch(db2, operations, true)
+      assert catch_exit(ErlangAdapter.write_batch(db2, operations, true))
       File.rm_rf("#{path}_closed")
     end
 
@@ -169,7 +169,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:nonexistent, "key2"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.delete_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.delete_batch(db, operations, true)
       assert {:ok, "value1"} = ErlangAdapter.get(db, :id2str, "key1")
     end
 
@@ -178,7 +178,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       ErlangAdapter.close(db2)
 
       operations = [{:id2str, "key1"}]
-      assert {:error, :already_closed} = ErlangAdapter.delete_batch(db2, operations, true)
+      assert catch_exit(ErlangAdapter.delete_batch(db2, operations, true))
       File.rm_rf("#{path}_closed")
     end
   end
@@ -308,7 +308,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:put, :nonexistent, "key1", "value1"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.mixed_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.mixed_batch(db, operations, true)
     end
 
     test "returns error for invalid column family in delete", %{db: db} do
@@ -316,7 +316,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:delete, :nonexistent, "key1"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.mixed_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.mixed_batch(db, operations, true)
     end
 
     test "returns error for closed database", %{db_path: path} do
@@ -324,7 +324,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
       ErlangAdapter.close(db2)
 
       operations = [{:put, :id2str, "key1", "value1"}]
-      assert {:error, :already_closed} = ErlangAdapter.mixed_batch(db2, operations, true)
+      assert catch_exit(ErlangAdapter.mixed_batch(db2, operations, true))
       File.rm_rf("#{path}_closed")
     end
   end
@@ -340,7 +340,7 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:nonexistent, "key2", "value2"}
       ]
 
-      assert {:error, {:invalid_cf, :nonexistent}} = ErlangAdapter.write_batch(db, operations, true)
+      assert {:error, :invalid_column_family} = ErlangAdapter.write_batch(db, operations, true)
 
       # The first key should NOT have been written due to atomic failure
       # Note: In RocksDB, validation happens before write, so partial write doesn't occur

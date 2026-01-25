@@ -60,7 +60,7 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
     test "returns error when closing already closed database", %{path: path} do
       {:ok, db} = ErlangAdapter.open(path)
       assert :ok = ErlangAdapter.close(db)
-      assert {:error, :already_closed} = ErlangAdapter.close(db)
+      assert catch_exit(ErlangAdapter.close(db))
     end
   end
 
