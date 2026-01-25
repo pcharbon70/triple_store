@@ -76,29 +76,65 @@ defmodule TripleStore.Test.DbPool do
 
   @impl true
   def handle_cast({:checkin, db_info}, state) do
-    # Clear the database synchronously before returning to pool or waiter
-    # This ensures tests always get clean databases
-    if Process.alive?(db_info.db) do
-      clear_database(db_info.db)
-    end
-
     new_in_use = Map.delete(state.in_use, db_info.id)
+
+    # Check if database is still alive - if not, replace it with a fresh one
+    {db_to_return, state} =
+      if Process.alive?(db_info.db) do
+        clear_database(db_info.db)
+        {db_info, state}
+      else
+        # Database died during test - close it (safely) and create a replacement
+        try do
+          ErlangAdapter.close(db_info.db)
+        rescue
+          _ -> :ok
+        end
+
+        # Remove old database files (including lock file)
+        File.rm_rf(db_info.path)
+
+        # Create new database with retry logic
+        case create_database_with_retry(db_info.path) do
+          {:ok, new_db} ->
+            new_db_info = %{db_info | db: new_db}
+            {new_db_info, state}
+
+          {:error, reason} ->
+            # If we still can't open after retries, log and remove from pool
+            require Logger
+            Logger.warning("Failed to recreate database at #{db_info.path}: #{inspect(reason)}")
+
+            # Don't return this database to the pool - shrink the pool
+          {nil, %{state | available: []}}
+        end
+      end
 
     case :queue.out(state.waiters) do
       {{:value, waiter}, new_waiters} ->
-        # Database was cleared, now give it to waiting test
-        GenServer.reply(waiter, db_info)
+        # If we don't have a valid database, tell the waiter to try again later
+        if db_to_return == nil do
+          # Re-queue the waiter at the front
+          {:noreply, %{state | waiters: :queue.in(waiter, new_waiters)}}
+        else
+          GenServer.reply(waiter, db_to_return)
 
-        new_state = %{
-          state
-          | in_use: Map.put(new_in_use, db_info.id, db_info),
-            waiters: new_waiters
-        }
+          new_state = %{
+            state
+            | in_use: Map.put(new_in_use, db_to_return.id, db_to_return),
+              waiters: new_waiters
+          }
 
-        {:noreply, new_state}
+          {:noreply, new_state}
+        end
 
       {:empty, _} ->
-        {:noreply, %{state | available: [db_info | state.available], in_use: new_in_use}}
+        if db_to_return == nil do
+          # No valid database to return, just update state
+          {:noreply, state}
+        else
+          {:noreply, %{state | available: [db_to_return | state.available], in_use: new_in_use}}
+        end
     end
   end
 
@@ -125,6 +161,31 @@ defmodule TripleStore.Test.DbPool do
         case Integer.parse(value) do
           {size, _} when size > 0 -> size
           _ -> default
+        end
+    end
+  end
+
+  defp create_database_with_retry(path, retries \\ 3, delay \\ 100) do
+    create_database_with_retry(path, retries, delay, nil)
+  end
+
+  defp create_database_with_retry(_path, retries, _delay, last_error) when retries <= 0 do
+    {:error, last_error}
+  end
+
+  defp create_database_with_retry(path, retries, delay, _last_error) do
+    case ErlangAdapter.open(path) do
+      {:ok, db} ->
+        {:ok, db}
+
+      {:error, reason} = error ->
+        # If there's a lock error, wait and retry
+        if String.contains?(inspect(reason), "lock") or
+           String.contains?(inspect(reason), "LOCK") do
+          Process.sleep(delay)
+          create_database_with_retry(path, retries - 1, delay, error)
+        else
+          error
         end
     end
   end

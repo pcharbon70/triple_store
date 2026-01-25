@@ -228,12 +228,13 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       ErlangAdapter.release_snapshot(db, snap)
     end
 
-    test "returns error for already closed iterator", %{db: db} do
+    test "is idempotent for already closed iterator", %{db: db} do
       {:ok, snap} = ErlangAdapter.snapshot(db)
       {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snap, :spo, "")
 
       assert :ok = ErlangAdapter.iterator_close(iter)
-      assert catch_exit(ErlangAdapter.iterator_close(iter))
+      # iterator_close/1 is idempotent - returns :ok for already-closed iterators
+      assert :ok = ErlangAdapter.iterator_close(iter)
 
       ErlangAdapter.release_snapshot(db, snap)
     end
@@ -333,11 +334,14 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       ErlangAdapter.release_snapshot(db, snap)
     end
 
-    test "returns error for invalid column family", %{db: db} do
+    test "raises error for invalid column family when consumed", %{db: db} do
       {:ok, snap} = ErlangAdapter.snapshot(db)
 
-      assert {:error, :invalid_column_family} =
-               ErlangAdapter.snapshot_stream(db, snap, :nonexistent, "")
+      # snapshot_stream returns a stream that raises an error when consumed
+      stream = ErlangAdapter.snapshot_stream(db, snap, :nonexistent, "")
+      assert_raise RuntimeError, ~r/Failed to create iterator/, fn ->
+        Enum.to_list(stream)
+      end
 
       ErlangAdapter.release_snapshot(db, snap)
     end

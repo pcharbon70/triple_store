@@ -1273,13 +1273,35 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
             {:ok, cf_handle} -> {:delete, cf_handle, key}
             {:error, _reason} = error -> error
           end
+
+        {invalid_op, _cf, _key, _value} ->
+          {:error, {:invalid_operation, invalid_op}}
+
+        {invalid_op, _cf, _key} ->
+          {:error, {:invalid_operation, invalid_op}}
+
+        other ->
+          {:error, {:invalid_operation, :unknown}}
       end)
 
-    if Enum.any?(batch, &match?({:error, _}, &1)) do
-      {:reply, {:error, :invalid_column_family}, state}
-    else
-      result = :rocksdb.write(db, batch, write_opts)
-      {:reply, result, state}
+    # Check for errors in the batch
+    error =
+      Enum.find(batch, fn
+        {:error, {:invalid_operation, _}} -> true
+        {:error, _} -> true
+        _ -> false
+      end)
+
+    case error do
+      {:error, {:invalid_operation, op}} ->
+        {:reply, {:error, {:invalid_operation, op}}, state}
+
+      {:error, _} ->
+        {:reply, {:error, :invalid_column_family}, state}
+
+      nil ->
+        result = :rocksdb.write(db, batch, write_opts)
+        {:reply, result, state}
     end
   end
 
