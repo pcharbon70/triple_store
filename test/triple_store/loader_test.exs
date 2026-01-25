@@ -13,7 +13,7 @@ defmodule TripleStore.LoaderTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -22,7 +22,7 @@ defmodule TripleStore.LoaderTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -32,7 +32,7 @@ defmodule TripleStore.LoaderTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -595,18 +595,18 @@ defmodule TripleStore.LoaderTest do
   describe "flush_wal NIF" do
     test "flush_wal with sync=true succeeds", %{db: db} do
       # Add some data first
-      assert :ok = NIF.flush_wal(db, true)
+      assert :ok = ErlangAdapter.flush_wal(db, true)
     end
 
     test "flush_wal with sync=false succeeds", %{db: db} do
-      assert :ok = NIF.flush_wal(db, false)
+      assert :ok = ErlangAdapter.flush_wal(db, false)
     end
 
     test "flush_wal returns error for closed database", %{path: path} do
       db_path = Path.join(path, "flush_wal_closed_test")
-      {:ok, db} = NIF.open(db_path)
-      NIF.close(db)
-      assert {:error, :already_closed} = NIF.flush_wal(db, true)
+      {:ok, db} = ErlangAdapter.open(db_path)
+      ErlangAdapter.close(db)
+      assert {:error, :already_closed} = ErlangAdapter.flush_wal(db, true)
     end
 
     # Note: Testing flush_wal failure during bulk_mode is difficult because

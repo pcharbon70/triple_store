@@ -46,7 +46,7 @@ defmodule TripleStore.Dictionary.Manager do
 
   use GenServer
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.SequenceCounter
   alias TripleStore.Dictionary.StringToId
@@ -455,7 +455,7 @@ defmodule TripleStore.Dictionary.Manager do
     case StringToId.encode_term(term) do
       {:ok, key} ->
         # Check if already exists in RocksDB
-        case NIF.get(db, :str2id, key) do
+        case ErlangAdapter.get(db, :str2id, key) do
           {:ok, <<id::64-big>>} ->
             # Populate cache for future lookups
             :ets.insert(cache, {key, id})
@@ -494,7 +494,7 @@ defmodule TripleStore.Dictionary.Manager do
   @spec lookup_in_rocksdb(reference(), :ets.tid(), binary()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp lookup_in_rocksdb(db, cache, key) do
-    case NIF.get(db, :str2id, key) do
+    case ErlangAdapter.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} ->
         :ets.insert(cache, {key, id})
         {:ok, id}
@@ -522,8 +522,8 @@ defmodule TripleStore.Dictionary.Manager do
       {:ok, id} ->
         id_binary = <<id::64-big>>
 
-        with :ok <- NIF.put(db, :str2id, key, id_binary),
-             :ok <- NIF.put(db, :id2str, id_binary, key) do
+        with :ok <- ErlangAdapter.put(db, :str2id, key, id_binary),
+             :ok <- ErlangAdapter.put(db, :id2str, id_binary, key) do
           # Populate cache after successful storage
           :ets.insert(cache, {key, id})
           {:ok, id}
@@ -660,7 +660,7 @@ defmodule TripleStore.Dictionary.Manager do
 
   @spec lookup_existing_id_in_db(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
   defp lookup_existing_id_in_db(db, cache, key) do
-    case NIF.get(db, :str2id, key) do
+    case ErlangAdapter.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} ->
         :ets.insert(cache, {key, id})
         id
@@ -717,8 +717,8 @@ defmodule TripleStore.Dictionary.Manager do
         id_binary = <<id::64-big>>
 
         # Store in RocksDB
-        :ok = NIF.put(db, :str2id, key, id_binary)
-        :ok = NIF.put(db, :id2str, id_binary, key)
+        :ok = ErlangAdapter.put(db, :str2id, key, id_binary)
+        :ok = ErlangAdapter.put(db, :id2str, id_binary, key)
 
         # Populate cache
         :ets.insert(cache, {key, id})

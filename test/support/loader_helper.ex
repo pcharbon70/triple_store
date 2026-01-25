@@ -6,7 +6,7 @@ defmodule TripleStore.Test.LoaderHelper do
   to reduce code duplication across loader test files.
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
 
   @doc """
@@ -26,7 +26,7 @@ defmodule TripleStore.Test.LoaderHelper do
   @spec setup_test_db(String.t(), String.t()) :: {reference(), pid(), String.t()}
   def setup_test_db(test_base, suffix) do
     test_path = "#{test_base}_#{suffix}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, test_path}
   end
@@ -45,7 +45,7 @@ defmodule TripleStore.Test.LoaderHelper do
   @spec cleanup_test_db(pid(), reference(), String.t()) :: :ok
   def cleanup_test_db(manager, db, test_path) do
     if Process.alive?(manager), do: Manager.stop(manager)
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf(test_path)
     :ok
   end

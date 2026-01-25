@@ -8,7 +8,7 @@ defmodule TripleStore.Integration.FullStackTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
 
@@ -17,12 +17,12 @@ defmodule TripleStore.Integration.FullStackTest do
       System.tmp_dir!() <>
         "/ts_fullstack_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(path)
+    {:ok, db} = ErlangAdapter.open(path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end)
 

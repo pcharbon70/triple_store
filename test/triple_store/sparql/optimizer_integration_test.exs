@@ -16,7 +16,7 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
   import TripleStore.Test.IntegrationHelpers, only: [var: 1, triple: 3]
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.SPARQL.{CostModel, JoinEnumeration, PlanCache, Query}
@@ -52,7 +52,7 @@ defmodule TripleStore.SPARQL.OptimizerIntegrationTest do
 
   setup %{tmp_dir: tmp_dir} do
     db_path = Path.join(tmp_dir, "optimizer_test_#{:erlang.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     cache_name = :"OptimizerCache_#{:erlang.unique_integer([:positive])}"

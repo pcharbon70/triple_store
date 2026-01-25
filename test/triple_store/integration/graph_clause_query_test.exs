@@ -15,7 +15,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.SPARQL.Authorization
@@ -83,7 +83,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
@@ -92,7 +92,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -252,7 +252,8 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Should get distinct graph names
-      graphs = Enum.map(results, fn r -> r["g"] end)
+      graphs =
+        Enum.map(results, fn r -> r["g"] end)
         |> Enum.uniq()
 
       assert length(graphs) >= 3
@@ -517,11 +518,14 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       # Verify we get results from both graphs
       graph_names = Enum.map(results, fn r -> r["g"] end)
-      graph_iris = Enum.map(graph_names, fn
-        {:named_node, iri} -> iri
-        %RDF.IRI{} = iri -> RDF.IRI.to_string(iri)
-        iri when is_binary(iri) -> iri
-      end)
+
+      graph_iris =
+        Enum.map(graph_names, fn
+          {:named_node, iri} -> iri
+          %RDF.IRI{} = iri -> RDF.IRI.to_string(iri)
+          iri when is_binary(iri) -> iri
+        end)
+
       assert "http://example.org/graph1" in graph_iris
       assert "http://example.org/graph2" in graph_iris
     end

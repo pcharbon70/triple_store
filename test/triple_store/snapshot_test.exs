@@ -2,7 +2,7 @@ defmodule TripleStore.SnapshotTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Snapshot
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   @moduletag :capture_log
 
@@ -10,14 +10,14 @@ defmodule TripleStore.SnapshotTest do
     # Create a temporary database for testing
     path = Path.join(System.tmp_dir!(), "snapshot_test_#{System.unique_integer([:positive])}")
 
-    {:ok, db} = NIF.open(path)
+    {:ok, db} = ErlangAdapter.open(path)
 
     # Insert some test data
-    :ok = NIF.put(db, :spo, "key1", "value1")
-    :ok = NIF.put(db, :spo, "key2", "value2")
+    :ok = ErlangAdapter.put(db, :spo, "key1", "value1")
+    :ok = ErlangAdapter.put(db, :spo, "key2", "value2")
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(path)
     end)
 
@@ -51,13 +51,13 @@ defmodule TripleStore.SnapshotTest do
       {:ok, snapshot} = Snapshot.create(db)
 
       # Update data after snapshot
-      :ok = NIF.put(db, :spo, "key1", "updated_value")
+      :ok = ErlangAdapter.put(db, :spo, "key1", "updated_value")
 
       # Snapshot should still see old value
-      assert {:ok, "value1"} = NIF.snapshot_get(snapshot, :spo, "key1")
+      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
 
       # Direct read should see new value
-      assert {:ok, "updated_value"} = NIF.get(db, :spo, "key1")
+      assert {:ok, "updated_value"} = ErlangAdapter.get(db, :spo, "key1")
 
       :ok = Snapshot.release(snapshot)
     end
@@ -85,7 +85,7 @@ defmodule TripleStore.SnapshotTest do
     test "executes function with snapshot", %{db: db} do
       result =
         Snapshot.with_snapshot(db, fn snapshot ->
-          {:ok, value} = NIF.snapshot_get(snapshot, :spo, "key1")
+          {:ok, value} = ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
           value
         end)
 

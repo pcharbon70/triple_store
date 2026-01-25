@@ -20,7 +20,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.SequenceCounter
@@ -31,10 +31,10 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -222,7 +222,7 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
 
       # Verify it's in RocksDB
       {:ok, key} = StringToId.encode_term(uri)
-      {:ok, <<stored_id::64-big>>} = NIF.get(db, :str2id, key)
+      {:ok, <<stored_id::64-big>>} = ErlangAdapter.get(db, :str2id, key)
       assert stored_id == id1
 
       Manager.stop(manager)
@@ -566,11 +566,11 @@ defmodule TripleStore.Dictionary.ParallelizationIntegrationTest do
         id_binary = <<id::64-big>>
 
         # str2id lookup
-        {:ok, <<stored_id::64-big>>} = NIF.get(db, :str2id, key)
+        {:ok, <<stored_id::64-big>>} = ErlangAdapter.get(db, :str2id, key)
         assert stored_id == id
 
         # id2str lookup
-        {:ok, stored_key} = NIF.get(db, :id2str, id_binary)
+        {:ok, stored_key} = ErlangAdapter.get(db, :id2str, id_binary)
         assert stored_key == key
       end
 

@@ -114,10 +114,12 @@ defmodule TripleStore.Statistics.AccuracyTrackerTest do
       pattern = {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0}
 
       AccuracyTracker.track_estimate(%{}, pattern, 100)
-      AccuracyTracker.track_actual(%{}, pattern, 90)  # 10% error
+      # 10% error
+      AccuracyTracker.track_actual(%{}, pattern, 90)
 
       AccuracyTracker.track_estimate(%{}, pattern, 100)
-      AccuracyTracker.track_actual(%{}, pattern, 80)  # 20% error
+      # 20% error
+      AccuracyTracker.track_actual(%{}, pattern, 80)
 
       {:ok, stats} = AccuracyTracker.get_accuracy_stats(%{})
       pattern_stats = stats[{:quad, :var, {:bound, 10}, :var, {:bound, 0}}]
@@ -140,10 +142,12 @@ defmodule TripleStore.Statistics.AccuracyTrackerTest do
       pattern2 = {:quad, 1, 10, {:variable, "o"}, 0}
 
       AccuracyTracker.track_estimate(%{}, pattern1, 100)
-      AccuracyTracker.track_actual(%{}, pattern1, 90)  # 10% error
+      # 10% error
+      AccuracyTracker.track_actual(%{}, pattern1, 90)
 
       AccuracyTracker.track_estimate(%{}, pattern2, 50)
-      AccuracyTracker.track_actual(%{}, pattern2, 25)  # 50% error
+      # 50% error
+      AccuracyTracker.track_actual(%{}, pattern2, 25)
 
       {:ok, stats} = AccuracyTracker.get_aggregated_stats(%{})
 

@@ -24,23 +24,23 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
   ```elixir
   # For dictionary lookups (high cache value)
   opts = ReadOptions.point_lookup()
-  {:ok, value} = NIF.get(db, :id2str, key, opts)
+  {:ok, value} = ErlangAdapter.get(db, :id2str, key, opts)
 
   # For prefix scans over indices
   opts = ReadOptions.prefix_scan()
-  {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix, opts)
+  {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, prefix, opts)
 
   # For graph-scoped quad queries (GSPO/GPOS)
   opts = ReadOptions.quad_prefix_scan()
-  {:ok, iter} = NIF.prefix_iterator(db, :gspo, prefix, opts)
+  {:ok, iter} = ErlangAdapter.prefix_iterator(db, :gspo, prefix, opts)
 
   # For cross-graph quad queries (SPOG/POSG)
   opts = ReadOptions.cross_graph_scan()
-  {:ok, iter} = NIF.prefix_iterator(db, :spog, prefix, opts)
+  {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spog, prefix, opts)
 
   # For large bulk scans that shouldn't pollute cache
   opts = ReadOptions.uncached_scan()
-  stream = NIF.prefix_stream(db, :spo, prefix, opts)
+  stream = ErlangAdapter.prefix_stream(db, :spo, prefix, opts)
   ```
 
   ## Option Details
@@ -350,7 +350,7 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
 
   ## Parameters
 
-  - `snapshot_ref`: Snapshot reference from `NIF.snapshot/1`
+  - `snapshot_ref`: Snapshot reference from `ErlangAdapter.snapshot/1`
 
   ## Returns
 
@@ -358,7 +358,7 @@ defmodule TripleStore.Backend.RocksDB.ReadOptions do
 
   ## Examples
 
-      iex> {:ok, snapshot} = NIF.snapshot(db)
+      iex> {:ok, snapshot} = ErlangAdapter.snapshot(db)
       iex> opts = ReadOptions.from_snapshot(snapshot)
       iex> Keyword.has_key?(opts, :snapshot)
       true

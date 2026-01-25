@@ -19,7 +19,7 @@ defmodule TripleStore.TrigTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.Exporter
@@ -29,7 +29,7 @@ defmodule TripleStore.TrigTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -37,7 +37,7 @@ defmodule TripleStore.TrigTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -320,6 +320,7 @@ defmodule TripleStore.TrigTest do
 
       # Export only default graph
       output_file = "#{@test_db_base}_output_#{:erlang.unique_integer()}.trig"
+
       {:ok, count} =
         Exporter.export_trig_file(db, output_file,
           pattern: {:var, :var, :var, :bound},
@@ -651,8 +652,8 @@ defmodule TripleStore.TrigTest do
     test "handles literals with newlines in TriG", %{db: db, manager: manager} do
       trig_string = """
       @prefix ex: <http://example.org/>.
-      ex:s ex:p """o with
-      newline""" .
+      ex:s ex:p \"""o with
+      newline\""" .
       """
 
       {:ok, count} = Loader.load_trig_string(db, manager, trig_string)

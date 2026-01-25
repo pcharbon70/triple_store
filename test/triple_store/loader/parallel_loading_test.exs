@@ -12,7 +12,7 @@ defmodule TripleStore.Loader.ParallelLoadingTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
 
@@ -24,14 +24,14 @@ defmodule TripleStore.Loader.ParallelLoadingTest do
 
   defp setup_test_db(suffix) do
     test_path = "#{@test_db_base}_#{suffix}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, test_path}
   end
 
   defp cleanup_test_db(manager, db, test_path) do
     if Process.alive?(manager), do: Manager.stop(manager)
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf(test_path)
   end
 

@@ -12,7 +12,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -116,7 +116,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
@@ -125,7 +125,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -153,7 +153,9 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
       assert length(results) == 1
 
       [result] = results
-      assert result["entity_count"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert result["entity_count"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "queries property partition from VoID graph", %{ctx: ctx} do
@@ -176,7 +178,9 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
 
       [result] = results
       assert {:named_node, "http://example.org/name"} = result["property"]
-      assert result["triples"] == {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert result["triples"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "joins data graph with VoID metadata", %{ctx: ctx} do
@@ -322,7 +326,9 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
       assert length(results) == 1
 
       [result] = results
-      assert result["value"] == {:literal, :typed, "100", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert result["value"] ==
+               {:literal, :typed, "100", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     test "compares versions across temporal graphs", %{ctx: ctx} do
@@ -344,8 +350,11 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
 
       [result] = results
       # Value increased from version 1 to version 2
-      assert result["v1_value"] == {:literal, :typed, "100", "http://www.w3.org/2001/XMLSchema#integer"}
-      assert result["v2_value"] == {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
+      assert result["v1_value"] ==
+               {:literal, :typed, "100", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert result["v2_value"] ==
+               {:literal, :typed, "150", "http://www.w3.org/2001/XMLSchema#integer"}
     end
 
     @tag :skip

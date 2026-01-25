@@ -14,7 +14,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Leapfrog.{QuadLeapfrog, QuadTrieIterator}
 
@@ -29,10 +29,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       System.tmp_dir!() <>
         "/ts_leapfrog_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -180,7 +180,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
       # Should be positioned at first entry
       assert {:ok, value} = QuadTrieIterator.current(iter)
-      assert value == 0  # First graph ID
+      # First graph ID
+      assert value == 0
 
       QuadTrieIterator.close(iter)
     end
@@ -198,7 +199,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
       # Should be positioned at first subject
       assert {:ok, value} = QuadTrieIterator.current(iter)
-      assert value == 1  # First subject ID
+      # First subject ID
+      assert value == 1
 
       QuadTrieIterator.close(iter)
     end
@@ -216,7 +218,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
       # Should be positioned at first predicate
       assert {:ok, value} = QuadTrieIterator.current(iter)
-      assert value in [10, 11]  # One of the predicates
+      # One of the predicates
+      assert value in [10, 11]
 
       QuadTrieIterator.close(iter)
     end
@@ -234,7 +237,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
       # Should be positioned at first object
       assert {:ok, value} = QuadTrieIterator.current(iter)
-      assert value in [100, 101]  # One of the objects
+      # One of the objects
+      assert value in [100, 101]
 
       QuadTrieIterator.close(iter)
     end
@@ -370,7 +374,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       assert {:ok, iter} = QuadTrieIterator.new(db, :gspo, <<>>, 0)
 
       assert {:ok, key} = QuadTrieIterator.current_key(iter)
-      assert byte_size(key) == 32  # Quad keys are 32 bytes
+      # Quad keys are 32 bytes
+      assert byte_size(key) == 32
 
       # Verify key structure: graph | subject | predicate | object
       <<g::64-big, s::64-big, p::64-big, o::64-big>> = key
@@ -432,10 +437,14 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       assert {:ok, iter} = QuadTrieIterator.new(db, :gspo, <<>>, 0)
 
       assert {:ok, binding} = QuadTrieIterator.extract_binding(iter)
-      assert binding.pos0 == 0  # graph
-      assert binding.pos1 == 1  # subject
-      assert binding.pos2 == 10  # predicate
-      assert binding.pos3 == 100  # object
+      # graph
+      assert binding.pos0 == 0
+      # subject
+      assert binding.pos1 == 1
+      # predicate
+      assert binding.pos2 == 10
+      # object
+      assert binding.pos3 == 100
 
       QuadTrieIterator.close(iter)
     end
@@ -536,6 +545,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       # because graph is at the end of the pattern tuple, not the beginning
       # The iterator will scan all quads and we need to check the result
       pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
+
       case QuadLeapfrog.from_pattern(db, pattern) do
         {:exhausted, lf} ->
           assert QuadLeapfrog.exhausted?(lf)
@@ -648,7 +658,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       # Pattern looking for quads in graph 999 (doesn't exist)
       # Note: from_pattern may return exhausted directly or find quads
       # due to implementation limitations (graph at end of pattern tuple)
-      case QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}) do
+      case QuadLeapfrog.from_pattern(
+             db,
+             {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
+           ) do
         {:exhausted, lf} ->
           # Iterator is exhausted immediately
           assert QuadLeapfrog.exhausted?(lf)
@@ -690,7 +703,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       # Insert some quads first
       :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
 
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0})
+      assert {:ok, lf} =
+               QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0})
 
       # Before search, bindings should be empty
       bindings = QuadLeapfrog.bindings(lf)
@@ -704,7 +718,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
     test "returns false for active leapfrog", %{db: db} do
       :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
 
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0})
+      assert {:ok, lf} =
+               QuadLeapfrog.from_pattern(
+                 db,
+                 {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+               )
+
       assert {:ok, lf} = QuadLeapfrog.search(lf)
 
       refute QuadLeapfrog.exhausted?(lf)
@@ -714,7 +733,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
     test "returns true for exhausted leapfrog", %{db: db} do
       # Empty database - no quads in graph 999
-      case QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}) do
+      case QuadLeapfrog.from_pattern(
+             db,
+             {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
+           ) do
         {:exhausted, lf} ->
           assert QuadLeapfrog.exhausted?(lf)
           QuadLeapfrog.close(lf)
@@ -731,7 +753,11 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
     test "closes leapfrog and releases resources", %{db: db} do
       :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
 
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0})
+      assert {:ok, lf} =
+               QuadLeapfrog.from_pattern(
+                 db,
+                 {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+               )
 
       # Close should return :ok
       assert :ok = QuadLeapfrog.close(lf)
@@ -746,9 +772,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
     test "finds quads across multiple graphs", %{db: db} do
       # Insert quads in different graphs
       quads = [
-        {1, 10, 100, 0},   # default graph
-        {2, 11, 101, 5},   # graph 5
-        {3, 12, 102, 10}   # graph 10
+        # default graph
+        {1, 10, 100, 0},
+        # graph 5
+        {2, 11, 101, 5},
+        # graph 10
+        {3, 12, 102, 10}
       ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)

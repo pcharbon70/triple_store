@@ -8,7 +8,7 @@ defmodule TripleStore.PrometheusTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Prometheus
 
   # Unique name for each test to avoid conflicts
@@ -32,7 +32,7 @@ defmodule TripleStore.PrometheusTest do
     path = Path.join(System.tmp_dir!(), "prometheus_test_#{:erlang.unique_integer([:positive])}")
     File.rm_rf!(path)
 
-    case NIF.open(path) do
+    case ErlangAdapter.open(path) do
       {:ok, db} ->
         {:ok, agent} = Agent.start_link(fn -> %{} end)
 
@@ -55,7 +55,7 @@ defmodule TripleStore.PrometheusTest do
       Agent.stop(dict_manager)
     end
 
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(path)
   end
 

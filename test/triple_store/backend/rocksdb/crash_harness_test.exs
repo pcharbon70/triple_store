@@ -27,17 +27,17 @@ defmodule TripleStore.Backend.RocksDB.CrashHarnessTest do
   @tag :slow
   test "iterator remains usable after db close (subprocess)" do
     script = """
-    alias TripleStore.Backend.RocksDB.NIF
+    alias TripleStore.Backend.RocksDB.ErlangAdapter
     path = System.tmp_dir!() <> "/ts_crash_iter_" <> Integer.to_string(System.unique_integer([:positive]))
-    {:ok, db} = NIF.open(path)
-    :ok = NIF.put(db, :spo, "key1", "value1")
-    :ok = NIF.put(db, :spo, "key2", "value2")
-    {:ok, iter} = NIF.prefix_iterator(db, :spo, "key")
-    :ok = NIF.close(db)
-    IO.inspect(NIF.iterator_next(iter), label: "next")
-    IO.inspect(NIF.iterator_next(iter), label: "next")
-    IO.inspect(NIF.iterator_next(iter), label: "next")
-    :ok = NIF.iterator_close(iter)
+    {:ok, db} = ErlangAdapter.open(path)
+    :ok = ErlangAdapter.put(db, :spo, "key1", "value1")
+    :ok = ErlangAdapter.put(db, :spo, "key2", "value2")
+    {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, "key")
+    :ok = ErlangAdapter.close(db)
+    IO.inspect(ErlangAdapter.iterator_next(iter), label: "next")
+    IO.inspect(ErlangAdapter.iterator_next(iter), label: "next")
+    IO.inspect(ErlangAdapter.iterator_next(iter), label: "next")
+    :ok = ErlangAdapter.iterator_close(iter)
     File.rm_rf(path)
     """
 
@@ -49,15 +49,15 @@ defmodule TripleStore.Backend.RocksDB.CrashHarnessTest do
   @tag :slow
   test "snapshot remains usable after db close (subprocess)" do
     script = """
-    alias TripleStore.Backend.RocksDB.NIF
+    alias TripleStore.Backend.RocksDB.ErlangAdapter
     path = System.tmp_dir!() <> "/ts_crash_snap_" <> Integer.to_string(System.unique_integer([:positive]))
-    {:ok, db} = NIF.open(path)
-    :ok = NIF.put(db, :spo, "key1", "value1")
-    {:ok, snap} = NIF.snapshot(db)
-    :ok = NIF.put(db, :spo, "key1", "value2")
-    :ok = NIF.close(db)
-    IO.inspect(NIF.snapshot_get(snap, :spo, "key1"), label: "snap")
-    :ok = NIF.release_snapshot(snap)
+    {:ok, db} = ErlangAdapter.open(path)
+    :ok = ErlangAdapter.put(db, :spo, "key1", "value1")
+    {:ok, snap} = ErlangAdapter.snapshot(db)
+    :ok = ErlangAdapter.put(db, :spo, "key1", "value2")
+    :ok = ErlangAdapter.close(db)
+    IO.inspect(ErlangAdapter.snapshot_get(snap, :spo, "key1"), label: "snap")
+    :ok = ErlangAdapter.release_snapshot(snap)
     File.rm_rf(path)
     """
 

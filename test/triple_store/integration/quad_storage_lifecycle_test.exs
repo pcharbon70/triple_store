@@ -16,7 +16,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ColumnFamilyConfig
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.QuadIndex
@@ -51,26 +51,26 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
     test "creates database with all quad indices" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # Verify the database is open
-      assert NIF.is_open(db)
+      assert ErlangAdapter.is_open(db)
 
       # Verify quad-specific column families are accessible
       # Verify the quad indices are accessible by checking they return :not_found for non-existent keys
-      assert :not_found = NIF.get(db, :gspo, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
-      assert :not_found = NIF.get(db, :gpos, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
-      assert :not_found = NIF.get(db, :spog, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
-      assert :not_found = NIF.get(db, :posg, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
+      assert :not_found = ErlangAdapter.get(db, :gspo, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
+      assert :not_found = ErlangAdapter.get(db, :gpos, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
+      assert :not_found = ErlangAdapter.get(db, :spog, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
+      assert :not_found = ErlangAdapter.get(db, :posg, <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>)
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "quad store has four indices" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # Verify we can access all four quad indices via QuadIndex
       # Encode a test quad key for each index
@@ -82,14 +82,14 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert byte_size(test_keys.spog) == 32
       assert byte_size(test_keys.posg) == 32
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "new database is empty" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # New database should have no quads
       refute QuadOperations.default_graph_exists?(db)
@@ -98,7 +98,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       {:ok, graphs} = QuadOperations.list_graphs(db)
       assert graphs == []
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
   end
@@ -112,7 +112,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path = unique_path()
 
       # Create database with quad schema
-      {:ok, db1} = NIF.open(path, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       # Insert some quads
@@ -132,10 +132,10 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       end)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Reopen database
-      {:ok, db2} = NIF.open(path, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       # Verify data persisted
@@ -143,7 +143,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert count == 10
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
@@ -151,7 +151,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path = unique_path()
 
       # Create and populate
-      {:ok, db1} = NIF.open(path, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       subject = RDF.iri("http://example.org/subject")
@@ -167,10 +167,10 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       :ok = QuadOperations.insert_quad(db1, {s_id, p_id, o_id, g_id})
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Reopen and query from each index pattern
-      {:ok, db2} = NIF.open(path, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       # Pattern that uses GSPO index (graph-scoped with subject) - lookup_quads returns list directly
@@ -191,7 +191,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert length(spog_results) == 1
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
   end
@@ -204,7 +204,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
     test "quad store uses schema version 2" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # Quad store uses 32-byte keys (4 x 64-bit IDs)
       keys = QuadIndex.encode_quad_keys(1, 2, 3, 4)
@@ -213,27 +213,27 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert byte_size(keys.spog) == 32
       assert byte_size(keys.posg) == 32
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "quad store uses 32-byte keys for 4 components" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # Quad store uses 32-byte keys (4 x 64-bit IDs)
       keys = QuadIndex.encode_quad_keys(1, 2, 3, 4)
       assert byte_size(keys.gspo) == 32
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "quad store has four distinct indices" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path, schema: :quad)
+      {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
       # Quad store has four different key orderings
       keys = QuadIndex.encode_quad_keys(1, 2, 3, 4)
@@ -246,7 +246,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert keys.gpos != keys.posg
       assert keys.spog != keys.posg
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
   end
@@ -260,7 +260,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path = unique_path() <> "_quad"
 
       # Create quad store
-      {:ok, quad_db} = NIF.open(path, schema: :quad)
+      {:ok, quad_db} = ErlangAdapter.open(path, schema: :quad)
 
       # Verify quad key size
       quad_key = QuadIndex.gspo_key(0, 1, 2, 3)
@@ -268,7 +268,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       # Quad keys are 32 bytes (4 x 64-bit IDs)
       assert byte_size(quad_key) == 32
 
-      NIF.close(quad_db)
+      ErlangAdapter.close(quad_db)
       cleanup_path(path)
     end
 
@@ -277,16 +277,16 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       triple_path = unique_path() <> "_triple"
 
       # Create both types
-      {:ok, quad_db} = NIF.open(quad_path, schema: :quad)
-      {:ok, triple_db} = NIF.open(triple_path, schema: :triple)
+      {:ok, quad_db} = ErlangAdapter.open(quad_path, schema: :quad)
+      {:ok, triple_db} = ErlangAdapter.open(triple_path, schema: :triple)
 
       # Quad store has different column families
       # Both should be openable but have different schemas
-      assert NIF.is_open(quad_db)
-      assert NIF.is_open(triple_db)
+      assert ErlangAdapter.is_open(quad_db)
+      assert ErlangAdapter.is_open(triple_db)
 
-      NIF.close(quad_db)
-      NIF.close(triple_db)
+      ErlangAdapter.close(quad_db)
+      ErlangAdapter.close(triple_db)
 
       cleanup_path(quad_path)
       cleanup_path(triple_path)
@@ -302,7 +302,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path = unique_path()
 
       # Phase 1: Open, insert quads, close
-      {:ok, db1} = NIF.open(path, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       # Create test quads
@@ -330,10 +330,10 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       end)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Phase 2: Reopen and verify quads persisted
-      {:ok, db2} = NIF.open(path, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       # Verify all quads still exist
@@ -343,14 +343,14 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       end)
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
     test "default graph quads persist across reopen" do
       path = unique_path()
 
-      {:ok, db1} = NIF.open(path, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       # Insert quads to default graph (graph_id = 0)
@@ -367,10 +367,10 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       end)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Reopen and verify default graph quads
-      {:ok, db2} = NIF.open(path, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       assert QuadOperations.default_graph_exists?(db2)
@@ -379,14 +379,14 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert count == 5
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
     test "named graph quads persist across reopen" do
       path = unique_path()
 
-      {:ok, db1} = NIF.open(path, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       graph = RDF.iri("http://example.org/test-graph")
@@ -406,10 +406,10 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       end)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Reopen and verify named graph
-      {:ok, db2} = NIF.open(path, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path, schema: :quad)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       assert QuadOperations.graph_exists?(db2, manager2, graph)
@@ -418,7 +418,7 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       assert count == 3
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
   end
@@ -432,8 +432,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path1 = unique_path() <> "_1"
       path2 = unique_path() <> "_2"
 
-      {:ok, db1} = NIF.open(path1, schema: :quad)
-      {:ok, db2} = NIF.open(path2, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path1, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path2, schema: :quad)
 
       {:ok, manager1} = Manager.start_link(db: db1)
       {:ok, manager2} = Manager.start_link(db: db2)
@@ -476,8 +476,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
 
       Manager.stop(manager1)
       Manager.stop(manager2)
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
 
       cleanup_path(path1)
       cleanup_path(path2)
@@ -487,8 +487,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path1 = unique_path() <> "_1"
       path2 = unique_path() <> "_2"
 
-      {:ok, db1} = NIF.open(path1, schema: :quad)
-      {:ok, db2} = NIF.open(path2, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path1, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path2, schema: :quad)
 
       {:ok, manager1} = Manager.start_link(db: db1)
       {:ok, manager2} = Manager.start_link(db: db2)
@@ -520,8 +520,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
 
       Manager.stop(manager1)
       Manager.stop(manager2)
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
 
       cleanup_path(path1)
       cleanup_path(path2)
@@ -531,8 +531,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       path1 = unique_path() <> "_1"
       path2 = unique_path() <> "_2"
 
-      {:ok, db1} = NIF.open(path1, schema: :quad)
-      {:ok, db2} = NIF.open(path2, schema: :quad)
+      {:ok, db1} = ErlangAdapter.open(path1, schema: :quad)
+      {:ok, db2} = ErlangAdapter.open(path2, schema: :quad)
 
       {:ok, manager1} = Manager.start_link(db: db1)
       {:ok, manager2} = Manager.start_link(db: db2)
@@ -588,8 +588,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
 
       Manager.stop(manager1)
       Manager.stop(manager2)
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
 
       cleanup_path(path1)
       cleanup_path(path2)

@@ -8,7 +8,7 @@ defmodule TripleStore.HealthTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Health
 
   # Helper to create a mock store
@@ -17,7 +17,7 @@ defmodule TripleStore.HealthTest do
     path = Path.join(System.tmp_dir!(), "health_test_#{:erlang.unique_integer([:positive])}")
     File.rm_rf!(path)
 
-    case NIF.open(path) do
+    case ErlangAdapter.open(path) do
       {:ok, db} ->
         # Start a mock dict_manager
         {:ok, agent} = Agent.start_link(fn -> %{} end)
@@ -41,7 +41,7 @@ defmodule TripleStore.HealthTest do
       Agent.stop(dict_manager)
     end
 
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(path)
   end
 
@@ -61,7 +61,7 @@ defmodule TripleStore.HealthTest do
     test "returns error when database is closed" do
       case create_mock_store() do
         {:ok, store, path} ->
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           assert {:error, :database_closed} = Health.liveness(store)
           File.rm_rf!(path)
 
@@ -86,7 +86,7 @@ defmodule TripleStore.HealthTest do
     test "returns error when database is closed" do
       case create_mock_store() do
         {:ok, store, path} ->
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           assert {:error, :database_closed} = Health.readiness(store)
           File.rm_rf!(path)
 
@@ -101,7 +101,7 @@ defmodule TripleStore.HealthTest do
           Agent.stop(store.dict_manager)
           store = %{store | dict_manager: nil}
           assert {:ok, :not_ready} = Health.readiness(store)
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           File.rm_rf!(path)
 
         {:error, _} ->

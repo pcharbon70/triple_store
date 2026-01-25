@@ -121,7 +121,7 @@ defmodule TripleStore.SPARQL.InputValidator do
 
   def validate_term({:literal, value, type, lang}, _position)
       when is_binary(value) and (is_binary(type) or is_nil(type)) and
-           (is_binary(lang) or is_nil(lang)) do
+             (is_binary(lang) or is_nil(lang)) do
     if String.length(value) > @max_literal_length do
       {:error, :literal_too_long}
     else

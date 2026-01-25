@@ -70,7 +70,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   }
 
   # Cleanup interval for stale entries
-  @cleanup_interval 300_000  # 5 minutes
+  # 5 minutes
+  @cleanup_interval 300_000
 
   # ===========================================================================
   # Types
@@ -78,7 +79,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
 
   @type user_id :: term()
   @type operation :: atom()
-  @type limit :: {non_neg_integer(), pos_integer()}  # {max_ops, window_seconds}
+  # {max_ops, window_seconds}
+  @type limit :: {non_neg_integer(), pos_integer()}
 
   # ===========================================================================
   # Client API
@@ -290,6 +292,7 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
         if window_start < cutoff do
           :ets.delete(@table_name, key)
         end
+
         acc
       end,
       nil,

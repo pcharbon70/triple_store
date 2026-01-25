@@ -388,7 +388,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
     end
 
     test "1.1.2.6 Quad schema has correct column families" do
-      cf_names = ColumnFamilyConfig.cf_descriptors(:quad) |> Enum.map(fn {name, _opts} -> name end)
+      cf_names =
+        ColumnFamilyConfig.cf_descriptors(:quad) |> Enum.map(fn {name, _opts} -> name end)
 
       # Should have quad indices
       assert "gspo" in cf_names
@@ -417,7 +418,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
     end
 
     test "1.1.2.8 Triple schema has correct column families" do
-      cf_names = ColumnFamilyConfig.cf_descriptors(:triple) |> Enum.map(fn {name, _opts} -> name end)
+      cf_names =
+        ColumnFamilyConfig.cf_descriptors(:triple) |> Enum.map(fn {name, _opts} -> name end)
 
       # Should have triple indices
       assert "spo" in cf_names
@@ -458,7 +460,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
       # (same bloom bits, block size, etc.)
       assert ColumnFamilyConfig.bloom_bits(:spo) == ColumnFamilyConfig.bloom_bits(:gspo)
       assert ColumnFamilyConfig.block_size(:spo) == ColumnFamilyConfig.block_size(:gspo)
-      assert ColumnFamilyConfig.has_prefix_extractor?(:spo) == ColumnFamilyConfig.has_prefix_extractor?(:gspo)
+
+      assert ColumnFamilyConfig.has_prefix_extractor?(:spo) ==
+               ColumnFamilyConfig.has_prefix_extractor?(:gspo)
     end
 
     test "1.1.2.11 Column family name conversion includes quad CFs" do

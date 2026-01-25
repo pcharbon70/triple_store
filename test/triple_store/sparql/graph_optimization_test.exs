@@ -22,8 +22,11 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
 
   describe "estimate_selectivity with quad patterns" do
     test "bound graph is more selective than unbound graph" do
-      quad_with_bound_graph = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
-      quad_with_graph_var = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+      quad_with_bound_graph =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
+
+      quad_with_graph_var =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
       bound_score = Optimizer.estimate_selectivity(quad_with_bound_graph, MapSet.new(), %{})
       unbound_score = Optimizer.estimate_selectivity(quad_with_graph_var, MapSet.new(), %{})
@@ -37,7 +40,9 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
     end
 
     test "bound named graph is selective" do
-      quad = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/graph1"}}
+      quad =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
+         {:named_node, "http://example.org/graph1"}}
 
       score = Optimizer.estimate_selectivity(quad, MapSet.new(), %{})
 
@@ -68,7 +73,9 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
     end
 
     test "bound subject + bound graph is most selective" do
-      quad = {:quad, {:named_node, "http://example.org/Alice"}, {:variable, "p"}, {:variable, "o"}, :default_graph}
+      quad =
+        {:quad, {:named_node, "http://example.org/Alice"}, {:variable, "p"}, {:variable, "o"},
+         :default_graph}
 
       score = Optimizer.estimate_selectivity(quad, MapSet.new(), %{})
 
@@ -133,28 +140,30 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
     test "single graph query has bound graph" do
       quads = [
         {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, :default_graph},
-        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}, :default_graph}
+        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"},
+         :default_graph}
       ]
 
       # All patterns have the same bound graph - single graph query
       assert Enum.all?(quads, fn
-        {:quad, _, _, _, :default_graph} -> true
-        {:quad, _, _, _, {:named_node, _}} -> true
-        _ -> false
-      end)
+               {:quad, _, _, _, :default_graph} -> true
+               {:quad, _, _, _, {:named_node, _}} -> true
+               _ -> false
+             end)
     end
 
     test "multi-graph query has graph variable" do
       quads = [
         {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}},
-        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}, {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"},
+         {:variable, "g"}}
       ]
 
       # Patterns have graph variable - will scan all graphs
       assert Enum.all?(quads, fn
-        {:quad, _, _, _, {:variable, "g"}} -> true
-        _ -> false
-      end)
+               {:quad, _, _, _, {:variable, "g"}} -> true
+               _ -> false
+             end)
     end
   end
 
@@ -223,7 +232,10 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
     end
 
     test "returns named graph tuple for named graph quads" do
-      quad = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:named_node, "http://example.org/graph"}}
+      quad =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
+         {:named_node, "http://example.org/graph"}}
+
       assert Optimizer.extract_graph_key(quad) == {:named_graph, "http://example.org/graph"}
     end
 
@@ -248,7 +260,8 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
       patterns = [
         {:quad, {:variable, "s1"}, {:variable, "p"}, {:variable, "o1"}, :default_graph},
         {:quad, {:variable, "s2"}, {:variable, "p"}, {:variable, "o2"}, :default_graph},
-        {:quad, {:variable, "s3"}, {:variable, "p"}, {:variable, "o3"}, {:named_node, "http://example.org/g1"}}
+        {:quad, {:variable, "s3"}, {:variable, "p"}, {:variable, "o3"},
+         {:named_node, "http://example.org/g1"}}
       ]
 
       groups = Optimizer.group_patterns_by_graph(patterns)
@@ -313,7 +326,8 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
         # Cross-graph pattern
         {:quad, {:variable, "s1"}, {:variable, "p"}, {:variable, "o1"}, {:variable, "g"}},
         # Named graph pattern
-        {:quad, {:variable, "s2"}, {:variable, "p"}, {:variable, "o2"}, {:named_node, "http://example.org/g1"}}
+        {:quad, {:variable, "s2"}, {:variable, "p"}, {:variable, "o2"},
+         {:named_node, "http://example.org/g1"}}
       ]
 
       reordered = Optimizer.reorder_bgp_patterns({:bgp, patterns}, %{})
@@ -343,10 +357,11 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
 
       # Check that at least two consecutive patterns have the same graph
       graph_keys = Enum.map(reordered_patterns, &Optimizer.extract_graph_key/1)
+
       assert Enum.any?(graph_keys, fn key ->
-        count = Enum.count(graph_keys, &(&1 == key))
-        count > 1
-      end)
+               count = Enum.count(graph_keys, &(&1 == key))
+               count > 1
+             end)
     end
   end
 
@@ -449,7 +464,8 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
 
       # Point lookup is very cheap - single seek and read
       assert cost.total < 100
-      assert cost.io > 0  # Has index seek cost
+      # Has index seek cost
+      assert cost.io > 0
     end
 
     test "prefix scan cost scales with result count" do

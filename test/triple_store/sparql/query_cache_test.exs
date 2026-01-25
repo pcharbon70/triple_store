@@ -242,6 +242,7 @@ defmodule TripleStore.SPARQL.QueryCacheTest do
 
     test "estimates size for map results" do
       query = "SELECT * WHERE { ?s ?p ?o }"
+
       result = %{
         bindings: ["s", "p", "o"],
         results: [%{s: "1", p: "2", o: "3"}]

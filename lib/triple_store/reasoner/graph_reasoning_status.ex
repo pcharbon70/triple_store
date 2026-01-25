@@ -144,8 +144,11 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
   @spec new!(keyword()) :: t()
   def new!(opts) when is_list(opts) do
     case new(opts) do
-      {:ok, status} -> status
-      {:error, reason} -> raise ArgumentError, "Invalid graph reasoning status: #{inspect(reason)}"
+      {:ok, status} ->
+        status
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid graph reasoning status: #{inspect(reason)}"
     end
   end
 
@@ -256,7 +259,8 @@ defmodule TripleStore.Reasoner.GraphReasoningStatus do
   def reset(%__MODULE__{} = status) do
     now = DateTime.utc_now()
 
-    %{status
+    %{
+      status
       | state: :initialized,
         derived_count: 0,
         last_materialization: nil,

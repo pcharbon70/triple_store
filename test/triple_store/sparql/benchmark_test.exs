@@ -16,7 +16,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.SPARQL.Query
@@ -40,7 +40,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
   defp setup_db(tmp_dir) do
     db_path = Path.join(tmp_dir, "bench_db_#{:erlang.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager}
   end
@@ -842,7 +842,8 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       try do
         # Create many named graphs
         limit = Executor.max_graphs_in_variable_query()
-        num_graphs = 100  # Well under the limit but tests graph creation
+        # Well under the limit but tests graph creation
+        num_graphs = 100
 
         Enum.each(1..num_graphs, fn i ->
           graph_iri = "http://example.org/stress#{i}"
@@ -915,7 +916,8 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
         # Proper CONSTRUCT template format
         template = [
-          {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+          {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"},
+           {:variable, "name"}}
         ]
 
         # Test that streaming construction works
@@ -947,6 +949,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
           |> Stream.take(100)
           |> Stream.map(fn i ->
             graph_name = "http://example.org/graph#{rem(i, 10) + 1}"
+
             %{
               "s" => {:named_node, "http://example.org/s#{i}"},
               "name" => {:literal, :simple, "Name#{i}"},
@@ -958,7 +961,8 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
         # CONSTRUCT template with graph context
         template = [
-          {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"}, {:variable, "name"}}
+          {:triple, {:variable, "s"}, {:named_node, "http://xmlns.com/foaf/0.1/name"},
+           {:variable, "name"}}
         ]
 
         # Test streaming with graph variable - use 5-arg version to pass graph_vars explicitly
@@ -973,7 +977,9 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
         statement_count = RDF.Dataset.statement_count(dataset)
         assert statement_count == 100
 
-        IO.puts("\n  ✅ CONSTRUCT with graph variable creates dataset with #{statement_count} statements")
+        IO.puts(
+          "\n  ✅ CONSTRUCT with graph variable creates dataset with #{statement_count} statements"
+        )
       after
         cleanup({db, manager})
       end
@@ -994,7 +1000,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       {:ok, o_id} = Manager.get_or_create_id(manager, RDF.iri(object))
 
       quad_key = TripleStore.QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
-      TripleStore.Backend.RocksDB.NIF.put(db, :gspo, quad_key, <<>>)
+      TripleStore.Backend.RocksDB.ErlangAdapter.put(db, :gspo, quad_key, <<>>)
     end)
   end
 end

@@ -293,19 +293,22 @@ defmodule TripleStore.Reasoner.GraphScopedReasoningIntegrationTest do
 
     test "computes aggregate statistics across graphs" do
       statuses = %{
-        1 => GraphReasoningStatus.default(1)
-              |> GraphReasoningStatus.record_materialization(%{
-                derived_count: 100,
-                iterations: 3,
-                duration_ms: 50
-              }),
-        2 => GraphReasoningStatus.default(2)
-              |> GraphReasoningStatus.record_materialization(%{
-                derived_count: 200,
-                iterations: 4,
-                duration_ms: 75
-              }),
-        3 => GraphReasoningStatus.default(3)  # Not materialized
+        1 =>
+          GraphReasoningStatus.default(1)
+          |> GraphReasoningStatus.record_materialization(%{
+            derived_count: 100,
+            iterations: 3,
+            duration_ms: 50
+          }),
+        2 =>
+          GraphReasoningStatus.default(2)
+          |> GraphReasoningStatus.record_materialization(%{
+            derived_count: 200,
+            iterations: 4,
+            duration_ms: 75
+          }),
+        # Not materialized
+        3 => GraphReasoningStatus.default(3)
       }
 
       aggregate = GraphReasoningStatus.aggregate(statuses)
@@ -376,11 +379,12 @@ defmodule TripleStore.Reasoner.GraphScopedReasoningIntegrationTest do
       status = GraphReasoningStatus.default(1)
 
       # After materialization
-      status = GraphReasoningStatus.record_materialization(status, %{
-        derived_count: 42,
-        iterations: 2,
-        duration_ms: 25
-      })
+      status =
+        GraphReasoningStatus.record_materialization(status, %{
+          derived_count: 42,
+          iterations: 2,
+          duration_ms: 25
+        })
 
       assert status.state == :materialized
       assert not GraphReasoningStatus.needs_rematerialization?(status)

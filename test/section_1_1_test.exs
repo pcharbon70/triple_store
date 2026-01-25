@@ -27,7 +27,7 @@ defmodule TripleStore.Section11Test do
         TripleStore.Application,
         TripleStore.Backend,
         TripleStore.Backend.RocksDB,
-        TripleStore.Backend.RocksDB.NIF,
+        TripleStore.Backend.RocksDB.ErlangAdapter,
         TripleStore.Dictionary,
         TripleStore.Index
       ]
@@ -48,18 +48,18 @@ defmodule TripleStore.Section11Test do
 
   describe "1.1.4.2 Rustler NIF loads successfully" do
     test "NIF module is defined" do
-      assert Code.ensure_loaded?(TripleStore.Backend.RocksDB.NIF)
+      assert Code.ensure_loaded?(TripleStore.Backend.RocksDB.ErlangAdapter)
     end
 
     test "NIF is loaded and operational" do
-      result = RocksDB.NIF.nif_loaded()
+      result = RocksDB.ErlangAdapter.nif_loaded()
       assert result == "rocksdb_nif"
     end
 
     test "NIF does not raise on call" do
       assert_raise_or_return = fn ->
         try do
-          RocksDB.NIF.nif_loaded()
+          RocksDB.ErlangAdapter.nif_loaded()
         rescue
           e -> {:error, e}
         end

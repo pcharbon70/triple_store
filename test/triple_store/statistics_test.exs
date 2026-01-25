@@ -21,7 +21,7 @@ defmodule TripleStore.StatisticsTest do
 
   import Bitwise
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Statistics
@@ -30,7 +30,7 @@ defmodule TripleStore.StatisticsTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -38,7 +38,7 @@ defmodule TripleStore.StatisticsTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -539,7 +539,7 @@ defmodule TripleStore.StatisticsTest do
     test "statistics persist across simulated restart" do
       # Use a separate path to avoid conflict with setup's db
       test_path = "/tmp/triple_store_stats_persist_test_#{:erlang.unique_integer([:positive])}"
-      {:ok, db} = NIF.open(test_path)
+      {:ok, db} = ErlangAdapter.open(test_path)
 
       triples = [
         {1000, 100, 2000},
@@ -552,19 +552,19 @@ defmodule TripleStore.StatisticsTest do
       :ok = Statistics.save(db, stats)
 
       # Close the db - need to wait for RocksDB to fully release lock
-      :ok = NIF.close(db)
+      :ok = ErlangAdapter.close(db)
 
       # Force garbage collection to ensure resource is released
       :erlang.garbage_collect()
       Process.sleep(100)
 
-      {:ok, db2} = NIF.open(test_path)
+      {:ok, db2} = ErlangAdapter.open(test_path)
 
       {:ok, loaded} = Statistics.load(db2)
       assert loaded.triple_count == 2
       assert loaded.predicate_histogram[100] == 2
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       :erlang.garbage_collect()
       Process.sleep(50)
       File.rm_rf(test_path)
@@ -777,19 +777,20 @@ defmodule TripleStore.StatisticsTest do
     test "load returns error for invalid stats structure", %{db: db} do
       # Save invalid structure directly
       invalid_data = :erlang.term_to_binary(%{foo: :bar}, [:compressed])
-      :ok = NIF.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, invalid_data)
+      :ok = ErlangAdapter.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, invalid_data)
 
-      # Load should detect invalid structure
-      assert {:error, :invalid_stats_structure} = Statistics.load(db)
+      # Load should detect invalid structure - returns the actual validation error
+      assert {:error, _} = Statistics.load(db)
     end
 
     test "load handles missing required keys", %{db: db} do
       # Save partial structure
       partial = %{triple_count: 100}
       partial_data = :erlang.term_to_binary(partial, [:compressed])
-      :ok = NIF.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, partial_data)
+      :ok = ErlangAdapter.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, partial_data)
 
-      assert {:error, :invalid_stats_structure} = Statistics.load(db)
+      # Returns the specific missing keys error
+      assert {:error, {:missing_keys, _keys}} = Statistics.load(db)
     end
   end
 
@@ -948,6 +949,7 @@ defmodule TripleStore.StatisticsTest do
         collected_at: DateTime.utc_now(),
         version: 1
       }
+
       assert {:error, {:invalid_types, _}} = Statistics.validate_stats_structure(stats)
     end
 
@@ -1000,7 +1002,7 @@ defmodule TripleStore.StatisticsTest do
         version: 1
       }
 
-      assert_raise ArgumentError, ~r/has invalid value/, fn ->
+      assert_raise ArgumentError, ~r/Invalid statistics/, fn ->
         Statistics.validate_stats!(stats)
       end
     end

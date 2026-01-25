@@ -156,11 +156,14 @@ defmodule TripleStore.SPARQL.BenchmarkUtilTest do
 
       assert length(reports) == 2
 
-      assert [%{name: "Fast", measurement: _, timestamp: _}, %{
-        name: "Slow",
-        measurement: _,
-        timestamp: _
-      }] = reports
+      assert [
+               %{name: "Fast", measurement: _, timestamp: _},
+               %{
+                 name: "Slow",
+                 measurement: _,
+                 timestamp: _
+               }
+             ] = reports
     end
 
     test "respects custom iterations" do

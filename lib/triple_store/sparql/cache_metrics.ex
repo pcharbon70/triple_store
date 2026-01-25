@@ -421,7 +421,15 @@ defmodule TripleStore.SPARQL.CacheMetrics do
   For a single cache metrics map, formats those metrics.
   For a map of all cache metrics, formats each cache type.
   """
-  def format_metrics(%{hits: hits, misses: misses, evictions: evictions, size: size, max_size: max_size, hit_rate: hit_rate, memory_mb: memory_mb}) do
+  def format_metrics(%{
+        hits: hits,
+        misses: misses,
+        evictions: evictions,
+        size: size,
+        max_size: max_size,
+        hit_rate: hit_rate,
+        memory_mb: memory_mb
+      }) do
     """
     Cache Metrics:
     - Hits: #{hits}

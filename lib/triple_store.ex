@@ -148,7 +148,7 @@ defmodule TripleStore do
   - `:all` - All available reasoning rules
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager, as: DictManager
   alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Loader
@@ -276,7 +276,7 @@ defmodule TripleStore do
         if not create_if_missing and not File.exists?(path) do
           {{:error, :database_not_found}, %{}}
         else
-          with {:ok, db} <- NIF.open(path),
+          with {:ok, db} <- ErlangAdapter.open(path),
                {:ok, dict_manager} <- start_dict_manager(db, dictionary_shards) do
             store = %{
               db: db,
@@ -322,7 +322,7 @@ defmodule TripleStore do
   @spec close(store()) :: :ok | {:error, term()}
   def close(%{db: db, dict_manager: dict_manager} = _store) do
     stop_dict_manager(dict_manager)
-    NIF.close(db)
+    ErlangAdapter.close(db)
   end
 
   @spec stop_dict_manager(pid() | term()) :: :ok | nil
@@ -1108,7 +1108,7 @@ defmodule TripleStore do
   """
   @spec health(store()) :: {:ok, health_result()} | {:error, term()}
   def health(%{db: db, dict_manager: dict_manager}) do
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
 
     triple_count =

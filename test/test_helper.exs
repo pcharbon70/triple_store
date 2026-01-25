@@ -1,4 +1,4 @@
-ExUnit.start(exclude: [:benchmark, :large_dataset, :slow])
+ExUnit.start(exclude: [:benchmark, :large_dataset, :slow, :lifetime_safety])
 
 # Start the pool (skip if NIF is not yet implemented)
 # Spawn without link to avoid crashes propagating

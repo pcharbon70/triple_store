@@ -1,7 +1,7 @@
 defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   @moduletag :fold_operations
   @moduletag timeout: 120_000
@@ -11,28 +11,28 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with prefix <<1::64-big>>
       for i <- 1..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Add data with different prefix
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<2::64-big, i::64-big>>, "other#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<2::64-big, i::64-big>>, "other#{i}")
       end
 
       # Fold over prefix <<1::64-big>>
       count =
-        NIF.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
           acc + 1
         end)
 
       assert count == 10
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -40,16 +40,16 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with numeric values
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, <<i::64-big>>)
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, <<i::64-big>>)
       end
 
       # Fold to sum values
       sum =
-        NIF.fold(db, :spo, <<1::64-big>>, 0, fn {_k, v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<1::64-big>>, 0, fn {_k, v}, acc ->
           <<i::64-big>> = v
           acc + i
         end)
@@ -57,7 +57,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       assert sum == 15
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -65,16 +65,16 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..20 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Fold with upper bound at <<1::64-big, 11::64-big>>
       count =
-        NIF.fold(
+        ErlangAdapter.fold(
           db,
           :spo,
           <<1::64-big>>,
@@ -89,7 +89,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       assert count <= 11
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -97,23 +97,23 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<i::64-big>>, "value#{i}")
       end
 
       # Fold over empty prefix (all entries)
       count =
-        NIF.fold(db, :spo, <<>>, 0, fn {_k, _v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<>>, 0, fn {_k, _v}, acc ->
           acc + 1
         end)
 
       assert count == 5
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -121,23 +121,23 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with different prefix
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Fold over non-existent prefix
       count =
-        NIF.fold(db, :spo, <<99::64-big>>, 0, fn {_k, _v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<99::64-big>>, 0, fn {_k, _v}, acc ->
           acc + 1
         end)
 
       assert count == 0
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
   end
@@ -147,16 +147,16 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_keys_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Collect keys using fold_keys
       keys =
-        NIF.fold_keys(db, :spo, <<1::64-big>>, [], fn k, acc ->
+        ErlangAdapter.fold_keys(db, :spo, <<1::64-big>>, [], fn k, acc ->
           [k | acc]
         end)
 
@@ -166,7 +166,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       Enum.all?(keys, fn k -> binary_part(k, 0, 8) == <<1::64-big>> end)
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -174,24 +174,24 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_keys_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with two different prefixes
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value1_#{i}")
-        :ok = NIF.put(db, :spo, <<2::64-big, i::64-big>>, "value2_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value1_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<2::64-big, i::64-big>>, "value2_#{i}")
       end
 
       # Count keys with prefix <<1::64-big>>
       count =
-        NIF.fold_keys(db, :spo, <<1::64-big>>, 0, fn _k, acc ->
+        ErlangAdapter.fold_keys(db, :spo, <<1::64-big>>, 0, fn _k, acc ->
           acc + 1
         end)
 
       assert count == 5
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -199,16 +199,16 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_keys_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..20 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Fold keys with upper bound
       keys =
-        NIF.fold_keys(
+        ErlangAdapter.fold_keys(
           db,
           :spo,
           <<1::64-big>>,
@@ -223,7 +223,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       assert length(keys) <= 11
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -231,18 +231,18 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_keys_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Fold over empty CF
       count =
-        NIF.fold_keys(db, :spo, <<>>, 0, fn _k, acc ->
+        ErlangAdapter.fold_keys(db, :spo, <<>>, 0, fn _k, acc ->
           acc + 1
         end)
 
       assert count == 0
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
   end
@@ -252,15 +252,15 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Create stream
-      stream = NIF.prefix_stream(db, :spo, <<1::64-big>>)
+      stream = ErlangAdapter.prefix_stream(db, :spo, <<1::64-big>>)
 
       # Verify it's a stream
       assert Enumerable.impl_for(stream) != nil
@@ -276,7 +276,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       end)
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -284,24 +284,24 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..100 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Take only first 5 entries
       entries =
         db
-        |> NIF.prefix_stream(:spo, <<1::64-big>>)
+        |> ErlangAdapter.prefix_stream(:spo, <<1::64-big>>)
         |> Stream.take(5)
         |> Enum.to_list()
 
       assert length(entries) == 5
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -309,20 +309,20 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<i::64-big>>, "value#{i}")
       end
 
       # Stream all entries
-      entries = Enum.to_list(NIF.prefix_stream(db, :spo, <<>>))
+      entries = Enum.to_list(ErlangAdapter.prefix_stream(db, :spo, <<>>))
 
       assert length(entries) == 5
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -330,20 +330,20 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with different prefix
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Stream non-existent prefix
-      entries = Enum.to_list(NIF.prefix_stream(db, :spo, <<99::64-big>>))
+      entries = Enum.to_list(ErlangAdapter.prefix_stream(db, :spo, <<99::64-big>>))
 
       assert Enum.empty?(entries)
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -351,24 +351,24 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add lots of data
       for i <- 1..1000 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Take only first entry then halt
       entries =
         db
-        |> NIF.prefix_stream(:spo, <<1::64-big>>)
+        |> ErlangAdapter.prefix_stream(:spo, <<1::64-big>>)
         |> Stream.take(1)
         |> Enum.to_list()
 
       assert length(entries) == 1
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
   end
@@ -378,22 +378,22 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_integration_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..50 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Collect via fold
       fold_entries =
-        NIF.fold(db, :spo, <<1::64-big>>, [], fn {k, v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<1::64-big>>, [], fn {k, v}, acc ->
           [{k, v} | acc]
         end)
         |> Enum.sort()
 
       # Collect via iterator
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, <<1::64-big>>)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<1::64-big>>)
 
       iter_entries =
         Stream.unfold(iter, fn
@@ -401,21 +401,21 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
             nil
 
           iter ->
-            case NIF.iterator_next(iter) do
+            case ErlangAdapter.iterator_next(iter) do
               {:ok, k, v} -> {{k, v}, iter}
               :iterator_end -> {nil, :iterator_end}
             end
         end)
         |> Enum.reject(&is_nil/1)
 
-      NIF.iterator_close(iter)
+      ErlangAdapter.iterator_close(iter)
 
       # Both should have same entries
       assert length(fold_entries) == length(iter_entries)
       assert length(fold_entries) == 50
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -423,24 +423,24 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_snapshot_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add initial data
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Create snapshot
-      {:ok, snap} = NIF.snapshot(db)
+      {:ok, snap} = ErlangAdapter.snapshot(db)
 
       # Add more data
       for i <- 6..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Fold with snapshot should only see 5 entries
       count =
-        NIF.fold(
+        ErlangAdapter.fold(
           db,
           :spo,
           <<1::64-big>>,
@@ -455,15 +455,15 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
 
       # Regular fold should see 10 entries
       count =
-        NIF.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<1::64-big>>, 0, fn {_k, _v}, acc ->
           acc + 1
         end)
 
       assert count == 10
 
       # Clean up
-      NIF.release_snapshot(db, snap)
-      NIF.close(db)
+      ErlangAdapter.release_snapshot(db, snap)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -471,29 +471,29 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_snapshot_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add initial data
       for i <- 1..5 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Create snapshot
-      {:ok, snap} = NIF.snapshot(db)
+      {:ok, snap} = ErlangAdapter.snapshot(db)
 
       # Add more data
       for i <- 6..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Stream with snapshot should only see 5 entries
-      entries = Enum.to_list(NIF.prefix_stream(db, :spo, <<1::64-big>>, snapshot: snap))
+      entries = Enum.to_list(ErlangAdapter.prefix_stream(db, :spo, <<1::64-big>>, snapshot: snap))
 
       assert length(entries) == 5
 
       # Clean up
-      NIF.release_snapshot(db, snap)
-      NIF.close(db)
+      ErlangAdapter.release_snapshot(db, snap)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -501,23 +501,23 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_fold_efficiency_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data
       for i <- 1..100 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value#{i}")
       end
 
       # Collect keys via fold_keys
       keys_from_fold_keys =
-        NIF.fold_keys(db, :spo, <<1::64-big>>, [], fn k, acc ->
+        ErlangAdapter.fold_keys(db, :spo, <<1::64-big>>, [], fn k, acc ->
           [k | acc]
         end)
         |> Enum.sort()
 
       # Collect keys via fold (discarding values)
       keys_from_fold =
-        NIF.fold(db, :spo, <<1::64-big>>, [], fn {k, _v}, acc ->
+        ErlangAdapter.fold(db, :spo, <<1::64-big>>, [], fn {k, _v}, acc ->
           [k | acc]
         end)
         |> Enum.sort()
@@ -527,7 +527,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       assert length(keys_from_fold_keys) == 100
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
 
@@ -535,16 +535,16 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       path = "/tmp/test_stream_boundary_#{System.unique_integer()}"
       File.rm_rf(path)
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Add data with interleaved prefixes
       for i <- 1..10 do
-        :ok = NIF.put(db, :spo, <<1::64-big, i::64-big>>, "value1_#{i}")
-        :ok = NIF.put(db, :spo, <<2::64-big, i::64-big>>, "value2_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64-big, i::64-big>>, "value1_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<2::64-big, i::64-big>>, "value2_#{i}")
       end
 
       # Stream should only get entries with prefix <<1::64-big>>
-      entries = Enum.to_list(NIF.prefix_stream(db, :spo, <<1::64-big>>))
+      entries = Enum.to_list(ErlangAdapter.prefix_stream(db, :spo, <<1::64-big>>))
 
       assert length(entries) == 10
 
@@ -552,7 +552,7 @@ defmodule TripleStore.Backend.RocksDB.FoldOperationsTest do
       Enum.all?(entries, fn {k, _v} -> binary_part(k, 0, 8) == <<1::64-big>> end)
 
       # Clean up
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(path)
     end
   end

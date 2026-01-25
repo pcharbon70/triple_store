@@ -12,7 +12,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.PropertyPath
   alias TripleStore.SPARQL.Query
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
     File.rm_rf!(db_path)
 
     # Open database
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
 
     # Start dictionary manager
     {:ok, dict_manager} = Manager.start_link(db: db)
@@ -41,7 +41,7 @@ defmodule TripleStore.SPARQL.PropertyPathTest do
         Manager.stop(dict_manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

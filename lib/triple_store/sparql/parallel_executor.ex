@@ -20,7 +20,8 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
 
   @type pattern_result :: {:ok, list()} | {:error, term()}
 
-  @default_threshold 1000  # Only parallelize if estimated cost >= 1000
+  # Only parallelize if estimated cost >= 1000
+  @default_threshold 1000
   @max_parallel 4
   @default_timeout 30_000
 
@@ -170,9 +171,9 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
       end)
 
     if Enum.all?(results, fn
-      {:ok, _} -> true
-      _ -> false
-    end) do
+         {:ok, _} -> true
+         _ -> false
+       end) do
       {:ok, Enum.map(results, fn {:ok, r} -> r end)}
     else
       {:error, :sequential_execution_failed}
@@ -224,16 +225,17 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
         Enum.map(pending, fn {_task, _} -> {:error, :timeout} end)
 
     if Enum.all?(final_results, fn
-      {:ok, _} -> true
-      _ -> false
-    end) do
+         {:ok, _} -> true
+         _ -> false
+       end) do
       {:ok, Enum.map(final_results, fn {:ok, r} -> r end)}
     else
       # Return results even if some failed
-      {:ok, Enum.map(final_results, fn
-        {:ok, r} -> r
-        {:error, _} -> []
-      end)}
+      {:ok,
+       Enum.map(final_results, fn
+         {:ok, r} -> r
+         {:error, _} -> []
+       end)}
     end
   end
 

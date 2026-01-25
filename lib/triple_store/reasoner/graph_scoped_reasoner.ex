@@ -70,8 +70,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       IO.puts("Derived \#{count} facts for graph \#{gid}")
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
+
   alias TripleStore.Reasoner.{
     GraphReasoningConfig,
     GraphReasoningStatus,
@@ -79,6 +80,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     Rule,
     SemiNaive
   }
+
   alias TripleStore.{Dictionary, QuadOperations}
 
   # ============================================================================
@@ -86,7 +88,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "Graph ID"
   @type graph_id :: non_neg_integer()
@@ -138,7 +140,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         parallel: true
       )
   """
-  @spec materialize_graph(db_ref(), keyword()) :: {:ok, materialization_stats()} | {:error, term()}
+  @spec materialize_graph(db_ref(), keyword()) ::
+          {:ok, materialization_stats()} | {:error, term()}
   def materialize_graph(db, opts) do
     with {:ok, graph_id} <- validate_graph_id(opts),
          {:ok, config} <- validate_config(opts),
@@ -378,7 +381,13 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       validate_rules: false
     ]
 
-    case SemiNaive.materialize(lookup_fn, store_fn, compiled_rules, initial_facts, semi_naive_opts) do
+    case SemiNaive.materialize(
+           lookup_fn,
+           store_fn,
+           compiled_rules,
+           initial_facts,
+           semi_naive_opts
+         ) do
       {:ok, semi_naive_stats} ->
         duration_ms = System.monotonic_time(:millisecond) - start_time
 
@@ -456,9 +465,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
   defp load_graph_facts(db, graph_id) do
     # Load all explicit quads from the specified graph
-    case QuadOperations.fold_quads(db, fn quad, acc ->
-      MapSet.put(acc, quad_to_triple(quad))
-    end, MapSet.new(), graph_id: graph_id) do
+    case QuadOperations.fold_quads(
+           db,
+           fn quad, acc ->
+             MapSet.put(acc, quad_to_triple(quad))
+           end,
+           MapSet.new(),
+           graph_id: graph_id
+         ) do
       {:ok, facts} when is_map(facts) -> {:ok, facts}
       {:error, _} = error -> error
     end
@@ -466,9 +480,13 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
   defp load_all_facts(db) do
     # Load all quads from all graphs as triples
-    case QuadOperations.fold_all_quads(db, fn quad, acc ->
-      MapSet.put(acc, quad_to_triple(quad))
-    end, MapSet.new()) do
+    case QuadOperations.fold_all_quads(
+           db,
+           fn quad, acc ->
+             MapSet.put(acc, quad_to_triple(quad))
+           end,
+           MapSet.new()
+         ) do
       {:ok, facts} when is_map(facts) -> {:ok, facts}
       {:error, _} = error -> error
     end
@@ -593,7 +611,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Use GSPO index to look up quads for this graph
     prefix = QuadIndex.gspo_prefix(graph_id)
 
-    case NIF.prefix_stream(db, :gspo, prefix) do
+    case ErlangAdapter.prefix_stream(db, :gspo, prefix) do
       stream when is_function(stream) ->
         quads =
           stream
@@ -625,7 +643,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         {@derived_cf, key, <<>>}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
 
   defp get_inference_graph_id, do: 0
@@ -778,9 +796,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           :error ->
             # Use default scope from config
             case ReasoningConfig.scope(config) do
-              :local -> {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
-              :global -> {local_acc, Map.put(global_acc, graph_id, GraphReasoningConfig.default(graph_id))}
-              :hybrid -> {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
+              :local ->
+                {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
+
+              :global ->
+                {local_acc, Map.put(global_acc, graph_id, GraphReasoningConfig.default(graph_id))}
+
+              :hybrid ->
+                {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
             end
         end
       end)

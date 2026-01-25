@@ -48,7 +48,7 @@ defmodule TripleStore.Statistics.Cache do
 
   use GenServer
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Statistics
 
   require Logger
@@ -348,7 +348,7 @@ defmodule TripleStore.Statistics.Cache do
   # Private Helpers
   # ===========================================================================
 
-  @spec compute_stats(NIF.db_ref()) :: {:ok, cached_stats()} | {:error, term()}
+  @spec compute_stats(ErlangAdapter.db_ref()) :: {:ok, cached_stats()} | {:error, term()}
   defp compute_stats(db) do
     with {:ok, base_stats} <- Statistics.all(db) do
       stats = Map.put(base_stats, :computed_at, DateTime.utc_now())
@@ -356,11 +356,11 @@ defmodule TripleStore.Statistics.Cache do
     end
   end
 
-  @spec compute_histogram(NIF.db_ref()) :: {:ok, predicate_histogram()}
+  @spec compute_histogram(ErlangAdapter.db_ref()) :: {:ok, predicate_histogram()}
   defp compute_histogram(db) do
     # Get all predicates by scanning the POS index
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, :pos, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, :pos, <<>>)
 
     histogram =
       stream
@@ -372,7 +372,7 @@ defmodule TripleStore.Statistics.Cache do
     {:ok, histogram}
   end
 
-  @spec compute_all(NIF.db_ref()) ::
+  @spec compute_all(ErlangAdapter.db_ref()) ::
           {:ok, cached_stats(), predicate_histogram()} | {:error, term()}
   defp compute_all(db) do
     with {:ok, stats} <- compute_stats(db),

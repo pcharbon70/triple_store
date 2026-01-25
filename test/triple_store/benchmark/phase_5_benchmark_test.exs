@@ -14,7 +14,7 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.Statistics
@@ -29,7 +29,7 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
       System.tmp_dir!() <>
         "/ts_benchmark_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     # Start Statistics GenServer
@@ -37,7 +37,7 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -60,7 +60,9 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
       # Should complete in under 100ms (100,000 microseconds)
       assert time_us < 100_000, "Statistics collection took #{time_us}μs, expected < 100ms"
 
-      IO.puts("\n  [Benchmark] Statistics collection for 1K quads: #{time_us}μs (#{div(time_us, 1000)}ms)")
+      IO.puts(
+        "\n  [Benchmark] Statistics collection for 1K quads: #{time_us}μs (#{div(time_us, 1000)}ms)"
+      )
     end
 
     test "collects statistics for 10K quads efficiently", %{db: db} do
@@ -373,7 +375,8 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
 
       # Verify summary
       assert summary.total_quads == 5000
-      assert summary.graph_count == 51  # 50 named + 1 default
+      # 50 named + 1 default
+      assert summary.graph_count == 51
 
       IO.puts(
         "\n  [Benchmark] All graphs summary for 5000 quads across 51 graphs: #{time_us}μs (#{div(time_us, 1000)}ms)"

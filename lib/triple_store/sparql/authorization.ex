@@ -47,7 +47,7 @@ defmodule TripleStore.SPARQL.Authorization do
   """
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
 
@@ -66,11 +66,11 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @typedoc "User object with id and optional roles"
   @type user :: %{
-            optional(:id) => user_id(),
-            optional(:roles) => [atom()],
-            optional(:name) => String.t(),
-            optional(atom()) => term()
-          }
+          optional(:id) => user_id(),
+          optional(:roles) => [atom()],
+          optional(:name) => String.t(),
+          optional(atom()) => term()
+        }
 
   @typedoc "Permission type"
   @type permission :: :read | :write | :admin | :owner
@@ -363,7 +363,13 @@ defmodule TripleStore.SPARQL.Authorization do
         # Filter by permission
         accessible =
           Enum.filter(all_graphs, fn graph_term ->
-            case check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission) do
+            case check_permission_for_term(
+                   db,
+                   dict_manager,
+                   graph_term,
+                   user_or_public,
+                   permission
+                 ) do
               {:ok, true} -> true
               {:ok, false} -> false
               {:error, _} -> false
@@ -372,7 +378,8 @@ defmodule TripleStore.SPARQL.Authorization do
 
         graph_iris =
           Enum.map(accessible, fn
-            :default -> nil  # Don't include default in IRIs
+            # Don't include default in IRIs
+            :default -> nil
             %RDF.IRI{value: iri} -> iri
             %RDF.BlankNode{value: id} -> "_:#{id}"
             {:named_node, iri} -> iri
@@ -442,7 +449,7 @@ defmodule TripleStore.SPARQL.Authorization do
       acl_prefix = "acl:graph:#{graph_id}:"
 
       result =
-        NIF.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
+        ErlangAdapter.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
           # If we already found the owner, skip
           if acc != nil do
             {:halt, acc}
@@ -544,6 +551,7 @@ defmodule TripleStore.SPARQL.Authorization do
           case get_acl_entry(db, graph_id, "user:#{user_id}") do
             {:ok, acl_entry} ->
               permissions = Map.get(acl_entry, "user:#{user_id}", [])
+
               if permission in permissions do
                 {:ok, true}
               else
@@ -607,7 +615,7 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Get existing ACL entry for this key
     current_entry =
-      case NIF.get(db, @acl_cf, acl_key) do
+      case ErlangAdapter.get(db, @acl_cf, acl_key) do
         {:ok, <<>>} -> %{}
         {:ok, binary} when is_binary(binary) -> :erlang.binary_to_term(binary)
         :not_found -> %{}
@@ -622,13 +630,13 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Store back
     encoded = :erlang.term_to_binary(updated_entry)
-    NIF.put(db, @acl_cf, acl_key, encoded)
+    ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
   end
 
   defp remove_acl_entry(db, graph_id, key, permission) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 
@@ -643,14 +651,14 @@ defmodule TripleStore.SPARQL.Authorization do
             # Remove the only permission, delete the key
             updated_entry = Map.delete(current_entry, key)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
 
           permissions ->
             # Remove this permission, keep others
             updated_permissions = List.delete(permissions, permission)
             updated_entry = Map.put(current_entry, key, updated_permissions)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
         end
 
       :not_found ->
@@ -664,7 +672,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp get_acl_entry(db, graph_id, key) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 
@@ -707,6 +715,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp term_to_graph_id(_db, dict_manager, {:named_node, iri}) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error
@@ -724,6 +733,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp graph_name_to_id(dict_manager, graph_iri) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(graph_iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error

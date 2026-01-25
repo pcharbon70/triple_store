@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -50,12 +50,12 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -171,7 +171,11 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
   # ===========================================================================
 
   describe "6.2.1.3 load N-Quads with default graph" do
-    test "loads quads without graph name to default graph", %{db: db, manager: manager, db_path: db_path} do
+    test "loads quads without graph name to default graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       nquads_file = Path.join(db_path, "default_graph.nq")
 
       # N-Quads without the fourth component (graph) go to default graph
@@ -221,7 +225,11 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
   # ===========================================================================
 
   describe "6.2.1.4 load N-Quads with blank node graphs" do
-    test "loads quads with blank node as graph name", %{db: db, manager: manager, db_path: db_path} do
+    test "loads quads with blank node as graph name", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       nquads_file = Path.join(db_path, "blank_graph.nq")
 
       content = """
@@ -262,7 +270,11 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
   # ===========================================================================
 
   describe "6.2.1.5 load large N-Quads file" do
-    test "handles large files efficiently (10k+ quads)", %{db: db, manager: manager, db_path: db_path} do
+    test "handles large files efficiently (10k+ quads)", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       nquads_file = Path.join(db_path, "large.nq")
 
       # Generate 10,000 quads across 10 graphs
@@ -284,7 +296,8 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
       assert time_us < 1_000_000
 
       # Load and measure
-      {load_time_us, result} = :timer.tc(fn -> Loader.load_nquads_file(db, manager, nquads_file) end)
+      {load_time_us, result} =
+        :timer.tc(fn -> Loader.load_nquads_file(db, manager, nquads_file) end)
 
       assert {:ok, ^num_quads} = result
 

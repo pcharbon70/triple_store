@@ -386,7 +386,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     key = <<graph_id::64-big, s::64-big, p::64-big, o::64-big>>
 
     # Use the NIF to check if the quad exists
-    case TripleStore.Backend.RocksDB.NIF.get(db, :gspo, key) do
+    case TripleStore.Backend.RocksDB.ErlangAdapter.get(db, :gspo, key) do
       {:ok, _value} ->
         # Quad exists, return empty iterator list (nothing to iterate)
         {:ok, []}
@@ -403,7 +403,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # Normalize graph ID to integer
   defp normalize_graph_id(graph_id) when is_integer(graph_id), do: graph_id
   defp normalize_graph_id(:default_graph), do: 0
-  defp normalize_graph_id({:named_node, _iri}), do: 0  # Would need actual lookup
+  # Would need actual lookup
+  defp normalize_graph_id({:named_node, _iri}), do: 0
   defp normalize_graph_id(_), do: 0
 
   # Build prefix from bound components
@@ -411,6 +412,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   defp build_prefix_from_components([component | rest], acc) do
     value = extract_bound_value(component)
+
     if is_bound?(component) do
       build_prefix_from_components(rest, [<<value::64-big>> | acc])
     else
@@ -451,7 +453,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       # Variables have selectivity based on position
       true ->
         # Use cardinality estimate if available
-        case QuadCardinality.estimate_pattern({:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}}, stats) do
+        case QuadCardinality.estimate_pattern(
+               {:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}},
+               stats
+             ) do
           card when is_number(card) and card > 0 ->
             # Higher cardinality = lower selectivity = higher score
             # Use log to scale the score
@@ -461,7 +466,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
             # Fallback: use default quad count with logging
             # This provides a consistent baseline instead of arbitrary 1000
             default_card = Map.get(stats, :quad_count, 10_000)
-            Logger.debug("QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering")
+
+            Logger.debug(
+              "QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering"
+            )
 
             # Log scale of default cardinality
             trunc(:math.log(max(1, default_card)))

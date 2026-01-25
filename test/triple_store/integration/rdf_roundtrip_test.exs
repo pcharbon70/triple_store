@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
   use ExUnit.Case, async: false
 
   alias RDF.XSD
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Exporter
   alias TripleStore.Loader
@@ -22,7 +22,7 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -30,7 +30,7 @@ defmodule TripleStore.Integration.RDFRoundtripTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

@@ -12,7 +12,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
   """
   use TripleStore.PooledDbCase
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.SequenceCounter
 
@@ -168,9 +168,9 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       SequenceCounter.stop(counter)
 
       # Verify persisted values in RocksDB
-      {:ok, uri_bin} = NIF.get(db, :str2id, "__seq_counter__uri")
-      {:ok, bnode_bin} = NIF.get(db, :str2id, "__seq_counter__bnode")
-      {:ok, literal_bin} = NIF.get(db, :str2id, "__seq_counter__literal")
+      {:ok, uri_bin} = ErlangAdapter.get(db, :str2id, "__seq_counter__uri")
+      {:ok, bnode_bin} = ErlangAdapter.get(db, :str2id, "__seq_counter__bnode")
+      {:ok, literal_bin} = ErlangAdapter.get(db, :str2id, "__seq_counter__literal")
 
       <<uri_persisted::64-big>> = uri_bin
       <<bnode_persisted::64-big>> = bnode_bin
@@ -260,7 +260,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
 
       # Get initial persisted value (should be 0 for fresh db)
       initial_persisted =
-        case NIF.get(db, :str2id, "__seq_counter__uri") do
+        case ErlangAdapter.get(db, :str2id, "__seq_counter__uri") do
           {:ok, bin} ->
             <<val::64-big>> = bin
             val
@@ -275,7 +275,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       end
 
       # Should have auto-flushed
-      {:ok, bin} = NIF.get(db, :str2id, "__seq_counter__uri")
+      {:ok, bin} = ErlangAdapter.get(db, :str2id, "__seq_counter__uri")
       <<persisted::64-big>> = bin
 
       # Persisted value should be updated
@@ -348,7 +348,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       :ok = SequenceCounter.stop(counter)
 
       # Verify flushed
-      {:ok, bin} = NIF.get(db, :str2id, "__seq_counter__uri")
+      {:ok, bin} = ErlangAdapter.get(db, :str2id, "__seq_counter__uri")
       <<persisted::64-big>> = bin
       assert persisted == final_val
     end
@@ -529,7 +529,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       # Pre-seed the counter to near max value
       near_max = Dictionary.max_sequence() - 1
       key = "__seq_counter__uri"
-      :ok = NIF.put(db, :str2id, key, <<near_max::64-big>>)
+      :ok = ErlangAdapter.put(db, :str2id, key, <<near_max::64-big>>)
 
       {:ok, counter} = SequenceCounter.start_link(db: db)
 
@@ -547,7 +547,7 @@ defmodule TripleStore.Dictionary.SequenceCounterTest do
       # Pre-seed to exactly max - safety_margin - 1 so first ID works but second fails
       start_val = Dictionary.max_sequence() - Dictionary.safety_margin() - 1
       key = "__seq_counter__uri"
-      :ok = NIF.put(db, :str2id, key, <<start_val::64-big>>)
+      :ok = ErlangAdapter.put(db, :str2id, key, <<start_val::64-big>>)
 
       {:ok, counter} = SequenceCounter.start_link(db: db)
 

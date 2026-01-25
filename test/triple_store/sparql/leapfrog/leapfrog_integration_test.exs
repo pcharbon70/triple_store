@@ -10,7 +10,7 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.SPARQL.JoinEnumeration
   alias TripleStore.SPARQL.Leapfrog.MultiLevel
@@ -21,10 +21,10 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogIntegrationTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

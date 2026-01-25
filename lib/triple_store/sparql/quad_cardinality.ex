@@ -170,21 +170,41 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   # Validates individual stat value types
   defp validate_stat_value_type(:quad_count, value) when is_integer(value) and value >= 0, do: :ok
   defp validate_stat_value_type(:quad_count, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:triple_count, value) when is_integer(value) and value >= 0, do: :ok
+
+  defp validate_stat_value_type(:triple_count, value) when is_integer(value) and value >= 0,
+    do: :ok
+
   defp validate_stat_value_type(:triple_count, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:distinct_subjects, value) when is_integer(value) and value >= 0, do: :ok
+
+  defp validate_stat_value_type(:distinct_subjects, value) when is_integer(value) and value >= 0,
+    do: :ok
+
   defp validate_stat_value_type(:distinct_subjects, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:distinct_predicates, value) when is_integer(value) and value >= 0, do: :ok
+
+  defp validate_stat_value_type(:distinct_predicates, value)
+       when is_integer(value) and value >= 0,
+       do: :ok
+
   defp validate_stat_value_type(:distinct_predicates, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:distinct_objects, value) when is_integer(value) and value >= 0, do: :ok
+
+  defp validate_stat_value_type(:distinct_objects, value) when is_integer(value) and value >= 0,
+    do: :ok
+
   defp validate_stat_value_type(:distinct_objects, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:total_graphs, value) when is_integer(value) and value >= 0, do: :ok
+
+  defp validate_stat_value_type(:total_graphs, value) when is_integer(value) and value >= 0,
+    do: :ok
+
   defp validate_stat_value_type(:total_graphs, _value), do: {:error, :invalid_stat_value}
   defp validate_stat_value_type(:predicate_histogram, value) when is_map(value), do: :ok
   defp validate_stat_value_type(:predicate_histogram, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(:per_graph_stats, value) when is_map(value), do: validate_per_graph_stats(value)
+
+  defp validate_stat_value_type(:per_graph_stats, value) when is_map(value),
+    do: validate_per_graph_stats(value)
+
   defp validate_stat_value_type(:per_graph_stats, _value), do: {:error, :invalid_stat_value}
-  defp validate_stat_value_type(_key, _value), do: :ok  # Unknown keys are okay
+  # Unknown keys are okay
+  defp validate_stat_value_type(_key, _value), do: :ok
 
   # Validates per-graph stats structure
   defp validate_per_graph_stats(per_graph_stats) do
@@ -214,7 +234,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   def ensure_stats_defaults(stats) when is_map(stats) do
     %{
       quad_count: Map.get(stats, :quad_count, @default_quad_count),
-      triple_count: Map.get(stats, :triple_count, @default_quad_count),  # Use quad count as fallback
+      # Use quad count as fallback
+      triple_count: Map.get(stats, :triple_count, @default_quad_count),
       distinct_subjects: Map.get(stats, :distinct_subjects, @default_distinct_subjects),
       distinct_predicates: Map.get(stats, :distinct_predicates, @default_distinct_predicates),
       distinct_objects: Map.get(stats, :distinct_objects, @default_distinct_objects),
@@ -317,15 +338,22 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   Estimated cardinality considering bound variables.
 
   """
-  @spec estimate_pattern_with_bindings(quad_pattern(), quad_stats(), %{String.t() => pos_integer()}) ::
+  @spec estimate_pattern_with_bindings(quad_pattern(), quad_stats(), %{
+          String.t() => pos_integer()
+        }) ::
           cardinality()
-  def estimate_pattern_with_bindings({:quad, subject, predicate, object, graph}, stats, bound_vars) do
+  def estimate_pattern_with_bindings(
+        {:quad, subject, predicate, object, graph},
+        stats,
+        bound_vars
+      ) do
     base_card = estimate_pattern({:quad, subject, predicate, object, graph}, stats)
 
     # Determine graph-specific stats if graph is bound
     graph_stats =
       if graph_bound?(graph) do
         graph_id = normalize_graph_id(graph)
+
         case get_graph_stats(graph_id, stats) do
           {:ok, gs} -> gs
           {:error, :not_found} -> nil
@@ -336,7 +364,10 @@ defmodule TripleStore.SPARQL.QuadCardinality do
 
     # Apply binding selectivity for each variable position
     s_adjustment = variable_binding_adjustment(subject, :subject, graph_stats, stats, bound_vars)
-    p_adjustment = variable_binding_adjustment(predicate, :predicate, graph_stats, stats, bound_vars)
+
+    p_adjustment =
+      variable_binding_adjustment(predicate, :predicate, graph_stats, stats, bound_vars)
+
     o_adjustment = variable_binding_adjustment(object, :object, graph_stats, stats, bound_vars)
     g_adjustment = variable_binding_adjustment(graph, :graph, graph_stats, stats, bound_vars)
 
@@ -536,8 +567,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
     # Accumulate joins
     {final_card, _vars, _graphs} =
       Enum.reduce(rest, {initial_card, initial_vars, initial_graphs}, fn pattern,
-                                                                          {acc_card, acc_vars,
-                                                                           acc_graphs} ->
+                                                                         {acc_card, acc_vars,
+                                                                          acc_graphs} ->
         pattern_card = estimate_pattern(pattern, stats)
         pattern_vars = pattern_variables(pattern)
         pattern_graphs = pattern_graph_variables(pattern)
@@ -655,8 +686,11 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @spec get_base_cardinality(term(), quad_stats()) :: cardinality()
   defp get_base_cardinality(predicate, stats) do
     case get_predicate_count(predicate, stats) do
-      {:ok, count} -> count * 1.0
-      :not_found -> get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count)) * 1.0
+      {:ok, count} ->
+        count * 1.0
+
+      :not_found ->
+        get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count)) * 1.0
     end
   end
 
@@ -703,7 +737,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   defp get_graph_predicate_count(predicate, graph_stats) do
     with true <- constant?(predicate),
          id when is_integer(id) <- get_constant_id(predicate),
-         predicate_counts when is_map(predicate_counts) <- Map.get(graph_stats, :predicate_counts),
+         predicate_counts when is_map(predicate_counts) <-
+           Map.get(graph_stats, :predicate_counts),
          count when is_integer(count) <- Map.get(predicate_counts, id) do
       {:ok, count}
     else
@@ -772,7 +807,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @spec calculate_join_selectivity([String.t()], cardinality(), cardinality(), quad_stats()) ::
           float()
   defp calculate_join_selectivity(join_vars, left_card, right_card, stats) do
-    total_quads = get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count))
+    total_quads =
+      get_stat(stats, :quad_count, get_stat(stats, :triple_count, @default_quad_count))
 
     join_vars
     |> Enum.map(fn _var ->
@@ -806,8 +842,11 @@ defmodule TripleStore.SPARQL.QuadCardinality do
         ) :: float()
   defp variable_binding_adjustment(term, position, graph_stats, global_stats, bound_vars) do
     case extract_var_name(term) do
-      nil -> 1.0
-      var_name -> apply_binding_adjustment(var_name, position, graph_stats, global_stats, bound_vars)
+      nil ->
+        1.0
+
+      var_name ->
+        apply_binding_adjustment(var_name, position, graph_stats, global_stats, bound_vars)
     end
   end
 
@@ -820,7 +859,9 @@ defmodule TripleStore.SPARQL.QuadCardinality do
         ) :: float()
   defp apply_binding_adjustment(var_name, position, graph_stats, global_stats, bound_vars) do
     case Map.get(bound_vars, var_name) do
-      nil -> 1.0
+      nil ->
+        1.0
+
       bound_domain_size ->
         # Use graph_stats if available, otherwise fall back to global_stats
         stats = graph_stats || global_stats || %{}
@@ -932,15 +973,18 @@ defmodule TripleStore.SPARQL.QuadCardinality do
         # Check if this exact quad exists in histograms
         graph_id = get_constant_id(graph)
         pred_id = get_constant_id(predicate)
+
         case get_in(histograms, [graph_id, pred_id]) do
           nil -> @min_cardinality
-          count when count > 0 -> min(count, 1.0)  # Exact match, return at most 1
+          # Exact match, return at most 1
+          count when count > 0 -> min(count, 1.0)
         end
 
       # Graph-scoped with bound predicate - use histogram directly
       constant?(graph) and constant?(predicate) ->
         graph_id = get_constant_id(graph)
         pred_id = get_constant_id(predicate)
+
         case get_in(histograms, [graph_id, pred_id]) do
           nil -> @min_cardinality
           count when count > 0 -> count * 1.0
@@ -949,8 +993,11 @@ defmodule TripleStore.SPARQL.QuadCardinality do
       # Graph-scoped with variable predicate - estimate from total graph quads
       constant?(graph) ->
         graph_id = get_constant_id(graph)
+
         case Map.get(histograms, graph_id) do
-          nil -> @min_cardinality
+          nil ->
+            @min_cardinality
+
           graph_histogram ->
             # Sum all predicates in this graph
             total_quads = graph_histogram |> Map.values() |> Enum.sum()
@@ -960,6 +1007,7 @@ defmodule TripleStore.SPARQL.QuadCardinality do
       # Cross-graph with bound predicate - sum across all graphs
       constant?(predicate) ->
         pred_id = get_constant_id(predicate)
+
         histograms
         |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
           case Map.get(graph_histogram, pred_id) do
@@ -1001,7 +1049,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
         ) :: cardinality()
   def estimate_with_hybrid({:quad, subject, predicate, object, graph}, histograms, stats) do
     # Try histogram-based estimation first
-    histogram_estimate = estimate_with_histogram({:quad, subject, predicate, object, graph}, histograms)
+    histogram_estimate =
+      estimate_with_histogram({:quad, subject, predicate, object, graph}, histograms)
 
     # If histogram has no data, fall back to statistical estimation
     if histogram_estimate <= @min_cardinality do
@@ -1016,7 +1065,9 @@ defmodule TripleStore.SPARQL.QuadCardinality do
 
   Returns a map of predicate_id => count for the given graph.
   """
-  @spec get_predicate_counts_for_graph(term_id(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
+  @spec get_predicate_counts_for_graph(term_id(), %{
+          term_id() => %{term_id() => non_neg_integer()}
+        }) ::
           %{term_id() => non_neg_integer()}
   def get_predicate_counts_for_graph(graph_id, histograms) do
     Map.get(histograms, graph_id, %{})
@@ -1027,7 +1078,9 @@ defmodule TripleStore.SPARQL.QuadCardinality do
 
   Returns nil if the predicate or graph doesn't exist in the histogram data.
   """
-  @spec get_predicate_count(term_id(), term_id(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
+  @spec get_predicate_count(term_id(), term_id(), %{
+          term_id() => %{term_id() => non_neg_integer()}
+        }) ::
           non_neg_integer() | nil
   def get_predicate_count(graph_id, predicate_id, histograms) do
     get_in(histograms, [graph_id, predicate_id])

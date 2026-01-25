@@ -255,6 +255,7 @@ defmodule TripleStore.Exporter do
       # If allowed_dirs is specified, verify the parent directory is within them
       if allowed_dirs != nil do
         parent = Path.dirname(expanded)
+
         if Path.type(parent) == :absolute and is_within_allowed_dirs?(parent, allowed_dirs) do
           :ok
         else
@@ -274,14 +275,22 @@ defmodule TripleStore.Exporter do
   defp has_path_traversal?(path) when is_binary(path) do
     # Check for literal dot-dot-slash sequences
     dot_dot_checks = [
-      "..",           # Literal ".."
-      "%2e%2e",       # URL encoded ".."
-      "%2e.",         # Partially encoded
-      ".%2e",         # Partially encoded
-      "..\\",         # Windows backslash separator (if on Unix, this is safe check)
-      "%252e",        # Double-encoded "."
-      "%c0%ae",       # Unicode bypass (UTF-8)
-      "%e0%80%af"     # Unicode bypass (overlong)
+      # Literal ".."
+      "..",
+      # URL encoded ".."
+      "%2e%2e",
+      # Partially encoded
+      "%2e.",
+      # Partially encoded
+      ".%2e",
+      # Windows backslash separator (if on Unix, this is safe check)
+      "..\\",
+      # Double-encoded "."
+      "%252e",
+      # Unicode bypass (UTF-8)
+      "%c0%ae",
+      # Unicode bypass (overlong)
+      "%e0%80%af"
     ]
 
     # Normalize path for checking (lowercase for case-insensitive checks)

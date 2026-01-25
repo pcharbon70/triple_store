@@ -41,6 +41,7 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       query = Keyword.get(args, :query)
 
       msg = message || "SPARQL syntax error"
+
       %__MODULE__{
         message: msg,
         position: position,
@@ -76,6 +77,7 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       algebra = Keyword.get(args, :algebra)
 
       msg = message || "Query execution error"
+
       %__MODULE__{
         message: msg,
         step: step,
@@ -111,6 +113,7 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       query = Keyword.get(args, :query)
 
       msg = message || "Query execution timeout"
+
       %__MODULE__{
         message: msg,
         timeout_ms: timeout_ms,
@@ -146,6 +149,7 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       value = Keyword.get(args, :value)
 
       msg = message || "Validation error"
+
       %__MODULE__{
         message: msg,
         field: field,
@@ -181,6 +185,7 @@ defmodule TripleStore.SPARQL.ErrorHandler do
       operation = Keyword.get(args, :operation)
 
       msg = message || "Resource error"
+
       %__MODULE__{
         message: msg,
         resource: resource,

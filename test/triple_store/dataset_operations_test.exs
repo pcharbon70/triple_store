@@ -13,7 +13,7 @@ defmodule TripleStore.DatasetOperationsTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
 
@@ -21,7 +21,7 @@ defmodule TripleStore.DatasetOperationsTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -29,7 +29,7 @@ defmodule TripleStore.DatasetOperationsTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -70,7 +70,8 @@ defmodule TripleStore.DatasetOperationsTest do
     # Insert quads in g1
     :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})
     :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o2_id, g1_id})
-    :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})  # duplicate, idempotent
+    # duplicate, idempotent
+    :ok = QuadOperations.insert_quad(db, {s1_id, p_id, o1_id, g1_id})
 
     # Insert quads in g2 (different quad so copy adds new quads)
     :ok = QuadOperations.insert_quad(db, {s2_id, p_id, o3_id, g2_id})

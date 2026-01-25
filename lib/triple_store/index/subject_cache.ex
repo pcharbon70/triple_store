@@ -32,7 +32,7 @@ defmodule TripleStore.Index.SubjectCache do
   """
 
   alias TripleStore.Index
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   require Logger
 
@@ -139,7 +139,7 @@ defmodule TripleStore.Index.SubjectCache do
   - `{:ok, property_map}` - Map of predicate_id => [object_id, ...]
   - `{:error, reason}` - On fetch failure
   """
-  @spec get_or_fetch(NIF.db_ref(), non_neg_integer()) ::
+  @spec get_or_fetch(ErlangAdapter.db_ref(), non_neg_integer()) ::
           {:ok, property_map()} | {:error, term()}
   def get_or_fetch(db, subject_id) do
     init()

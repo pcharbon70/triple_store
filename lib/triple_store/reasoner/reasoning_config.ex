@@ -436,7 +436,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   """
   @spec graph_config_count(t()) :: non_neg_integer()
   def graph_config_count(%__MODULE__{graph_configs: nil}), do: 0
-  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs), do: map_size(configs)
+
+  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs),
+    do: map_size(configs)
 
   @doc """
   Returns the TBox graph ID if configured.
@@ -462,7 +464,10 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   """
   @spec separate_inferred_graph?(t()) :: boolean()
   def separate_inferred_graph?(%__MODULE__{inferred_graph: :separate}), do: true
-  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id), do: true
+
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id),
+    do: true
+
   def separate_inferred_graph?(%__MODULE__{}), do: false
 
   @doc """

@@ -54,7 +54,7 @@ defmodule TripleStore.QuadOperations do
   ```
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadIndex
   alias TripleStore.Telemetry
@@ -114,17 +114,17 @@ defmodule TripleStore.QuadOperations do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> QuadOperations.insert_quad(db, {1, 2, 3, 0})
       :ok
 
   """
-  @spec insert_quad(NIF.db_ref(), quad()) :: :ok | {:error, term()}
+  @spec insert_quad(ErlangAdapter.db_ref(), quad()) :: :ok | {:error, term()}
   def insert_quad(db, {subject, predicate, object, graph})
       when valid_quad?(subject, predicate, object, graph) do
     Telemetry.span(:quad, :insert, %{quad: {subject, predicate, object, graph}}, fn ->
       operations = build_insert_operations(subject, predicate, object, graph)
-      result = NIF.write_batch(db, operations, true)
+      result = ErlangAdapter.write_batch(db, operations, true)
       {result, %{count: 1}}
     end)
   end
@@ -152,7 +152,7 @@ defmodule TripleStore.QuadOperations do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> quads = [{1, 2, 3, 0}, {4, 5, 6, 0}, {7, 8, 9, 1}]
       iex> QuadOperations.insert_quads(db, quads)
       :ok
@@ -162,7 +162,7 @@ defmodule TripleStore.QuadOperations do
       :ok
 
   """
-  @spec insert_quads(NIF.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
+  @spec insert_quads(ErlangAdapter.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
   def insert_quads(_db, [], _opts), do: :ok
 
   def insert_quads(db, quads, opts) when is_list(quads) do
@@ -175,7 +175,7 @@ defmodule TripleStore.QuadOperations do
           op
         end
 
-      result = NIF.write_batch(db, operations, sync)
+      result = ErlangAdapter.write_batch(db, operations, sync)
       {result, %{count: length(quads)}}
     end)
   end
@@ -203,18 +203,18 @@ defmodule TripleStore.QuadOperations do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> QuadOperations.delete_quad(db, {1, 2, 3, 0})
       :ok
 
   """
-  @spec delete_quad(NIF.db_ref(), quad()) :: :ok | {:error, term()}
+  @spec delete_quad(ErlangAdapter.db_ref(), quad()) :: :ok | {:error, term()}
   def delete_quad(db, {subject, predicate, object, graph})
       when valid_quad?(subject, predicate, object, graph) do
     Telemetry.span(:quad, :delete, %{quad: {subject, predicate, object, graph}}, fn ->
       keys = build_delete_keys(subject, predicate, object, graph)
       operations = for {cf, key} <- keys, do: {cf, key}
-      result = NIF.delete_batch(db, operations, true)
+      result = ErlangAdapter.delete_batch(db, operations, true)
       {result, %{count: 1}}
     end)
   end
@@ -240,13 +240,13 @@ defmodule TripleStore.QuadOperations do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> quads = [{1, 2, 3, 0}, {4, 5, 6, 0}]
       iex> QuadOperations.delete_quads(db, quads)
       :ok
 
   """
-  @spec delete_quads(NIF.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
+  @spec delete_quads(ErlangAdapter.db_ref(), [quad()], keyword()) :: :ok | {:error, term()}
   def delete_quads(_db, [], _opts), do: :ok
 
   def delete_quads(db, quads, opts) when is_list(quads) do
@@ -259,7 +259,7 @@ defmodule TripleStore.QuadOperations do
           {cf, key}
         end
 
-      result = NIF.delete_batch(db, operations, sync)
+      result = ErlangAdapter.delete_batch(db, operations, sync)
       {result, %{count: length(quads)}}
     end)
   end
@@ -294,7 +294,7 @@ defmodule TripleStore.QuadOperations do
       false
 
   """
-  @spec quad_exists?(NIF.db_ref(), quad()) :: boolean() | {:error, term()}
+  @spec quad_exists?(ErlangAdapter.db_ref(), quad()) :: boolean() | {:error, term()}
   def quad_exists?(db, {subject, predicate, object, graph})
       when valid_quad?(subject, predicate, object, graph) do
     quad_exists_fast?(db, subject, predicate, object, graph)
@@ -333,7 +333,12 @@ defmodule TripleStore.QuadOperations do
       QuadOperations.lookup_quads(db, {:bound, :bound, :var, :bound}, %{s: 1, p: 2, g: 0})
 
   """
-  @spec lookup_quads(NIF.db_ref(), quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+  @spec lookup_quads(ErlangAdapter.db_ref(), quad_pattern(), %{
+          s: term_id(),
+          p: term_id(),
+          o: term_id(),
+          g: term_id()
+        }) ::
           [quad()]
   def lookup_quads(db, pattern, values) do
     Telemetry.span(:quad, :lookup, %{pattern: pattern}, fn ->
@@ -344,7 +349,16 @@ defmodule TripleStore.QuadOperations do
       prefix = selection.prefix
       prefix_len = byte_size(prefix)
 
-      result = perform_prefix_scan(db, column_family, prefix, prefix_len, selection.index, pattern, values)
+      result =
+        perform_prefix_scan(
+          db,
+          column_family,
+          prefix,
+          prefix_len,
+          selection.index,
+          pattern,
+          values
+        )
 
       {result, %{result_count: length(result)}}
     end)
@@ -389,7 +403,12 @@ defmodule TripleStore.QuadOperations do
   - Suitable for queries returning millions of quads
 
   """
-  @spec lookup_quads_stream(NIF.db_ref(), quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+  @spec lookup_quads_stream(ErlangAdapter.db_ref(), quad_pattern(), %{
+          s: term_id(),
+          p: term_id(),
+          o: term_id(),
+          g: term_id()
+        }) ::
           Enumerable.t()
   def lookup_quads_stream(db, pattern, values) do
     # Build the prefix scan parameters outside the stream
@@ -414,7 +433,12 @@ defmodule TripleStore.QuadOperations do
           {:halt, []} ->
             # No more results, emit stop event
             duration = System.monotonic_time() - start_time
-            Telemetry.emit_stop([:triple_store, :quad, :lookup], duration, %{pattern: pattern, result_count: 0})
+
+            Telemetry.emit_stop([:triple_store, :quad, :lookup], duration, %{
+              pattern: pattern,
+              result_count: 0
+            })
+
             {:halt, []}
 
           {:cont, []} ->
@@ -437,7 +461,7 @@ defmodule TripleStore.QuadOperations do
   # Performs prefix scan and returns results as a list
   defp perform_prefix_scan(db, cf, prefix, prefix_len, index, pattern, values) do
     try do
-      NIF.fold_keys(db, cf, prefix, [], fn key, acc ->
+      ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
         # Check if key is within prefix bounds
         if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
           quad = decode_key_to_quad(key, index)
@@ -463,7 +487,7 @@ defmodule TripleStore.QuadOperations do
   defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
     try do
       results =
-        NIF.fold_keys(db, cf, prefix, [], fn key, acc ->
+        ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
           # Check if key is within prefix bounds
           if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
             quad = decode_key_to_quad(key, index)
@@ -517,7 +541,7 @@ defmodule TripleStore.QuadOperations do
   defp quad_exists_fast?(db, s, p, o, g) do
     key = QuadIndex.gspo_key(g, s, p, o)
 
-    case NIF.get(db, :gspo, key) do
+    case ErlangAdapter.get(db, :gspo, key) do
       {:ok, _value} -> true
       :not_found -> false
       {:error, _} -> false
@@ -583,7 +607,8 @@ defmodule TripleStore.QuadOperations do
       {:ok, graphs} = QuadOperations.list_graphs(db, include_default: true)
 
   """
-  @spec list_graphs(NIF.db_ref(), keyword()) :: {:ok, [RDF.IRI.t() | RDF.BlankNode.t()]} | {:error, term()}
+  @spec list_graphs(ErlangAdapter.db_ref(), keyword()) ::
+          {:ok, [RDF.IRI.t() | RDF.BlankNode.t()]} | {:error, term()}
   def list_graphs(db, opts \\ []) do
     Telemetry.span(:quad, :list_graphs, %{}, fn ->
       include_default = Keyword.get(opts, :include_default, false)
@@ -636,7 +661,11 @@ defmodule TripleStore.QuadOperations do
       # => false
 
   """
-  @spec graph_exists?(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) :: boolean()
+  @spec graph_exists?(
+          ErlangAdapter.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t()
+        ) :: boolean()
   def graph_exists?(db, manager, graph_term) do
     # Use lookup_id instead of term_to_id to avoid creating ID during existence check
     # A graph exists if it has an ID in the dictionary AND contains at least one quad
@@ -675,7 +704,7 @@ defmodule TripleStore.QuadOperations do
       # => true
 
   """
-  @spec default_graph_exists?(NIF.db_ref()) :: boolean()
+  @spec default_graph_exists?(ErlangAdapter.db_ref()) :: boolean()
   def default_graph_exists?(db) do
     graph_id_exists?(db, 0)
   end
@@ -707,7 +736,11 @@ defmodule TripleStore.QuadOperations do
       {:ok, :already_exists} = QuadOperations.create_graph(db, manager, RDF.iri("http://example.org/existing"))
 
   """
-  @spec create_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t()) ::
+  @spec create_graph(
+          ErlangAdapter.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t()
+        ) ::
           {:ok, :created | :already_exists} | {:error, term()}
   def create_graph(_db, manager, graph_term) do
     Telemetry.span(:quad, :create_graph, %{graph: graph_term}, fn ->
@@ -756,7 +789,11 @@ defmodule TripleStore.QuadOperations do
       {:ok, 0} = QuadOperations.clear_graph(db, manager, RDF.iri("http://example.org/empty"))
 
   """
-  @spec clear_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+  @spec clear_graph(
+          ErlangAdapter.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t() | :default
+        ) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def clear_graph(db, manager, :default) do
     Telemetry.span(:quad, :clear_graph, %{graph: :default}, fn ->
@@ -807,7 +844,11 @@ defmodule TripleStore.QuadOperations do
       {:ok, count} = QuadOperations.delete_graph(db, manager, :default)
 
   """
-  @spec delete_graph(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+  @spec delete_graph(
+          ErlangAdapter.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t() | :default
+        ) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def delete_graph(db, _manager, :default) do
     Telemetry.span(:quad, :delete_graph, %{graph: :default}, fn ->
@@ -871,7 +912,7 @@ defmodule TripleStore.QuadOperations do
 
   """
   @spec copy_graph(
-          NIF.db_ref(),
+          ErlangAdapter.db_ref(),
           TripleStore.Dictionary.Manager.manager(),
           RDF.IRI.t() | RDF.BlankNode.t() | :default,
           RDF.IRI.t() | RDF.BlankNode.t() | :default,
@@ -949,7 +990,7 @@ defmodule TripleStore.QuadOperations do
 
   """
   @spec move_quads(
-          NIF.db_ref(),
+          ErlangAdapter.db_ref(),
           TripleStore.Dictionary.Manager.manager(),
           RDF.IRI.t() | RDF.BlankNode.t() | :default,
           RDF.IRI.t() | RDF.BlankNode.t() | :default,
@@ -1012,7 +1053,11 @@ defmodule TripleStore.QuadOperations do
       # => {:ok, 100}
 
   """
-  @spec graph_quad_count(NIF.db_ref(), TripleStore.Dictionary.Manager.manager(), RDF.IRI.t() | RDF.BlankNode.t() | :default) ::
+  @spec graph_quad_count(
+          ErlangAdapter.db_ref(),
+          TripleStore.Dictionary.Manager.manager(),
+          RDF.IRI.t() | RDF.BlankNode.t() | :default
+        ) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def graph_quad_count(db, _manager, :default) do
     count_quads_in_graph(db, 0)
@@ -1055,8 +1100,9 @@ defmodule TripleStore.QuadOperations do
       # => {:ok, %{%RDF.IRI{value: "http://example.org/g1"} => 42}}
 
   """
-  @spec graphs_summary(NIF.db_ref(), keyword()) ::
-          {:ok, %{(RDF.IRI.t() | RDF.BlankNode.t() | :default) => non_neg_integer()}} | {:error, term()}
+  @spec graphs_summary(ErlangAdapter.db_ref(), keyword()) ::
+          {:ok, %{(RDF.IRI.t() | RDF.BlankNode.t() | :default) => non_neg_integer()}}
+          | {:error, term()}
   def graphs_summary(db, opts \\ []) do
     Telemetry.span(:quad, :graphs_summary, %{}, fn ->
       include_default = Keyword.get(opts, :include_default, true)
@@ -1089,7 +1135,7 @@ defmodule TripleStore.QuadOperations do
   defp scan_distinct_graph_ids(db) do
     try do
       graph_ids =
-        NIF.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
+        ErlangAdapter.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
           # Extract first 8 bytes (graph ID) from GSPO key
           <<graph_id::unsigned-big-integer-size(64), _rest::binary>> = key
           MapSet.put(acc, graph_id)
@@ -1137,18 +1183,19 @@ defmodule TripleStore.QuadOperations do
 
     try do
       quads =
-        case NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
-          case key do
-            <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
-              {g, s, p, o} = QuadIndex.decode_gspo_key(key)
-              [{s, p, o, g} | acc]
+        case ErlangAdapter.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+               case key do
+                 <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
+                   {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+                   [{s, p, o, g} | acc]
 
-            _ ->
-              throw({:halt, acc})
-          end
-        end) do
+                 _ ->
+                   throw({:halt, acc})
+               end
+             end) do
           {:error, reason} ->
             throw({:exit, reason})
+
           result ->
             result
         end
@@ -1194,7 +1241,8 @@ defmodule TripleStore.QuadOperations do
         # Build batch operations: delete old, insert new
         # Track count directly to avoid calculation errors
         {puts, deletes, quad_count} =
-          NIF.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key, {puts_acc, deletes_acc, count_acc} ->
+          ErlangAdapter.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key,
+                                                           {puts_acc, deletes_acc, count_acc} ->
             case key do
               <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
                 {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1222,9 +1270,9 @@ defmodule TripleStore.QuadOperations do
 
           # Execute deletes first, then puts in sync mode for atomicity
           with :ok <-
-                 if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
+                 if(delete_batch == [], do: :ok, else: ErlangAdapter.delete_batch(db, delete_batch, true)),
                :ok <-
-                 if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
+                 if(put_batch == [], do: :ok, else: ErlangAdapter.write_batch(db, put_batch, true)) do
             {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}
@@ -1237,8 +1285,8 @@ defmodule TripleStore.QuadOperations do
           put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
 
           with :ok <-
-                 if(delete_batch == [], do: :ok, else: NIF.delete_batch(db, delete_batch, true)),
-               :ok <- if(put_batch == [], do: :ok, else: NIF.write_batch(db, put_batch, true)) do
+                 if(delete_batch == [], do: :ok, else: ErlangAdapter.delete_batch(db, delete_batch, true)),
+               :ok <- if(put_batch == [], do: :ok, else: ErlangAdapter.write_batch(db, put_batch, true)) do
             {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}
@@ -1253,6 +1301,7 @@ defmodule TripleStore.QuadOperations do
   # Generates delete operations for a quad in all 4 indices
   defp delete_ops_for_quad(s, p, o, g) do
     keys = QuadIndex.encode_quad_keys(s, p, o, g)
+
     [
       {:gspo, keys.gspo},
       {:gpos, keys.gpos},
@@ -1264,6 +1313,7 @@ defmodule TripleStore.QuadOperations do
   # Generates put operations for a quad in all 4 indices
   defp put_ops_for_quad(s, p, o, g) do
     keys = QuadIndex.encode_quad_keys(s, p, o, g)
+
     [
       {:gspo, keys.gspo, @empty_value},
       {:gpos, keys.gpos, @empty_value},
@@ -1301,7 +1351,7 @@ defmodule TripleStore.QuadOperations do
 
       try do
         quads =
-          NIF.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+          ErlangAdapter.fold_keys(db, :gspo, prefix, [], fn key, acc ->
             case key do
               <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
                 {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1342,7 +1392,7 @@ defmodule TripleStore.QuadOperations do
 
     try do
       count =
-        NIF.fold_keys(db, :gspo, prefix, 0, fn key, acc ->
+        ErlangAdapter.fold_keys(db, :gspo, prefix, 0, fn key, acc ->
           case key do
             <<^graph_id::unsigned-big-integer-size(64), _::binary>> -> acc + 1
             _ -> throw({:halt, acc})

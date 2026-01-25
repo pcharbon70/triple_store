@@ -233,7 +233,8 @@ defmodule TripleStore.SPARQL.Executor do
         }
 
   @typedoc "Graph context for pattern conversion"
-  @type graph_context :: :default | :default_graph | {:named_node, String.t()} | {:variable, String.t()} | nil
+  @type graph_context ::
+          :default | :default_graph | {:named_node, String.t()} | {:variable, String.t()} | nil
 
   # ===========================================================================
   # Security Limits
@@ -379,7 +380,9 @@ defmodule TripleStore.SPARQL.Executor do
   """
   @spec binding_has_graph?(binding(), String.t() | {:variable, String.t()}) :: boolean()
   def binding_has_graph?(binding, {:variable, var_name}), do: Map.has_key?(binding, var_name)
-  def binding_has_graph?(binding, var_name) when is_binary(var_name), do: Map.has_key?(binding, var_name)
+
+  def binding_has_graph?(binding, var_name) when is_binary(var_name),
+    do: Map.has_key?(binding, var_name)
 
   @doc """
   Extracts the graph value from a binding.
@@ -491,7 +494,12 @@ defmodule TripleStore.SPARQL.Executor do
       {:ok, stream} = Executor.execute_graph(ctx, :default, bgp)
 
   """
-  @spec execute_graph(context(), :default | {:iri, String.t()} | {:named_node, String.t()} | {:variable, String.t()}, term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_graph(
+          context(),
+          :default | {:iri, String.t()} | {:named_node, String.t()} | {:variable, String.t()},
+          term(),
+          binding()
+        ) :: {:ok, binding_stream()} | {:error, term()}
   def execute_graph(ctx, graph_spec, pattern, initial_binding \\ %{})
 
   def execute_graph(ctx, :default, pattern, initial_binding) do
@@ -519,7 +527,8 @@ defmodule TripleStore.SPARQL.Executor do
   Validation and authorization are checked before executing the pattern.
 
   """
-  @spec execute_in_named_graph(context(), term(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_in_named_graph(context(), term(), term(), binding()) ::
+          {:ok, binding_stream()} | {:error, term()}
   def execute_in_named_graph(ctx, pattern, graph_term, initial_binding) do
     # Validate graph term first
     case validate_graph_term(graph_term) do
@@ -576,7 +585,8 @@ defmodule TripleStore.SPARQL.Executor do
   graph quads.
 
   """
-  @spec execute_in_default_graph(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_in_default_graph(context(), term(), binding()) ::
+          {:ok, binding_stream()} | {:error, term()}
   def execute_in_default_graph(ctx, pattern, initial_binding) do
     execute_in_named_graph(ctx, pattern, :default_graph, initial_binding)
   end
@@ -593,7 +603,8 @@ defmodule TripleStore.SPARQL.Executor do
   with many graphs.
 
   """
-  @spec execute_with_graph_variable(context(), term(), String.t(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_with_graph_variable(context(), term(), String.t(), binding()) ::
+          {:ok, binding_stream()} | {:error, term()}
   def execute_with_graph_variable(ctx, pattern, var_name, initial_binding) do
     user_or_public = Map.get(ctx, :user, :public)
 
@@ -641,10 +652,11 @@ defmodule TripleStore.SPARQL.Executor do
               # Debug: log graph iteration
               # IO.inspect({:graph, graph}, label: "ITERATING GRAPH")
               # Normalize graph term - convert :default to :default_graph
-              normalized_graph = case graph do
-                :default -> :default_graph
-                other -> other
-              end
+              normalized_graph =
+                case graph do
+                  :default -> :default_graph
+                  other -> other
+                end
 
               # Bind graph variable in initial binding BEFORE executing pattern
               # Use internal format for expression evaluation to work correctly
@@ -748,7 +760,8 @@ defmodule TripleStore.SPARQL.Executor do
   triple patterns (3-tuple).
 
   """
-  @spec execute_quad_pattern(context(), term(), binding()) :: {:ok, binding_stream()} | {:error, term()}
+  @spec execute_quad_pattern(context(), term(), binding()) ::
+          {:ok, binding_stream()} | {:error, term()}
   def execute_quad_pattern(ctx, pattern, initial_binding \\ %{})
 
   def execute_quad_pattern(ctx, {:bgp, quad_patterns}, initial_binding) do
@@ -931,8 +944,11 @@ defmodule TripleStore.SPARQL.Executor do
     case ErlangAdapter.is_quad_store?(ctx.db) do
       {:ok, true} ->
         extend_bindings(ctx, binding_stream, {:quad, s, p, o, :default_graph})
+
       {:ok, false} ->
-        extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx, binding, {:triple, s, p, o} ->
+        extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx,
+                                                                         binding,
+                                                                         {:triple, s, p, o} ->
           execute_single_pattern(ctx, binding, s, p, o)
         end)
     end
@@ -941,7 +957,10 @@ defmodule TripleStore.SPARQL.Executor do
   # Property path pattern - delegates to PropertyPath module
   @doc false
   def extend_bindings(ctx, binding_stream, {:path, s, path_expr, o}) do
-    extend_bindings_with(ctx, binding_stream, {:path, s, path_expr, o}, fn ctx, binding, {:path, s, path_expr, o} ->
+    extend_bindings_with(ctx, binding_stream, {:path, s, path_expr, o}, fn ctx,
+                                                                           binding,
+                                                                           {:path, s, path_expr,
+                                                                            o} ->
       PropertyPath.evaluate(ctx, binding, s, path_expr, o)
     end)
   end
@@ -949,7 +968,9 @@ defmodule TripleStore.SPARQL.Executor do
   # Quad pattern - extends bindings using quad index lookup
   @doc false
   def extend_bindings(ctx, binding_stream, {:quad, s, p, o, g}) do
-    extend_bindings_with(ctx, binding_stream, {:quad, s, p, o, g}, fn ctx, binding, {:quad, s, p, o, g} ->
+    extend_bindings_with(ctx, binding_stream, {:quad, s, p, o, g}, fn ctx,
+                                                                      binding,
+                                                                      {:quad, s, p, o, g} ->
       execute_single_quad_pattern(ctx, binding, s, p, o, g)
     end)
   end
@@ -3530,10 +3551,12 @@ defmodule TripleStore.SPARQL.Executor do
   defp is_graph_variable_name?("g"), do: true
   defp is_graph_variable_name?("graph"), do: true
   defp is_graph_variable_name?("graphName"), do: true
+
   defp is_graph_variable_name?(name) when is_binary(name) do
     # Check for common graph variable patterns
     String.starts_with?(name, "graph") or String.ends_with?(name, "Graph")
   end
+
   defp is_graph_variable_name?(_), do: false
 
   # Check if a value is a special graph term (not regular RDF terms)
@@ -3572,11 +3595,17 @@ defmodule TripleStore.SPARQL.Executor do
     # Graph variables are typically named "g", "graph", or contain "graph"
     graph_term =
       Enum.find_value(binding, fn
-        {"g", v} -> v
-        {"graph", v} -> v
+        {"g", v} ->
+          v
+
+        {"graph", v} ->
+          v
+
         {k, v} when is_binary(k) ->
           if String.contains?(k, "graph"), do: v, else: nil
-        _ -> nil
+
+        _ ->
+          nil
       end)
 
     Enum.flat_map(template, fn {:triple, s, p, o} ->
@@ -3622,7 +3651,9 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Convert internal graph term to RDF format for result bindings
   # This is used when binding graph variables in GRAPH ?g patterns
-  defp convert_graph_term_to_rdf(:default_graph), do: RDF.iri("http://www.w3.org/ns/graphs/default")
+  defp convert_graph_term_to_rdf(:default_graph),
+    do: RDF.iri("http://www.w3.org/ns/graphs/default")
+
   defp convert_graph_term_to_rdf(:default), do: RDF.iri("http://www.w3.org/ns/graphs/default")
   defp convert_graph_term_to_rdf({:named_node, uri}), do: RDF.iri(uri)
   defp convert_graph_term_to_rdf({:blank_node, id}), do: RDF.bnode(id)
@@ -3830,9 +3861,11 @@ defmodule TripleStore.SPARQL.Executor do
   @spec validate_graph_term(term()) :: :ok | {:error, atom()}
   defp validate_graph_term(:default_graph), do: :ok
   defp validate_graph_term(:default), do: :ok
+
   defp validate_graph_term({:named_node, iri}) when is_binary(iri) do
     Validation.validate_graph_iri(iri)
   end
+
   defp validate_graph_term({:blank_node, _id}), do: :ok
   defp validate_graph_term(_), do: {:error, :invalid_graph_term}
 

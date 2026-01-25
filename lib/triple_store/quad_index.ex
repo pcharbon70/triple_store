@@ -1020,7 +1020,7 @@ defmodule TripleStore.QuadIndex do
   @spec select_index_for_quad(quad_pattern()) :: :no_match | pattern_match()
   def select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
       when s_pat in [:bound, :var] and p_pat in [:bound, :var] and
-           o_pat in [:bound, :var] and g_pat in [:bound, :var] do
+             o_pat in [:bound, :var] and g_pat in [:bound, :var] do
     do_select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
   end
 
@@ -1117,7 +1117,12 @@ defmodule TripleStore.QuadIndex do
       iex> QuadIndex.build_quad_prefix(pattern, values)
       %{index: :gspo, prefix: <<0::64-big, 100::64-big>>, needs_filter: true, filter_positions: [:p]}
   """
-  @spec build_quad_prefix(quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+  @spec build_quad_prefix(quad_pattern(), %{
+          s: term_id(),
+          p: term_id(),
+          o: term_id(),
+          g: term_id()
+        }) ::
           pattern_match()
   def build_quad_prefix(pattern, values) when is_tuple(pattern) and is_map(values) do
     selection = select_index_for_quad(pattern)
@@ -1126,9 +1131,20 @@ defmodule TripleStore.QuadIndex do
       :no_match ->
         %{index: :gspo, prefix: <<>>, needs_filter: false, filter_positions: []}
 
-      %{index: index, prefix_len: len, needs_filter: needs_filter, filter_positions: filter_positions} ->
+      %{
+        index: index,
+        prefix_len: len,
+        needs_filter: needs_filter,
+        filter_positions: filter_positions
+      } ->
         prefix = build_prefix_for_index(index, pattern, values, len)
-        %{index: index, prefix: prefix, needs_filter: needs_filter, filter_positions: filter_positions}
+
+        %{
+          index: index,
+          prefix: prefix,
+          needs_filter: needs_filter,
+          filter_positions: filter_positions
+        }
     end
   end
 

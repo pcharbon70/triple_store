@@ -150,8 +150,11 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
   @spec new!(keyword()) :: t()
   def new!(opts) when is_list(opts) do
     case new(opts) do
-      {:ok, config} -> config
-      {:error, reason} -> raise ArgumentError, "Invalid graph reasoning config: #{inspect(reason)}"
+      {:ok, config} ->
+        config
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid graph reasoning config: #{inspect(reason)}"
     end
   end
 
@@ -241,9 +244,11 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
   """
   @spec shared_tbox?(t()) :: boolean()
   def shared_tbox?(%__MODULE__{tbox_source: :shared}), do: true
+
   def shared_tbox?(%__MODULE__{tbox_source: source})
       when is_integer(source) and source >= 0,
       do: true
+
   def shared_tbox?(%__MODULE__{}), do: false
 
   @doc """
@@ -254,7 +259,8 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
   """
   @spec tbox_graph_id(t()) :: :self | non_neg_integer()
   def tbox_graph_id(%__MODULE__{tbox_source: :self}), do: :self
-  def tbox_graph_id(%__MODULE__{tbox_source: :shared}), do: 0  # Default to default graph
+  # Default to default graph
+  def tbox_graph_id(%__MODULE__{tbox_source: :shared}), do: 0
   def tbox_graph_id(%__MODULE__{tbox_source: graph_id}) when is_integer(graph_id), do: graph_id
 
   @doc """
@@ -369,7 +375,7 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
   end
 
   defp validate_config(%__MODULE__{graph_id: graph_id} = config)
-      when is_integer(graph_id) and graph_id >= 0 do
+       when is_integer(graph_id) and graph_id >= 0 do
     with :ok <- validate_scope(config.scope),
          :ok <- validate_tbox_source(config.tbox_source, graph_id),
          :ok <- validate_store_inferred(config.store_inferred) do
@@ -384,9 +390,11 @@ defmodule TripleStore.Reasoner.GraphReasoningConfig do
 
   defp validate_tbox_source(:self, _graph_id), do: :ok
   defp validate_tbox_source(:shared, _graph_id), do: :ok
+
   defp validate_tbox_source(tbox_graph_id, graph_id)
-      when is_integer(tbox_graph_id) and tbox_graph_id >= 0 and tbox_graph_id != graph_id,
-      do: :ok
+       when is_integer(tbox_graph_id) and tbox_graph_id >= 0 and tbox_graph_id != graph_id,
+       do: :ok
+
   defp validate_tbox_source(_tbox_source, _graph_id), do: {:error, :invalid_tbox_source}
 
   defp validate_store_inferred(strategy) when strategy in [:self, :separate], do: :ok

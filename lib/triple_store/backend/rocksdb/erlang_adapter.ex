@@ -65,12 +65,12 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   ## Migration from NIF Module
 
-  The `TripleStore.Backend.RocksDB.NIF` module is deprecated. Use this module
+  The `TripleStore.Backend.RocksDB.ErlangAdapter` module is deprecated. Use this module
   directly instead:
 
   ```elixir
   # Old way (deprecated)
-  {:ok, db} = TripleStore.Backend.RocksDB.NIF.open("/path/to/db")
+  {:ok, db} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
 
   # New way (recommended)
   {:ok, adapter} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
@@ -148,7 +148,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @type adapter :: pid()
   @type db_ref :: reference()
-  @type column_family :: :id2str | :str2id | :spo | :pos | :osp | :derived | :numeric_range | :gspo | :gpos | :spog | :posg | :acl
+  @type column_family ::
+          :id2str
+          | :str2id
+          | :spo
+          | :pos
+          | :osp
+          | :derived
+          | :numeric_range
+          | :gspo
+          | :gpos
+          | :spog
+          | :posg
+          | :acl
   @type cf_handle :: reference()
   @type cf_name :: charlist()
   @type iterator_ref :: pid()
@@ -1626,7 +1638,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
          {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
          {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []),
          {:ok, acl_cf} <- :rocksdb.create_column_family(db, ~c"acl", []) do
-      {:ok, [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, numeric_cf, acl_cf]}
+      {:ok,
+       [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, numeric_cf, acl_cf]}
     end
   end
 
@@ -1687,6 +1700,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
       # Allow paths under the current project directory
       path_within_directory?(expanded_path, current_dir) ->
+        :ok
+
+      # Allow paths under /dev/shm (Linux shared memory for test databases)
+      path_within_directory?(expanded_path, "/dev/shm") ->
         :ok
 
       # Reject other absolute paths for security

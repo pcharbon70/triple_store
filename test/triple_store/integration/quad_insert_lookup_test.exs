@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.QuadIndex
@@ -39,12 +39,12 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
   setup do
     test_path = unique_path()
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(test_path)
     end)
 
@@ -96,7 +96,8 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
       {:ok, p_id} = Manager.get_or_create_id(manager, predicate)
       {:ok, o_id} = Manager.get_or_create_id(manager, object)
 
-      quad = {s_id, p_id, o_id, 0}  # Default graph ID
+      # Default graph ID
+      quad = {s_id, p_id, o_id, 0}
 
       :ok = QuadOperations.insert_quad(db, quad)
 
@@ -405,16 +406,16 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
       keys = QuadIndex.encode_quad_keys(s_id, p_id, o_id, g_id)
 
       # GSPO
-      assert {:ok, _} = NIF.get(db, :gspo, keys.gspo)
+      assert {:ok, _} = ErlangAdapter.get(db, :gspo, keys.gspo)
 
       # GPOS
-      assert {:ok, _} = NIF.get(db, :gpos, keys.gpos)
+      assert {:ok, _} = ErlangAdapter.get(db, :gpos, keys.gpos)
 
       # SPOG
-      assert {:ok, _} = NIF.get(db, :spog, keys.spog)
+      assert {:ok, _} = ErlangAdapter.get(db, :spog, keys.spog)
 
       # POSG
-      assert {:ok, _} = NIF.get(db, :posg, keys.posg)
+      assert {:ok, _} = ErlangAdapter.get(db, :posg, keys.posg)
     end
 
     test "pattern matching uses optimal index", %{db: db, manager: manager} do

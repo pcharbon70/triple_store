@@ -482,7 +482,7 @@ defmodule TripleStore.QuadIndexTest do
 
     test "resolve_graph_id invalid reference returns error" do
       assert {:error, {:invalid_graph_reference, _}} =
-        QuadIndex.resolve_graph_id("invalid", nil)
+               QuadIndex.resolve_graph_id("invalid", nil)
     end
 
     test "id_to_graph_term for default graph ID returns :not_found" do

@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.UpdateExecutor
@@ -21,7 +21,7 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{
@@ -34,7 +34,7 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -49,10 +49,8 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
     test "deletes single quad from default graph", %{ctx: ctx} do
       # First insert a quad
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -65,14 +63,10 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
 
     test "deletes multiple quads from default graph", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s1"},
-                {:named_node, "http://example.org/p1"},
-                {:literal, :simple, "value1"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s2"},
-                {:named_node, "http://example.org/p2"},
-                {:literal, :simple, "value2"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p1"},
+         {:literal, :simple, "value1"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s2"}, {:named_node, "http://example.org/p2"},
+         {:literal, :simple, "value2"}, :default_graph}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -84,18 +78,12 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
 
     test "deletes with different literal types", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p1"},
-                {:literal, :simple, "simple"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p2"},
-                {:literal, :lang, "hello", "en"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p3"},
-                {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p1"},
+         {:literal, :simple, "simple"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p2"},
+         {:literal, :lang, "hello", "en"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p3"},
+         {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}, :default_graph}
       ]
 
       assert {:ok, 3} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -116,18 +104,18 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
       graph_iri = "http://example.org/named"
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph_iri}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
+
       assert {:ok, 1} =
                QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # Now delete it
       assert {:ok, 1} = UpdateExecutor.execute_delete_data(ctx, quads)
+
       assert {:ok, 0} =
                QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
@@ -137,14 +125,10 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
       graph2 = "http://example.org/g2"
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "v1"},
-                {:named_node, graph1}},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "v2"},
-                {:named_node, graph2}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v1"}, {:named_node, graph1}},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v2"}, {:named_node, graph2}}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -166,24 +150,18 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
 
       # Insert quads to both graphs
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph1}},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph2}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph1}},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph2}}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
 
       # Delete only from graph1
       delete_quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph1}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph1}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_delete_data(ctx, delete_quads)
@@ -300,9 +278,8 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
       quads =
         for i <- 1..(max + 1) do
           {:quad, {:named_node, "http://example.org/s#{i}"},
-                  {:named_node, "http://example.org/p"},
-                  {:literal, :simple, "value#{i}"},
-                  :default_graph}
+           {:named_node, "http://example.org/p"}, {:literal, :simple, "value#{i}"},
+           :default_graph}
         end
 
       assert {:error, :too_many_triples} = UpdateExecutor.execute_delete_data(ctx, quads)
@@ -315,9 +292,7 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
     test "deleting non-existent quads returns ok with count 0", %{ctx: ctx} do
       quads = [
         {:quad, {:named_node, "http://example.org/nonexistent"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+         {:named_node, "http://example.org/p"}, {:literal, :simple, "value"}, :default_graph}
       ]
 
       # Should succeed but delete nothing
@@ -328,10 +303,8 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
       graph_iri = "http://example.org/nonexistent_graph"
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph_iri}}
       ]
 
       # Should succeed but delete nothing (graph doesn't exist)
@@ -346,10 +319,8 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
   describe "DELETE DATA idempotence" do
     test "deleting same quad twice is idempotent", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       # Insert

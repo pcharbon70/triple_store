@@ -23,11 +23,11 @@ defmodule TripleStore.SPARQL.ResultStream do
   defstruct [:enumerable, :batch_size, :transform, :state]
 
   @type t :: %__MODULE__{
-    enumerable: Enumerable.t(),
-    batch_size: pos_integer(),
-    transform: (term() -> term()) | nil,
-    state: :running | :done
-  }
+          enumerable: Enumerable.t(),
+          batch_size: pos_integer(),
+          transform: (term() -> term()) | nil,
+          state: :running | :done
+        }
 
   @default_batch_size 1000
 
@@ -123,6 +123,7 @@ defmodule TripleStore.SPARQL.ResultStream do
   def each(%__MODULE__{enumerable: enumerable}, fun) do
     enumerable
     |> Enum.each(fun)
+
     :ok
   end
 
@@ -161,11 +162,12 @@ defmodule TripleStore.SPARQL.ResultStream do
   def to_list(%__MODULE__{enumerable: enumerable} = stream, opts) do
     max_items = Keyword.get(opts, :max_items)
 
-    base = if max_items do
-      Stream.take(enumerable, max_items)
-    else
-      enumerable
-    end
+    base =
+      if max_items do
+        Stream.take(enumerable, max_items)
+      else
+        enumerable
+      end
 
     Enum.to_list(base)
   end
@@ -185,7 +187,12 @@ defmodule TripleStore.SPARQL.ResultStream do
   @doc """
   Paginates a stream.
   """
-  @spec paginate(Enumerable.t(), pos_integer(), pos_integer()) :: %{items: list(), total: non_neg_integer(), page: pos_integer(), page_size: pos_integer()}
+  @spec paginate(Enumerable.t(), pos_integer(), pos_integer()) :: %{
+          items: list(),
+          total: non_neg_integer(),
+          page: pos_integer(),
+          page_size: pos_integer()
+        }
   def paginate(enumerable, page, page_size \\ @default_batch_size) do
     offset = (page - 1) * page_size
 
@@ -209,7 +216,10 @@ defmodule TripleStore.SPARQL.ResultStream do
   # Implement Enumerable protocol for ResultStream
   defimpl Enumerable, for: __MODULE__ do
     def reduce(_stream, {:halt, acc}, _fun), do: {:halted, acc}
-    def reduce(%{enumerable: enumerable} = stream, {:suspend, acc}, fun), do: {:suspended, acc, &reduce(stream, &1, fun)}
+
+    def reduce(%{enumerable: enumerable} = stream, {:suspend, acc}, fun),
+      do: {:suspended, acc, &reduce(stream, &1, fun)}
+
     def reduce(%{enumerable: enumerable}, {:cont, acc}, fun) do
       Enumerable.reduce(enumerable, {:cont, acc}, fun)
     end
@@ -233,6 +243,7 @@ defmodule TripleStore.SPARQL.ResultStream do
   # Private helpers
 
   defp advance_state(:done, _batch_size), do: :done
+
   defp advance_state(state, batch_size) do
     case Enum.split(state, batch_size) do
       {[], _} -> {:done, state}

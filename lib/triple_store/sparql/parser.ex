@@ -1,6 +1,6 @@
 defmodule TripleStore.SPARQL.Parser do
   @moduledoc """
-  SPARQL query and update parser using spargebra NIF.
+  SPARQL query and update parser using spargebra ErlangAdapter.
 
   This module provides functions to parse SPARQL query and update strings into an
   Elixir-native AST representation. The parser supports all SPARQL 1.1
@@ -103,7 +103,7 @@ defmodule TripleStore.SPARQL.Parser do
       {:error, {:parse_error, "Query exceeds maximum size of #{@max_query_size} bytes"}}
     else
       start_time = System.monotonic_time()
-      result = NIF.parse_query(sparql)
+      result = ErlangAdapter.parse_query(sparql)
       duration = System.monotonic_time() - start_time
 
       :telemetry.execute(
@@ -165,7 +165,7 @@ defmodule TripleStore.SPARQL.Parser do
     if byte_size(sparql) > @max_query_size do
       {:error, {:parse_error, "Query exceeds maximum size of #{@max_query_size} bytes"}}
     else
-      NIF.parse_update(sparql)
+      ErlangAdapter.parse_update(sparql)
     end
   end
 
@@ -242,7 +242,7 @@ defmodule TripleStore.SPARQL.Parser do
          hint: "The query is too large. Consider breaking it into smaller queries."
        }}
     else
-      case NIF.parse_query(sparql) do
+      case ErlangAdapter.parse_query(sparql) do
         {:ok, ast} ->
           {:ok, ast}
 
@@ -291,7 +291,7 @@ defmodule TripleStore.SPARQL.Parser do
          hint: "The query is too large. Consider breaking it into smaller queries."
        }}
     else
-      case NIF.parse_update(sparql) do
+      case ErlangAdapter.parse_update(sparql) do
         {:ok, ast} ->
           {:ok, ast}
 
@@ -639,7 +639,7 @@ defmodule TripleStore.SPARQL.Parser do
   """
   @spec nif_loaded?() :: boolean()
   def nif_loaded? do
-    NIF.nif_loaded() == "sparql_parser_nif"
+    ErlangAdapter.nif_loaded() == "sparql_parser_nif"
   rescue
     _ -> false
   end

@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.MigrationTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -38,7 +38,7 @@ defmodule TripleStore.Integration.MigrationTest do
   # Create a triple store (schema v1)
   defp create_triple_store do
     path = unique_path("_triple")
-    {:ok, db} = NIF.open(path, schema: :triple)
+    {:ok, db} = ErlangAdapter.open(path, schema: :triple)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, path}
   end
@@ -46,7 +46,7 @@ defmodule TripleStore.Integration.MigrationTest do
   # Create a quad store (schema v2)
   defp create_quad_store do
     path = unique_path("_quad")
-    {:ok, db} = NIF.open(path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, path}
   end
@@ -60,7 +60,7 @@ defmodule TripleStore.Integration.MigrationTest do
     end
 
     try do
-      NIF.close(db)
+      ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end
@@ -144,7 +144,12 @@ defmodule TripleStore.Integration.MigrationTest do
       teardown_db(quad_db, quad_manager, quad_path)
     end)
 
-    %{triple_db: triple_db, triple_manager: triple_manager, quad_db: quad_db, quad_manager: quad_manager}
+    %{
+      triple_db: triple_db,
+      triple_manager: triple_manager,
+      quad_db: quad_db,
+      quad_manager: quad_manager
+    }
   end
 
   # ===========================================================================
@@ -182,7 +187,11 @@ defmodule TripleStore.Integration.MigrationTest do
       nquads = ntriples_to_nquads(ntriples)
 
       # Verify N-Quads format includes graph context
-      assert String.contains?(nquads, "<http://www.w3.org/1999/02/22-rdf-syntax-ns#default_graph>")
+      assert String.contains?(
+               nquads,
+               "<http://www.w3.org/1999/02/22-rdf-syntax-ns#default_graph>"
+             )
+
       assert String.contains?(nquads, "<#{@ex}s1>")
       assert String.contains?(nquads, "<#{@ex}p1>")
       assert String.contains?(nquads, "\"o1\"")
@@ -215,7 +224,12 @@ defmodule TripleStore.Integration.MigrationTest do
     end
 
     test "6.8.1.4 query migrated data returns same results", context do
-      %{triple_db: triple_db, triple_manager: triple_manager, quad_db: quad_db, quad_manager: quad_manager} = context
+      %{
+        triple_db: triple_db,
+        triple_manager: triple_manager,
+        quad_db: quad_db,
+        quad_manager: quad_manager
+      } = context
 
       # Populate triple store
       {:ok, _count} = populate_triple_store(triple_db, triple_manager)
@@ -243,7 +257,9 @@ defmodule TripleStore.Integration.MigrationTest do
 
       # Compare N-Triples output (normalize for comparison)
       original_lines = ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
-      migrated_lines = migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
+
+      migrated_lines =
+        migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
 
       # The N-Triples should be identical (same count and same content)
       assert MapSet.size(original_lines) == MapSet.size(migrated_lines)
@@ -252,7 +268,12 @@ defmodule TripleStore.Integration.MigrationTest do
     end
 
     test "6.8.1.5 all data preserved in migration", context do
-      %{triple_db: triple_db, triple_manager: triple_manager, quad_db: quad_db, quad_manager: quad_manager} = context
+      %{
+        triple_db: triple_db,
+        triple_manager: triple_manager,
+        quad_db: quad_db,
+        quad_manager: quad_manager
+      } = context
 
       # Populate with diverse test data
       triples = [
@@ -288,7 +309,9 @@ defmodule TripleStore.Integration.MigrationTest do
 
       # Compare N-Triples output as sets
       original_lines = ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
-      migrated_lines = migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
+
+      migrated_lines =
+        migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
 
       # All data should be preserved - exact match
       assert MapSet.equal?(original_lines, migrated_lines)
@@ -312,6 +335,7 @@ defmodule TripleStore.Integration.MigrationTest do
 
       # Insert 1000 triples
       count = 1000
+
       Enum.each(1..count, fn i ->
         subject = RDF.iri("#{@ex}subject#{i}")
         predicate = RDF.iri("#{@ex}predicate")
@@ -414,7 +438,9 @@ defmodule TripleStore.Integration.MigrationTest do
       assert empty_count == 0
 
       # Verify quad store is still operational after error
-      valid_nquads = "<#{@ex}s> <#{@ex}p> \"o\" <http://www.w3.org/1999/02/22-rdf-syntax-ns#default_graph> ."
+      valid_nquads =
+        "<#{@ex}s> <#{@ex}p> \"o\" <http://www.w3.org/1999/02/22-rdf-syntax-ns#default_graph> ."
+
       {:ok, count} = Loader.load_nquads_string(quad_db, quad_manager, valid_nquads)
       assert count == 1
     end
@@ -458,7 +484,9 @@ defmodule TripleStore.Integration.MigrationTest do
       migrated_ntriples = nquads_to_ntriples(migrated_nquads)
 
       original_lines = ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
-      migrated_lines = migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
+
+      migrated_lines =
+        migrated_ntriples |> String.split("\n") |> Enum.reject(&(&1 == "")) |> MapSet.new()
 
       assert MapSet.equal?(original_lines, migrated_lines)
     end
@@ -476,13 +504,15 @@ defmodule TripleStore.Integration.MigrationTest do
       end)
 
       # Insert test data in batches
-      batch1 = Enum.map(1..50, fn i ->
-        {RDF.iri("#{@ex}s#{i}"), RDF.iri("#{@ex}p"), RDF.literal("v#{i}")}
-      end)
+      batch1 =
+        Enum.map(1..50, fn i ->
+          {RDF.iri("#{@ex}s#{i}"), RDF.iri("#{@ex}p"), RDF.literal("v#{i}")}
+        end)
 
-      batch2 = Enum.map(51..100, fn i ->
-        {RDF.iri("#{@ex}s#{i}"), RDF.iri("#{@ex}p"), RDF.literal("v#{i}")}
-      end)
+      batch2 =
+        Enum.map(51..100, fn i ->
+          {RDF.iri("#{@ex}s#{i}"), RDF.iri("#{@ex}p"), RDF.literal("v#{i}")}
+        end)
 
       # Insert first batch
       Enum.each(batch1, fn {subject, predicate, object} ->

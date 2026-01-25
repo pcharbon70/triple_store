@@ -61,6 +61,7 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     else
       # First, check if user has admin role (global admin access)
       user_roles = Map.get(user, :roles, [])
+
       if :admin in user_roles do
         :ok
       else
@@ -110,6 +111,7 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     else
       # Check if user has admin role (global access)
       user_roles = Map.get(user, :roles, [])
+
       if :admin in user_roles do
         :ok
       else
@@ -249,7 +251,10 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   def ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
   def ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
   def ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  def ast_to_rdf({:literal, :language_tagged, value, lang}), do: RDF.literal(value, language: lang)
+
+  def ast_to_rdf({:literal, :language_tagged, value, lang}),
+    do: RDF.literal(value, language: lang)
+
   def ast_to_rdf({:literal, :typed, value, datatype}) do
     RDF.literal(value, datatype: RDF.iri(datatype))
   end
@@ -294,7 +299,8 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   @doc """
   Looks up term ID - uses inline encoding for numeric types, dictionary for others.
   """
-  @spec lookup_term_id(reference(), RDF.Literal.t()) :: {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  @spec lookup_term_id(reference(), RDF.Literal.t()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   def lookup_term_id(db, %RDF.Literal{} = literal) do
     if Dictionary.inline_encodable?(literal) do
       encode_inline_literal(literal)
@@ -303,7 +309,8 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     end
   end
 
-  @spec lookup_term_id(reference(), term()) :: {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
+  @spec lookup_term_id(reference(), term()) ::
+          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   def lookup_term_id(db, term) do
     TripleStore.Dictionary.StringToId.lookup_id(db, term)
   end
@@ -335,7 +342,9 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   @spec get_prop(keyword(), term(), term()) :: term()
   def get_prop(props, key, default \\ nil) do
     case List.keyfind(props, key, 0) do
-      {^key, value} -> value
+      {^key, value} ->
+        value
+
       nil ->
         atom_key = String.to_atom(key)
         Keyword.get(props, atom_key, default)

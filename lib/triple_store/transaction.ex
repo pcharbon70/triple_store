@@ -63,7 +63,7 @@ defmodule TripleStore.Transaction do
 
   use GenServer
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.Query
@@ -401,7 +401,7 @@ defmodule TripleStore.Transaction do
   def terminate(_reason, state) do
     # Release any active snapshot
     if state.current_snapshot do
-      NIF.release_snapshot(state.db, state.current_snapshot)
+      ErlangAdapter.release_snapshot(state.db, state.current_snapshot)
     end
 
     :ok
@@ -515,11 +515,11 @@ defmodule TripleStore.Transaction do
   # ===========================================================================
 
   defp create_snapshot(db) do
-    NIF.snapshot(db)
+    ErlangAdapter.snapshot(db)
   end
 
   defp release_snapshot(db, snapshot) do
-    NIF.release_snapshot(db, snapshot)
+    ErlangAdapter.release_snapshot(db, snapshot)
   end
 
   # ===========================================================================

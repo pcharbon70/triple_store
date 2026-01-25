@@ -39,6 +39,7 @@ defmodule TripleStore.Integration.Helpers do
     if Process.whereis(__MODULE__) do
       Agent.update(__MODULE__, fn paths -> MapSet.put(paths, path) end)
     end
+
     :ok
   end
 
@@ -53,6 +54,7 @@ defmodule TripleStore.Integration.Helpers do
       Enum.each(paths, &cleanup_path/1)
       Agent.update(__MODULE__, fn _ -> MapSet.new() end)
     end
+
     :ok
   end
 
@@ -68,7 +70,7 @@ defmodule TripleStore.Integration.Helpers do
       {:ok, 3}  # Cleaned up 3 orphaned databases
   """
   def cleanup_orphaned_databases(max_age_hours \\ 24) do
-    cutoff_time = System.system_time(:second) - (max_age_hours * 3600)
+    cutoff_time = System.system_time(:second) - max_age_hours * 3600
 
     "/tmp"
     |> File.ls()
@@ -166,6 +168,7 @@ defmodule TripleStore.Integration.Helpers do
         :exit, _ -> :ok
       end
     end
+
     :ok
   end
 
@@ -181,10 +184,11 @@ defmodule TripleStore.Integration.Helpers do
   """
   def safe_close_db(db) do
     try do
-      TripleStore.Backend.RocksDB.NIF.close(db)
+      TripleStore.Backend.RocksDB.ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end
+
     :ok
   end
 

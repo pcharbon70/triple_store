@@ -12,7 +12,7 @@ defmodule TripleStore.Statistics.QuadTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.Statistics
@@ -25,7 +25,7 @@ defmodule TripleStore.Statistics.QuadTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -35,7 +35,7 @@ defmodule TripleStore.Statistics.QuadTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -103,7 +103,8 @@ defmodule TripleStore.Statistics.QuadTest do
       # Insert quads with different predicates
       quads =
         for i <- 1..30 do
-          predicate_id = rem(i, 3) + 1  # Predicates 1, 2, 3
+          # Predicates 1, 2, 3
+          predicate_id = rem(i, 3) + 1
           {i, predicate_id, i * 10, graph_id}
         end
 
@@ -152,7 +153,8 @@ defmodule TripleStore.Statistics.QuadTest do
       :ok = QuadOperations.insert_quads(db, quads, [])
 
       assert {:ok, count} = Statistics.graph_distinct_subjects(db, graph_id)
-      assert count == 6  # Subjects 1-6
+      # Subjects 1-6
+      assert count == 6
     end
   end
 
@@ -179,7 +181,8 @@ defmodule TripleStore.Statistics.QuadTest do
       :ok = QuadOperations.insert_quads(db, quads, [])
 
       assert {:ok, count} = Statistics.graph_object_count(db, graph_id)
-      assert count == 6  # Objects 10, 20, 30, 40, 50, 60
+      # Objects 10, 20, 30, 40, 50, 60
+      assert count == 6
     end
   end
 
@@ -250,9 +253,12 @@ defmodule TripleStore.Statistics.QuadTest do
   describe "all_graphs_summary/2" do
     test "aggregates statistics across all graphs", %{db: db, manager: manager} do
       # Insert quads into multiple graphs
-      insert_test_quads(db, manager, 0, 100)    # Default graph
-      insert_test_quads(db, manager, 100, 200)  # Named graph 100
-      insert_test_quads(db, manager, 200, 150)  # Named graph 200
+      # Default graph
+      insert_test_quads(db, manager, 0, 100)
+      # Named graph 100
+      insert_test_quads(db, manager, 100, 200)
+      # Named graph 200
+      insert_test_quads(db, manager, 200, 150)
 
       assert {:ok, summary} = Statistics.all_graphs_summary(db)
       assert summary.total_quads == 450
@@ -281,8 +287,10 @@ defmodule TripleStore.Statistics.QuadTest do
     end
 
     test "can exclude default graph", %{db: db, manager: manager} do
-      insert_test_quads(db, manager, 0, 100)   # Default graph
-      insert_test_quads(db, manager, 100, 200) # Named graph
+      # Default graph
+      insert_test_quads(db, manager, 0, 100)
+      # Named graph
+      insert_test_quads(db, manager, 100, 200)
 
       assert {:ok, summary} = Statistics.all_graphs_summary(db, include_default: false)
       # Should only count the named graph
@@ -294,7 +302,8 @@ defmodule TripleStore.Statistics.QuadTest do
       assert {:ok, summary} = Statistics.all_graphs_summary(db)
       # Empty database - default graph exists but has no quads
       assert summary.total_quads == 0
-      assert summary.graph_count == 0  # No graphs with quads
+      # No graphs with quads
+      assert summary.graph_count == 0
     end
   end
 

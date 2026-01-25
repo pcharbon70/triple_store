@@ -92,8 +92,10 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
 
     test "detects filter in algebra" do
       query = "SELECT * WHERE { ?s a ?type FILTER(?s > 0) }"
-      algebra = {:filter, {:binary_op, :>, {:variable, "s"}, {:literal, 0}},
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "type"}}]}}
+
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "s"}, {:literal, 0}},
+         {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "type"}}]}}
 
       test_pid = self()
 
@@ -143,10 +145,9 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
     end
 
     test "records actual cost with error ratio" do
-      algebra = {:join,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
-        {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}
-      }
+      algebra =
+        {:join, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
+         {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}}
 
       test_pid = self()
 
@@ -380,10 +381,12 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
           nil
         )
 
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 1, {:variable, "o"}},
-        {:triple, {:variable, "s"}, 2, {:variable, "p"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 1, {:variable, "o"}},
+           {:triple, {:variable, "s"}, 2, {:variable, "p"}}
+         ]}
 
       CostTelemetry.query_start("test", algebra)
       assert_receive {:pattern_count, 2}, 100

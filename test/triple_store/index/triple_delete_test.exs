@@ -32,7 +32,7 @@ defmodule TripleStore.Index.TripleDeleteTest do
       :ok = Index.delete_triple(db, {100, 200, 300})
 
       spo_key = Index.spo_key(100, 200, 300)
-      assert :not_found = NIF.get(db, :spo, spo_key)
+      assert :not_found = ErlangAdapter.get(db, :spo, spo_key)
     end
 
     test "removes from POS index", %{db: db} do
@@ -40,7 +40,7 @@ defmodule TripleStore.Index.TripleDeleteTest do
       :ok = Index.delete_triple(db, {100, 200, 300})
 
       pos_key = Index.pos_key(200, 300, 100)
-      assert :not_found = NIF.get(db, :pos, pos_key)
+      assert :not_found = ErlangAdapter.get(db, :pos, pos_key)
     end
 
     test "removes from OSP index", %{db: db} do
@@ -48,7 +48,7 @@ defmodule TripleStore.Index.TripleDeleteTest do
       :ok = Index.delete_triple(db, {100, 200, 300})
 
       osp_key = Index.osp_key(300, 100, 200)
-      assert :not_found = NIF.get(db, :osp, osp_key)
+      assert :not_found = ErlangAdapter.get(db, :osp, osp_key)
     end
 
     test "removes from all three indices atomically", %{db: db} do
@@ -60,9 +60,9 @@ defmodule TripleStore.Index.TripleDeleteTest do
       pos_key = Index.pos_key(20, 30, 10)
       osp_key = Index.osp_key(30, 10, 20)
 
-      assert :not_found = NIF.get(db, :spo, spo_key)
-      assert :not_found = NIF.get(db, :pos, pos_key)
-      assert :not_found = NIF.get(db, :osp, osp_key)
+      assert :not_found = ErlangAdapter.get(db, :spo, spo_key)
+      assert :not_found = ErlangAdapter.get(db, :pos, pos_key)
+      assert :not_found = ErlangAdapter.get(db, :osp, osp_key)
     end
 
     test "is idempotent - deleting non-existent triple succeeds", %{db: db} do
@@ -143,9 +143,9 @@ defmodule TripleStore.Index.TripleDeleteTest do
       :ok = Index.delete_triples(db, triples)
 
       for {s, p, o} <- triples do
-        assert :not_found = NIF.get(db, :spo, Index.spo_key(s, p, o))
-        assert :not_found = NIF.get(db, :pos, Index.pos_key(p, o, s))
-        assert :not_found = NIF.get(db, :osp, Index.osp_key(o, s, p))
+        assert :not_found = ErlangAdapter.get(db, :spo, Index.spo_key(s, p, o))
+        assert :not_found = ErlangAdapter.get(db, :pos, Index.pos_key(p, o, s))
+        assert :not_found = ErlangAdapter.get(db, :osp, Index.osp_key(o, s, p))
       end
     end
 
@@ -197,17 +197,17 @@ defmodule TripleStore.Index.TripleDeleteTest do
       :ok = Index.delete_triples(db, triples)
 
       # Count entries in each index using prefix iteration
-      {:ok, spo_iter} = NIF.prefix_iterator(db, :spo, <<>>)
-      {:ok, spo_entries} = NIF.iterator_collect(spo_iter)
-      NIF.iterator_close(spo_iter)
+      {:ok, spo_iter} = ErlangAdapter.prefix_iterator(db, :spo, <<>>)
+      {:ok, spo_entries} = ErlangAdapter.iterator_collect(spo_iter)
+      ErlangAdapter.iterator_close(spo_iter)
 
-      {:ok, pos_iter} = NIF.prefix_iterator(db, :pos, <<>>)
-      {:ok, pos_entries} = NIF.iterator_collect(pos_iter)
-      NIF.iterator_close(pos_iter)
+      {:ok, pos_iter} = ErlangAdapter.prefix_iterator(db, :pos, <<>>)
+      {:ok, pos_entries} = ErlangAdapter.iterator_collect(pos_iter)
+      ErlangAdapter.iterator_close(pos_iter)
 
-      {:ok, osp_iter} = NIF.prefix_iterator(db, :osp, <<>>)
-      {:ok, osp_entries} = NIF.iterator_collect(osp_iter)
-      NIF.iterator_close(osp_iter)
+      {:ok, osp_iter} = ErlangAdapter.prefix_iterator(db, :osp, <<>>)
+      {:ok, osp_entries} = ErlangAdapter.iterator_collect(osp_iter)
+      ErlangAdapter.iterator_close(osp_iter)
 
       assert Enum.empty?(spo_entries)
       assert Enum.empty?(pos_entries)
@@ -230,9 +230,9 @@ defmodule TripleStore.Index.TripleDeleteTest do
 
       # Query by subject prefix
       prefix = Index.spo_prefix(1)
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       # Should find exactly 1 triple
       assert length(entries) == 1
@@ -250,9 +250,9 @@ defmodule TripleStore.Index.TripleDeleteTest do
 
       # Query by predicate prefix
       prefix = Index.pos_prefix(100)
-      {:ok, iter} = NIF.prefix_iterator(db, :pos, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :pos, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       assert length(entries) == 1
       [{key, _}] = entries
@@ -267,9 +267,9 @@ defmodule TripleStore.Index.TripleDeleteTest do
 
       # Query by object prefix
       prefix = Index.osp_prefix(999)
-      {:ok, iter} = NIF.prefix_iterator(db, :osp, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :osp, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       assert length(entries) == 1
       [{key, _}] = entries

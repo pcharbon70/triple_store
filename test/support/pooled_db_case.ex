@@ -8,7 +8,7 @@ defmodule TripleStore.PooledDbCase do
   using do
     quote do
       use ExUnit.Case, async: true
-      alias TripleStore.Backend.RocksDB.NIF
+      alias TripleStore.Backend.RocksDB.ErlangAdapter
     end
   end
 

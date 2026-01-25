@@ -5,7 +5,7 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.SPARQL.Parser
@@ -22,7 +22,7 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
     File.rm_rf!(db_path)
 
     # Open database
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
 
     # Start dictionary manager
     {:ok, manager} = Manager.start_link(db: db)
@@ -35,7 +35,7 @@ defmodule TripleStore.SPARQL.UpdateExecutorTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

@@ -11,7 +11,7 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Authorization
@@ -49,7 +49,7 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
@@ -58,7 +58,7 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -93,33 +93,41 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}to_drop"
 
       # Insert data first
-      {:ok, ast} = Parser.parse_update("INSERT DATA { GRAPH <#{graph_iri}> { <#{@ex}s> <#{@ex}p> \"value\" } }")
+      {:ok, ast} =
+        Parser.parse_update(
+          "INSERT DATA { GRAPH <#{graph_iri}> { <#{@ex}s> <#{@ex}p> \"value\" } }"
+        )
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
       # Verify data exists
-      assert {:ok, 1} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 1} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # Drop the graph
       {:ok, drop_ast} = Parser.parse_update("DROP GRAPH <#{graph_iri}>")
       assert {:ok, 1} = UpdateExecutor.execute(ctx, drop_ast)
 
       # Verify graph is empty
-      assert {:ok, 0} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 0} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.1.3 CLEAR GRAPH empties graph", %{ctx: ctx} do
       graph_iri = "#{@ex}to_clear"
 
       # Insert multiple quads
-      {:ok, ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "v1" .
-            <#{@ex}s2> <#{@ex}p> "v2" .
-            <#{@ex}s3> <#{@ex}p> "v3" .
+      {:ok, ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "v1" .
+              <#{@ex}s2> <#{@ex}p> "v2" .
+              <#{@ex}s3> <#{@ex}p> "v3" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 3} = UpdateExecutor.execute(ctx, ast)
 
       # Clear the graph
@@ -127,7 +135,8 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       assert {:ok, 3} = UpdateExecutor.execute(ctx, clear_ast)
 
       # Verify graph is empty
-      assert {:ok, 0} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 0} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.1.4 CREATE SILENT on existing graph", %{ctx: ctx} do
@@ -155,8 +164,12 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph2 = "#{@ex}g2"
 
       # Insert data to multiple graphs
-      {:ok, ast1} = Parser.parse_update("INSERT DATA { GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> \"v\" } }")
-      {:ok, ast2} = Parser.parse_update("INSERT DATA { GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> \"v\" } }")
+      {:ok, ast1} =
+        Parser.parse_update("INSERT DATA { GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> \"v\" } }")
+
+      {:ok, ast2} =
+        Parser.parse_update("INSERT DATA { GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> \"v\" } }")
+
       {:ok, ast3} = Parser.parse_update("INSERT DATA { <#{@ex}s> <#{@ex}p> \"default\" }")
 
       assert {:ok, 1} = UpdateExecutor.execute(ctx, ast1)
@@ -183,18 +196,21 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}target"
 
       # Insert to named graph
-      {:ok, ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p1> "o1" .
-            <#{@ex}s2> <#{@ex}p2> "o2" .
+      {:ok, ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p1> "o1" .
+              <#{@ex}s2> <#{@ex}p2> "o2" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, ast)
 
       # Verify insertion
-      assert {:ok, 2} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 2} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.2.2 INSERT DATA with multiple GRAPH blocks", %{ctx: ctx} do
@@ -202,16 +218,18 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph2 = "#{@ex}g2"
 
       # Insert to multiple graphs in single operation
-      {:ok, ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph1}> {
-            <#{@ex}s> <#{@ex}p> "v1" .
+      {:ok, ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph1}> {
+              <#{@ex}s> <#{@ex}p> "v1" .
+            }
+            GRAPH <#{graph2}> {
+              <#{@ex}s> <#{@ex}p> "v2" .
+            }
           }
-          GRAPH <#{graph2}> {
-            <#{@ex}s> <#{@ex}p> "v2" .
-          }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, ast)
 
       # Verify both graphs have data
@@ -223,29 +241,34 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}target"
 
       # Insert first
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "o1" .
-            <#{@ex}s2> <#{@ex}p> "o2" .
-            <#{@ex}s3> <#{@ex}p> "o3" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "o1" .
+              <#{@ex}s2> <#{@ex}p> "o2" .
+              <#{@ex}s3> <#{@ex}p> "o3" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 3} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Delete specific quads
-      {:ok, delete_ast} = Parser.parse_update("""
-        DELETE DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s2> <#{@ex}p> "o2" .
+      {:ok, delete_ast} =
+        Parser.parse_update("""
+          DELETE DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s2> <#{@ex}p> "o2" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, delete_ast)
 
       # Verify only 2 quads remain
-      assert {:ok, 2} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 2} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.2.4 DELETE DATA with multiple GRAPH blocks", %{ctx: ctx} do
@@ -253,21 +276,25 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph2 = "#{@ex}g2"
 
       # Insert to multiple graphs
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> "v1" . }
-          GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> "v2" . }
-        }
-      """)
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> "v1" . }
+            GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> "v2" . }
+          }
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Delete from both graphs
-      {:ok, delete_ast} = Parser.parse_update("""
-        DELETE DATA {
-          GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> "v1" . }
-          GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> "v2" . }
-        }
-      """)
+      {:ok, delete_ast} =
+        Parser.parse_update("""
+          DELETE DATA {
+            GRAPH <#{graph1}> { <#{@ex}s> <#{@ex}p> "v1" . }
+            GRAPH <#{graph2}> { <#{@ex}s> <#{@ex}p> "v2" . }
+          }
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, delete_ast)
 
       # Verify both graphs are empty
@@ -279,50 +306,60 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}test"
 
       # Insert a quad
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s> <#{@ex}p> "value" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s> <#{@ex}p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Verify insertion
-      assert {:ok, 1} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 1} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # Delete the same quad
-      {:ok, delete_ast} = Parser.parse_update("""
-        DELETE DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s> <#{@ex}p> "value" .
+      {:ok, delete_ast} =
+        Parser.parse_update("""
+          DELETE DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s> <#{@ex}p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, delete_ast)
 
       # Verify deletion
-      assert {:ok, 0} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 0} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.2.6 INSERT creates graph if needed", %{ctx: ctx} do
       graph_iri = "#{@ex}new_graph"
 
       # Verify graph doesn't exist (no quads)
-      assert {:ok, 0} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 0} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # Insert data - graph should be created automatically
-      {:ok, ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s> <#{@ex}p> "value" .
+      {:ok, ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s> <#{@ex}p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, ast)
 
       # Verify graph now has data
-      assert {:ok, 1} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 1} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
   end
 
@@ -335,40 +372,45 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}test"
 
       # Insert initial data
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old" .
-            <#{@ex}s2> <#{@ex}p> "unchanged" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old" .
+              <#{@ex}s2> <#{@ex}p> "unchanged" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # MODIFY: delete old, insert new
-      {:ok, modify_ast} = Parser.parse_update("""
-        DELETE {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old" .
+      {:ok, modify_ast} =
+        Parser.parse_update("""
+          DELETE {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old" .
+            }
           }
-        }
-        INSERT {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "new" .
+          INSERT {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "new" .
+            }
           }
-        }
-        WHERE {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old" .
+          WHERE {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, count} = UpdateExecutor.execute(ctx, modify_ast)
       # Delete 1, insert 1 = 2 operations
       assert count == 2
 
       # Verify graph still has 2 quads (s1 updated, s2 unchanged)
-      assert {:ok, 2} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 2} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.3.2 MODIFY with WHERE across graphs", %{ctx: ctx} do
@@ -376,36 +418,40 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph2 = "#{@ex}g2"
 
       # Insert data to both graphs
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph1}> {
-            <#{@ex}s> <#{@ex}g1-p> "value" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph1}> {
+              <#{@ex}s> <#{@ex}g1-p> "value" .
+            }
+            GRAPH <#{graph2}> {
+              <#{@ex}s> <#{@ex}g2-p> "other" .
+            }
           }
-          GRAPH <#{graph2}> {
-            <#{@ex}s> <#{@ex}g2-p> "other" .
-          }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # MODIFY using pattern matching
-      {:ok, modify_ast} = Parser.parse_update("""
-        DELETE {
-          GRAPH <#{graph1}> {
-            <#{@ex}s> <#{@ex}g1-p> "value" .
+      {:ok, modify_ast} =
+        Parser.parse_update("""
+          DELETE {
+            GRAPH <#{graph1}> {
+              <#{@ex}s> <#{@ex}g1-p> "value" .
+            }
           }
-        }
-        INSERT {
-          GRAPH <#{graph1}> {
-            <#{@ex}s> <#{@ex}g1-p> "updated" .
+          INSERT {
+            GRAPH <#{graph1}> {
+              <#{@ex}s> <#{@ex}g1-p> "updated" .
+            }
           }
-        }
-        WHERE {
-          GRAPH <#{graph1}> {
-            <#{@ex}s> <#{@ex}g1-p> "value" .
+          WHERE {
+            GRAPH <#{graph1}> {
+              <#{@ex}s> <#{@ex}g1-p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, count} = UpdateExecutor.execute(ctx, modify_ast)
       assert count == 2
 
@@ -419,36 +465,41 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}default"
 
       # Insert initial data
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s> <#{@ex}p> "old" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s> <#{@ex}p> "old" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 1} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Use WITH to set graph context for DELETE/INSERT
       # Note: WITH clause affects the graph used for templates without GRAPH
-      {:ok, modify_ast} = Parser.parse_update("""
-        DELETE {
-          <#{@ex}s> <#{@ex}p> "old" .
-        }
-        INSERT {
-          <#{@ex}s> <#{@ex}p> "new" .
-        }
-        WHERE {
-          GRAPH <#{graph_iri}> {
+      {:ok, modify_ast} =
+        Parser.parse_update("""
+          DELETE {
             <#{@ex}s> <#{@ex}p> "old" .
           }
-        }
-      """)
+          INSERT {
+            <#{@ex}s> <#{@ex}p> "new" .
+          }
+          WHERE {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s> <#{@ex}p> "old" .
+            }
+          }
+        """)
+
       # This will modify the default graph, not the named graph
       assert {:ok, count} = UpdateExecutor.execute(ctx, modify_ast)
       assert count == 2
 
       # Verify named graph still has original data (unchanged)
-      assert {:ok, 1} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 1} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # But default graph now has the new value
       assert {:ok, 1} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, :default)
@@ -458,79 +509,90 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       graph_iri = "#{@ex}atomic"
 
       # Insert initial data
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old1" .
-            <#{@ex}s2> <#{@ex}p> "old2" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old1" .
+              <#{@ex}s2> <#{@ex}p> "old2" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Get initial count
-      assert {:ok, 2} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 2} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       # MODIFY both in one operation
-      {:ok, modify_ast} = Parser.parse_update("""
-        DELETE {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old1" .
-            <#{@ex}s2> <#{@ex}p> "old2" .
+      {:ok, modify_ast} =
+        Parser.parse_update("""
+          DELETE {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old1" .
+              <#{@ex}s2> <#{@ex}p> "old2" .
+            }
           }
-        }
-        INSERT {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "new1" .
-            <#{@ex}s2> <#{@ex}p> "new2" .
+          INSERT {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "new1" .
+              <#{@ex}s2> <#{@ex}p> "new2" .
+            }
           }
-        }
-        WHERE {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "old1" .
-            <#{@ex}s2> <#{@ex}p> "old2" .
+          WHERE {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "old1" .
+              <#{@ex}s2> <#{@ex}p> "old2" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 4} = UpdateExecutor.execute(ctx, modify_ast)
 
       # Verify atomic operation - both old values gone, both new values present
-      assert {:ok, 2} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 2} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
 
     test "6.4.3.5 MODIFY returns correct counts", %{ctx: ctx} do
       graph_iri = "#{@ex}count_test"
 
       # Insert multiple matching quads
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{graph_iri}> {
-            <#{@ex}s1> <#{@ex}p> "value" .
-            <#{@ex}s2> <#{@ex}p> "value" .
-            <#{@ex}s3> <#{@ex}p> "value" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{graph_iri}> {
+              <#{@ex}s1> <#{@ex}p> "value" .
+              <#{@ex}s2> <#{@ex}p> "value" .
+              <#{@ex}s3> <#{@ex}p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 3} = UpdateExecutor.execute(ctx, insert_ast)
 
       # DELETE only - should return count of deleted quads
-      {:ok, delete_ast} = Parser.parse_update("""
-        DELETE {
-          GRAPH <#{graph_iri}> {
-            ?s <#{@ex}p> "value" .
+      {:ok, delete_ast} =
+        Parser.parse_update("""
+          DELETE {
+            GRAPH <#{graph_iri}> {
+              ?s <#{@ex}p> "value" .
+            }
           }
-        }
-        WHERE {
-          GRAPH <#{graph_iri}> {
-            ?s <#{@ex}p> "value" .
+          WHERE {
+            GRAPH <#{graph_iri}> {
+              ?s <#{@ex}p> "value" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, count} = UpdateExecutor.execute(ctx, delete_ast)
       assert count == 3
 
       # Verify all quads deleted
-      assert {:ok, 0} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
+      assert {:ok, 0} =
+               QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
     end
   end
 
@@ -544,15 +606,17 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       target = "#{@ex}target"
 
       # Insert source data
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{source}> {
-            <#{@ex}s1> <#{@ex}p> "v1" .
-            <#{@ex}s2> <#{@ex}p> "v2" .
-            <#{@ex}s3> <#{@ex}p> "v3" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{source}> {
+              <#{@ex}s1> <#{@ex}p> "v1" .
+              <#{@ex}s2> <#{@ex}p> "v2" .
+              <#{@ex}s3> <#{@ex}p> "v3" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 3} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Copy source to target
@@ -571,14 +635,16 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       target = "#{@ex}target"
 
       # Insert source data
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{source}> {
-            <#{@ex}s1> <#{@ex}p> "v1" .
-            <#{@ex}s2> <#{@ex}p> "v2" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{source}> {
+              <#{@ex}s1> <#{@ex}p> "v1" .
+              <#{@ex}s2> <#{@ex}p> "v2" .
+            }
           }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Move source to target
@@ -599,16 +665,18 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       target = "#{@ex}target"
 
       # Insert different data to both graphs
-      {:ok, insert_ast} = Parser.parse_update("""
-        INSERT DATA {
-          GRAPH <#{source}> {
-            <#{@ex}s1> <#{@ex}p> "from_source" .
+      {:ok, insert_ast} =
+        Parser.parse_update("""
+          INSERT DATA {
+            GRAPH <#{source}> {
+              <#{@ex}s1> <#{@ex}p> "from_source" .
+            }
+            GRAPH <#{target}> {
+              <#{@ex}s2> <#{@ex}p> "from_target" .
+            }
           }
-          GRAPH <#{target}> {
-            <#{@ex}s2> <#{@ex}p> "from_target" .
-          }
-        }
-      """)
+        """)
+
       assert {:ok, 2} = UpdateExecutor.execute(ctx, insert_ast)
 
       # Add source to target (merge)
@@ -627,15 +695,21 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       target = "#{@ex}target"
 
       # COPY SILENT with non-existent source should succeed
-      {:ok, copy_ast} = Parser.parse_update("COPY SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+      {:ok, copy_ast} =
+        Parser.parse_update("COPY SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+
       assert {:ok, 0} = UpdateExecutor.execute(ctx, copy_ast)
 
       # MOVE SILENT with non-existent source should succeed
-      {:ok, move_ast} = Parser.parse_update("MOVE SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+      {:ok, move_ast} =
+        Parser.parse_update("MOVE SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+
       assert {:ok, 0} = UpdateExecutor.execute(ctx, move_ast)
 
       # ADD SILENT with non-existent source should succeed
-      {:ok, add_ast} = Parser.parse_update("ADD SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+      {:ok, add_ast} =
+        Parser.parse_update("ADD SILENT GRAPH <#{nonexistent}> TO GRAPH <#{target}>")
+
       assert {:ok, 0} = UpdateExecutor.execute(ctx, add_ast)
     end
 

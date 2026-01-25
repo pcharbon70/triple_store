@@ -3,7 +3,7 @@ defmodule TripleStore.Backend.RocksDB do
   RocksDB backend implementation for TripleStore.
 
   This module provides the high-level Elixir interface to RocksDB operations.
-  Low-level NIF calls are delegated to the `TripleStore.Backend.RocksDB.NIF` module.
+  Low-level NIF calls are delegated to the `TripleStore.Backend.RocksDB.ErlangAdapter` module.
 
   ## Column Families
 

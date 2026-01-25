@@ -14,7 +14,7 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.Statistics
@@ -29,7 +29,7 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
       System.tmp_dir!() <>
         "/ts_quadstats_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     # Start Statistics GenServer
@@ -37,7 +37,7 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -52,10 +52,14 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
     test "insert quads and collect accurate statistics", %{db: db, manager: manager} do
       # Insert test quads into default graph
       quads = [
-        {1, 10, 100, 0},   # s1, p1, o1, default
-        {1, 10, 101, 0},   # s1, p1, o2, default
-        {2, 10, 100, 0},   # s2, p1, o1, default
-        {1, 11, 102, 0}    # s1, p2, o3, default
+        # s1, p1, o1, default
+        {1, 10, 100, 0},
+        # s1, p1, o2, default
+        {1, 10, 101, 0},
+        # s2, p1, o1, default
+        {2, 10, 100, 0},
+        # s1, p2, o3, default
+        {1, 11, 102, 0}
       ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -75,10 +79,14 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
 
       # Insert quads to different graphs
       quads = [
-        {1, 10, 100, 0},      # default graph
-        {2, 10, 101, 0},      # default graph
-        {3, 11, 102, graph_iri},  # named graph
-        {4, 11, 103, graph_iri}   # named graph
+        # default graph
+        {1, 10, 100, 0},
+        # default graph
+        {2, 10, 101, 0},
+        # named graph
+        {3, 11, 102, graph_iri},
+        # named graph
+        {4, 11, 103, graph_iri}
       ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -125,10 +133,13 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
 
       # Insert quads to multiple graphs
       quads = [
-        {1, 10, 100, 0},    # default: 1 quad
-        {2, 11, 101, g1},   # g1: 2 quads
+        # default: 1 quad
+        {1, 10, 100, 0},
+        # g1: 2 quads
+        {2, 11, 101, g1},
         {3, 11, 102, g1},
-        {4, 12, 103, g2},   # g2: 3 quads
+        # g2: 3 quads
+        {4, 12, 103, g2},
         {5, 12, 104, g2},
         {6, 13, 105, g2}
       ]
@@ -195,9 +206,14 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
 
       # Insert quads across graphs
       all_quads = [
-        {1, 100, 1000, g1}, {2, 100, 1001, g1}, {3, 101, 1002, g1},
-        {4, 100, 1003, g2}, {5, 101, 1004, g2},
-        {6, 100, 1005, g3}, {7, 101, 1006, g3}, {8, 102, 1007, g3}
+        {1, 100, 1000, g1},
+        {2, 100, 1001, g1},
+        {3, 101, 1002, g1},
+        {4, 100, 1003, g2},
+        {5, 101, 1004, g2},
+        {6, 100, 1005, g3},
+        {7, 101, 1006, g3},
+        {8, 102, 1007, g3}
       ]
 
       Enum.each(all_quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -231,7 +247,10 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
   # ===========================================================================
 
   describe "cardinality estimation with real data" do
-    test "estimate_pattern returns accurate cardinality for real quads", %{db: db, manager: manager} do
+    test "estimate_pattern returns accurate cardinality for real quads", %{
+      db: db,
+      manager: manager
+    } do
       # Insert test quads
       quads = for i <- 1..50, do: {i, 10, 100 + i, 0}
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -245,7 +264,8 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
 
       # Should be approximately 50 (the actual count)
       assert estimate > 0
-      assert estimate < 1000  # Should be reasonable
+      # Should be reasonable
+      assert estimate < 1000
     end
 
     test "cross-graph pattern estimates sum across graphs", %{db: db, manager: manager} do
@@ -336,10 +356,13 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
       {:ok, g2} = Adapter.term_to_id(manager, RDF.iri("http://example.org/g2"))
 
       quads = [
-        {1, 10, 100, 0},   # default: 1 quad
-        {2, 11, 101, g1},  # g1: 2 quads
+        # default: 1 quad
+        {1, 10, 100, 0},
+        # g1: 2 quads
+        {2, 11, 101, g1},
         {3, 11, 102, g1},
-        {4, 12, 103, g2},  # g2: 3 quads
+        # g2: 3 quads
+        {4, 12, 103, g2},
         {5, 12, 104, g2},
         {6, 13, 105, g2}
       ]

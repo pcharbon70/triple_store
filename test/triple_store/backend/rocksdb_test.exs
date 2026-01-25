@@ -15,7 +15,7 @@ defmodule TripleStore.Backend.RocksDBTest do
     end
 
     test "NIF loads successfully" do
-      assert RocksDB.NIF.nif_loaded() == "rocksdb_nif"
+      assert RocksDB.ErlangAdapter.nif_loaded() == "rocksdb_nif"
     end
   end
 end
