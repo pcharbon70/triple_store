@@ -974,6 +974,38 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # ===========================================================================
 
   @doc """
+  Creates a lazy stream over a prefix range using a snapshot.
+
+  The stream reads from a point-in-time snapshot of the database,
+  ensuring consistent reads even if the data is modified during iteration.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - Snapshot reference from `snapshot/1`
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate over
+
+  ## Returns
+
+  - `Stream.t()` - A stream of `{key, value}` tuples
+
+  ## Examples
+
+      # Create snapshot and stream from it
+      {:ok, snap} = ErlangAdapter.snapshot(db)
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, <<subject_id::64-big>>)
+      results = Enum.to_list(stream)
+      ErlangAdapter.release_snapshot(db, snap)
+
+  """
+  @spec snapshot_stream(adapter(), snapshot_ref(), column_family(), binary()) :: Enumerable.t()
+  def snapshot_stream(adapter, snapshot_ref, cf, prefix)
+      when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    prefix_stream(adapter, cf, prefix, snapshot: snapshot_ref)
+  end
+
+  @doc """
   Creates a lazy stream over a prefix range.
 
   The stream properly manages resources and will close the underlying iterator
