@@ -174,7 +174,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       )
 
       # Snapshot iterator
-      {:ok, snap_iter} = ErlangAdapter.snapshot_prefix_iterator(snap, :spo, "key")
+      {:ok, snap_iter} = ErlangAdapter.snapshot_prefix_iterator(db, snap, :spo, "key")
       {:ok, snap_results} = ErlangAdapter.iterator_collect(snap_iter)
       ErlangAdapter.iterator_close(snap_iter)
 
@@ -186,7 +186,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       assert length(snap_results) == 2
       assert length(reg_results) == 4
 
-      ErlangAdapter.release_snapshot(snap)
+      ErlangAdapter.release_snapshot(db, snap)
     end
 
     test "multiple snapshots at different points see different data", %{db: db} do
@@ -200,21 +200,21 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       {:ok, snap3} = ErlangAdapter.snapshot(db)
 
       # Create iterators from each snapshot
-      {:ok, iter1} = ErlangAdapter.snapshot_prefix_iterator(snap1, :spo, "key")
-      {:ok, iter2} = ErlangAdapter.snapshot_prefix_iterator(snap2, :spo, "key")
-      {:ok, iter3} = ErlangAdapter.snapshot_prefix_iterator(snap3, :spo, "key")
+      {:ok, iter1} = ErlangAdapter.snapshot_prefix_iterator(db, snap1, :spo, "key")
+      {:ok, iter2} = ErlangAdapter.snapshot_prefix_iterator(db, snap2, :spo, "key")
+      {:ok, iter3} = ErlangAdapter.snapshot_prefix_iterator(db, snap3, :spo, "key")
 
-      assert {:ok, "key", "v1"} = ErlangAdapter.snapshot_iterator_next(iter1)
-      assert {:ok, "key", "v2"} = ErlangAdapter.snapshot_iterator_next(iter2)
-      assert {:ok, "key", "v3"} = ErlangAdapter.snapshot_iterator_next(iter3)
+      assert {:ok, "key", "v1"} = ErlangAdapter.iterator_next(iter1)
+      assert {:ok, "key", "v2"} = ErlangAdapter.iterator_next(iter2)
+      assert {:ok, "key", "v3"} = ErlangAdapter.iterator_next(iter3)
 
       ErlangAdapter.iterator_close(iter1)
       ErlangAdapter.iterator_close(iter2)
       ErlangAdapter.iterator_close(iter3)
 
-      ErlangAdapter.release_snapshot(snap1)
-      ErlangAdapter.release_snapshot(snap2)
-      ErlangAdapter.release_snapshot(snap3)
+      ErlangAdapter.release_snapshot(db, snap1)
+      ErlangAdapter.release_snapshot(db, snap2)
+      ErlangAdapter.release_snapshot(db, snap3)
     end
   end
 
@@ -249,7 +249,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       end
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      {:ok, stream} = ErlangAdapter.snapshot_stream(snap, :spo, "key")
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, "key")
 
       # Modify data during iteration
       results =
@@ -265,7 +265,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       # But new data should exist
       assert {:ok, "modified"} = ErlangAdapter.get(db, :spo, "new_key01")
 
-      ErlangAdapter.release_snapshot(snap)
+      ErlangAdapter.release_snapshot(db, snap)
     end
   end
 
@@ -341,7 +341,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
         for i <- 1..50 do
           Task.async(fn ->
             expected = "original#{i}"
-            {:ok, ^expected} = ErlangAdapter.snapshot_get(snap, :spo, "key#{i}")
+            {:ok, ^expected} = ErlangAdapter.snapshot_get(db, snap, :spo, "key#{i}")
             :ok
           end)
         end
@@ -349,7 +349,7 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       Task.await_many(writers, 5000)
       assert Enum.all?(Task.await_many(readers, 5000), &(&1 == :ok))
 
-      ErlangAdapter.release_snapshot(snap)
+      ErlangAdapter.release_snapshot(db, snap)
     end
   end
 
@@ -364,12 +364,12 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.prefix_iterator(db, invalid_cf, "")
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.snapshot_get(snap, invalid_cf, "key")
+      assert {:error, {:invalid_cf, ^invalid_cf}} = ErlangAdapter.snapshot_get(db, snap, invalid_cf, "key")
 
       assert {:error, {:invalid_cf, ^invalid_cf}} =
-               ErlangAdapter.snapshot_prefix_iterator(snap, invalid_cf, "")
+               ErlangAdapter.snapshot_prefix_iterator(db, snap, invalid_cf, "")
 
-      ErlangAdapter.release_snapshot(snap)
+      ErlangAdapter.release_snapshot(db, snap)
     end
 
     test "batch operations validate all entries before writing", %{db: db} do
@@ -417,14 +417,14 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       # Create many snapshots and release them
       for _ <- 1..100 do
         {:ok, snap} = ErlangAdapter.snapshot(db)
-        ErlangAdapter.snapshot_get(snap, :spo, "key")
-        ErlangAdapter.release_snapshot(snap)
+        ErlangAdapter.snapshot_get(db, snap, :spo, "key")
+        ErlangAdapter.release_snapshot(db, snap)
       end
 
       # Should still be able to create more
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      assert {:ok, "value"} = ErlangAdapter.snapshot_get(snap, :spo, "key")
-      ErlangAdapter.release_snapshot(snap)
+      assert {:ok, "value"} = ErlangAdapter.snapshot_get(db, snap, :spo, "key")
+      ErlangAdapter.release_snapshot(db, snap)
     end
   end
 

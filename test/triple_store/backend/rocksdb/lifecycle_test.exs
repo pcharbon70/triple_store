@@ -121,10 +121,17 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
     end
 
     test "returns error for path traversal attempt" do
-      result = ErlangAdapter.open("/tmp/test/../etc/passwd")
+      # Path expansion happens before validation, so we need a path that
+      # escapes /tmp AFTER expansion (not before)
+      # /tmp/test/../../etc/passwd expands to /tmp/../etc/passwd = /etc/passwd
+      result = ErlangAdapter.open("/tmp/test/../../etc/passwd")
 
       case result do
         {:error, :path_traversal_attempt} ->
+          :ok
+
+        {:error, :absolute_path_not_allowed} ->
+          # Also acceptable - /etc/passwd is not under /tmp or current dir
           :ok
 
         {:error, _reason} ->

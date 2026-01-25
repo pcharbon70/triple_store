@@ -56,8 +56,8 @@ defmodule TripleStore.Backend.RocksDB.CrashHarnessTest do
     {:ok, snap} = ErlangAdapter.snapshot(db)
     :ok = ErlangAdapter.put(db, :spo, "key1", "value2")
     :ok = ErlangAdapter.close(db)
-    IO.inspect(ErlangAdapter.snapshot_get(snap, :spo, "key1"), label: "snap")
-    :ok = ErlangAdapter.release_snapshot(snap)
+    IO.inspect(ErlangAdapter.snapshot_get(db, snap, :spo, "key1"), label: "snap")
+    :ok = ErlangAdapter.release_snapshot(db, snap)
     File.rm_rf(path)
     """
 

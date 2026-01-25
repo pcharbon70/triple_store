@@ -168,7 +168,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
     end
   end
 
-  describe "snapshot_iterator_next/1" do
+  describe "iterator_next/1" do
     test "returns key-value pairs in order", %{db: db} do
       ErlangAdapter.put(db, :spo, "a", "1")
       ErlangAdapter.put(db, :spo, "b", "2")
@@ -177,10 +177,10 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       {:ok, snap} = ErlangAdapter.snapshot(db)
       {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snap, :spo, "")
 
-      assert {:ok, "a", "1"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert {:ok, "b", "2"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert {:ok, "c", "3"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert :iterator_end = ErlangAdapter.snapshot_iterator_next(iter)
+      assert {:ok, "a", "1"} = ErlangAdapter.iterator_next(iter)
+      assert {:ok, "b", "2"} = ErlangAdapter.iterator_next(iter)
+      assert {:ok, "c", "3"} = ErlangAdapter.iterator_next(iter)
+      assert :iterator_end = ErlangAdapter.iterator_next(iter)
 
       ErlangAdapter.iterator_close(iter)
       ErlangAdapter.release_snapshot(db, snap)
@@ -194,9 +194,9 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       {:ok, snap} = ErlangAdapter.snapshot(db)
       {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snap, :spo, "prefix_")
 
-      assert {:ok, "prefix_a", "1"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert {:ok, "prefix_b", "2"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert :iterator_end = ErlangAdapter.snapshot_iterator_next(iter)
+      assert {:ok, "prefix_a", "1"} = ErlangAdapter.iterator_next(iter)
+      assert {:ok, "prefix_b", "2"} = ErlangAdapter.iterator_next(iter)
+      assert :iterator_end = ErlangAdapter.iterator_next(iter)
 
       ErlangAdapter.iterator_close(iter)
       ErlangAdapter.release_snapshot(db, snap)
@@ -207,7 +207,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snap, :spo, "")
       ErlangAdapter.iterator_close(iter)
 
-      assert {:error, :iterator_closed} = ErlangAdapter.snapshot_iterator_next(iter)
+      assert {:error, :iterator_closed} = ErlangAdapter.iterator_next(iter)
 
       ErlangAdapter.release_snapshot(db, snap)
     end
@@ -284,7 +284,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       ErlangAdapter.put(db, :spo, "s2p2o2", "")
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      {:ok, stream} = ErlangAdapter.snapshot_stream(db, snap, :spo, "s1")
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, "s1")
 
       results = Enum.to_list(stream)
       assert length(results) == 2
@@ -303,7 +303,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       # Add after snapshot
       ErlangAdapter.put(db, :spo, "key3", "value3")
 
-      {:ok, stream} = ErlangAdapter.snapshot_stream(db, snap, :spo, "key")
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, "key")
       results = Enum.to_list(stream)
 
       assert length(results) == 2
@@ -318,7 +318,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       end
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      {:ok, stream} = ErlangAdapter.snapshot_stream(db, snap, :spo, "key")
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, "key")
 
       # Take only first 5
       results = Enum.take(stream, 5)
@@ -380,9 +380,9 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
       assert :ok = ErlangAdapter.close(db)
 
       # Iterator should still work
-      assert {:ok, "key1", "value1"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert {:ok, "key2", "value2"} = ErlangAdapter.snapshot_iterator_next(iter)
-      assert :iterator_end = ErlangAdapter.snapshot_iterator_next(iter)
+      assert {:ok, "key1", "value1"} = ErlangAdapter.iterator_next(iter)
+      assert {:ok, "key2", "value2"} = ErlangAdapter.iterator_next(iter)
+      assert :iterator_end = ErlangAdapter.iterator_next(iter)
 
       ErlangAdapter.iterator_close(iter)
       ErlangAdapter.release_snapshot(db, snap)
