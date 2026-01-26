@@ -380,11 +380,11 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
       assert ColumnFamilyConfig.has_prefix_extractor?(:posg) == true
     end
 
-    test "1.1.2.5 Quad schema returns 9 column families (8 CFs + default)" do
+    test "1.1.2.5 Quad schema returns 10 column families (9 CFs + default)" do
       descriptors = ColumnFamilyConfig.cf_descriptors(:quad)
 
-      # Quad schema should have 9 CFs (4 quad indices + dict + derived + numeric + default)
-      assert length(descriptors) == 9
+      # Quad schema should have 10 CFs (4 quad indices + dict + derived + numeric + acl + default)
+      assert length(descriptors) == 10
     end
 
     test "1.1.2.6 Quad schema has correct column families" do
@@ -492,8 +492,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
       # Triple should have 8 CFs
       assert length(triple_names) == 8
 
-      # Quad should have 9 CFs
-      assert length(quad_names) == 9
+      # Quad should have 10 CFs (including acl)
+      assert length(quad_names) == 10
 
       # Triple should have spo, pos, osp
       assert "spo" in triple_names

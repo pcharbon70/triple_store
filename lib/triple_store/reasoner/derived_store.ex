@@ -105,7 +105,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
       DerivedStore.clear_all(db)
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.{Index, QuadIndex}
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
@@ -115,7 +115,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "A triple as term IDs"
   @type id_triple :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
@@ -185,7 +185,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
 
   @doc """
@@ -204,7 +204,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec insert_derived_single(db_ref(), id_triple()) :: :ok | {:error, term()}
   def insert_derived_single(db, {s, p, o}) do
     key = Index.spo_key(s, p, o)
-    NIF.put(db, @derived_cf, key, @empty_value)
+    ErlangAdapter.put(db, @derived_cf, key, @empty_value)
   end
 
   @doc """
@@ -230,7 +230,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key}
       end
 
-    NIF.delete_batch(db, operations, true)
+    ErlangAdapter.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -250,7 +250,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec derived_exists?(db_ref(), id_triple()) :: {:ok, boolean()} | {:error, term()}
   def derived_exists?(db, {s, p, o}) do
     key = Index.spo_key(s, p, o)
-    NIF.exists(db, @derived_cf, key)
+    ErlangAdapter.exists(db, @derived_cf, key)
   end
 
   @doc """
@@ -280,13 +280,13 @@ defmodule TripleStore.Reasoner.DerivedStore do
   def clear_all(db) do
     # Use batched deletion to avoid loading all keys into memory
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, @derived_cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, <<>>)
 
     stream
     |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
     |> Stream.chunk_every(@clear_batch_size)
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
-      case NIF.delete_batch(db, chunk, true) do
+      case ErlangAdapter.delete_batch(db, chunk, true) do
         :ok -> {:cont, {:ok, acc + length(chunk)}}
         error -> {:halt, error}
       end
@@ -308,7 +308,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec count(db_ref()) :: {:ok, non_neg_integer()}
   def count(db) do
     # Use fold for efficient counting without creating a stream
-    count = NIF.fold(db, @derived_cf, <<>>, 0, fn {_key, _value}, acc -> acc + 1 end)
+    count = ErlangAdapter.fold(db, @derived_cf, <<>>, 0, fn {_key, _value}, acc -> acc + 1 end)
     {:ok, count}
   end
 
@@ -347,7 +347,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
 
   @doc """
@@ -366,7 +366,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec insert_derived_quad_single(db_ref(), id_quad()) :: :ok | {:error, term()}
   def insert_derived_quad_single(db, {g, s, p, o}) do
     key = QuadIndex.gspo_key(g, s, p, o)
-    NIF.put(db, @derived_cf, key, @empty_value)
+    ErlangAdapter.put(db, @derived_cf, key, @empty_value)
   end
 
   @doc """
@@ -392,7 +392,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key}
       end
 
-    NIF.delete_batch(db, operations, true)
+    ErlangAdapter.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -412,7 +412,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec derived_quad_exists?(db_ref(), id_quad()) :: {:ok, boolean()} | {:error, term()}
   def derived_quad_exists?(db, {g, s, p, o}) do
     key = QuadIndex.gspo_key(g, s, p, o)
-    NIF.exists(db, @derived_cf, key)
+    ErlangAdapter.exists(db, @derived_cf, key)
   end
 
   @doc """
@@ -441,14 +441,14 @@ defmodule TripleStore.Reasoner.DerivedStore do
     # Create prefix for this graph (graph is first component of GSPO key)
     prefix = <<graph_id::64-big>>
 
-    stream = NIF.prefix_stream(db, @derived_cf, prefix)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
 
     result =
       stream
       |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
       |> Stream.chunk_every(@clear_batch_size)
       |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
-        case NIF.delete_batch(db, chunk, true) do
+        case ErlangAdapter.delete_batch(db, chunk, true) do
           :ok -> {:cont, {:ok, acc + length(chunk)}}
           error -> {:halt, error}
         end
@@ -474,7 +474,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def count_graph_quads(db, graph_id) do
     prefix = <<graph_id::64-big>>
-    count = NIF.fold(db, @derived_cf, prefix, 0, fn {_key, _value}, acc -> acc + 1 end)
+    count = ErlangAdapter.fold(db, @derived_cf, prefix, 0, fn {_key, _value}, acc -> acc + 1 end)
     {:ok, count}
   end
 
@@ -507,7 +507,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
     prefix = pattern_to_prefix(pattern)
 
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, @derived_cf, prefix)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
 
     decoded_stream =
       stream
@@ -609,7 +609,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
     # Use fold to collect results directly, avoiding stream overhead
     results =
-      NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+      ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
         triple = Index.decode_spo_key(key)
 
         if triple_matches_pattern?(triple, pattern) do
@@ -651,7 +651,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   def lookup_derived_quads(db, graph_id, pattern) do
     prefix = graph_pattern_to_prefix(graph_id, pattern)
 
-    stream = NIF.prefix_stream(db, @derived_cf, prefix)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
 
     decoded_stream =
       stream
@@ -703,7 +703,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
     prefix = graph_pattern_to_prefix(graph_id, pattern)
 
     results =
-      NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+      ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
         {g, s, p, o} = QuadIndex.decode_gspo_key(key)
 
         if g == graph_id and triple_matches_pattern?({s, p, o}, pattern) do

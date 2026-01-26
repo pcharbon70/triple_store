@@ -76,7 +76,7 @@ defmodule TripleStore.Backup do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.SequenceCounter
   alias TripleStore.Telemetry
@@ -414,9 +414,9 @@ defmodule TripleStore.Backup do
 
       true ->
         # Try to open the backup to verify it's valid
-        case NIF.open(backup_path) do
+        case ErlangAdapter.open(backup_path) do
           {:ok, db} ->
-            NIF.close(db)
+            ErlangAdapter.close(db)
             {:ok, :valid}
 
           {:error, reason} ->

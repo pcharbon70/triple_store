@@ -159,7 +159,7 @@ defmodule TripleStore.SPARQL.ResultStream do
   @spec to_list(t() | Enumerable.t(), keyword()) :: list()
   def to_list(stream_or_enumerable, opts \\ [])
 
-  def to_list(%__MODULE__{enumerable: enumerable} = _stream, opts) do
+  def to_list(%__MODULE__{enumerable: enumerable} = stream, opts) do
     max_items = Keyword.get(opts, :max_items)
 
     base =
@@ -217,7 +217,7 @@ defmodule TripleStore.SPARQL.ResultStream do
   defimpl Enumerable, for: __MODULE__ do
     def reduce(_stream, {:halt, acc}, _fun), do: {:halted, acc}
 
-    def reduce(%{enumerable: _enumerable} = stream, {:suspend, acc}, fun),
+    def reduce(%{enumerable: enumerable} = stream, {:suspend, acc}, fun),
       do: {:suspended, acc, &reduce(stream, &1, fun)}
 
     def reduce(%{enumerable: enumerable}, {:cont, acc}, fun) do

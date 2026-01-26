@@ -502,7 +502,7 @@ defmodule TripleStore.SPARQL.Update.Modify do
   defp execute_batch(_db, []), do: :ok
 
   defp execute_batch(db, operations) do
-    alias TripleStore.Backend.RocksDB.NIF
+    alias TripleStore.Backend.RocksDB.ErlangAdapter
 
     # Convert to NIF format
     {puts, deletes} =
@@ -516,8 +516,8 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
     # Execute deletes first, then puts
     # SPARQL updates use sync: true for data integrity
-    with :ok <- if(deletes == [], do: :ok, else: NIF.delete_batch(db, deletes, true)) do
-      if(puts == [], do: :ok, else: NIF.write_batch(db, puts, true))
+    with :ok <- if(deletes == [], do: :ok, else: ErlangAdapter.delete_batch(db, deletes, true)) do
+      if(puts == [], do: :ok, else: ErlangAdapter.write_batch(db, puts, true))
     end
   end
 

@@ -1,7 +1,7 @@
 defmodule TripleStore.UpdateTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager, as: DictManager
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.Query
@@ -12,13 +12,13 @@ defmodule TripleStore.UpdateTest do
 
   setup do
     db_path = "/tmp/triple_store_update_test_#{System.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
 
     {:ok, manager} = DictManager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: DictManager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

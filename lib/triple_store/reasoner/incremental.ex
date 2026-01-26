@@ -60,7 +60,7 @@ defmodule TripleStore.Reasoner.Incremental do
   alias TripleStore.Reasoner.SemiNaive
 
   # Database-related imports for the database API
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.Reasoner.DerivedStore
 
@@ -75,7 +75,7 @@ defmodule TripleStore.Reasoner.Incremental do
   @type fact_set :: MapSet.t(term_triple())
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "A triple as dictionary-encoded IDs"
   @type id_triple :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}

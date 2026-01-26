@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.QuadDeleteTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.QuadIndex
@@ -39,12 +39,12 @@ defmodule TripleStore.Integration.QuadDeleteTest do
   setup do
     test_path = unique_path()
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(test_path)
     end)
 
@@ -74,19 +74,19 @@ defmodule TripleStore.Integration.QuadDeleteTest do
 
       # Verify it exists in all indices
       keys = QuadIndex.encode_quad_keys(s_id, p_id, o_id, g_id)
-      assert {:ok, _} = NIF.get(db, :gspo, keys.gspo)
-      assert {:ok, _} = NIF.get(db, :gpos, keys.gpos)
-      assert {:ok, _} = NIF.get(db, :spog, keys.spog)
-      assert {:ok, _} = NIF.get(db, :posg, keys.posg)
+      assert {:ok, _} = ErlangAdapter.get(db, :gspo, keys.gspo)
+      assert {:ok, _} = ErlangAdapter.get(db, :gpos, keys.gpos)
+      assert {:ok, _} = ErlangAdapter.get(db, :spog, keys.spog)
+      assert {:ok, _} = ErlangAdapter.get(db, :posg, keys.posg)
 
       # Delete quad
       :ok = QuadOperations.delete_quad(db, quad)
 
       # Verify removed from all indices
-      assert :not_found = NIF.get(db, :gspo, keys.gspo)
-      assert :not_found = NIF.get(db, :gpos, keys.gpos)
-      assert :not_found = NIF.get(db, :spog, keys.spog)
-      assert :not_found = NIF.get(db, :posg, keys.posg)
+      assert :not_found = ErlangAdapter.get(db, :gspo, keys.gspo)
+      assert :not_found = ErlangAdapter.get(db, :gpos, keys.gpos)
+      assert :not_found = ErlangAdapter.get(db, :spog, keys.spog)
+      assert :not_found = ErlangAdapter.get(db, :posg, keys.posg)
 
       # Verify exists? returns false
       refute QuadOperations.quad_exists?(db, quad)
@@ -200,7 +200,7 @@ defmodule TripleStore.Integration.QuadDeleteTest do
         refute QuadOperations.quad_exists?(db, {s, p, o, g})
 
         keys = QuadIndex.encode_quad_keys(s, p, o, g)
-        assert :not_found = NIF.get(db, :gspo, keys.gspo)
+        assert :not_found = ErlangAdapter.get(db, :gspo, keys.gspo)
       end)
     end
 

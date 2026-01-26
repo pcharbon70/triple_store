@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -36,7 +36,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
   defp setup_db do
     path = unique_path()
-    {:ok, db} = NIF.open(path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
     ctx = %{db: db, dict_manager: manager}
     {ctx, path}
@@ -50,7 +50,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
     end
 
     try do
-      NIF.close(db)
+      ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end

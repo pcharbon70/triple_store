@@ -14,7 +14,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
   import TripleStore.Test.IntegrationHelpers,
     only: [extract_count: 1, get_iri: 1, get_literal: 1, extract_iris: 2]
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Query
   alias TripleStore.Update
@@ -37,7 +37,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
 
     File.rm_rf!(db_path)
 
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, dict_manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: dict_manager}
@@ -47,7 +47,7 @@ defmodule TripleStore.SPARQL.PropertyPathIntegrationTest do
         Manager.stop(dict_manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

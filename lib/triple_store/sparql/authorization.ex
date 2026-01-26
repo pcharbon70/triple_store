@@ -47,7 +47,7 @@ defmodule TripleStore.SPARQL.Authorization do
   """
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
 
@@ -449,7 +449,7 @@ defmodule TripleStore.SPARQL.Authorization do
       acl_prefix = "acl:graph:#{graph_id}:"
 
       result =
-        NIF.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
+        ErlangAdapter.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
           # If we already found the owner, skip
           if acc != nil do
             {:halt, acc}
@@ -615,7 +615,7 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Get existing ACL entry for this key
     current_entry =
-      case NIF.get(db, @acl_cf, acl_key) do
+      case ErlangAdapter.get(db, @acl_cf, acl_key) do
         {:ok, <<>>} -> %{}
         {:ok, binary} when is_binary(binary) -> :erlang.binary_to_term(binary)
         :not_found -> %{}
@@ -630,13 +630,13 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Store back
     encoded = :erlang.term_to_binary(updated_entry)
-    NIF.put(db, @acl_cf, acl_key, encoded)
+    ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
   end
 
   defp remove_acl_entry(db, graph_id, key, permission) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 
@@ -651,14 +651,14 @@ defmodule TripleStore.SPARQL.Authorization do
             # Remove the only permission, delete the key
             updated_entry = Map.delete(current_entry, key)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
 
           permissions ->
             # Remove this permission, keep others
             updated_permissions = List.delete(permissions, permission)
             updated_entry = Map.put(current_entry, key, updated_permissions)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
         end
 
       :not_found ->
@@ -672,7 +672,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp get_acl_entry(db, graph_id, key) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 

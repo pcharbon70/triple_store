@@ -7,7 +7,7 @@ defmodule TripleStore.QuadOperationsTest do
   """
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
 
   # ===========================================================================
@@ -17,10 +17,10 @@ defmodule TripleStore.QuadOperationsTest do
   setup do
     # Use relative path that will be expanded to current working directory
     path = "test_quad_ops_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(path)
     end)
 

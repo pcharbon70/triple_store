@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.MigrationTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -38,7 +38,7 @@ defmodule TripleStore.Integration.MigrationTest do
   # Create a triple store (schema v1)
   defp create_triple_store do
     path = unique_path("_triple")
-    {:ok, db} = NIF.open(path, schema: :triple)
+    {:ok, db} = ErlangAdapter.open(path, schema: :triple)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, path}
   end
@@ -46,7 +46,7 @@ defmodule TripleStore.Integration.MigrationTest do
   # Create a quad store (schema v2)
   defp create_quad_store do
     path = unique_path("_quad")
-    {:ok, db} = NIF.open(path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager, path}
   end
@@ -60,7 +60,7 @@ defmodule TripleStore.Integration.MigrationTest do
     end
 
     try do
-      NIF.close(db)
+      ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end

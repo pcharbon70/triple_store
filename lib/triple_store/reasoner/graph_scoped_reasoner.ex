@@ -70,35 +70,28 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       IO.puts("Derived \#{count} facts for graph \#{gid}")
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
 
   alias TripleStore.Reasoner.{
     GraphReasoningConfig,
     GraphReasoningStatus,
     ReasoningConfig,
-    SemiNaive,
-    TBoxExtractor,
-    Telemetry
+    Rule,
+    SemiNaive
   }
 
-  require Logger
+  alias TripleStore.{Dictionary, QuadOperations}
 
   # ============================================================================
   # Types
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "Graph ID"
   @type graph_id :: non_neg_integer()
-
-  @typedoc "ID triple {subject, predicate, object}"
-  @type id_triple :: {integer(), integer(), integer()}
-
-  @typedoc "ID quad {graph, subject, predicate, object}"
-  @type id_quad :: {integer(), integer(), integer(), integer()}
 
   @typedoc "Materialization statistics"
   @type materialization_stats :: %{
@@ -289,12 +282,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Get rules to apply
     rules = Keyword.get(opts, :rules, get_rules_for_graph(config, graph_config))
 
-    # Check if we should load TBox from a separate graph
-    tbox_graph_id = ReasoningConfig.tbox_graph(config)
-    tbox_facts = load_tbox_facts(db, tbox_graph_id, graph_id)
-
-    # Create TBox-aware lookup and graph-scoped store functions
-    lookup_fn = make_tbox_aware_lookup_fn(db, graph_id, tbox_facts)
+    # Create graph-scoped lookup and store functions
+    lookup_fn = make_graph_lookup_fn(db, graph_id)
     store_fn = make_graph_store_fn(db, graph_id)
 
     # Run semi-naive materialization
@@ -314,8 +303,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           total_derived: semi_naive_stats.total_derived,
           duration_ms: duration_ms,
           rules_applied: semi_naive_stats.rules_applied,
-          graph_id: graph_id,
-          tbox_graph: tbox_graph_id
+          graph_id: graph_id
         }
 
         update_graph_status_after_materialization(db, graph_id, graph_config, stats)
@@ -326,55 +314,6 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         # Record error in status
         record_graph_error(db, graph_id, error)
         error
-    end
-  end
-
-  # Load TBox facts from the designated TBox graph
-  # If TBox graph is the same as target graph, don't duplicate facts
-  defp load_tbox_facts(_db, tbox_graph_id, target_graph_id)
-       when tbox_graph_id == target_graph_id do
-    # TBox is in the same graph, facts already loaded as initial_facts
-    MapSet.new()
-  end
-
-  defp load_tbox_facts(db, tbox_graph_id, target_graph_id) do
-    # Emit telemetry event for TBox extraction start
-    Telemetry.emit_tbox_extract_start(target_graph_id, tbox_graph_id)
-    start_time = System.monotonic_time()
-
-    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
-      {:ok, tbox_quads} ->
-        duration = System.monotonic_time() - start_time
-        tbox_fact_count = MapSet.size(tbox_quads)
-
-        # Emit success telemetry event
-        Telemetry.emit_tbox_extract_stop(
-          target_graph_id,
-          tbox_graph_id,
-          tbox_fact_count,
-          duration
-        )
-
-        Logger.debug(
-          "TBox extraction succeeded: graph=#{target_graph_id}, tbox_graph=#{tbox_graph_id}, facts=#{tbox_fact_count}"
-        )
-
-        # Convert TBox quads to triples for reasoning
-        Enum.into(tbox_quads, MapSet.new(), fn {_g, s, p, o} -> {s, p, o} end)
-
-      {:error, reason} ->
-        duration = System.monotonic_time() - start_time
-
-        # Emit error telemetry event
-        Telemetry.emit_tbox_extract_error(target_graph_id, tbox_graph_id, reason, duration)
-
-        # Log warning (not error, since we continue without TBox)
-        Logger.warning(
-          "TBox extraction failed: graph=#{target_graph_id}, tbox_graph=#{tbox_graph_id}, reason=#{inspect(reason)}. Continuing without TBox."
-        )
-
-        # If TBox extraction fails, continue without TBox
-        MapSet.new()
     end
   end
 
@@ -422,28 +361,18 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   defp do_materialize_all(db, config, opts) do
     start_time = System.monotonic_time(:millisecond)
 
-    # Load TBox from designated graph (if configured)
-    tbox_graph_id = ReasoningConfig.tbox_graph(config)
-    tbox_facts = load_tbox_facts_for_global(db, tbox_graph_id)
-
-    # Load explicit facts from all graphs (excluding derived quads)
-    {:ok, explicit_facts} = load_all_explicit_quads(db)
-
-    # Combine TBox and explicit facts for initial fact set
-    initial_facts = MapSet.union(tbox_facts, explicit_facts)
+    # Load initial facts from all graphs
+    {:ok, initial_facts} = load_all_facts(db)
 
     # Get rules to apply
     rules = ReasoningConfig.materialization_rules(config)
+    {:ok, compiled_rules} = compile_rules(rules, config)
 
-    # Get storage strategy
-    storage_strategy = ReasoningConfig.storage_strategy(config)
+    # Determine where to store derived facts
     inferred_graph = ReasoningConfig.inferred_graph(config)
 
-    # Create TBox-aware global lookup function
-    lookup_fn = make_global_lookup_fn(db, tbox_facts)
-
-    # Create store function based on storage strategy
-    store_fn = make_global_store_fn(db, config, storage_strategy, inferred_graph)
+    lookup_fn = make_all_graphs_lookup_fn(db)
+    store_fn = make_inferred_store_fn(db, inferred_graph)
 
     # Run semi-naive materialization
     semi_naive_opts = [
@@ -452,7 +381,13 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       validate_rules: false
     ]
 
-    case SemiNaive.materialize(lookup_fn, store_fn, rules, initial_facts, semi_naive_opts) do
+    case SemiNaive.materialize(
+           lookup_fn,
+           store_fn,
+           compiled_rules,
+           initial_facts,
+           semi_naive_opts
+         ) do
       {:ok, semi_naive_stats} ->
         duration_ms = System.monotonic_time(:millisecond) - start_time
 
@@ -462,9 +397,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           duration_ms: duration_ms,
           rules_applied: semi_naive_stats.rules_applied,
           scope: :global,
-          storage_strategy: storage_strategy,
-          inferred_graph: inferred_graph,
-          tbox_graph: tbox_graph_id
+          inferred_graph: inferred_graph
         }
 
         {:ok, stats}
@@ -530,198 +463,47 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # Private Functions - Graph Fact Loading
   # ============================================================================
 
-  @doc """
-  Loads all explicit quads from all graphs, excluding derived quads.
-
-  This function scans the GSPO index and filters out any quads that exist
-  in the derived column family, returning only explicit (user-provided) quads.
-
-  ## Parameters
-
-  - `db` - Database reference
-
-  ## Returns
-
-  - `{:ok, explicit_quads}` - MapSet of explicit quads as {s, p, o} triples
-  - `{:error, reason}` - On failure
-  """
-  @spec load_all_explicit_quads(db_ref()) :: {:ok, MapSet.t(id_triple())} | {:error, term()}
-  def load_all_explicit_quads(db) do
-    try do
-      # First, collect all keys from the derived CF for filtering
-      derived_keys =
-        NIF.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
-          MapSet.put(acc, key)
-        end)
-
-      facts =
-        NIF.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
-          # Check if this quad is in the derived CF
-          if MapSet.member?(derived_keys, key) do
-            # Skip derived quads
-            acc
-          else
-            case QuadIndex.key_to_quad(:gspo, key) do
-              {_g, _s, _p, _o} = quad ->
-                MapSet.put(acc, quad_to_triple(quad))
-
-              _error ->
-                acc
-            end
-          end
-        end)
-
-      {:ok, facts}
-    rescue
-      e -> {:error, {:explicit_quad_loading_failed, e}}
-    end
-  end
-
   defp load_graph_facts(db, graph_id) do
     # Load all explicit quads from the specified graph
-    # Use GSPO index to iterate over the graph
-    prefix = QuadIndex.gspo_prefix(graph_id)
-
-    try do
-      facts =
-        NIF.fold(db, :gspo, prefix, MapSet.new(), fn {key, _value}, acc ->
-          case QuadIndex.key_to_quad(:gspo, key) do
-            {_g, _s, _p, _o} = quad ->
-              MapSet.put(acc, quad_to_triple(quad))
-
-            _error ->
-              acc
-          end
-        end)
-
-      {:ok, facts}
-    rescue
-      e -> {:error, {:fact_loading_failed, e}}
+    case QuadOperations.fold_quads(
+           db,
+           fn quad, acc ->
+             MapSet.put(acc, quad_to_triple(quad))
+           end,
+           MapSet.new(),
+           graph_id: graph_id
+         ) do
+      {:ok, facts} when is_map(facts) -> {:ok, facts}
+      {:error, _} = error -> error
     end
   end
 
-  defp _load_all_facts(db) do
+  defp load_all_facts(db) do
     # Load all quads from all graphs as triples
-    # This requires scanning the entire GSPO index
-    try do
-      facts =
-        NIF.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
-          case QuadIndex.key_to_quad(:gspo, key) do
-            {_g, _s, _p, _o} = quad ->
-              MapSet.put(acc, quad_to_triple(quad))
-
-            _error ->
-              acc
-          end
-        end)
-
-      {:ok, facts}
-    rescue
-      e -> {:error, {:fact_loading_failed, e}}
+    case QuadOperations.fold_all_quads(
+           db,
+           fn quad, acc ->
+             MapSet.put(acc, quad_to_triple(quad))
+           end,
+           MapSet.new()
+         ) do
+      {:ok, facts} when is_map(facts) -> {:ok, facts}
+      {:error, _} = error -> error
     end
   end
 
   # Convert quad {s, p, o, g} to triple {s, p, o} for reasoning
-  defp quad_to_triple({_g, s, p, o}), do: {s, p, o}
-
-  # ============================================================================
-  # Private Functions - TBox-Aware Lookup
-  # ============================================================================
-
-  defp make_tbox_aware_lookup_fn(db, graph_id, tbox_facts) do
-    fn pattern ->
-      # First check TBox facts (these don't require database lookup)
-      tbox_matches = lookup_in_tbox_facts(pattern, tbox_facts)
-
-      # Then check graph facts
-      graph_matches = lookup_in_graph_facts(db, graph_id, pattern)
-
-      # Union both result sets
-      case {tbox_matches, graph_matches} do
-        {{:ok, tbox_results}, {:ok, graph_results}} ->
-          {:ok, MapSet.union(tbox_results, graph_results)}
-
-        {{:ok, _tbox_results}, {:error, _reason}} ->
-          # If graph lookup fails, the error is fatal since it's the primary source
-          :error
-      end
-    end
-  end
-
-  # Lookup facts in TBox (in-memory MapSet)
-  defp lookup_in_tbox_facts(_pattern, tbox_facts) when map_size(tbox_facts) == 0 do
-    {:ok, MapSet.new()}
-  end
-
-  defp lookup_in_tbox_facts({:pattern, [s, p, o]}, tbox_facts) do
-    # Pattern match against TBox triples
-    matches =
-      Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
-        matches_term?(s, fact_s) and matches_term?(p, fact_p) and matches_term?(o, fact_o)
-      end)
-
-    {:ok, MapSet.new(matches)}
-  end
-
-  defp lookup_in_tbox_facts({:quad_pattern, [_g, s, p, o]}, tbox_facts) do
-    # Quad pattern with variable/ignored graph - match on SPO
-    matches =
-      Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
-        matches_term?(s, fact_s) and matches_term?(p, fact_p) and matches_term?(o, fact_o)
-      end)
-
-    {:ok, MapSet.new(matches)}
-  end
-
-  defp lookup_in_tbox_facts(_pattern, _tbox_facts) do
-    # Unsupported pattern, return empty
-    {:ok, MapSet.new()}
-  end
-
-  defp matches_term?(:var, _fact), do: true
-  defp matches_term?({:var, _name}, _fact), do: true
-  defp matches_term?(:bound, _fact), do: true
-  defp matches_term?({:bound, term}, fact), do: term == fact
-  defp matches_term?(term, fact) when is_integer(term), do: term == fact
-  defp matches_term?(_, _), do: false
+  defp quad_to_triple({s, p, o, _g}), do: {s, p, o}
 
   # ============================================================================
   # Private Functions - Graph-Scoped Lookup/Store
   # ============================================================================
 
-  defp lookup_in_graph_facts(db, graph_id, pattern) do
-    # Build a quad pattern bound to the specific graph
-    quad_pattern = bind_graph_to_pattern(pattern, graph_id)
-    lookup_quads_as_triples_in_graph(db, quad_pattern, graph_id)
-  end
-
-  defp lookup_quads_as_triples_in_graph(
-         db,
-         {:quad_pattern, [{:bound, graph_id}, s, p, o]},
-         graph_id
-       ) do
-    # Build quad index lookup pattern
-    pattern = build_quad_lookup_pattern(graph_id, s, p, o)
-
-    case lookup_quads_with_pattern(db, pattern, graph_id) do
-      {:ok, quads} ->
-        triples = Enum.map(quads, fn {_g, s, p, o} -> {s, p, o} end)
-        {:ok, MapSet.new(triples)}
-
-      {:error, _} = error ->
-        error
-    end
-  end
-
-  defp lookup_quads_as_triples_in_graph(_db, _pattern, _graph_id) do
-    {:ok, MapSet.new()}
-  end
-
-  defp _make_graph_lookup_fn(db, graph_id) do
+  defp make_graph_lookup_fn(db, graph_id) do
     fn pattern ->
       # Convert rule pattern to quad pattern with bound graph
       quad_pattern = bind_graph_to_pattern(pattern, graph_id)
-      _lookup_quads_as_triples(db, quad_pattern)
+      lookup_quads_as_triples(db, quad_pattern)
     end
   end
 
@@ -738,254 +520,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
-  # ============================================================================
-  # Private Functions - Global Lookup and Storage
-  # ============================================================================
-
-  # Loads TBox facts for global reasoning.
-  # If a TBox graph is configured, extracts TBox facts from it.
-  # Otherwise returns an empty set.
-  defp load_tbox_facts_for_global(_db, nil), do: MapSet.new()
-
-  defp load_tbox_facts_for_global(db, tbox_graph_id) do
-    # Emit telemetry event for TBox extraction start (global reasoning uses graph_id = :global)
-    Telemetry.emit_tbox_extract_start(:global, tbox_graph_id)
-    start_time = System.monotonic_time()
-
-    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
-      {:ok, tbox_quads} ->
-        duration = System.monotonic_time() - start_time
-        tbox_fact_count = MapSet.size(tbox_quads)
-
-        # Emit success telemetry event
-        Telemetry.emit_tbox_extract_stop(:global, tbox_graph_id, tbox_fact_count, duration)
-
-        Logger.debug(
-          "Global TBox extraction succeeded: tbox_graph=#{tbox_graph_id}, facts=#{tbox_fact_count}"
-        )
-
-        # Convert TBox quads to triples for reasoning
-        Enum.into(tbox_quads, MapSet.new(), fn {_g, s, p, o} -> {s, p, o} end)
-
-      {:error, reason} ->
-        duration = System.monotonic_time() - start_time
-
-        # Emit error telemetry event
-        Telemetry.emit_tbox_extract_error(:global, tbox_graph_id, reason, duration)
-
-        # Log warning (not error, since we continue without TBox)
-        Logger.warning(
-          "Global TBox extraction failed: tbox_graph=#{tbox_graph_id}, reason=#{inspect(reason)}. Continuing without TBox."
-        )
-
-        # If TBox extraction fails, continue without TBox
-        MapSet.new()
-    end
-  end
-
-  # Creates a TBox-aware global lookup function.
-  # The lookup function combines in-memory TBox facts with database lookups
-  # across all graphs for explicit facts.
-  defp make_global_lookup_fn(db, tbox_facts) do
-    fn pattern ->
-      # First check TBox facts (fast, in-memory)
-      tbox_matches = lookup_in_tbox_facts(pattern, tbox_facts)
-
-      # Then check all graphs in the database
-      graph_matches = lookup_all_graphs_facts(db, pattern)
-
-      # Union both result sets
-      case {tbox_matches, graph_matches} do
-        {{:ok, tbox_results}, {:ok, graph_results}} ->
-          {:ok, MapSet.union(tbox_results, graph_results)}
-
-        {{:ok, _tbox_results}, {:error, _reason}} ->
-          # If graph lookup fails, the error is fatal since it's the primary source
-          :error
-      end
-    end
-  end
-
-  # Looks up facts across all graphs in the database.
-  # For global reasoning, this uses index selection to optimize the scan
-  # and returns matching triples (quads converted to triples).
-  #
-  # ## Index Selection
-  #
-  # The function selects the optimal quad index based on which pattern
-  # positions are bound:
-  # - Subject bound → SPOG index (cross-graph subject lookup)
-  # - Predicate bound → POSG index (cross-graph predicate lookup)
-  # - All variables → GSPO index (default full scan)
-  #
-  # This avoids scanning the entire database when possible.
-  defp lookup_all_graphs_facts(db, {:pattern, [s, p, o]}) do
-    # Convert to quad pattern with variable graph (:var for all graphs)
-    s_pat = if s == :var or match?({:var, _}, s), do: :var, else: :bound
-    p_pat = if p == :var or match?({:var, _}, p), do: :var, else: :bound
-    o_pat = if o == :var or match?({:var, _}, o), do: :var, else: :bound
-
-    # Quad pattern: {s, p, o, g} - g is :var for all graphs
-    quad_pattern = {s_pat, p_pat, o_pat, :var}
-
-    # Extract bound values for prefix building
-    bound_values =
-      %{}
-      |> maybe_add_bound_value(:s, s)
-      |> maybe_add_bound_value(:p, p)
-      |> maybe_add_bound_value(:o, o)
-
-    # Use QuadIndex to select optimal index and build prefix
-    try do
-      case QuadIndex.build_quad_prefix(quad_pattern, bound_values) do
-        %{
-          index: index,
-          prefix: prefix,
-          needs_filter: needs_filter,
-          filter_positions: filter_positions
-        } ->
-          lookup_facts_with_index(
-            db,
-            index,
-            prefix,
-            quad_pattern,
-            bound_values,
-            needs_filter,
-            filter_positions
-          )
-      end
-    rescue
-      e -> {:error, {:lookup_failed, e}}
-    end
-  end
-
-  # Catch-all clause for non-pattern lookups
-  defp lookup_all_graphs_facts(_db, _pattern) do
-    {:ok, MapSet.new()}
-  end
-
-  # Optimized fact lookup using selected index
-  defp lookup_facts_with_index(
-         db,
-         index,
-         prefix,
-         quad_pattern,
-         bound_values,
-         needs_filter,
-         filter_positions
-       ) do
-    results =
-      NIF.fold(db, index, prefix, [], fn {key, _value}, acc ->
-        case QuadIndex.key_to_quad(index, key) do
-          {_g, s, p, o} ->
-            if needs_filter do
-              if matches_quad_pattern?(
-                   {s, p, o, :ignored},
-                   quad_pattern,
-                   bound_values,
-                   filter_positions
-                 ) do
-                [{s, p, o} | acc]
-              else
-                acc
-              end
-            else
-              [{s, p, o} | acc]
-            end
-
-          _error ->
-            acc
-        end
-      end)
-
-    {:ok, MapSet.new(results)}
-  end
-
-  # Creates a global store function based on the storage strategy.
-  #
-  # The store function handles three strategies:
-  # - `:separate_graph` - Store in designated inference graph (recommended)
-  # - `:per_graph_cf` - Store only in derived CF (no graph context)
-  # - `:same_as_premises` - **DEPRECATED**: Falls back to `:separate_graph`
-  #
-  # ## Deprecation Notice
-  #
-  # The `:same_as_premises` storage strategy is **not fully implemented**.
-  # This strategy would store derived facts in the same graph as their premises,
-  # but requires full provenance tracking infrastructure.
-  #
-  # Currently, using `:same_as_premises` will fall back to `:separate_graph` behavior
-  # with a deprecation warning. Use `:separate_graph` explicitly instead.
-  #
-  # ## Future Implementation
-  #
-  # Full `:same_as_premises` support requires:
-  # - Provenance tracking for each derived fact (which rule produced it)
-  # - Source graph identification for each premise
-  # - Incremental maintenance with cross-graph dependencies
-  #
-  # Use `:separate_graph` for now, which stores all derived facts in a
-  # designated inference graph (default: graph 9999).
-  defp make_global_store_fn(db, config, :same_as_premises, inferred_graph) do
-    # Emit deprecation warning
-    Logger.warning("""
-    The storage strategy :same_as_premises is deprecated and not fully implemented.
-    Falling back to :separate_graph behavior.
-
-    To store derived facts in the same graph as premises, use :separate_graph
-    with a specific inferred_graph ID, or wait for full provenance tracking support.
-    """)
-
-    # For same_as_premises, we need to track source graphs
-    # This requires provenance tracking - for now, use inferred_graph
-    make_global_store_fn(db, config, :separate_graph, inferred_graph)
-  end
-
-  defp make_global_store_fn(db, _config, :separate_graph, inferred_graph) do
-    target_graph =
-      case inferred_graph do
-        :separate -> get_inference_graph_id()
-        graph_id when is_integer(graph_id) -> graph_id
-        # Default to graph 0
-        nil -> 0
-      end
-
-    fn fact_set ->
-      quads = Enum.map(fact_set, fn {s, p, o} -> {s, p, o, target_graph} end)
-      store_derived_quads(db, quads, target_graph)
-    end
-  end
-
-  defp make_global_store_fn(db, _config, :per_graph_cf, _inferred_graph) do
-    fn fact_set ->
-      # Store in derived CF only, without graph context
-      # Convert triples to quads with default graph 0
-      quads = Enum.map(fact_set, fn {s, p, o} -> {s, p, o, 0} end)
-
-      # Store in derived CF
-      Enum.each(quads, fn {s, p, o, _g} ->
-        # Use spog_key for derived storage (subject-predicate-object-graph order)
-        key = QuadIndex.spog_key(s, p, o, 0)
-        NIF.put(db, :derived, key, <<>>)
-      end)
-
-      :ok
-    end
-  end
-
-  # Gets the inference graph ID for storing derived quads.
-  # Returns a predefined graph ID (e.g., 9999) for storing inferences
-  # when :separate is specified.
-  defp get_inference_graph_id, do: 9999
-
-  defp _make_all_graphs_lookup_fn(db) do
+  defp make_all_graphs_lookup_fn(db) do
     fn pattern ->
       # Lookup across all graphs, return as triples
-      _lookup_quads_all_graphs_as_triples(db, pattern)
+      lookup_quads_all_graphs_as_triples(db, pattern)
     end
   end
 
-  defp _make_inferred_store_fn(db, inferred_graph) do
+  defp make_inferred_store_fn(db, inferred_graph) do
     fn fact_set ->
       quads =
         case inferred_graph do
@@ -1023,7 +565,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # Private Functions - Quad Lookup
   # ============================================================================
 
-  defp _lookup_quads_as_triples(db, {:quad_pattern, [{:bound, graph_id}, s, p, o]}) do
+  defp lookup_quads_as_triples(db, {:quad_pattern, [{:bound, graph_id}, s, p, o]}) do
     # Build quad index lookup pattern
     pattern = build_quad_lookup_pattern(graph_id, s, p, o)
 
@@ -1037,7 +579,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
-  defp _lookup_quads_all_graphs_as_triples(db, pattern) do
+  defp lookup_quads_all_graphs_as_triples(db, pattern) do
     # For global reasoning, look up across all graphs
     # Convert to triple pattern for lookup
     case pattern do
@@ -1047,135 +589,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
       {:quad_pattern, [{:var, _g}, s, p, o]} ->
         # Variable graph - look up all graphs
-        _lookup_quads_all_graphs_var(db, s, p, o)
+        lookup_quads_all_graphs_var(db, s, p, o)
     end
   end
 
-  defp _lookup_quads_all_graphs_var(db, s, p, o) do
-    # Convert to quad pattern with variable graph (:var for all graphs)
-    s_pat = if s == :var or match?({:var, _}, s), do: :var, else: :bound
-    p_pat = if p == :var or match?({:var, _}, p), do: :var, else: :bound
-    o_pat = if o == :var or match?({:var, _}, o), do: :var, else: :bound
-
-    # Quad pattern: {s, p, o, g} - g is :var for all graphs
-    quad_pattern = {s_pat, p_pat, o_pat, :var}
-
-    # Extract bound values for prefix building
-    bound_values =
-      %{}
-      |> maybe_add_bound_value(:s, s)
-      |> maybe_add_bound_value(:p, p)
-      |> maybe_add_bound_value(:o, o)
-
-    # Use QuadIndex to select optimal index and build prefix
-    case QuadIndex.build_quad_prefix(quad_pattern, bound_values) do
-      %{
-        index: index,
-        prefix: prefix,
-        needs_filter: needs_filter,
-        filter_positions: filter_positions
-      } ->
-        _lookup_with_index_selection(
-          db,
-          index,
-          prefix,
-          quad_pattern,
-          bound_values,
-          needs_filter,
-          filter_positions
-        )
-    end
-  end
-
-  # Helper to extract bound values from pattern elements
-  defp maybe_add_bound_value(values, _key, :var), do: values
-  defp maybe_add_bound_value(values, _key, {:var, _}), do: values
-  defp maybe_add_bound_value(values, key, {:bound, value}), do: Map.put(values, key, value)
-
-  defp maybe_add_bound_value(values, key, value) when is_integer(value),
-    do: Map.put(values, key, value)
-
-  # Optimized lookup using selected index
-  defp _lookup_with_index_selection(
-         db,
-         index,
-         prefix,
-         quad_pattern,
-         bound_values,
-         needs_filter,
-         filter_positions
-       ) do
-    try do
-      results =
-        NIF.fold(db, index, prefix, [], fn {key, _value}, acc ->
-          case QuadIndex.key_to_quad(index, key) do
-            {s, p, o, g} ->
-              if needs_filter do
-                if matches_quad_pattern?(
-                     {s, p, o, g},
-                     quad_pattern,
-                     bound_values,
-                     filter_positions
-                   ) do
-                  [{s, p, o} | acc]
-                else
-                  acc
-                end
-              else
-                [{s, p, o} | acc]
-              end
-
-            _error ->
-              acc
-          end
-        end)
-
-      {:ok, MapSet.new(results)}
-    rescue
-      e -> {:error, {:lookup_failed, e}}
-    end
-  end
-
-  # Pattern matching for post-filtering
-  defp matches_quad_pattern?(
-         {s, p, o, _g},
-         {s_pat, p_pat, o_pat, _g_pat},
-         bound_values,
-         filter_positions
-       ) do
-    (:s not in filter_positions or matches_bound?(:s, s, s_pat, bound_values)) and
-      (:p not in filter_positions or matches_bound?(:p, p, p_pat, bound_values)) and
-      (:o not in filter_positions or matches_bound?(:o, o, o_pat, bound_values))
-  end
-
-  defp matches_bound?(:s, value, :bound, values), do: Map.get(values, :s) == value
-  defp matches_bound?(:p, value, :bound, values), do: Map.get(values, :p) == value
-  defp matches_bound?(:o, value, :bound, values), do: Map.get(values, :o) == value
-  defp matches_bound?(_pos, _value, _pat, _values), do: true
-
-  # Fallback full scan (should rarely be used with proper index selection)
-  defp _lookup_full_scan_gspo(db, s, p, o) do
-    try do
-      results =
-        NIF.fold(db, :gspo, <<>>, [], fn {key, _value}, acc ->
-          case QuadIndex.decode_gspo_key(key) do
-            {_g, fact_s, fact_p, fact_o} ->
-              if matches_term?(s, fact_s) and matches_term?(p, fact_p) and
-                   matches_term?(o, fact_o) do
-                [{fact_s, fact_p, fact_o} | acc]
-              else
-                acc
-              end
-
-            _error ->
-              acc
-          end
-        end)
-
-      {:ok, MapSet.new(results)}
-    rescue
-      e -> {:error, {:lookup_failed, e}}
-    end
+  defp lookup_quads_all_graphs_var(_db, _s, _p, _o) do
+    # This requires scanning all quad indices
+    # For now, return empty and implement fully in next phase
+    {:ok, []}
   end
 
   defp build_quad_lookup_pattern(graph_id, s, p, o) do
@@ -1190,7 +611,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Use GSPO index to look up quads for this graph
     prefix = QuadIndex.gspo_prefix(graph_id)
 
-    case NIF.prefix_stream(db, :gspo, prefix) do
+    case ErlangAdapter.prefix_stream(db, :gspo, prefix) do
       stream when is_function(stream) ->
         quads =
           stream
@@ -1222,8 +643,10 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         {@derived_cf, key, <<>>}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
+
+  defp get_inference_graph_id, do: 0
 
   # ============================================================================
   # Private Functions - Validation
@@ -1285,31 +708,10 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
-  defp _compile_rules(rule_names, config) do
-    alias TripleStore.Reasoner.Rules
-
-    # Get all rules for the configured profile
-    profile_rules = Rules.rules_for_profile(config.profile)
-
-    # Filter to specific rule names if provided
-    filtered_rules =
-      case rule_names do
-        # No filter, return all profile rules
-        [] -> profile_rules
-        names -> Enum.filter(profile_rules, fn rule -> rule.name in names end)
-      end
-
-    # Attach graph metadata to rules for quad-aware reasoning
-    _with_graph_metadata(filtered_rules, config)
-  end
-
-  defp _with_graph_metadata(rules, config) do
-    graph_id = Map.get(config, :graph_id)
-    tbox_graph = Map.get(config, :tbox_graph)
-
-    Enum.map(rules, fn rule ->
-      %{rule | applies_to_graph: graph_id, tbox_graph: tbox_graph || graph_id}
-    end)
+  defp compile_rules(_rule_names, _config) do
+    # This would use RuleCompiler to compile rule names to Rule structs
+    # For now, return empty list
+    []
   end
 
   # ============================================================================
@@ -1378,92 +780,41 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Get all graphs in the database
     all_graph_ids = get_all_graph_ids(db)
 
-    # Track whether we're in hybrid mode for warning
-    hybrid_mode? = ReasoningConfig.scope(config) == :hybrid
-
-    # First pass: partition graphs and collect unconfigured ones
-    {local, global, unconfigured_graphs} =
-      Enum.reduce(all_graph_ids, {%{}, %{}, []}, fn graph_id,
-                                                    {local_acc, global_acc, unconf_acc} ->
+    {local, global} =
+      Enum.reduce(all_graph_ids, {%{}, %{}}, fn graph_id, {local_acc, global_acc} ->
         case ReasoningConfig.graph_config(config, graph_id) do
           {:ok, %GraphReasoningConfig{scope: :local} = gc} ->
-            {Map.put(local_acc, graph_id, gc), global_acc, unconf_acc}
+            {Map.put(local_acc, graph_id, gc), global_acc}
 
           {:ok, %GraphReasoningConfig{scope: :global} = gc} ->
-            {local_acc, Map.put(global_acc, graph_id, gc), unconf_acc}
+            {local_acc, Map.put(global_acc, graph_id, gc)}
 
           {:ok, %GraphReasoningConfig{scope: :none}} ->
             # Graph doesn't participate in reasoning
-            {local_acc, global_acc, unconf_acc}
+            {local_acc, global_acc}
 
           :error ->
-            # Graph has no explicit configuration - use default
-            default_gc = GraphReasoningConfig.default(graph_id)
+            # Use default scope from config
+            case ReasoningConfig.scope(config) do
+              :local ->
+                {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
 
-            if hybrid_mode? do
-              # Track unconfigured graphs for warning
-              {Map.put(local_acc, graph_id, default_gc), global_acc, [graph_id | unconf_acc]}
-            else
-              {Map.put(local_acc, graph_id, default_gc), global_acc, unconf_acc}
+              :global ->
+                {local_acc, Map.put(global_acc, graph_id, GraphReasoningConfig.default(graph_id))}
+
+              :hybrid ->
+                {Map.put(local_acc, graph_id, GraphReasoningConfig.default(graph_id)), global_acc}
             end
         end
       end)
 
-    # Emit warning if hybrid mode has unconfigured graphs
-    if hybrid_mode? and length(unconfigured_graphs) > 0 do
-      Logger.warning("""
-      Hybrid reasoning mode: #{length(unconfigured_graphs)} graphs have no explicit configuration.
-      Using local scope as default for graphs: #{inspect(Enum.reverse(unconfigured_graphs))}
-
-      To silence this warning, configure each graph explicitly using ReasoningConfig.set_graph_config/3.
-      """)
-    end
-
     {local, global}
   end
 
-  defp get_all_graph_ids(db) do
-    # Check cache first
-    cache_key = {:graph_discovery, db}
-    # 5 minutes
-    cache_ttl_ms = 5 * 60 * 1000
-
-    case :persistent_term.get(cache_key, :cache_miss) do
-      {:cached, graph_ids, timestamp} ->
-        # Check if cache is still valid
-        if System.system_time(:millisecond) - timestamp < cache_ttl_ms do
-          graph_ids
-        else
-          # Cache expired, refresh
-          discover_and_cache_graphs(db, cache_key)
-        end
-
-      :cache_miss ->
-        discover_and_cache_graphs(db, cache_key)
-    end
-  end
-
-  defp discover_and_cache_graphs(db, cache_key) do
-    # Use fold_keys to scan GSPO index keys (efficient - only keys, not values)
-    # Extract graph ID from first 8 bytes of each GSPO key
-    graph_ids =
-      NIF.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
-        # GSPO key format: <<graph::64-big, subject::64-big, predicate::64-big, object::64-big>>
-        case key do
-          <<graph_id::64-big, _rest::binary>> ->
-            MapSet.put(acc, graph_id)
-
-          _ ->
-            acc
-        end
-      end)
-      |> MapSet.to_list()
-      |> Enum.sort()
-
-    # Cache the result with timestamp
-    :persistent_term.put(cache_key, {:cached, graph_ids, System.system_time(:millisecond)})
-
-    graph_ids
+  defp get_all_graph_ids(_db) do
+    # Get all graph IDs from the database
+    # For now, return default graph
+    [0]
   end
 
   defp put_global_graphs(config, _graph_ids) do

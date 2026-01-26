@@ -219,7 +219,7 @@ defmodule TripleStore.Loader do
   """
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
 
@@ -1528,7 +1528,7 @@ defmodule TripleStore.Loader do
     # Only OS crash or power failure before the OS flushes its buffers can lose data.
     case result do
       {:ok, count} when bulk_mode? ->
-        case NIF.flush_wal(db, true) do
+        case ErlangAdapter.flush_wal(db, true) do
           :ok ->
             {:ok, count}
 
@@ -1591,7 +1591,7 @@ defmodule TripleStore.Loader do
     # In bulk mode, flush WAL after successful load for durability.
     case result do
       {:ok, count} when bulk_mode? ->
-        case NIF.flush_wal(db, true) do
+        case ErlangAdapter.flush_wal(db, true) do
           :ok ->
             {:ok, count}
 

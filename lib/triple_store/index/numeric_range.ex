@@ -37,9 +37,9 @@ defmodule TripleStore.Index.NumericRange do
 
   import Bitwise
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
   @type predicate_id :: non_neg_integer()
   @type subject_id :: non_neg_integer()
 
@@ -225,17 +225,17 @@ defmodule TripleStore.Index.NumericRange do
     max_key = build_range_key(predicate_id, max, :max)
 
     # Use prefix iterator starting from min_key
-    case NIF.prefix_iterator(db, @cf, prefix) do
+    case ErlangAdapter.prefix_iterator(db, @cf, prefix) do
       {:ok, iter} ->
         # Seek to the minimum key if bounded
         case min do
           :unbounded -> :ok
-          _ -> NIF.iterator_seek(iter, min_key)
+          _ -> ErlangAdapter.iterator_seek(iter, min_key)
         end
 
         # Collect results up to max_key
         results = collect_range_results(iter, max_key, max)
-        NIF.iterator_close(iter)
+        ErlangAdapter.iterator_close(iter)
         {:ok, results}
 
       {:error, reason} ->
@@ -273,7 +273,7 @@ defmodule TripleStore.Index.NumericRange do
   end
 
   defp collect_range_results(iter, max_key, max_value, acc) do
-    case NIF.iterator_next(iter) do
+    case ErlangAdapter.iterator_next(iter) do
       {:ok, key, _value} ->
         # Check if we've passed the max key
         if key > max_key do
@@ -332,7 +332,7 @@ defmodule TripleStore.Index.NumericRange do
       when is_float(value) or is_integer(value) do
     key = build_index_key(predicate_id, value * 1.0, subject_id)
     # Value is empty - all data is in the key
-    NIF.put(db, @cf, key, <<>>)
+    ErlangAdapter.put(db, @cf, key, <<>>)
   end
 
   @doc """
@@ -354,14 +354,14 @@ defmodule TripleStore.Index.NumericRange do
   def delete_value(db, predicate_id, subject_id, value)
       when is_float(value) or is_integer(value) do
     key = build_index_key(predicate_id, value * 1.0, subject_id)
-    NIF.delete(db, @cf, key)
+    ErlangAdapter.delete(db, @cf, key)
   end
 
   @doc """
   Builds index operations for a batch write.
 
   Returns a list of `{:put, :numeric_range, key, value}` tuples for use with
-  `NIF.write_batch/3` or `NIF.mixed_batch/3`.
+  `ErlangAdapter.write_batch/3` or `ErlangAdapter.mixed_batch/3`.
 
   ## Arguments
   - `predicate_id` - The dictionary-encoded predicate ID
@@ -383,7 +383,7 @@ defmodule TripleStore.Index.NumericRange do
   Builds a delete operation for batch removal from the index.
 
   Returns a `{:delete, :numeric_range, key}` tuple for use with
-  `NIF.delete_batch/3` or `NIF.mixed_batch/3`.
+  `ErlangAdapter.delete_batch/3` or `ErlangAdapter.mixed_batch/3`.
 
   ## Arguments
   - `predicate_id` - The dictionary-encoded predicate ID

@@ -241,7 +241,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
       case :rocksdb.iterator_move(iter_ref, action) do
         {:ok, key, _value} = result ->
           # Check prefix boundary if set
-          if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
+          if prefix && !has_prefix?(key, prefix) do
             # Iterator moved past prefix boundary
             {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
           else
@@ -289,7 +289,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
         case :rocksdb.iterator_move(iter_ref, last_seek) do
           {:ok, key, _value} = result ->
             # Check prefix boundary if set
-            if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
+            if prefix && !has_prefix?(key, prefix) do
               # Seek moved past prefix boundary
               {:reply, :iterator_end,
                %{state | last_seek: nil, exhausted: true, positioned: true}}
@@ -331,7 +331,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
         case :rocksdb.iterator_move(iter_ref, :next) do
           {:ok, key, _value} = result ->
             # Check prefix boundary if set
-            if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
+            if prefix && !has_prefix?(key, prefix) do
               # Iterator moved past prefix boundary
               {:reply, :iterator_end, %{state | exhausted: true}}
             else
@@ -429,7 +429,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
     case :rocksdb.iterator_move(iter_ref, start_key) do
       {:ok, key, value} ->
         # Check prefix boundary if set
-        if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
+        if prefix && !has_prefix?(key, prefix) do
           # First entry is past prefix boundary
           Enum.reverse(acc)
         else
@@ -450,7 +450,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
     case :rocksdb.iterator_move(iter_ref, :next) do
       {:ok, key, value} ->
         # Check prefix boundary if set
-        if prefix && binary_part(key, 0, byte_size(prefix)) != prefix do
+        if prefix && !has_prefix?(key, prefix) do
           # Reached end of prefix
           Enum.reverse(acc)
         else
@@ -464,4 +464,12 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
         Enum.reverse(acc)
     end
   end
+
+  # Checks if a key has the given prefix, safely handling keys shorter than the prefix
+  defp has_prefix?(key, prefix) when is_binary(prefix) and byte_size(prefix) > 0 do
+    byte_size(key) >= byte_size(prefix) and
+      binary_part(key, 0, byte_size(prefix)) == prefix
+  end
+
+  defp has_prefix?(_key, _prefix), do: true
 end

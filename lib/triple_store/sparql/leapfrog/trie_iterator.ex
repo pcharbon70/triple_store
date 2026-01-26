@@ -52,7 +52,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
   is managed through the NIF layer.
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   # ===========================================================================
   # Types
@@ -133,7 +133,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
   @spec new(pid(), :spo | :pos | :osp, binary(), 0 | 1 | 2) ::
           {:ok, t()} | {:error, term()}
   def new(db, cf, prefix, level) when cf in [:spo, :pos, :osp] and level in [0, 1, 2] do
-    case NIF.prefix_iterator(db, cf, prefix) do
+    case ErlangAdapter.prefix_iterator(db, cf, prefix) do
       {:ok, iter_ref} ->
         iter = %__MODULE__{
           db: db,
@@ -188,10 +188,10 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
     # Build the seek key by appending target at the correct level
     seek_key = build_seek_key(iter.prefix, iter.level, target)
 
-    case NIF.iterator_seek(iter.iter_ref, seek_key) do
+    case ErlangAdapter.iterator_seek(iter.iter_ref, seek_key) do
       :ok ->
         # After seeking, get the current entry
-        case NIF.iterator_next(iter.iter_ref) do
+        case ErlangAdapter.iterator_next(iter.iter_ref) do
           {:ok, key, _value} ->
             if String.starts_with?(key, iter.prefix) do
               value = extract_value_at_level(key, iter.level)
@@ -338,7 +338,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
   def close(%__MODULE__{iter_ref: nil}), do: :ok
 
   def close(%__MODULE__{iter_ref: iter_ref}) do
-    NIF.iterator_close(iter_ref)
+    ErlangAdapter.iterator_close(iter_ref)
     :ok
   end
 
@@ -385,7 +385,7 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
 
   # Advances to the first entry and extracts the value
   defp advance_to_first(iter) do
-    case NIF.iterator_next(iter.iter_ref) do
+    case ErlangAdapter.iterator_next(iter.iter_ref) do
       {:ok, key, _value} ->
         if String.starts_with?(key, iter.prefix) do
           value = extract_value_at_level(key, iter.level)

@@ -17,7 +17,7 @@ defmodule TripleStore.Stress.QuadLargeScaleTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
 
@@ -34,7 +34,7 @@ defmodule TripleStore.Stress.QuadLargeScaleTest do
     test_id = :erlang.unique_integer([:positive])
     db_path = Path.join(System.tmp_dir!(), "stress_quad_large_scale_#{test_id}")
 
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}

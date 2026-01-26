@@ -9,7 +9,7 @@ defmodule TripleStore.SPARQL.UpdateCacheInvalidationTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Statistics
   alias TripleStore.SPARQL.Parser
@@ -31,7 +31,7 @@ defmodule TripleStore.SPARQL.UpdateCacheInvalidationTest do
     test_path = Path.join([System.tmp_dir!(), "triple_store_test", db_name])
     File.mkdir_p!(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     # Start a dictionary manager
     {:ok, manager} = Manager.start_link(db: db)
@@ -48,7 +48,7 @@ defmodule TripleStore.SPARQL.UpdateCacheInvalidationTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(test_path)
     end)
 

@@ -17,7 +17,7 @@ defmodule TripleStore.Adapter.TermConversionTest do
   alias TripleStore.Dictionary.Manager
 
   setup %{db: db} do
-    assert NIF.is_open(db)
+    assert ErlangAdapter.is_open(db)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->

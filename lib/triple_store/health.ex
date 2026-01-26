@@ -49,7 +49,7 @@ defmodule TripleStore.Health do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Statistics
 
   require Logger
@@ -147,7 +147,7 @@ defmodule TripleStore.Health do
   """
   @spec liveness(store()) :: :ok | {:error, :database_closed}
   def liveness(%{db: db}) do
-    if NIF.is_open(db) do
+    if ErlangAdapter.is_open(db) do
       :ok
     else
       {:error, :database_closed}
@@ -181,7 +181,7 @@ defmodule TripleStore.Health do
   """
   @spec readiness(store()) :: {:ok, readiness_status()} | {:error, term()}
   def readiness(%{db: db, dict_manager: dict_manager}) do
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
 
     cond do
@@ -275,7 +275,7 @@ defmodule TripleStore.Health do
     include_compaction = Keyword.get(opts, :include_compaction, false) or include_all
 
     # Check component status
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
     plan_cache_alive = plan_cache_running?()
     query_cache_alive = query_cache_running?()
@@ -373,7 +373,7 @@ defmodule TripleStore.Health do
       # => %{spo: 10000, pos: 10000, osp: 10000, derived: 500, dictionary: 2500}
 
   """
-  @spec get_index_sizes(NIF.db_ref()) :: index_sizes()
+  @spec get_index_sizes(ErlangAdapter.db_ref()) :: index_sizes()
   def get_index_sizes(db) do
     %{
       spo: count_index_entries(db, :spo),
@@ -396,7 +396,7 @@ defmodule TripleStore.Health do
   Estimated size in bytes.
 
   """
-  @spec estimate_data_size(NIF.db_ref()) :: non_neg_integer()
+  @spec estimate_data_size(ErlangAdapter.db_ref()) :: non_neg_integer()
   def estimate_data_size(db) do
     sizes = get_index_sizes(db)
 
@@ -565,7 +565,7 @@ defmodule TripleStore.Health do
   """
   @spec component_status(atom(), store()) :: {:ok, :running | :stopped} | {:error, term()}
   def component_status(:database, %{db: db}) do
-    if NIF.is_open(db), do: {:ok, :running}, else: {:ok, :stopped}
+    if ErlangAdapter.is_open(db), do: {:ok, :running}, else: {:ok, :stopped}
   end
 
   def component_status(:dict_manager, %{dict_manager: dict_manager}) do
@@ -891,7 +891,7 @@ defmodule TripleStore.Health do
 
   defp count_index_entries(db, cf) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, cf, <<>>)
     Enum.count(stream)
   end
 

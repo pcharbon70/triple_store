@@ -14,7 +14,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Leapfrog.{QuadLeapfrog, QuadTrieIterator}
 
@@ -29,10 +29,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       System.tmp_dir!() <>
         "/ts_leapfrog_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

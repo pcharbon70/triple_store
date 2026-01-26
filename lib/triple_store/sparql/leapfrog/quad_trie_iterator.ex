@@ -47,7 +47,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   algorithm for 4-way joins on quad patterns.
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   # ===========================================================================
   # Types
@@ -132,7 +132,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
           {:ok, t()} | {:error, term()}
   def new(db, cf, prefix, level)
       when cf in [:gspo, :gpos, :spog, :posg] and level in [0, 1, 2, 3] do
-    case NIF.prefix_iterator(db, cf, prefix) do
+    case ErlangAdapter.prefix_iterator(db, cf, prefix) do
       {:ok, iter_ref} ->
         iter = %__MODULE__{
           db: db,
@@ -181,10 +181,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
     # Build the seek key by appending target at the correct level
     seek_key = build_seek_key(iter.prefix, iter.level, target)
 
-    case NIF.iterator_seek(iter.iter_ref, seek_key) do
+    case ErlangAdapter.iterator_seek(iter.iter_ref, seek_key) do
       :ok ->
         # After seeking, get the current entry
-        case NIF.iterator_next(iter.iter_ref) do
+        case ErlangAdapter.iterator_next(iter.iter_ref) do
           {:ok, key, _value} ->
             if String.starts_with?(key, iter.prefix) do
               value = extract_value_at_level(key, iter.level)
@@ -312,7 +312,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   def close(%__MODULE__{iter_ref: nil}), do: :ok
 
   def close(%__MODULE__{iter_ref: iter_ref}) do
-    NIF.iterator_close(iter_ref)
+    ErlangAdapter.iterator_close(iter_ref)
     :ok
   end
 
@@ -395,15 +395,19 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   # Private Helpers
   # ===========================================================================
 
-  # Advances the iterator to the first entry and extracts the value.
-  #
-  # Returns:
-  # - `{:ok, iterator}` if positioned at a valid entry
-  # - `{:exhausted, iterator}` if no entries exist
-  # - `{:error, reason}` on failure
+  @doc """
+  Advances the iterator to the first entry and extracts the value.
+
+  ## Returns
+
+  - `{:ok, iterator}` if positioned at a valid entry
+  - `{:exhausted, iterator}` if no entries exist
+  - `{:error, reason}` on failure
+
+  """
   @spec advance_to_first(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   defp advance_to_first(iter) do
-    case NIF.iterator_next(iter.iter_ref) do
+    case ErlangAdapter.iterator_next(iter.iter_ref) do
       {:ok, key, _value} ->
         if String.starts_with?(key, iter.prefix) do
           value = extract_value_at_level(key, iter.level)
@@ -420,10 +424,13 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
     end
   end
 
-  # Builds a seek key by extending the prefix with the target at the given level.
-  #
-  # The seek key is used to position the iterator at the first entry where
-  # the value at the specified level is >= target.
+  @doc """
+  Builds a seek key by extending the prefix with the target at the given level.
+
+  The seek key is used to position the iterator at the first entry where
+  the value at the specified level is >= target.
+
+  """
   @spec build_seek_key(binary(), 0 | 1 | 2 | 3, non_neg_integer()) :: binary()
   defp build_seek_key(prefix, level, target) do
     # The prefix length tells us how many complete IDs are already bound

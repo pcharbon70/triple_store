@@ -8,7 +8,7 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Parser
@@ -24,7 +24,7 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
     File.rm_rf!(db_path)
 
     # Open quad store for testing
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     # Create test users
@@ -44,7 +44,7 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

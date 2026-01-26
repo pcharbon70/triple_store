@@ -16,7 +16,7 @@ defmodule TripleStore.Index.IndexLookupTest do
   alias TripleStore.Index
 
   setup %{db: db} do
-    assert NIF.is_open(db)
+    assert ErlangAdapter.is_open(db)
     :ok
   end
 

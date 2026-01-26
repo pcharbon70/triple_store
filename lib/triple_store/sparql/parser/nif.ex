@@ -30,7 +30,7 @@ defmodule TripleStore.SPARQL.Parser.NIF do
 
   ## Examples
 
-      iex> TripleStore.SPARQL.Parser.NIF.nif_loaded()
+      iex> TripleStore.SPARQL.Parser.ErlangAdapter.nif_loaded()
       "sparql_parser_nif"
 
   """
@@ -49,7 +49,7 @@ defmodule TripleStore.SPARQL.Parser.NIF do
 
   ## Examples
 
-      iex> {:ok, ast} = TripleStore.SPARQL.Parser.NIF.parse_query("SELECT ?s WHERE { ?s ?p ?o }")
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.ErlangAdapter.parse_query("SELECT ?s WHERE { ?s ?p ?o }")
       iex> elem(ast, 0)
       :select
 
@@ -69,7 +69,7 @@ defmodule TripleStore.SPARQL.Parser.NIF do
 
   ## Examples
 
-      iex> {:ok, ast} = TripleStore.SPARQL.Parser.NIF.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
+      iex> {:ok, ast} = TripleStore.SPARQL.Parser.ErlangAdapter.parse_update("INSERT DATA { <http://example.org/s> <http://example.org/p> <http://example.org/o> }")
       iex> elem(ast, 0)
       :update
 

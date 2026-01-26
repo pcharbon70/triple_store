@@ -68,7 +68,7 @@ defmodule TripleStore.Statistics do
 
   ## Stream Performance and Memory Characteristics
 
-  This module uses RocksDB prefix iterators via `NIF.prefix_stream/3` to efficiently
+  This module uses RocksDB prefix iterators via `ErlangAdapter.prefix_stream/3` to efficiently
   scan large datasets without loading everything into memory. Understanding the
   performance characteristics is important for optimal usage.
 
@@ -143,7 +143,7 @@ defmodule TripleStore.Statistics do
   - `[:triple_store, :statistics, :cache_miss]` - Cache misses requiring recomputation
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Index
 
@@ -185,7 +185,7 @@ defmodule TripleStore.Statistics do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "64-bit term ID"
   @type term_id :: non_neg_integer()
@@ -890,7 +890,7 @@ defmodule TripleStore.Statistics do
          :ok <- validate_stats_size(stats) do
       encoded = :erlang.term_to_binary(stats, [:compressed])
 
-      case NIF.put(db, :id2str, @stats_key_prefix, encoded) do
+      case ErlangAdapter.put(db, :id2str, @stats_key_prefix, encoded) do
         :ok -> :ok
         {:error, _} = error -> error
       end
@@ -1217,7 +1217,7 @@ defmodule TripleStore.Statistics do
 
   @spec load(db_ref()) :: {:ok, stats() | nil} | {:error, term()}
   def load(db) do
-    case NIF.get(db, :id2str, @stats_key_prefix) do
+    case ErlangAdapter.get(db, :id2str, @stats_key_prefix) do
       {:ok, encoded} when is_binary(encoded) ->
         # Check size before deserialization to prevent memory exhaustion
         if byte_size(encoded) > @max_term_size do
@@ -1502,7 +1502,7 @@ defmodule TripleStore.Statistics do
   @spec build_predicate_histogram(db_ref()) :: {:ok, %{term_id() => non_neg_integer()}}
   def build_predicate_histogram(db) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, :pos, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, :pos, <<>>)
 
     histogram =
       stream
@@ -1553,7 +1553,7 @@ defmodule TripleStore.Statistics do
     # Two-pass streaming to avoid loading all values into memory (B2 fix)
     # Pass 1: Find min, max, and count by streaming
     # prefix_stream now returns the stream directly (may raise on error)
-    stream1 = NIF.prefix_stream(db, :pos, prefix)
+    stream1 = ErlangAdapter.prefix_stream(db, :pos, prefix)
 
     {min_val, max_val, count} =
       stream1
@@ -1573,7 +1573,7 @@ defmodule TripleStore.Statistics do
       {:ok, histogram} = build_histogram_from_values(min_val, max_val, count, bucket_count)
 
       # prefix_stream now returns the stream directly
-      stream2 = NIF.prefix_stream(db, :pos, prefix)
+      stream2 = ErlangAdapter.prefix_stream(db, :pos, prefix)
 
       value_stream =
         stream2
@@ -1727,7 +1727,7 @@ defmodule TripleStore.Statistics do
     prefix = <<graph_id::64-big>>
 
     # Use prefix_stream and count results
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
     count = Enum.count(stream)
     {:ok, count}
   end
@@ -1751,7 +1751,7 @@ defmodule TripleStore.Statistics do
           {:ok, non_neg_integer()} | {:error, term()}
   def graph_distinct_subjects(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     count =
       stream
@@ -1793,7 +1793,7 @@ defmodule TripleStore.Statistics do
           {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
   def graph_predicate_histogram(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     histogram =
       stream
@@ -1874,7 +1874,7 @@ defmodule TripleStore.Statistics do
     # Stream GSPO index and build histogram
     histogram =
       db
-      |> NIF.prefix_stream(:gspo, <<>>)
+      |> ErlangAdapter.prefix_stream(:gspo, <<>>)
       |> Stream.filter(fn {key, _value} ->
         # GSPO key: graph_id | subject_id | predicate_id | object_id
         <<graph_id::64-big, _rest::binary>> = key
@@ -1939,7 +1939,7 @@ defmodule TripleStore.Statistics do
   @spec graph_object_count(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
   def graph_object_count(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     count =
       stream
@@ -2116,7 +2116,7 @@ defmodule TripleStore.Statistics do
           {:ok, non_neg_integer()}
   defp count_distinct_by_position(db, cf) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, cf, <<>>)
 
     count =
       stream

@@ -16,7 +16,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.SPARQL.Query
@@ -40,7 +40,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
 
   defp setup_db(tmp_dir) do
     db_path = Path.join(tmp_dir, "bench_db_#{:erlang.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager}
   end
@@ -1000,7 +1000,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       {:ok, o_id} = Manager.get_or_create_id(manager, RDF.iri(object))
 
       quad_key = TripleStore.QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
-      TripleStore.Backend.RocksDB.NIF.put(db, :gspo, quad_key, <<>>)
+      TripleStore.Backend.RocksDB.ErlangAdapter.put(db, :gspo, quad_key, <<>>)
     end)
   end
 end

@@ -6,7 +6,7 @@ defmodule TripleStore.Index.TestHelper do
   boilerplate across index test files.
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.Test.DbPool
 
@@ -25,7 +25,7 @@ defmodule TripleStore.Index.TestHelper do
 
       db_info = IndexTestHelper.setup_test_db("my_test")
   """
-  @spec setup_test_db(String.t()) :: %{db: NIF.db_ref(), path: String.t(), id: integer()}
+  @spec setup_test_db(String.t()) :: %{db: ErlangAdapter.db_ref(), path: String.t(), id: integer()}
   def setup_test_db(_base_name) do
     DbPool.checkout()
   end
@@ -41,7 +41,7 @@ defmodule TripleStore.Index.TestHelper do
 
       IndexTestHelper.cleanup_test_db(db_info)
   """
-  @spec cleanup_test_db(%{db: NIF.db_ref(), path: String.t(), id: integer()}) :: :ok
+  @spec cleanup_test_db(%{db: ErlangAdapter.db_ref(), path: String.t(), id: integer()}) :: :ok
   def cleanup_test_db(db_info) do
     DbPool.checkin(db_info)
     :ok
@@ -62,7 +62,7 @@ defmodule TripleStore.Index.TestHelper do
 
       assert_triple_in_all_indices(db, {1, 2, 3})
   """
-  @spec assert_triple_in_all_indices(NIF.db_ref(), Index.triple()) :: :ok
+  @spec assert_triple_in_all_indices(ErlangAdapter.db_ref(), Index.triple()) :: :ok
   def assert_triple_in_all_indices(db, {s, p, o}) do
     import ExUnit.Assertions
 
@@ -70,13 +70,13 @@ defmodule TripleStore.Index.TestHelper do
     pos_key = Index.pos_key(p, o, s)
     osp_key = Index.osp_key(o, s, p)
 
-    assert {:ok, <<>>} = NIF.get(db, :spo, spo_key),
+    assert {:ok, <<>>} = ErlangAdapter.get(db, :spo, spo_key),
            "Triple {#{s}, #{p}, #{o}} not found in SPO index"
 
-    assert {:ok, <<>>} = NIF.get(db, :pos, pos_key),
+    assert {:ok, <<>>} = ErlangAdapter.get(db, :pos, pos_key),
            "Triple {#{s}, #{p}, #{o}} not found in POS index"
 
-    assert {:ok, <<>>} = NIF.get(db, :osp, osp_key),
+    assert {:ok, <<>>} = ErlangAdapter.get(db, :osp, osp_key),
            "Triple {#{s}, #{p}, #{o}} not found in OSP index"
 
     :ok
@@ -97,7 +97,7 @@ defmodule TripleStore.Index.TestHelper do
 
       assert_triple_not_in_any_index(db, {1, 2, 3})
   """
-  @spec assert_triple_not_in_any_index(NIF.db_ref(), Index.triple()) :: :ok
+  @spec assert_triple_not_in_any_index(ErlangAdapter.db_ref(), Index.triple()) :: :ok
   def assert_triple_not_in_any_index(db, {s, p, o}) do
     import ExUnit.Assertions
 
@@ -105,13 +105,13 @@ defmodule TripleStore.Index.TestHelper do
     pos_key = Index.pos_key(p, o, s)
     osp_key = Index.osp_key(o, s, p)
 
-    assert {:ok, nil} = NIF.get(db, :spo, spo_key),
+    assert {:ok, nil} = ErlangAdapter.get(db, :spo, spo_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in SPO index"
 
-    assert {:ok, nil} = NIF.get(db, :pos, pos_key),
+    assert {:ok, nil} = ErlangAdapter.get(db, :pos, pos_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in POS index"
 
-    assert {:ok, nil} = NIF.get(db, :osp, osp_key),
+    assert {:ok, nil} = ErlangAdapter.get(db, :osp, osp_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in OSP index"
 
     :ok
@@ -192,7 +192,7 @@ defmodule TripleStore.Index.TestHelper do
   """
   defmacro __using__(_opts) do
     quote do
-      alias TripleStore.Backend.RocksDB.NIF
+      alias TripleStore.Backend.RocksDB.ErlangAdapter
       alias TripleStore.Index
       alias TripleStore.Index.TestHelper, as: IndexTestHelper
 

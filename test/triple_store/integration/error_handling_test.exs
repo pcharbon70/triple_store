@@ -10,7 +10,7 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.SPARQL.Authorization
@@ -43,7 +43,7 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
@@ -59,7 +59,7 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
       end
 
       try do
-        NIF.close(db)
+        ErlangAdapter.close(db)
       catch
         _, _ -> :ok
       end

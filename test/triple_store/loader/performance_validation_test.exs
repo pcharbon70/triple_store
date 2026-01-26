@@ -14,7 +14,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
 
@@ -32,7 +32,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -42,7 +42,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -119,7 +119,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
         for run <- 1..3 do
           # Create fresh db for each run
           run_path = "#{path}_run_#{run}"
-          {:ok, db} = NIF.open(run_path)
+          {:ok, db} = ErlangAdapter.open(run_path)
           {:ok, manager} = Manager.start_link(db: db)
 
           warmup_db(db, manager)
@@ -137,7 +137,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
           throughput = triple_count / (elapsed_us / 1_000_000)
 
           Manager.stop(manager)
-          NIF.close(db)
+          ErlangAdapter.close(db)
           File.rm_rf(run_path)
 
           throughput
@@ -176,7 +176,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
       # Sequential run (1 stage)
       seq_path = "#{path}_seq"
-      {:ok, seq_db} = NIF.open(seq_path)
+      {:ok, seq_db} = ErlangAdapter.open(seq_path)
       {:ok, seq_manager} = Manager.start_link(db: seq_db)
       warmup_db(seq_db, seq_manager)
 
@@ -193,12 +193,12 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       seq_throughput = triple_count / (seq_elapsed / 1_000_000)
 
       Manager.stop(seq_manager)
-      NIF.close(seq_db)
+      ErlangAdapter.close(seq_db)
       File.rm_rf(seq_path)
 
       # Parallel run (N stages)
       par_path = "#{path}_par"
-      {:ok, par_db} = NIF.open(par_path)
+      {:ok, par_db} = ErlangAdapter.open(par_path)
       {:ok, par_manager} = Manager.start_link(db: par_db)
       warmup_db(par_db, par_manager)
 
@@ -215,7 +215,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       par_throughput = triple_count / (par_elapsed / 1_000_000)
 
       Manager.stop(par_manager)
-      NIF.close(par_db)
+      ErlangAdapter.close(par_db)
       File.rm_rf(par_path)
 
       speedup = par_throughput / seq_throughput
@@ -254,7 +254,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       results =
         for stages <- stage_counts do
           run_path = "#{path}_stages_#{stages}"
-          {:ok, db} = NIF.open(run_path)
+          {:ok, db} = ErlangAdapter.open(run_path)
           {:ok, manager} = Manager.start_link(db: db)
           warmup_db(db, manager)
 
@@ -271,7 +271,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
           throughput = triple_count / (elapsed / 1_000_000)
 
           Manager.stop(manager)
-          NIF.close(db)
+          ErlangAdapter.close(db)
           File.rm_rf(run_path)
 
           {stages, throughput}
@@ -444,7 +444,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
       # Default mode (no bulk optimizations)
       default_path = "#{path}_default"
-      {:ok, default_db} = NIF.open(default_path)
+      {:ok, default_db} = ErlangAdapter.open(default_path)
       {:ok, default_manager} = Manager.start_link(db: default_db)
 
       default_start = System.monotonic_time(:microsecond)
@@ -459,12 +459,12 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       default_throughput = triple_count / (default_elapsed / 1_000_000)
 
       Manager.stop(default_manager)
-      NIF.close(default_db)
+      ErlangAdapter.close(default_db)
       File.rm_rf(default_path)
 
       # Bulk mode (all optimizations)
       bulk_path = "#{path}_bulk"
-      {:ok, bulk_db} = NIF.open(bulk_path)
+      {:ok, bulk_db} = ErlangAdapter.open(bulk_path)
       {:ok, bulk_manager} = Manager.start_link(db: bulk_db)
       warmup_db(bulk_db, bulk_manager)
 
@@ -481,7 +481,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       bulk_throughput = triple_count / (bulk_elapsed / 1_000_000)
 
       Manager.stop(bulk_manager)
-      NIF.close(bulk_db)
+      ErlangAdapter.close(bulk_db)
       File.rm_rf(bulk_path)
 
       improvement = bulk_throughput / default_throughput
@@ -511,7 +511,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
       # Single stage (minimal parallelism)
       single_path = "#{path}_single"
-      {:ok, single_db} = NIF.open(single_path)
+      {:ok, single_db} = ErlangAdapter.open(single_path)
       {:ok, single_manager} = Manager.start_link(db: single_db)
 
       single_start = System.monotonic_time(:microsecond)
@@ -527,12 +527,12 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       single_throughput = triple_count / (single_elapsed / 1_000_000)
 
       Manager.stop(single_manager)
-      NIF.close(single_db)
+      ErlangAdapter.close(single_db)
       File.rm_rf(single_path)
 
       # Multi-stage (parallel dictionary encoding)
       multi_path = "#{path}_multi"
-      {:ok, multi_db} = NIF.open(multi_path)
+      {:ok, multi_db} = ErlangAdapter.open(multi_path)
       {:ok, multi_manager} = Manager.start_link(db: multi_db)
 
       multi_start = System.monotonic_time(:microsecond)
@@ -548,7 +548,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       multi_throughput = triple_count / (multi_elapsed / 1_000_000)
 
       Manager.stop(multi_manager)
-      NIF.close(multi_db)
+      ErlangAdapter.close(multi_db)
       File.rm_rf(multi_path)
 
       speedup = multi_throughput / single_throughput
@@ -576,7 +576,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
       # Run optimized configuration
       run_path = "#{path}_summary"
-      {:ok, db} = NIF.open(run_path)
+      {:ok, db} = ErlangAdapter.open(run_path)
       {:ok, manager} = Manager.start_link(db: db)
       warmup_db(db, manager)
 
@@ -597,7 +597,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       memory_mb = :erlang.memory(:total) / (1024 * 1024)
 
       Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(run_path)
 
       IO.puts("\n")

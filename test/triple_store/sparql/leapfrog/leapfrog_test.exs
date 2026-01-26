@@ -1,7 +1,7 @@
 defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.SPARQL.Leapfrog.Leapfrog
   alias TripleStore.SPARQL.Leapfrog.TrieIterator
@@ -12,10 +12,10 @@ defmodule TripleStore.SPARQL.Leapfrog.LeapfrogTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

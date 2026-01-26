@@ -28,21 +28,21 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triple(db, {100, 200, 300})
 
       spo_key = Index.spo_key(100, 200, 300)
-      assert {:ok, <<>>} = NIF.get(db, :spo, spo_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :spo, spo_key)
     end
 
     test "writes to POS index", %{db: db} do
       :ok = Index.insert_triple(db, {100, 200, 300})
 
       pos_key = Index.pos_key(200, 300, 100)
-      assert {:ok, <<>>} = NIF.get(db, :pos, pos_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :pos, pos_key)
     end
 
     test "writes to OSP index", %{db: db} do
       :ok = Index.insert_triple(db, {100, 200, 300})
 
       osp_key = Index.osp_key(300, 100, 200)
-      assert {:ok, <<>>} = NIF.get(db, :osp, osp_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :osp, osp_key)
     end
 
     test "writes to all three indices atomically", %{db: db} do
@@ -53,9 +53,9 @@ defmodule TripleStore.Index.TripleInsertTest do
       pos_key = Index.pos_key(20, 30, 10)
       osp_key = Index.osp_key(30, 10, 20)
 
-      assert {:ok, <<>>} = NIF.get(db, :spo, spo_key)
-      assert {:ok, <<>>} = NIF.get(db, :pos, pos_key)
-      assert {:ok, <<>>} = NIF.get(db, :osp, osp_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :spo, spo_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :pos, pos_key)
+      assert {:ok, <<>>} = ErlangAdapter.get(db, :osp, osp_key)
     end
 
     test "is idempotent - duplicate insertion succeeds", %{db: db} do
@@ -71,7 +71,7 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triple(db, {1, 2, 3})
 
       spo_key = Index.spo_key(1, 2, 3)
-      {:ok, value} = NIF.get(db, :spo, spo_key)
+      {:ok, value} = ErlangAdapter.get(db, :spo, spo_key)
 
       assert value == <<>>
       assert byte_size(value) == 0
@@ -138,9 +138,9 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triples(db, triples)
 
       for {s, p, o} <- triples do
-        assert {:ok, <<>>} = NIF.get(db, :spo, Index.spo_key(s, p, o))
-        assert {:ok, <<>>} = NIF.get(db, :pos, Index.pos_key(p, o, s))
-        assert {:ok, <<>>} = NIF.get(db, :osp, Index.osp_key(o, s, p))
+        assert {:ok, <<>>} = ErlangAdapter.get(db, :spo, Index.spo_key(s, p, o))
+        assert {:ok, <<>>} = ErlangAdapter.get(db, :pos, Index.pos_key(p, o, s))
+        assert {:ok, <<>>} = ErlangAdapter.get(db, :osp, Index.osp_key(o, s, p))
       end
     end
 
@@ -172,17 +172,17 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triples(db, triples)
 
       # Count entries in each index using prefix iteration
-      {:ok, spo_iter} = NIF.prefix_iterator(db, :spo, <<>>)
-      {:ok, spo_entries} = NIF.iterator_collect(spo_iter)
-      NIF.iterator_close(spo_iter)
+      {:ok, spo_iter} = ErlangAdapter.prefix_iterator(db, :spo, <<>>)
+      {:ok, spo_entries} = ErlangAdapter.iterator_collect(spo_iter)
+      ErlangAdapter.iterator_close(spo_iter)
 
-      {:ok, pos_iter} = NIF.prefix_iterator(db, :pos, <<>>)
-      {:ok, pos_entries} = NIF.iterator_collect(pos_iter)
-      NIF.iterator_close(pos_iter)
+      {:ok, pos_iter} = ErlangAdapter.prefix_iterator(db, :pos, <<>>)
+      {:ok, pos_entries} = ErlangAdapter.iterator_collect(pos_iter)
+      ErlangAdapter.iterator_close(pos_iter)
 
-      {:ok, osp_iter} = NIF.prefix_iterator(db, :osp, <<>>)
-      {:ok, osp_entries} = NIF.iterator_collect(osp_iter)
-      NIF.iterator_close(osp_iter)
+      {:ok, osp_iter} = ErlangAdapter.prefix_iterator(db, :osp, <<>>)
+      {:ok, osp_entries} = ErlangAdapter.iterator_collect(osp_iter)
+      ErlangAdapter.iterator_close(osp_iter)
 
       assert length(spo_entries) == 2
       assert length(pos_entries) == 2
@@ -256,9 +256,9 @@ defmodule TripleStore.Index.TripleInsertTest do
 
       # Query by subject prefix
       prefix = Index.spo_prefix(1)
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       # Should find exactly 2 triples with subject 1
       assert length(entries) == 2
@@ -277,9 +277,9 @@ defmodule TripleStore.Index.TripleInsertTest do
 
       # Query by predicate prefix
       prefix = Index.pos_prefix(100)
-      {:ok, iter} = NIF.prefix_iterator(db, :pos, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :pos, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       # Should find exactly 2 triples with predicate 100
       assert length(entries) == 2
@@ -298,9 +298,9 @@ defmodule TripleStore.Index.TripleInsertTest do
 
       # Query by object prefix
       prefix = Index.osp_prefix(999)
-      {:ok, iter} = NIF.prefix_iterator(db, :osp, prefix)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :osp, prefix)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       # Should find exactly 2 triples with object 999
       assert length(entries) == 2
@@ -322,9 +322,9 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triple(db, {1, 9, 9})
       :ok = Index.insert_triple(db, {2, 5, 5})
 
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, <<>>)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<>>)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       triples = Enum.map(entries, fn {key, _} -> Index.decode_spo_key(key) end)
 
@@ -338,9 +338,9 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triple(db, {9, 1, 9})
       :ok = Index.insert_triple(db, {9, 2, 5})
 
-      {:ok, iter} = NIF.prefix_iterator(db, :pos, <<>>)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :pos, <<>>)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       triples = Enum.map(entries, fn {key, _} -> Index.key_to_triple(:pos, key) end)
 
@@ -354,9 +354,9 @@ defmodule TripleStore.Index.TripleInsertTest do
       :ok = Index.insert_triple(db, {9, 9, 1})
       :ok = Index.insert_triple(db, {5, 5, 2})
 
-      {:ok, iter} = NIF.prefix_iterator(db, :osp, <<>>)
-      {:ok, entries} = NIF.iterator_collect(iter)
-      NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :osp, <<>>)
+      {:ok, entries} = ErlangAdapter.iterator_collect(iter)
+      ErlangAdapter.iterator_close(iter)
 
       triples = Enum.map(entries, fn {key, _} -> Index.key_to_triple(:osp, key) end)
 

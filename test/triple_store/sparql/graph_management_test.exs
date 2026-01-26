@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.UpdateExecutor
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
   defp setup_db(tmp_dir) do
     db_path = Path.join(tmp_dir, "test_graph_#{System.unique_integer([:positive])}")
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
 
     {:ok, manager} = Manager.start_link(db: db)
 
@@ -38,7 +38,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
 
   defp cleanup({db, manager}) do
     Manager.stop(manager)
-    NIF.close(db)
+    ErlangAdapter.close(db)
   end
 
   defp create_context(db, manager) do

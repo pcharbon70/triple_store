@@ -3,7 +3,7 @@ defmodule TripleStore.Config.RuntimeTest do
 
   alias TripleStore.Config.Runtime
   alias TripleStore.Config.Compaction
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   @moduletag :integration
 
@@ -14,10 +14,10 @@ defmodule TripleStore.Config.RuntimeTest do
 
     File.rm_rf!(path)
 
-    {:ok, db} = NIF.open(path)
+    {:ok, db} = ErlangAdapter.open(path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(path)
     end)
 
@@ -26,7 +26,7 @@ defmodule TripleStore.Config.RuntimeTest do
 
   describe "set_options/2 NIF" do
     test "sets level0 compaction trigger", %{db: db} do
-      assert :ok = NIF.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
+      assert :ok = ErlangAdapter.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
     end
 
     test "sets multiple options", %{db: db} do
@@ -36,29 +36,29 @@ defmodule TripleStore.Config.RuntimeTest do
         {"level0_stop_writes_trigger", "128"}
       ]
 
-      assert :ok = NIF.set_options(db, options)
+      assert :ok = ErlangAdapter.set_options(db, options)
     end
 
     test "sets disable_auto_compactions", %{db: db} do
-      assert :ok = NIF.set_options(db, [{"disable_auto_compactions", "true"}])
-      assert :ok = NIF.set_options(db, [{"disable_auto_compactions", "false"}])
+      assert :ok = ErlangAdapter.set_options(db, [{"disable_auto_compactions", "true"}])
+      assert :ok = ErlangAdapter.set_options(db, [{"disable_auto_compactions", "false"}])
     end
 
     test "returns error for invalid option", %{db: db} do
       # Invalid option name should fail
       assert {:error, {:set_options_failed, _reason}} =
-               NIF.set_options(db, [{"invalid_option_name", "123"}])
+               ErlangAdapter.set_options(db, [{"invalid_option_name", "123"}])
     end
 
     test "returns error for closed database" do
       path =
         Path.join(System.tmp_dir!(), "runtime_closed_test_#{:erlang.unique_integer([:positive])}")
 
-      {:ok, db} = NIF.open(path)
-      NIF.close(db)
+      {:ok, db} = ErlangAdapter.open(path)
+      ErlangAdapter.close(db)
 
       assert {:error, :already_closed} =
-               NIF.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
+               ErlangAdapter.set_options(db, [{"level0_file_num_compaction_trigger", "16"}])
 
       File.rm_rf!(path)
     end
@@ -100,7 +100,7 @@ defmodule TripleStore.Config.RuntimeTest do
       :ok = Runtime.restore_config(db, saved)
 
       # Verify we can still write to the database
-      assert :ok = NIF.write_batch(db, [{:put, :spo, "test_key", "test_value"}], true)
+      assert :ok = ErlangAdapter.write_batch(db, [{:put, :spo, "test_key", "test_value"}], true)
     end
   end
 
@@ -168,7 +168,7 @@ defmodule TripleStore.Config.RuntimeTest do
         end)
 
       # Database should still work with normal settings
-      assert :ok = NIF.write_batch(db, [{:put, :spo, "key1", "value1"}], true)
+      assert :ok = ErlangAdapter.write_batch(db, [{:put, :spo, "key1", "value1"}], true)
     end
 
     test "restores config on error", %{db: db} do
@@ -181,7 +181,7 @@ defmodule TripleStore.Config.RuntimeTest do
       assert {:ok, {:error, :simulated_failure}} = result
 
       # Database should still work
-      assert :ok = NIF.write_batch(db, [{:put, :spo, "key2", "value2"}], true)
+      assert :ok = ErlangAdapter.write_batch(db, [{:put, :spo, "key2", "value2"}], true)
     end
 
     test "restores config on raise", %{db: db} do
@@ -192,7 +192,7 @@ defmodule TripleStore.Config.RuntimeTest do
       end
 
       # Database should still work after exception
-      assert :ok = NIF.write_batch(db, [{:put, :spo, "key3", "value3"}], true)
+      assert :ok = ErlangAdapter.write_batch(db, [{:put, :spo, "key3", "value3"}], true)
     end
 
     test "works with disable_compaction option", %{db: db} do
@@ -212,14 +212,14 @@ defmodule TripleStore.Config.RuntimeTest do
 
       # Simulate some work
       for i <- 1..10 do
-        NIF.write_batch(db, [{:put, :spo, "key#{i}", "value#{i}"}], false)
+        ErlangAdapter.write_batch(db, [{:put, :spo, "key#{i}", "value#{i}"}], false)
       end
 
       # Restore original config
       :ok = Runtime.restore_config(db, saved)
 
       # Verify database still works
-      {:ok, value} = NIF.get(db, :spo, "key5")
+      {:ok, value} = ErlangAdapter.get(db, :spo, "key5")
       assert value == "value5"
     end
 
@@ -231,7 +231,7 @@ defmodule TripleStore.Config.RuntimeTest do
       end
 
       # Database should still work
-      assert :ok = NIF.write_batch(db, [{:put, :spo, "final_key", "final_value"}], true)
+      assert :ok = ErlangAdapter.write_batch(db, [{:put, :spo, "final_key", "final_value"}], true)
     end
   end
 end

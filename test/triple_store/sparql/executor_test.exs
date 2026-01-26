@@ -1,7 +1,7 @@
 defmodule TripleStore.SPARQL.ExecutorTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.SPARQL.Executor
@@ -11,7 +11,7 @@ defmodule TripleStore.SPARQL.ExecutorTest do
   # Helper to create a temporary database
   defp setup_db(tmp_dir) do
     db_path = Path.join(tmp_dir, "test_db")
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager}
   end

@@ -9,7 +9,7 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.UpdateExecutor
@@ -23,7 +23,7 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
 
     File.rm_rf!(db_path)
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
@@ -35,7 +35,7 @@ defmodule TripleStore.SPARQL.Update.AtomicMoveTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

@@ -35,7 +35,7 @@ defmodule TripleStore.Config.Runtime do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Config.Compaction
 
   @typedoc "RocksDB database reference"
@@ -131,7 +131,7 @@ defmodule TripleStore.Config.Runtime do
       preset: :default
     }
 
-    case NIF.set_options(db_ref, bulk_options) do
+    case ErlangAdapter.set_options(db_ref, bulk_options) do
       :ok ->
         {:ok, saved_config}
 
@@ -160,7 +160,7 @@ defmodule TripleStore.Config.Runtime do
   """
   @spec restore_config(db_ref(), saved_config()) :: :ok | {:error, term()}
   def restore_config(db_ref, %{options: options}) do
-    NIF.set_options(db_ref, options)
+    ErlangAdapter.set_options(db_ref, options)
   end
 
   @doc """
@@ -192,7 +192,7 @@ defmodule TripleStore.Config.Runtime do
       {"disable_auto_compactions", "false"}
     ]
 
-    NIF.set_options(db_ref, options)
+    ErlangAdapter.set_options(db_ref, options)
   end
 
   @doc """
@@ -229,7 +229,7 @@ defmodule TripleStore.Config.Runtime do
       {"target_file_size_base", Integer.to_string(config.target_file_size_base)}
     ]
 
-    NIF.set_options(db_ref, options)
+    ErlangAdapter.set_options(db_ref, options)
   end
 
   @doc """
@@ -281,7 +281,7 @@ defmodule TripleStore.Config.Runtime do
         {str_key, str_value}
       end)
 
-    NIF.set_options(db_ref, string_opts)
+    ErlangAdapter.set_options(db_ref, string_opts)
   end
 
   @doc """

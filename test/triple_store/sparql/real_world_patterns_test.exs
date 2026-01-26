@@ -11,7 +11,7 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.Query
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.RealWorldPatternsTest do
     test_id = :erlang.unique_integer([:positive])
     db_path = Path.join(System.tmp_dir!(), "real_world_#{test_id}")
 
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}

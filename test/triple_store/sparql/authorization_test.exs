@@ -1,7 +1,7 @@
 defmodule TripleStore.SPARQL.AuthorizationTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Authorization
 
@@ -16,7 +16,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -288,7 +288,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       # Get the actual graph ID
       {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
       acl_key = "acl:graph:#{graph_id}:user:#{user_id}"
-      {:ok, binary} = NIF.get(db, :acl, acl_key)
+      {:ok, binary} = ErlangAdapter.get(db, :acl, acl_key)
       acl_entry = :erlang.binary_to_term(binary)
       assert Map.has_key?(acl_entry, "user:#{user_id}")
       assert :read in acl_entry["user:#{user_id}"]

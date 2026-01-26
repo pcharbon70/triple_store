@@ -12,7 +12,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Statistics.Cache
@@ -40,7 +40,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       # Phase 1: Open, insert triples, close
-      {:ok, db1} = NIF.open(path)
+      {:ok, db1} = ErlangAdapter.open(path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       triples = [
@@ -57,14 +57,14 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       # Close everything
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure the db reference is garbage collected and file handles released
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Phase 2: Reopen and verify data persisted
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
 
       {:ok, count2} = Index.count(db2, {:var, :var, :var})
       assert count2 == 3
@@ -74,7 +74,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert {:ok, true} = Index.triple_exists?(db2, {1001, 100, 2001})
       assert {:ok, true} = Index.triple_exists?(db2, {1002, 101, 2002})
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
@@ -83,7 +83,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       # Phase 1: Create dictionary entries
-      {:ok, db1} = NIF.open(path)
+      {:ok, db1} = ErlangAdapter.open(path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       # Get IDs for some RDF terms (use actual RDF.ex types)
@@ -96,10 +96,10 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, literal_id} = Manager.get_or_create_id(manager1, literal)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Phase 2: Reopen and verify same IDs
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       {:ok, uri_id2} = Manager.get_or_create_id(manager2, uri)
@@ -111,7 +111,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert literal_id == literal_id2
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
@@ -119,7 +119,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       # Phase 1: Create many entries to advance counters
-      {:ok, db1} = NIF.open(path)
+      {:ok, db1} = ErlangAdapter.open(path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       # Create 100 URIs to advance counter
@@ -130,10 +130,10 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, last_id1} = Manager.get_or_create_id(manager1, RDF.iri("http://example.org/last"))
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Phase 2: Reopen and create new entry - should get higher ID
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       {:ok, new_id} = Manager.get_or_create_id(manager2, RDF.iri("http://example.org/new"))
@@ -142,7 +142,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert new_id > last_id1
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
@@ -151,7 +151,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       # Phase 1: Insert triples
-      {:ok, db1} = NIF.open(path)
+      {:ok, db1} = ErlangAdapter.open(path)
 
       triples =
         for i <- 1..50 do
@@ -162,14 +162,14 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       {:ok, stats1} = TripleStore.Statistics.all(db1)
 
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure the db reference is garbage collected and file handles released
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Phase 2: Reopen and verify statistics
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
 
       {:ok, stats2} = TripleStore.Statistics.all(db2)
 
@@ -178,7 +178,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert stats1.distinct_predicates == stats2.distinct_predicates
       assert stats1.distinct_objects == stats2.distinct_objects
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
   end
@@ -191,7 +191,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
     @tag :slow
     test "reads do not block during writes" do
       path = unique_path()
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Insert initial data
       :ok = Index.insert_triples(db, [{1000, 100, 2000}, {1001, 100, 2001}])
@@ -229,13 +229,13 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, count} = Index.count(db, {:var, :var, :var})
       assert count == 102
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "concurrent lookups during inserts" do
       path = unique_path()
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Insert initial data with specific predicate
       for i <- 1..10 do
@@ -270,13 +270,13 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       Task.await(writer, 10_000)
       assert Task.await(reader, 10_000)
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "snapshot provides consistent view during writes" do
       path = unique_path()
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Insert initial data
       for i <- 1..10 do
@@ -284,10 +284,10 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       end
 
       # Take snapshot
-      {:ok, snapshot} = NIF.snapshot(db)
+      {:ok, snapshot} = ErlangAdapter.snapshot(db)
 
       # Count at snapshot time using snapshot_stream
-      {:ok, snapshot_stream} = NIF.snapshot_stream(snapshot, :spo, <<>>)
+      {:ok, snapshot_stream} = ErlangAdapter.snapshot_stream(snapshot, :spo, <<>>)
 
       snapshot_count =
         snapshot_stream
@@ -304,8 +304,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert snapshot_count == 10
       assert current_count == 50
 
-      NIF.release_snapshot(snapshot)
-      NIF.close(db)
+      ErlangAdapter.release_snapshot(snapshot)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
   end
@@ -319,7 +319,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       # Open and write data
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       for i <- 1..100 do
         Index.insert_triple(db, {1000 + i, 100, 2000 + i})
@@ -327,15 +327,15 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       # Force close without proper cleanup (simulates crash)
       # RocksDB handles this via WAL recovery
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Reopen - should work and have data
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
       {:ok, count} = Index.count(db2, {:var, :var, :var})
 
       assert count == 100
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
 
@@ -344,42 +344,42 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path = unique_path()
 
       for _ <- 1..5 do
-        {:ok, db} = NIF.open(path)
+        {:ok, db} = ErlangAdapter.open(path)
         Index.insert_triple(db, {:rand.uniform(10_000), 100, :rand.uniform(10_000)})
-        NIF.close(db)
+        ErlangAdapter.close(db)
       end
 
       # Final open should show accumulated data
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
       {:ok, count} = Index.count(db, {:var, :var, :var})
 
       # Should have some triples (exact count depends on duplicates)
       assert count >= 1 and count <= 5
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(path)
     end
 
     test "batch operations are atomic on recovery" do
       path = unique_path()
 
-      {:ok, db} = NIF.open(path)
+      {:ok, db} = ErlangAdapter.open(path)
 
       # Insert batch atomically
       triples = for i <- 1..50, do: {1000 + i, 100, 2000 + i}
       :ok = Index.insert_triples(db, triples)
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Reopen and verify all triples from batch exist
-      {:ok, db2} = NIF.open(path)
+      {:ok, db2} = ErlangAdapter.open(path)
 
       for {s, p, o} <- triples do
         assert {:ok, true} = Index.triple_exists?(db2, {s, p, o}),
                "Triple {#{s}, #{p}, #{o}} should exist after recovery"
       end
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path)
     end
   end
@@ -393,8 +393,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path1 = unique_path()
       path2 = unique_path()
 
-      {:ok, db1} = NIF.open(path1)
-      {:ok, db2} = NIF.open(path2)
+      {:ok, db1} = ErlangAdapter.open(path1)
+      {:ok, db2} = ErlangAdapter.open(path2)
 
       # Insert different data into each
       :ok = Index.insert_triple(db1, {1000, 100, 2000})
@@ -416,8 +416,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       assert {:ok, true} = Index.triple_exists?(db2, {3000, 300, 4000})
       assert {:ok, false} = Index.triple_exists?(db2, {1000, 100, 2000})
 
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
       cleanup_path(path1)
       cleanup_path(path2)
     end
@@ -426,8 +426,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path1 = unique_path()
       path2 = unique_path()
 
-      {:ok, db1} = NIF.open(path1)
-      {:ok, db2} = NIF.open(path2)
+      {:ok, db1} = ErlangAdapter.open(path1)
+      {:ok, db2} = ErlangAdapter.open(path2)
 
       {:ok, manager1} = Manager.start_link(db: db1)
       {:ok, manager2} = Manager.start_link(db: db2)
@@ -462,8 +462,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       Manager.stop(manager1)
       Manager.stop(manager2)
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
       cleanup_path(path1)
       cleanup_path(path2)
     end
@@ -472,14 +472,14 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path1 = unique_path()
       path2 = unique_path()
 
-      {:ok, db1} = NIF.open(path1)
-      {:ok, db2} = NIF.open(path2)
+      {:ok, db1} = ErlangAdapter.open(path1)
+      {:ok, db2} = ErlangAdapter.open(path2)
 
       :ok = Index.insert_triple(db1, {1000, 100, 2000})
       :ok = Index.insert_triple(db2, {2000, 200, 3000})
 
       # Close db1
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # db2 should still work
       assert {:ok, true} = Index.triple_exists?(db2, {2000, 200, 3000})
@@ -488,7 +488,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, count} = Index.count(db2, {:var, :var, :var})
       assert count == 2
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       cleanup_path(path1)
       cleanup_path(path2)
     end
@@ -498,8 +498,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       path1 = unique_path()
       path2 = unique_path()
 
-      {:ok, db1} = NIF.open(path1)
-      {:ok, db2} = NIF.open(path2)
+      {:ok, db1} = ErlangAdapter.open(path1)
+      {:ok, db2} = ErlangAdapter.open(path2)
 
       # Insert different amounts
       for i <- 1..10, do: Index.insert_triple(db1, {1000 + i, 100, 2000 + i})
@@ -520,8 +520,8 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
 
       Cache.stop(cache1)
       Cache.stop(cache2)
-      NIF.close(db1)
-      NIF.close(db2)
+      ErlangAdapter.close(db1)
+      ErlangAdapter.close(db2)
       cleanup_path(path1)
       cleanup_path(path2)
     end

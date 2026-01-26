@@ -65,12 +65,12 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   ## Migration from NIF Module
 
-  The `TripleStore.Backend.RocksDB.NIF` module is deprecated. Use this module
+  The `TripleStore.Backend.RocksDB.ErlangAdapter` module is deprecated. Use this module
   directly instead:
 
   ```elixir
   # Old way (deprecated)
-  {:ok, db} = TripleStore.Backend.RocksDB.NIF.open("/path/to/db")
+  {:ok, db} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
 
   # New way (recommended)
   {:ok, adapter} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
@@ -974,6 +974,38 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # ===========================================================================
 
   @doc """
+  Creates a lazy stream over a prefix range using a snapshot.
+
+  The stream reads from a point-in-time snapshot of the database,
+  ensuring consistent reads even if the data is modified during iteration.
+
+  ## Parameters
+
+  - `adapter` - The adapter PID
+  - `snapshot_ref` - Snapshot reference from `snapshot/1`
+  - `cf` - Column family atom
+  - `prefix` - Binary prefix to iterate over
+
+  ## Returns
+
+  - `Stream.t()` - A stream of `{key, value}` tuples
+
+  ## Examples
+
+      # Create snapshot and stream from it
+      {:ok, snap} = ErlangAdapter.snapshot(db)
+      stream = ErlangAdapter.snapshot_stream(db, snap, :spo, <<subject_id::64-big>>)
+      results = Enum.to_list(stream)
+      ErlangAdapter.release_snapshot(db, snap)
+
+  """
+  @spec snapshot_stream(adapter(), snapshot_ref(), column_family(), binary()) :: Enumerable.t()
+  def snapshot_stream(adapter, snapshot_ref, cf, prefix)
+      when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
+    prefix_stream(adapter, cf, prefix, snapshot: snapshot_ref)
+  end
+
+  @doc """
   Creates a lazy stream over a prefix range.
 
   The stream properly manages resources and will close the underlying iterator
@@ -1241,13 +1273,35 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
             {:ok, cf_handle} -> {:delete, cf_handle, key}
             {:error, _reason} = error -> error
           end
+
+        {invalid_op, _cf, _key, _value} ->
+          {:error, {:invalid_operation, invalid_op}}
+
+        {invalid_op, _cf, _key} ->
+          {:error, {:invalid_operation, invalid_op}}
+
+        other ->
+          {:error, {:invalid_operation, :unknown}}
       end)
 
-    if Enum.any?(batch, &match?({:error, _}, &1)) do
-      {:reply, {:error, :invalid_column_family}, state}
-    else
-      result = :rocksdb.write(db, batch, write_opts)
-      {:reply, result, state}
+    # Check for errors in the batch
+    error =
+      Enum.find(batch, fn
+        {:error, {:invalid_operation, _}} -> true
+        {:error, _} -> true
+        _ -> false
+      end)
+
+    case error do
+      {:error, {:invalid_operation, op}} ->
+        {:reply, {:error, {:invalid_operation, op}}, state}
+
+      {:error, _} ->
+        {:reply, {:error, :invalid_column_family}, state}
+
+      nil ->
+        result = :rocksdb.write(db, batch, write_opts)
+        {:reply, result, state}
     end
   end
 
@@ -1700,6 +1754,10 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
       # Allow paths under the current project directory
       path_within_directory?(expanded_path, current_dir) ->
+        :ok
+
+      # Allow paths under /dev/shm (Linux shared memory for test databases)
+      path_within_directory?(expanded_path, "/dev/shm") ->
         :ok
 
       # Reject other absolute paths for security

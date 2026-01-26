@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIteratorTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Leapfrog.QuadTrieIterator
 
@@ -17,10 +17,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIteratorTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

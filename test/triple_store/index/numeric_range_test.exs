@@ -1,7 +1,7 @@
 defmodule TripleStore.Index.NumericRangeTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index.NumericRange
 
   @moduletag :integration
@@ -9,7 +9,7 @@ defmodule TripleStore.Index.NumericRangeTest do
   setup do
     # Create a unique test database
     path = "/tmp/triple_store_numeric_range_test_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(path)
+    {:ok, db} = ErlangAdapter.open(path)
     NumericRange.init()
 
     # Clear ETS table between tests to prevent test pollution (T2 from review)
@@ -19,7 +19,7 @@ defmodule TripleStore.Index.NumericRangeTest do
     end
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(path)
     end)
 
@@ -393,7 +393,7 @@ defmodule TripleStore.Index.NumericRangeTest do
         NumericRange.build_index_operation(predicate_id, 3, 30.0)
       ]
 
-      :ok = NIF.mixed_batch(db, ops, true)
+      :ok = ErlangAdapter.mixed_batch(db, ops, true)
 
       # Verify values were indexed
       {:ok, results} = NumericRange.range_query(db, predicate_id, 0.0, 50.0)

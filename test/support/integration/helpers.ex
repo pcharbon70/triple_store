@@ -184,7 +184,7 @@ defmodule TripleStore.Integration.Helpers do
   """
   def safe_close_db(db) do
     try do
-      TripleStore.Backend.RocksDB.NIF.close(db)
+      TripleStore.Backend.RocksDB.ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end
