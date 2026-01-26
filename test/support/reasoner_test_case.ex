@@ -58,6 +58,7 @@ defmodule TripleStore.ReasonerTestCase do
       alias TripleStore.Reasoner.{
         DeleteWithReasoning,
         GraphReasoningStatus,
+        GraphScopedReasoner,
         Incremental,
         PatternMatcher,
         ReasoningConfig,

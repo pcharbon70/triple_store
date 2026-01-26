@@ -50,7 +50,6 @@ defmodule TripleStore.Quad.CacheWarmer do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
 
   # ===========================================================================
@@ -289,7 +288,7 @@ defmodule TripleStore.Quad.CacheWarmer do
     prefix = QuadIndex.gspo_prefix(graph_id)
 
     try do
-      NIF.fold_keys(db, :gspo, prefix, 0, fn key, acc ->
+      ErlangAdapter.fold_keys(db, :gspo, prefix, 0, fn key, acc ->
         case key do
           <<^graph_id::unsigned-big-integer-size(64), _::binary>> -> acc + 1
           _ -> throw({:halt, acc})
@@ -310,7 +309,7 @@ defmodule TripleStore.Quad.CacheWarmer do
     # We don't need to do anything with the data - the act of
     # reading it loads it into RocksDB's block cache
     _ =
-      NIF.fold_keys(db, index, prefix, 0, fn _key, acc ->
+      ErlangAdapter.fold_keys(db, index, prefix, 0, fn _key, acc ->
         acc + 1
       end)
 

@@ -53,7 +53,6 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
   alias TripleStore.Reasoner.SemiNaive
 
   # Database-related imports for the database API
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.DerivedStore
@@ -79,7 +78,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
   @type triple_set :: MapSet.t(Rule.term_triple())
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "Statistics from incremental quad addition"
   @type add_stats :: %{

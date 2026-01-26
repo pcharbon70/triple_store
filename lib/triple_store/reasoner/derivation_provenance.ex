@@ -43,7 +43,6 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
       {:ok, explanation} = DerivationProvenance.explain_inference(tracker, derived_quad, db)
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Reasoner.Rule
 
   # ============================================================================
@@ -312,7 +311,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
         {@provenance_cf, key, value}
       end)
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   rescue
     error -> {:error, error}
   end
@@ -336,7 +335,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
       prefix = if graph_id, do: <<graph_id::64-big>>, else: <<>>
 
       derivations =
-        NIF.fold(db, @provenance_cf, prefix, [], fn {key, value}, acc ->
+        ErlangAdapter.fold(db, @provenance_cf, prefix, [], fn {key, value}, acc ->
           case decode_provenance_key(key) do
             {:ok, {_g, _s, _p, _o} = quad} ->
               case decode_derivation(value) do
@@ -380,7 +379,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     try do
       # Collect all keys for this graph
       keys =
-        NIF.fold_keys(db, @provenance_cf, prefix, [], fn key, acc ->
+        ErlangAdapter.fold_keys(db, @provenance_cf, prefix, [], fn key, acc ->
           [key | acc]
         end)
 
@@ -389,7 +388,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
       else
         operations = Enum.map(keys, fn key -> {@provenance_cf, key} end)
 
-        case NIF.delete_batch(db, operations, true) do
+        case ErlangAdapter.delete_batch(db, operations, true) do
           :ok -> {:ok, length(keys)}
           error -> error
         end
@@ -438,7 +437,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   end
 
   defp lookup_term(db, term_id) do
-    case NIF.get(db, :id2str, <<term_id::64-big>>) do
+    case ErlangAdapter.get(db, :id2str, <<term_id::64-big>>) do
       {:ok, value} -> value
       _ -> "##{term_id}"
     end

@@ -32,7 +32,6 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
       )
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.BackwardTraceQuad
@@ -44,7 +43,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "ID quad: {graph_id, subject_id, predicate_id, object_id}"
   @type id_quad :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
@@ -270,7 +269,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
           {:derived_cf, key}
         end)
 
-      NIF.delete_batch(db, operations, true)
+      ErlangAdapter.delete_batch(db, operations, true)
     rescue
       _error -> :ok
     end

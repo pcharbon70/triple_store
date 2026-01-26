@@ -542,7 +542,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     analyze_complexity_recursive(pattern, acc, depth + 1)
   end
 
-  defp analyze_complexity_recursive(node, acc, depth) do
+  defp analyze_complexity_recursive(_node, acc, depth) do
     %{acc | node_count: acc.node_count + 1, max_depth: max(acc.max_depth, depth)}
   end
 
@@ -824,7 +824,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Calculate cost for a single triple/quad pattern
-  defp cost_pattern(pattern, stats) do
+  defp cost_pattern(_pattern, stats) do
     # Use statistics if available, otherwise default
     case stats do
       %{quad_count: total} when total > 0 ->
@@ -893,7 +893,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Track transformation steps that would be applied
-  defp track_transformations(algebra, stats) do
+  defp track_transformations(algebra, _stats) do
     transformations = []
 
     # Check for filter push-down
@@ -978,25 +978,6 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Count BGP patterns in algebra
-  defp count_bgps(algebra) do
-    count_bgps(algebra, 0)
-  end
-
-  defp count_bgps(algebra, acc) do
-    case algebra do
-      {:bgp, _patterns} ->
-        {acc + 1, acc + 1}
-
-      {:join, left, right} ->
-        {left_count, _} = count_bgps(left, 0)
-        {right_count, _} = count_bgps(right, 0)
-        {acc + left_count + right_count, acc + left_count + right_count}
-
-      _ ->
-        {acc, acc}
-    end
-  end
-
   # Check for constant expressions
   defp has_constant_expressions?(algebra) do
     case algebra do
@@ -1029,7 +1010,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Generate recommended execution plan
   defp generate_recommended_plan(algebra, stats, cost_breakdown) do
-    {steps, _} = generate_execution_steps(algebra, 1, [])
+    {steps, _} = _generate_execution_steps(algebra, 1, [])
 
     %{
       strategy: recommend_strategy(algebra, stats),
@@ -1071,12 +1052,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   end
 
   # Generate execution steps
-  defp generate_execution_steps(algebra) do
-    {steps, _} = generate_execution_steps(algebra, 1, [])
-    Enum.sort_by(steps, & &1.step)
-  end
-
-  defp generate_execution_steps(algebra, index, acc) do
+  defp _generate_execution_steps(algebra, index, acc) do
     step =
       case algebra do
         {:bgp, patterns} ->
@@ -1110,7 +1086,7 @@ defmodule TripleStore.SPARQL.Optimizer do
     # Process children and build steps list
     {child_steps, _} =
       Enum.reduce(children, {[], index + 1}, fn child, {steps_acc, next_index} ->
-        {new_steps, final_index} = generate_execution_steps(child, next_index, steps_acc)
+        {new_steps, final_index} = _generate_execution_steps(child, next_index, steps_acc)
         {new_steps, final_index}
       end)
 
@@ -2666,7 +2642,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Find all patterns connected to the given pattern via shared variables
   defp find_connected_component(start_pattern, var_to_patterns, seen) do
-    vars = pattern_variables(start_pattern)
+    _vars = pattern_variables(start_pattern)
 
     # BFS to find all connected patterns
     {connected, _} =

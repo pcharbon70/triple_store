@@ -680,24 +680,6 @@ defmodule TripleStore.SPARQL.Executor do
     end
   end
 
-  # Take a batch from a stream, returning {batch, remaining_stream}
-  # This is used to implement lazy graph iteration without materializing
-  # entire result sets
-  defp _take_batch(stream, count) do
-    # Collect all elements from the stream into a list
-    # This is necessary because streams can't be properly "continued"
-    # after taking elements - both Stream.take and Stream.drop would
-    # start from the beginning
-    all_items = Enum.to_list(stream)
-
-    # Split into batch and remaining
-    if length(all_items) > count do
-      {Enum.take(all_items, count), Enum.drop(all_items, count)}
-    else
-      {all_items, []}
-    end
-  end
-
   @spec convert_patterns_to_quads(term(), term()) :: {:ok, term()} | {:error, term()}
   defp convert_patterns_to_quads({:bgp, triple_patterns}, graph_term) do
     quad_patterns =
@@ -3430,56 +3412,6 @@ defmodule TripleStore.SPARQL.Executor do
 
   defp substitute_term(term, _binding), do: {:ok, term}
 
-  # Build RDF.Graph from internal term triples
-  defp _build_graph_from_terms(_ctx, [], opts) do
-    {:ok, RDF.Graph.new(opts)}
-  end
-
-  defp _build_graph_from_terms(_ctx, triples, opts) do
-    # Convert internal terms to RDF terms
-    rdf_triples =
-      Enum.flat_map(triples, fn {s, p, o} ->
-        with {:ok, s_term} <- internal_to_rdf(s),
-             {:ok, p_term} <- internal_to_rdf(p),
-             {:ok, o_term} <- internal_to_rdf(o) do
-          [{s_term, p_term, o_term}]
-        else
-          _ -> []
-        end
-      end)
-
-    {:ok, RDF.Graph.new(rdf_triples, opts)}
-  end
-
-  # Build RDF.Dataset from internal term quads (for named graph queries)
-  defp _build_dataset_from_terms(_ctx, [], _opts) do
-    {:ok, RDF.Dataset.new([])}
-  end
-
-  defp _build_dataset_from_terms(_ctx, quads, _opts) do
-    # Convert internal quads to RDF quads
-    # Quads are {s, p, o, g} or {s, p, o} with graph context from binding
-    rdf_quads =
-      Enum.flat_map(quads, fn
-        {s, _p, _o, g} = quad ->
-          with {:ok, s_term} <- internal_to_rdf(s),
-               {:ok, p_term} <- internal_to_rdf(elem(quad, 1)),
-               {:ok, o_term} <- internal_to_rdf(elem(quad, 2)),
-               {:ok, g_term} <- internal_to_rdf(g) do
-            [{s_term, p_term, o_term, g_term}]
-          else
-            _ -> []
-          end
-
-        {_s, _p, _o} ->
-          # Triple without explicit graph - skip in dataset mode
-          # (this shouldn't happen if has_graph_vars? is true)
-          []
-      end)
-
-    {:ok, RDF.Dataset.new(rdf_quads)}
-  end
-
   # Build RDF.Graph from stream of bindings (streaming, no materialization)
   defp build_graph_from_stream(_ctx, stream, template, opts) do
     rdf_triples =
@@ -3582,52 +3514,6 @@ defmodule TripleStore.SPARQL.Executor do
       else
         :unbound -> []
       end
-    end)
-  end
-
-  # Instantiate template with graph context
-  # Returns list of {s, p, o, g} quads when graph is present, or {s, p, o} when not
-  defp _instantiate_template_with_graph(template, binding) do
-    # Try to find the graph variable value in the binding
-    # Graph variables are typically named "g", "graph", or contain "graph"
-    graph_term =
-      Enum.find_value(binding, fn
-        {"g", v} ->
-          v
-
-        {"graph", v} ->
-          v
-
-        {k, v} when is_binary(k) ->
-          if String.contains?(k, "graph"), do: v, else: nil
-
-        _ ->
-          nil
-      end)
-
-    Enum.flat_map(template, fn {:triple, s, p, o} ->
-      with {:ok, s_val} <- substitute_term(s, binding),
-           {:ok, p_val} <- substitute_term(p, binding),
-           {:ok, o_val} <- substitute_term(o, binding) do
-        if graph_term do
-          # Include graph context
-          [{s_val, p_val, o_val, graph_term}]
-        else
-          # No graph context - return triple
-          [{s_val, p_val, o_val}]
-        end
-      else
-        :unbound -> []
-      end
-    end)
-  end
-
-  # Extract graph names from binding and instantiated quads
-  defp _extract_graph_names(_binding, instantiated) do
-    # Collect all graph values from the instantiated quads
-    Enum.reduce(instantiated, MapSet.new(), fn
-      {_s, _p, _o, g}, acc -> MapSet.put(acc, g)
-      {_s, _p, _o}, acc -> acc
     end)
   end
 

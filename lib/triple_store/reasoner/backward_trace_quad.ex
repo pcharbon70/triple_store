@@ -31,7 +31,6 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
       )
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
@@ -41,7 +40,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "ID quad: {graph_id, subject_id, predicate_id, object_id}"
   @type id_quad :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
@@ -242,7 +241,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
 
   defp get_all_graphs_with_derivations(db) do
     # Scan the derived column family for all graph IDs
-    case NIF.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
+    case ErlangAdapter.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
            case DerivedStore.decode_derived_key(key) do
              {:ok, {g, _s, _p, _o}} -> MapSet.put(acc, g)
              _ -> acc

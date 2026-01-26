@@ -259,14 +259,9 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           config: config
         )
 
-        # Query graph 2 should not have alice's inferred type
-        {alice_id, _} = NIF.get_or_put_str2id(db, ex_iri("alice"))
-        {person_id, _} = NIF.get_or_put_str2id(db, ex_iri("Person"))
-        {type_id, _} = NIF.get_or_put_str2id(db, rdf_type())
-
         # Check for alice rdf:type Person in graph 2's derived quads
         g2_prefix = QuadIndex.gspo_prefix(2)
-        alice_in_g2 = NIF.fold_count(db, :derived_cf, g2_prefix)
+        alice_in_g2 = NIF.fold(db, :derived, g2_prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
         assert alice_in_g2 == 0
       after
         cleanup_db(db, path)

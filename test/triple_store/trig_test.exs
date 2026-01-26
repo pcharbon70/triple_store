@@ -652,8 +652,8 @@ defmodule TripleStore.TrigTest do
     test "handles literals with newlines in TriG", %{db: db, manager: manager} do
       trig_string = """
       @prefix ex: <http://example.org/>.
-      ex:s ex:p \"""o with
-      newline\""" .
+      ex:s ex:p \"\"\"o with
+      newline\"\"\" .
       """
 
       {:ok, count} = Loader.load_trig_string(db, manager, trig_string)

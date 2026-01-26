@@ -21,7 +21,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       {:ok, fingerprint} = TBoxExtractor.tbox_fingerprint(db, 0)
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.Dictionary.IdToString
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.Namespaces
@@ -68,7 +67,7 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   # Types
   # ============================================================================
 
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
   @type graph_id :: non_neg_integer()
   @type id_quad :: {integer(), integer(), integer(), integer()}
   @type tbox_facts :: MapSet.t(id_quad())
@@ -112,7 +111,7 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
       tbox_quads =
-        NIF.fold(db, @gspo_cf, graph_prefix, MapSet.new(), fn
+        ErlangAdapter.fold(db, @gspo_cf, graph_prefix, MapSet.new(), fn
           {key, _value}, acc ->
             case QuadIndex.key_to_quad(:gspo, key) do
               {_g, _s, p, _o} = quad ->
@@ -164,7 +163,7 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
       tbox_data =
-        NIF.fold(db, @gspo_cf, graph_prefix, [], fn
+        ErlangAdapter.fold(db, @gspo_cf, graph_prefix, [], fn
           {key, _value}, acc ->
             case QuadIndex.key_to_quad(:gspo, key) do
               {_g, _s, p, _o} = quad ->

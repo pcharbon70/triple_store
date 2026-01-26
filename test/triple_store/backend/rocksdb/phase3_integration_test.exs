@@ -33,8 +33,8 @@ defmodule TripleStore.Backend.RocksDB.Phase3IntegrationTest do
     File.rm_rf(db_path)
     File.mkdir_p!(db_path)
 
-    # Open database using ErlangAdapter directly
-    {:ok, adapter} = ErlangAdapter.open(db_path)
+    # Open database using ErlangAdapter with triple schema
+    {:ok, adapter} = ErlangAdapter.open(db_path, schema: :triple)
 
     on_exit(fn ->
       ErlangAdapter.close(adapter)

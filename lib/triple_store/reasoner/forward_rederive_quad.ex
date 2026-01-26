@@ -35,7 +35,6 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
       )
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.PatternMatcher
@@ -49,7 +48,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "ID quad: {graph_id, subject_id, predicate_id, object_id}"
   @type id_quad :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
@@ -244,7 +243,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     try do
       # Collect all explicit quads (not in derived CF)
       explicit_quads =
-        NIF.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+        ErlangAdapter.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
           {g, s, p, o} = QuadIndex.decode_gspo_key(key)
           quad = {g, s, p, o}
 

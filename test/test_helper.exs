@@ -1,6 +1,6 @@
 ExUnit.start(exclude: [:benchmark, :large_dataset, :slow, :lifetime_safety])
 
-# Start the pool (skip if NIF is not yet implemented)
+# Start the pool (skip if ErlangAdapter is not yet implemented)
 # Spawn without link to avoid crashes propagating
 spawn(fn ->
   case TripleStore.Test.DbPool.start_link() do
@@ -8,7 +8,7 @@ spawn(fn ->
       :ok
 
     {:error, _} ->
-      IO.warn("DbPool not started: NIF not yet implemented")
+      IO.warn("DbPool not started: ErlangAdapter not yet implemented")
       IO.warn("Some tests may be skipped. This is expected during migration phases.")
   end
 end)

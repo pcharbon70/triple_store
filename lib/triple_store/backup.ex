@@ -528,7 +528,7 @@ defmodule TripleStore.Backup do
   def verify_quad_backup(backup_path) do
     with {:ok, :valid} <- verify(backup_path) do
       # Check for all 4 quad indices using list_column_families
-      case NIF.list_column_families(backup_path) do
+      case ErlangAdapter.list_column_families(backup_path) do
         {:ok, indices} when is_list(indices) ->
           quad_indices = [:gspo, :gpos, :spog, :posg]
           missing = Enum.reject(quad_indices, &(&1 in indices))
@@ -565,7 +565,7 @@ defmodule TripleStore.Backup do
   @spec get_backup_schema(Path.t()) :: {:ok, :triple | :quad} | {:error, term()}
   def get_backup_schema(backup_path) do
     # list_column_families returns a list directly (or empty list on error)
-    indices = NIF.list_column_families(backup_path)
+    indices = ErlangAdapter.list_column_families(backup_path)
 
     cond do
       # Check for quad-specific indices (list_column_families returns strings)
@@ -578,11 +578,11 @@ defmodule TripleStore.Backup do
 
       # Fallback: try to open and check
       true ->
-        with {:ok, db} <- NIF.open(backup_path) do
+        with {:ok, db} <- ErlangAdapter.open(backup_path) do
           # If we can open it, check the column families through the db
-          NIF.close(db)
+          ErlangAdapter.close(db)
           # Re-check with list_column_families
-          indices = NIF.list_column_families(backup_path)
+          indices = ErlangAdapter.list_column_families(backup_path)
 
           if "gspo" in indices do
             {:ok, :quad}
@@ -652,22 +652,6 @@ defmodule TripleStore.Backup do
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
-
-  # Gets the list of column families in a database
-  defp _get_column_families(db) do
-    # The NIF doesn't expose a direct way to list CFs, but we can infer from
-    # successful operations or check the backup metadata
-    case NIF.list_column_families(db) do
-      {:ok, cfs} when is_list(cfs) ->
-        cfs
-
-      _ ->
-        # Fallback: assume standard indices
-        [:id2str, :str2id, :spo, :pos, :osp]
-    end
-  rescue
-    _ -> [:id2str, :str2id, :spo, :pos, :osp]
-  end
 
   # Writes graph statistics to backup metadata
   defp write_graph_stats_metadata(backup_path, store, include_reasoning) do

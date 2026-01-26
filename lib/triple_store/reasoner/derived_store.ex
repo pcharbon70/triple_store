@@ -1071,7 +1071,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
     try do
       results =
-        NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+        ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
           {g, s, p, o} = QuadIndex.decode_gspo_key(key)
           [{g, s, p, o} | acc]
         end)

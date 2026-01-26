@@ -17,19 +17,21 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   | `pos` | Predicate-Object-Subject index | Prefix scans (predicate, predicate-object) |
   | `osp` | Object-Subject-Predicate index | Prefix scans (object, object-subject) |
   | `derived` | Inferred triples from reasoning | Sequential bulk writes, batch scans |
-  | `derivation_provenance` | Derivation tracking for provenance | Point lookups and scans |
   | `numeric_range` | Numeric range indices | Range queries |
 
   ## Quad Store Column Families (Schema v2)
 
-  The quad store uses four quad indices for named graph support:
+  The quad store includes all triple store column families plus quad-specific ones:
 
-  | CF Name | Key Ordering | Primary Use Case |
-  |---------|-------------|------------------|
-  | `gspo` | Graph-Subject-Predicate-Object | All quads in specific graph |
-  | `gpos` | Graph-Predicate-Object-Subject | All predicates in specific graph |
-  | `spog` | Subject-Predicate-Object-Graph | Subject-scoped queries across graphs |
-  | `posg` | Predicate-Object-Subject-Graph | Predicate-scoped queries across graphs |
+  | CF Name | Purpose | Access Pattern |
+  |---------|---------|----------------|
+  | (All triple CFs) | Same as triple store | Same patterns |
+  | `gspo` | Graph-Subject-Predicate-Object index | All quads in specific graph |
+  | `gpos` | Graph-Predicate-Object-Subject index | All predicates in specific graph |
+  | `spog` | Subject-Predicate-Object-Graph index | Subject-scoped across graphs |
+  | `posg` | Predicate-Object-Subject-Graph index | Predicate-scoped across graphs |
+  | `derivation_provenance` | Derivation tracking for provenance | Point lookups and scans |
+  | `acl` | Access control lists | Permission checks |
 
   ## Storage Tradeoffs
 
@@ -187,7 +189,6 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"pos", index_cf_options()},
       {"osp", index_cf_options()},
       {"derived", derived_cf_options()},
-      {"derivation_provenance", derivation_provenance_cf_options()},
       {"numeric_range", numeric_range_cf_options()}
     ]
   end
@@ -255,7 +256,6 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       "pos",
       "osp",
       "derived",
-      "derivation_provenance",
       "numeric_range"
     ]
   end

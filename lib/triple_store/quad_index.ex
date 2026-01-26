@@ -1314,7 +1314,7 @@ defmodule TripleStore.QuadIndex do
     prefix = graph_pattern_to_lookup_prefix(graph_id, pattern)
 
     results =
-      TripleStore.Backend.RocksDB.NIF.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+      TripleStore.Backend.RocksDB.ErlangAdapter.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
         {g, s, p, o} = decode_gspo_key(key)
 
         if g == graph_id and triple_matches_index_pattern?({s, p, o}, pattern) do
