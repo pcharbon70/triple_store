@@ -8,6 +8,7 @@ defmodule TripleStore.SPARQL.Authorization do
   - Role-based permissions
   - Public/private graphs
   - Graph ownership
+  - Permit-all mode for open-access scenarios
 
   ## Permission Model
 
@@ -23,6 +24,26 @@ defmodule TripleStore.SPARQL.Authorization do
   `%{id: "user123", roles: [:admin, :editor], name: "Alice"}`
 
   For public/unauthenticated access, use `:public` atom.
+
+  ## Permit-All Mode (Open Access)
+
+  For scenarios where authorization is not needed (public datasets, internal tools,
+  development environments), permit-all mode bypasses ACL checks entirely:
+
+  ```elixir
+  # Enable permit-all mode
+  Authorization.set_permit_all(true)
+
+  # All authorization checks return true
+  {:ok, true} = Authorization.can_read?(ctx, "any-graph", :public)
+
+  # Disable permit-all mode (use ACLs)
+  Authorization.set_permit_all(false)
+  ```
+
+  Permit-all mode is **process-global** and affects all authorization checks
+  in the calling process. This allows different parts of an application to
+  have different authorization policies.
 
   ## ACL Storage
 
@@ -44,6 +65,9 @@ defmodule TripleStore.SPARQL.Authorization do
       # List graphs accessible to user
       {:ok, [graph1, graph2]} = Authorization.list_accessible_graphs(ctx, user)
 
+      # Enable permit-all for open-access scenarios
+      Authorization.set_permit_all(true)
+
   """
 
   alias TripleStore.Adapter
@@ -55,10 +79,15 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @telemetry_event_prefix [:triple_store, :sparql, :authorization]
 
+  # Module attributes for permit-all mode
+  @permit_all_key :triple_store_authorization_permit_all
+  @default_permit_all false
+
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
           optional(:db) => pid() | term(),
-          optional(:dict_manager) => pid()
+          optional(:dict_manager) => pid(),
+          optional(:permit_all) => boolean()
         }
 
   @typedoc "User identifier - either an atom for special users or a string ID"
@@ -77,6 +106,74 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @typedoc "ACL entry"
   @type acl_entry :: %{(String.t() | atom()) => [permission()]}
+
+  # ===========================================================================
+  # Permit-All Mode (Open Access)
+  # ===========================================================================
+
+  @doc """
+  Checks if permit-all mode is enabled for the current process.
+
+  When permit-all mode is enabled, authorization checks return `true` for
+  all graphs and users, bypassing ACL lookups.
+
+  ## Returns
+
+  - `true` if permit-all mode is enabled
+  - `false` if ACL-based authorization is active
+
+  ## Examples
+
+      iex> Authorization.permit_all?()
+      false
+
+      iex> Authorization.set_permit_all(true)
+      :ok
+
+      iex> Authorization.permit_all?()
+      true
+
+  """
+  @spec permit_all?() :: boolean()
+  def permit_all? do
+    case Process.get(@permit_all_key) do
+      nil -> @default_permit_all
+      value -> value
+    end
+  end
+
+  @doc """
+  Sets permit-all mode for the current process.
+
+  When enabled, all authorization checks bypass ACL lookups and return `true`.
+  This is useful for:
+  - Public datasets with open access
+  - Development and testing environments
+  - Internal tools that don't need user-based authorization
+  - Migrated triple stores that don't have ACLs configured
+
+  ## Parameters
+
+  - `enabled` - `true` to enable permit-all mode, `false` to use ACLs
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      # Enable for open-access scenario
+      Authorization.set_permit_all(true)
+
+      # Disable to use ACLs
+      Authorization.set_permit_all(false)
+
+  """
+  @spec set_permit_all(boolean()) :: :ok
+  def set_permit_all(enabled) when is_boolean(enabled) do
+    Process.put(@permit_all_key, enabled)
+    :ok
+  end
 
   # ===========================================================================
   # Public API
@@ -186,7 +283,7 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission)
+    check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission)
   end
 
   @doc """
@@ -497,26 +594,31 @@ defmodule TripleStore.SPARQL.Authorization do
     # Convert graph IRI to term for lookup
     graph_term = {:named_node, graph_iri}
 
-    check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission)
+    check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission)
   end
 
-  defp check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission) do
-    # Special case: default graph is always readable
-    if graph_term in [:default, :default_graph] and permission == :read do
+  defp check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission) do
+    # Permit-all mode bypasses all ACL checks (checked from both context and process)
+    if ctx[:permit_all] == true or permit_all?() do
       {:ok, true}
     else
-      # Check if graph exists and get permissions
-      with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term),
-           {:ok, acl_entry} <- get_acl_entry(db, graph_id, "__public__"),
-           {:ok, has_perm} <- check_public_permission(acl_entry, permission) do
-        {:ok, has_perm}
+      # Special case: default graph is always readable
+      if graph_term in [:default, :default_graph] and permission == :read do
+        {:ok, true}
       else
-        {:error, _} ->
-          # If public check fails or graph not found, check user/role permissions
-          check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
+        # Check if graph exists and get permissions
+        with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term),
+             {:ok, acl_entry} <- get_acl_entry(db, graph_id, "__public__"),
+             {:ok, has_perm} <- check_public_permission(acl_entry, permission) do
+          {:ok, has_perm}
+        else
+          {:error, _} ->
+            # If public check fails or graph not found, check user/role permissions
+            check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
 
-        other ->
-          other
+          other ->
+            other
+        end
       end
     end
   end
