@@ -461,6 +461,7 @@ defmodule TripleStore.SPARQL.Authorization do
         accessible =
           Enum.filter(all_graphs, fn graph_term ->
             case check_permission_for_term(
+                   ctx,
                    db,
                    dict_manager,
                    graph_term,
