@@ -1,16 +1,16 @@
-# SPARQL Queries
+# SPARQL Queries (Triple Store)
 
-This guide covers querying data with SPARQL in TripleStore, with emphasis on quad store and named graphs.
+This guide covers querying data with SPARQL in a triple store.
 
-> **Note**: This guide assumes you're using a quad store (`schema: :quad`). For basic triple store usage, see [Getting Started](01-getting-started.md).
+> **Note**: This guide is for triple stores (`schema: :triple`). For quad stores with named graphs and GRAPH clauses, see the [Quad Store SPARQL Queries](../quads/03-sparql-queries.md) guide.
 
 ## Query Basics
 
 ### Executing Queries
 
 ```elixir
-# Open quad store
-{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+# Open triple store
+{:ok, store} = TripleStore.open("./my_database", schema: :triple)
 
 # Execute query
 {:ok, results} = TripleStore.query(store, """
@@ -490,167 +490,6 @@ Get resource descriptions:
 # Returns all triples where alice is subject or object
 ```
 
-## GRAPH Clause (Named Graphs)
-
-The `GRAPH` keyword allows you to query specific named graphs in a quad store.
-
-> **Note**: Named graphs require opening the store with `schema: :quad`. See [Named Graphs](07-named-graphs.md) for details.
-
-### Query a Specific Graph
-
-```elixir
-# Open quad store first
-{:ok, store} = TripleStore.open("./my_database", schema: :quad)
-
-# Query a specific named graph
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?s ?p ?o
-  WHERE {
-    GRAPH ex:source1 {
-      ?s ?p ?o
-    }
-  }
-  LIMIT 100
-""")
-```
-
-### Query All Graphs
-
-Use a graph variable to iterate over all graphs:
-
-```elixir
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?g ?s ?p ?o
-  WHERE {
-    GRAPH ?g {
-      ?s ?p ?o
-    }
-  }
-  ORDER BY ?g
-""")
-```
-
-### Combine Graph Patterns
-
-Query multiple specific graphs with UNION:
-
-```elixir
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?s ?p ?o
-  WHERE {
-    { GRAPH ex:graph1 { ?s ?p ?o } }
-    UNION
-    { GRAPH ex:graph2 { ?s ?p ?o } }
-  }
-""")
-```
-
-### Graph Variable in Patterns
-
-Use graph variables to correlate data across graphs:
-
-```elixir
-# Find quads that appear in multiple graphs
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?s ?p ?o
-  WHERE {
-    GRAPH ex:graph1 { ?s ?p ?o }
-    GRAPH ex:graph2 { ?s ?p ?o }
-  }
-""")
-```
-
-### Filter by Graph
-
-Combine graph patterns with FILTER:
-
-```elixir
-# Query specific graphs from a set
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?g ?s ?p ?o
-  WHERE {
-    GRAPH ?g {
-      ?s ex:name ?o .
-      FILTER (?g IN (ex:graph1, ex:graph2, ex:graph3))
-    }
-  }
-""")
-```
-
-### Graph with Subpatterns
-
-Combine graph patterns with other patterns:
-
-```elixir
-# Match pattern in graph, then join with default graph
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?person ?department
-  WHERE {
-    GRAPH ex:employees {
-      ?person a ex:Employee .
-    }
-    ?person ex:worksIn ?department .
-  }
-""")
-```
-
-### Count per Graph
-
-Get statistics for each graph:
-
-```elixir
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?g (COUNT(*) AS ?tripleCount)
-  WHERE {
-    GRAPH ?g {
-      ?s ?p ?o
-    }
-  }
-  GROUP BY ?g
-  ORDER BY DESC(?tripleCount)
-""")
-```
-
-### Default Graph vs Named Graphs
-
-```elixir
-# Default graph (no GRAPH keyword) - queries default graph only
-{:ok, results} = TripleStore.query(store, """
-  SELECT ?s ?p ?o
-  WHERE { ?s ?p ?o }
-""")
-
-# All graphs (with GRAPH variable)
-{:ok, results} = TripleStore.query(store, """
-  SELECT ?g ?s ?p ?o
-  WHERE { GRAPH ?g { ?s ?p ?o } }
-""")
-
-# Union of default and all named graphs
-{:ok, results} = TripleStore.query(store, """
-  SELECT ?s ?p ?o
-  WHERE {
-    { ?s ?p ?o }
-    UNION
-    { GRAPH ?g { ?s ?p ?o } }
-  }
-""")
-```
-
 ## Query Options
 
 ### Timeout
@@ -728,7 +567,7 @@ GROUP BY ?start ?end
 
 ### Use Prefixes
 
-Makes queries more readable and maintainable:
+Makes queries more readable:
 
 ```elixir
 """
@@ -740,7 +579,7 @@ WHERE { ?person foaf:name ?name }
 """
 ```
 
-### Limit Early, Optimize Later
+### Limit Early
 
 Start with LIMIT during development:
 
@@ -751,8 +590,6 @@ SELECT * WHERE { ?s ?p ?o } LIMIT 10
 ```
 
 ### Put Most Selective Patterns First
-
-The query optimizer reorders patterns, but hints help:
 
 ```elixir
 # Good: specific pattern first

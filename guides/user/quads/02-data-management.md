@@ -1,6 +1,8 @@
-# Data Management
+# Data Management (Quad Store)
 
-This guide covers loading, exporting, and backing up data in TripleStore, with focus on quad store operations and named graphs.
+This guide covers loading, exporting, and backing up data in a quad store with named graphs.
+
+> **Note**: This guide is for quad stores (`schema: :quad`) with named graphs. For triple stores, see the [Triple Store Data Management](../triples/02-data-management.md) guide.
 
 ## Loading Data
 
@@ -9,7 +11,7 @@ This guide covers loading, exporting, and backing up data in TripleStore, with f
 Load RDF data from files:
 
 ```elixir
-# Load N-Quads (recommended for quad store)
+# Load N-Quads (recommended for quad store - includes graph context)
 {:ok, count} = TripleStore.load(store, "data.nq")
 
 # Load TriG (human-readable quad format)
@@ -18,12 +20,22 @@ Load RDF data from files:
 # Load Turtle (loaded into default graph)
 {:ok, count} = TripleStore.load(store, "ontology.ttl")
 
-# Load N-Triples
+# Load N-Triples (loaded into default graph)
 {:ok, count} = TripleStore.load(store, "data.nt")
 
 # Explicit format specification
 {:ok, count} = TripleStore.load(store, "data.xml", format: :rdfxml)
 ```
+
+The format is auto-detected from the file extension:
+
+| Extension | Format | Graph Support |
+|-----------|--------|---------------|
+| `.nq` | N-Quads | Full quad support |
+| `.trig` | TriG | Full quad support |
+| `.ttl` | Turtle | Default graph only |
+| `.nt` | N-Triples | Default graph only |
+| `.rdf` | RDF/XML | Default graph only |
 
 ### Loading into Named Graphs
 
@@ -56,7 +68,7 @@ TripleStore.update(store, """
 Load RDF content from a string:
 
 ```elixir
-# N-Quads string
+# N-Quads string (with graph context)
 nquads = """
 <http://example.org/alice> <http://xmlns.com/foaf/0.1/name> "Alice" <http://example.org/people> .
 <http://example.org/bob> <http://xmlns.com/foaf/0.1/name> "Bob" <http://example.org/people> .
@@ -64,9 +76,9 @@ nquads = """
 
 {:ok, count} = TripleStore.load_string(store, nquads, :nquads)
 
-# TriG string
+# TriG string (human-readable quads)
 trig = """
-@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
 
 <http://example.org/people> {
   <http://example.org/charlie> foaf:name "Charlie" .
@@ -77,7 +89,7 @@ trig = """
 
 # Turtle string (goes to default graph)
 turtle = """
-@prefix ex: <http://example.org/> .
+@prefix ex: <http://example.org/>.
 ex:david ex:name "David" .
 """
 
@@ -329,7 +341,6 @@ IO.puts("Backup created:")
 IO.puts("  Path: #{metadata.path}")
 IO.puts("  Schema: #{metadata.schema}")
 IO.puts("  Size: #{metadata.size_bytes} bytes")
-IO.puts("  Time: #{metadata.created_at}")
 ```
 
 ### Per-Graph Backup
@@ -442,57 +453,6 @@ Enum.each(backups, fn backup ->
 end)
 ```
 
-### Verifying Quad Store Backup
-
-For quad stores, verify all 4 indices are present:
-
-```elixir
-# Check if backup is from a quad store
-{:ok, :quad} = TripleStore.Backup.get_backup_schema("/backups/mydb")
-
-# Verify quad store has all required indices
-{:ok, :valid} = TripleStore.Backup.verify_quad_backup("/backups/mydb")
-```
-
-### Scheduled Backups
-
-Set up automatic periodic backups:
-
-```elixir
-# Hourly backups, keep last 24
-{:ok, scheduler} = TripleStore.Backup.schedule_backup(store, "/backups/mydb",
-  interval: :timer.hours(1),
-  max_backups: 24,
-  prefix: "hourly"
-)
-
-# Check status
-{:ok, status} = TripleStore.ScheduledBackup.status(scheduler)
-IO.puts("Backups completed: #{status.backup_count}")
-IO.puts("Last backup: #{status.last_backup}")
-
-# Trigger immediate backup
-{:ok, metadata} = TripleStore.ScheduledBackup.trigger_backup(scheduler)
-
-# Stop scheduled backups
-:ok = TripleStore.ScheduledBackup.stop(scheduler)
-```
-
-### Backup Rotation
-
-Automatically remove old backups:
-
-```elixir
-# Keep only the 5 most recent daily backups
-{:ok, metadata} = TripleStore.Backup.rotate(store, "/backups/mydb",
-  max_backups: 5,
-  prefix: "daily"
-)
-
-# Creates backup named: daily_20240120_103000_123
-# Removes oldest backups beyond max_backups
-```
-
 ## Graph Management
 
 ### Listing Graphs
@@ -502,7 +462,7 @@ Get all graphs in the store:
 ```elixir
 {:ok, graphs} = TripleStore.list_graphs(store)
 
-# Returns list of graph IDs or IRIs
+# Returns list of graph IDs or URIs
 # Example: [0, 5, 12] or ["http://example.org/g1", ...]
 ```
 
@@ -749,8 +709,8 @@ For very large files, use N-Quads format which is streamed:
 
 ## Next Steps
 
-- [SPARQL Queries](03-sparql-queries.md) - Query your data with GRAPH clauses
-- [SPARQL Updates](04-sparql-updates.md) - Modify data with SPARQL
-- [Named Graphs](07-named-graphs.md) - Advanced graph management
-- [Reasoning](05-reasoning.md) - Enable inference
-- [Configuration & Performance](06-configuration.md) - Optimize loading
+- [SPARQL Queries](03-sparql-queries.md) - Query with GRAPH clauses
+- [SPARQL Updates](04-sparql-updates.md) - Modify data in named graphs
+- [Reasoning](05-reasoning.md) - Graph-scoped inference
+- [Configuration & Performance](06-configuration.md) - Quad-specific tuning
+- [Named Graphs](07-named-graphs.md) - Advanced named graph patterns

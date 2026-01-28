@@ -1,8 +1,8 @@
-# Configuration & Performance
+# Configuration & Performance (Triple Store)
 
-This guide covers configuring and tuning TripleStore for optimal performance, with emphasis on quad store configuration.
+This guide covers configuring and tuning TripleStore for optimal performance with a triple store.
 
-> **Note**: Quad stores have different memory and performance requirements. See [Quad Store Configuration](#quad-store-configuration) for details.
+> **Note**: This guide is for triple stores (`schema: :triple`). For quad store configuration, see the [Quad Store Configuration & Performance](../quads/06-configuration.md) guide.
 
 ## RocksDB Configuration
 
@@ -43,73 +43,23 @@ bytes = TripleStore.Config.RocksDB.estimate_memory_usage(config)
 IO.puts("Estimated usage: #{bytes / 1_000_000} MB")
 ```
 
+### Opening with Configuration
+
+```elixir
+# Open with custom config
+config = TripleStore.Config.RocksDB.preset(:production_high_memory)
+
+{:ok, store} = TripleStore.open("./my_database",
+  schema: :triple,
+  config: config
+)
+```
+
 ### Viewing Configuration
 
 ```elixir
 config = TripleStore.Config.RocksDB.recommended()
 IO.puts(TripleStore.Config.RocksDB.format_summary(config))
-```
-
-### Quad Store Configuration
-
-Quad stores have different performance characteristics and memory requirements compared to triple stores. When using `schema: :quad`, consider these adjustments:
-
-| Metric | Triple Store | Quad Store | Change |
-|--------|--------------|------------|--------|
-| **Key Size** | 24 bytes | 32 bytes | +33% |
-| **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) | +33% |
-| **Write Amplification** | 3x | 4x | +33% |
-| **Block Size** | 8 KB | 16 KB | +100% |
-| **Memtable** | 64 MB | 128 MB | +100% |
-| **Bloom Filter** | 12 bits/key | 10 bits/key | -17% |
-
-#### Memory Budget for Quad Stores
-
-Quad stores require approximately 1.5-2x more memory for the same data size:
-
-```elixir
-# For quad stores, allocate more memory
-config = TripleStore.Config.RocksDB.for_memory_budget(
-  16 * 1024 * 1024 * 1024  # 16 GB recommended for quad (vs 8 GB for triple)
-)
-
-# Or use quad-specific presets
-config = TripleStore.Config.RocksDB.preset(:quad_production)
-config = TripleStore.Config.RocksDB.preset(:quad_write_heavy)
-```
-
-#### Quad Store Presets
-
-| Preset | Block Cache | Write Buffer | Best For |
-|--------|-------------|--------------|----------|
-| `quad_development` | 256 MB | 64 MB × 2 | Local development with named graphs |
-| `quad_production` | 8 GB | 256 MB × 4 | Production quad stores |
-| `quad_write_heavy` | 2 GB | 512 MB × 4 | Bulk loading quads |
-
-#### When to Use Quad vs Triple Configuration
-
-**Use triple store configuration when:**
-- You don't need named graphs (`schema: :triple` or default)
-- Maximum performance is critical
-- Your data is in a single context
-
-**Use quad store configuration when:**
-- You need named graphs (`schema: :quad`)
-- Multi-tenancy or data isolation is required
-- You need provenance tracking
-
-#### Quad Store Performance Tips
-
-```elixir
-# 1. Increase block cache for quad stores
-config = TripleStore.Config.RocksDB.recommended()
-config = %{config | block_cache_size_mb: 8192}  # 8 GB for quad
-
-# 2. Increase memtable for better write performance
-config = %{config | write_buffer_size_mb: 128}  # 128 MB per column family
-
-# 3. Use larger bloom filters for quad keys
-config = %{config | bloom_bits_per_key: 10}  # Slightly lower for quad
 ```
 
 ## Query Performance
@@ -453,6 +403,19 @@ Before going to production:
 - [ ] Monitor health during initial deployment
 - [ ] Plan for materialization time after data updates
 
+## Triple Store vs Quad Store Performance
+
+Triple stores have better performance characteristics for simple datasets:
+
+| Metric | Triple Store | Quad Store |
+|--------|--------------|------------|
+| **Key Size** | 24 bytes | 32 bytes (+33%) |
+| **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) |
+| **Write Speed** | Faster (~33% faster) | Slower (more indices) |
+| **Memory Usage** | Lower | Higher |
+
+If you don't need named graphs, triple stores offer better performance and lower memory usage.
+
 ## Troubleshooting
 
 ### Slow Queries
@@ -478,4 +441,6 @@ Before going to production:
 
 ## Next Steps
 
-This concludes the user guide series. For implementation details, see the [Developer Guides](../developer/README.md).
+This concludes the triple store guide series. For implementation details, see the [Developer Guides](../../developer/README.md).
+
+If you need named graphs or multi-tenancy, consider migrating to a [Quad Store](../quads/02-data-management.md).

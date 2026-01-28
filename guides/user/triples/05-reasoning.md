@@ -1,8 +1,8 @@
-# Reasoning
+# Reasoning (Triple Store)
 
-This guide covers using OWL 2 RL reasoning to infer new knowledge from your data, with emphasis on graph-scoped reasoning for quad stores.
+This guide covers using OWL 2 RL reasoning to infer new knowledge from your data in a triple store.
 
-> **Note**: Graph-scoped reasoning requires opening the store with `schema: :quad`. See [Named Graphs](07-named-graphs.md) for details.
+> **Note**: This guide is for triple stores (`schema: :triple`). For graph-scoped reasoning in quad stores, see the [Quad Store Reasoning](../quads/05-reasoning.md) guide.
 
 ## What is Reasoning?
 
@@ -70,8 +70,8 @@ Materialization computes all derivable facts and stores them. Queries then see b
 Define a class hierarchy in your ontology:
 
 ```turtle
-@prefix ex: <http://example.org/> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://example.org/>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 
 ex:GraduateStudent rdfs:subClassOf ex:Student .
 ex:Student rdfs:subClassOf ex:Person .
@@ -159,7 +159,7 @@ Data and inference:
 Define transitive property:
 
 ```turtle
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
 
 ex:contains a owl:TransitiveProperty .
 ```
@@ -298,197 +298,6 @@ Data:
   }
 """)
 # Results include: Course
-```
-
-## Graph-Scoped Reasoning
-
-When using a quad store with named graphs, you can control the scope of reasoning. This allows you to reason independently within each graph, or merge all graphs for global reasoning.
-
-> **Note**: Graph-scoped reasoning requires opening the store with `schema: :quad`. See [Named Graphs](07-named-graphs.md) for details.
-
-### Local vs Global Reasoning
-
-```elixir
-alias TripleStore.Reasoner.ReasoningConfig
-
-# Local reasoning - each graph reasons independently
-local_config = ReasoningConfig.new(
-  profile: :owl2rl,
-  scope: :local
-)
-
-# Global reasoning - merge all graphs for reasoning
-global_config = ReasoningConfig.new(
-  profile: :owl2rl,
-  scope: :global
-)
-```
-
-**Local (`:local`)**: Each named graph is reasoned independently. Inferences stay within their source graph.
-
-**Global (`:global`)**: All graphs are merged before reasoning. Inferences may derive from data across multiple graphs.
-
-### When to Use Each Scope
-
-| Scope | Use Case |
-|-------|----------|
-| `:local` | Multi-tenant data, isolated datasets, provenance tracking |
-| `:global` | Unified ontology, shared schema across graphs |
-
-### Local Reasoning Example
-
-```elixir
-# Open quad store
-{:ok, store} = TripleStore.open("./my_database", schema: :quad)
-
-# Load schema into graph1 (shared ontology)
-TripleStore.update(store, """
-  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-  PREFIX ex: <http://example.org/>
-
-  INSERT DATA {
-    GRAPH ex:schema {
-      ex:Student rdfs:subClassOf ex:Person .
-    }
-  }
-""")
-
-# Load data into different graphs
-TripleStore.update(store, """
-  PREFIX ex: <http://example.org/>
-
-  INSERT DATA {
-    GRAPH ex:graph1 {
-      ex:alice a ex:Student .
-    }
-    GRAPH ex:graph2 {
-      ex:bob a ex:Student .
-    }
-  }
-""")
-
-# Materialize with local scope
-config = ReasoningConfig.new(profile: :owl2rl, scope: :local)
-{:ok, stats} = TripleStore.materialize(store, config: config)
-
-# Query graph1 - alice is now also a Person in graph1
-{:ok, results} = TripleStore.query(store, """
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?type
-  WHERE {
-    GRAPH ex:graph1 {
-      ex:alice a ?type
-    }
-  }
-""")
-# Results: [Student, Person]
-```
-
-### Global Reasoning Example
-
-```elixir
-# With global scope, all graphs are merged for reasoning
-config = ReasoningConfig.new(profile: :owl2rl, scope: :global)
-{:ok, stats} = TripleStore.materialize(store, config: config)
-
-# Inferences can derive from data across any graph
-# Useful when schema is in one graph and data in others
-```
-
-### Materializing Specific Graphs
-
-Materialize inferences for a specific graph:
-
-```elixir
-alias TripleStore.Reasoner.GraphScopedReasoner
-
-# Materialize inferences for graph ID 1
-{:ok, stats} = GraphScopedReasoner.materialize_graph(
-  store,
-  graph_id: 1,
-  config: ReasoningConfig.new(profile: :owl2rl, scope: :local)
-)
-```
-
-### Graph-Scoped Best Practices
-
-**1. Schema Placement**
-
-For local reasoning, place schema triples in the same graph as the data:
-
-```elixir
-# Good: Schema with data
-TripleStore.update(store, """
-  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-  PREFIX ex: <http://example.org/>
-
-  INSERT DATA {
-    GRAPH ex:tenant1 {
-      ex:Student rdfs:subClassOf ex:Person .
-      ex:alice a ex:Student .
-    }
-  }
-""")
-```
-
-For global reasoning, place schema in a dedicated graph:
-
-```elixir
-# Good: Dedicated schema graph
-TripleStore.update(store, """
-  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-  PREFIX ex: <http://example.org/>
-
-  INSERT DATA {
-    GRAPH ex:schema {
-      ex:Student rdfs:subClassOf ex:Person .
-    }
-  }
-""")
-
-# Data in separate graphs
-TripleStore.update(store, """
-  PREFIX ex: <http://example.org/>
-
-  INSERT DATA {
-    GRAPH ex:tenant1 { ex:alice a ex:Student . }
-    GRAPH ex:tenant2 { ex:bob a ex:Student . }
-  }
-""")
-
-# Use global scope to apply schema to all graphs
-config = ReasoningConfig.new(profile: :owl2rl, scope: :global)
-{:ok, _} = TripleStore.materialize(store, config: config)
-```
-
-**2. Multi-Tenancy**
-
-For multi-tenant data, use local scope:
-
-```elixir
-# Each tenant's data is isolated
-# Tenant 1 cannot derive facts from Tenant 2's data
-config = ReasoningConfig.new(profile: :owl2rl, scope: :local)
-{:ok, _} = TripleStore.materialize(store, config: config)
-```
-
-**3. Performance Considerations**
-
-Local reasoning is generally faster for large multi-tenant datasets:
-
-```elixir
-# Local reasoning processes each graph independently
-# Can be parallelized across graphs
-config = ReasoningConfig.new(profile: :owl2rl, scope: :local)
-```
-
-Global reasoning requires merging all graphs first:
-
-```elixir
-# Global reasoning merges all graphs before reasoning
-# Use when you need cross-graph inferences
-config = ReasoningConfig.new(profile: :owl2rl, scope: :global)
 ```
 
 ## When to Materialize
