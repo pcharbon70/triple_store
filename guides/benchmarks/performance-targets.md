@@ -1,215 +1,206 @@
 # Performance Targets
 
-> **Last Validated:** 2026-01-03 (Post Phase 4 Optimizations)
+> **Last Updated:** 2026-01-28
 
 ## Overview
 
-This document defines measurable performance targets for the TripleStore and tracks current status against those targets.
+This document defines measurable performance targets for the TripleStore using the WatDiv (Waterloo SPARQL Diversity Test) benchmark suite.
 
-## Target Summary
+## Running Benchmarks
 
-```mermaid
-graph LR
-    subgraph Targets
-        A[Simple BGP<br/>p95 < 10ms]
-        B[Complex Join<br/>p95 < 100ms]
-        C[Bulk Load<br/>> 100K tps]
-        D[BSBM Mix<br/>p95 < 50ms]
-    end
-
-    subgraph Status
-        A --> A1[Mixed]
-        B --> B1[Pass]
-        C --> C1[Fail]
-        D --> D1[Fail]
-    end
-
-    style A1 fill:#ffd700
-    style B1 fill:#90EE90
-    style C1 fill:#ff6b6b
-    style D1 fill:#ff6b6b
+```bash
+# Run the main WatDiv benchmark
+mix run scripts/run_benchmarks.exs
 ```
 
-## Detailed Targets
+The benchmark script will:
+1. Generate WatDiv test data (scale 1 = ~100K triples)
+2. Open a test database
+3. Load the data and measure throughput
+4. Run all 20 WatDiv queries with warmup
+5. Report p50, p95, p99 latencies and result counts
 
-### 1. Simple BGP Query
+## Performance Targets
 
-**Target:** p95 latency < 10ms on 1M triples
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Bulk Load | > 100K triples/sec | WatDiv data generation + load |
+| Simple Query | p95 < 10ms | Linear queries (L1-L5) |
+| Complex Query | p95 < 100ms | Snowflake/Complex queries (F1-F5, C1-C3) |
+| Query Mix | p95 < 50ms | All queries aggregate |
 
-A simple Basic Graph Pattern (BGP) query with a single triple pattern and one bound term.
+## WatDiv Query Categories
 
-```sparql
-SELECT ?x WHERE { ?x rdf:type ub:UndergraduateStudent }
-```
+### Linear Queries (L1-L5)
 
-| Dataset | p95 | Status |
-|---------|-----|--------|
-| LUBM 23K | 10.8ms | Borderline |
-| BSBM 141K | 10.2ms | Borderline |
+Single-path queries following linear chains through the graph.
 
-**Analysis:** Simple type queries approach the target after Phase 4 optimizations. Performance scales linearly with result set size. Both benchmarks show ~7% improvement.
+| Query | Description | Target |
+|-------|-------------|--------|
+| L1 | User likes content with caption | p95 < 10ms |
+| L2 | Users who like a product with nationality | p95 < 10ms |
+| L3 | User likes and subscribes | p95 < 10ms |
+| L4 | Content tagged with topic | p95 < 10ms |
+| L5 | Person with job title and nationality | p95 < 10ms |
 
----
+### Star Queries (S1-S7)
 
-### 2. Complex Join Query
+Queries centered on a single entity with many relationships.
 
-**Target:** p95 latency < 100ms on 1M triples
+| Query | Description | Target |
+|-------|-------------|--------|
+| S1 | Offer with all properties | p95 < 50ms |
+| S2 | User by location, nationality, gender, role | p95 < 50ms |
+| S3 | Product by type with caption, genre, publisher | p95 < 50ms |
+| S4 | Person by age with name and artist connection | p95 < 50ms |
+| S5 | Product by type with description, keywords, language | p95 < 50ms |
+| S6 | Musical work with conductor and genre | p95 < 50ms |
+| S7 | Product liked by user | p95 < 10ms |
 
-Multi-pattern queries with 3+ triple patterns requiring joins.
+### Snowflake Queries (F1-F5)
 
-```sparql
-SELECT ?x ?y ?z WHERE {
-  ?x rdf:type ub:GraduateStudent .
-  ?y rdf:type ub:University .
-  ?z rdf:type ub:Department .
-  ?x ub:memberOf ?z .
-  ?z ub:subOrganizationOf ?y .
-}
-```
+Branching patterns from multiple entities.
 
-| Dataset | Query | p95 | Status |
-|---------|-------|-----|--------|
-| LUBM 23K | Q2 | 85.9ms | Pass |
-| BSBM 141K | Q7 | 1425.9ms | Fail |
+| Query | Description | Target |
+|-------|-------------|--------|
+| F1 | Movie with genre tagged with topic | p95 < 100ms |
+| F2 | Product with homepage and genre | p95 < 100ms |
+| F3 | Product purchase by genre | p95 < 100ms |
+| F4 | Product with offer, likes, and language | p95 < 100ms |
+| F5 | Offer with product title and type | p95 < 100ms |
 
-**Analysis:** Join performance varies significantly by query structure. LUBM Q2 now passes the target (improved 11% from 96.3ms), but BSBM Q7 (which joins products with all offers) is 14x over target.
+### Complex Queries (C1-C3)
 
----
+Multi-feature queries combining several patterns.
 
-### 3. Bulk Load Throughput
+| Query | Description | Target |
+|-------|-------------|--------|
+| C1 | Review with actor and language | p95 < 100ms |
+| C2 | Purchase flow with offers and reviews | p95 < 100ms |
+| C3 | User with all profile attributes | p95 < 50ms |
 
-**Target:** > 100,000 triples/second
+## Benchmark Scales
 
-Measure the rate of triple insertion during bulk loading operations.
+| Scale | Triples | Use Case |
+|-------|---------|----------|
+| 1 | ~100K | Quick validation, CI/CD |
+| 10 | ~1M | Standard performance testing |
+| 100 | ~10M | Large-scale validation |
 
-| Dataset | Triples | Time | Throughput | Status |
-|---------|---------|------|------------|--------|
-| LUBM Scale 1 | 23,316 | 953ms | 24,467 tps | Fail |
-| BSBM 1000 | 141,084 | 12,451ms | 11,331 tps | Fail |
-
-**Average:** 17,899 triples/sec (18% of target)
-
-```mermaid
-xychart-beta
-    title "Bulk Load Throughput vs Target"
-    x-axis ["LUBM-1", "BSBM-1000", "Target"]
-    y-axis "Triples/sec" 0 --> 120000
-    bar [24467, 11331, 100000]
-```
-
-**Analysis:** Bulk load throughput decreased after Phase 4 tuning. This is expected as:
-- Bloom filter configuration increases memory overhead during writes
-- Block size changes affect write buffering
-- Read performance was prioritized over write performance
-
-Optimization opportunities:
-- Disable bloom filters during bulk load
-- Use bulk_mode option for improved throughput
-- Larger batch sizes
-- Parallel index updates
-
----
-
-### 4. BSBM Query Mix
-
-**Target:** p95 latency < 50ms for overall query mix
-
-The aggregate p95 latency across all BSBM queries.
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Average p50 | 258.4ms | Fail |
-| Average p95 | 259.2ms | Fail |
-
-**Analysis:** The BSBM mix is dominated by Q6 (174ms), Q7 (1426ms), and Q11 (1437ms). Q11 now executes correctly after Phase 2 fixes (was previously failing). Excluding these outliers:
-
-| Metric | Value (excl. Q6, Q7, Q11) |
-|--------|--------------------------|
-| Average p50 | 7.8ms |
-| Average p95 | 8.0ms |
-
-Core search queries (Q1-Q5, Q8-Q10) perform well; lookup and join queries need optimization.
-
----
-
-## Performance by Query Type
-
-```mermaid
-pie title Performance Distribution (All Queries)
-    "< 1ms (Excellent)" : 16
-    "1-10ms (Good)" : 2
-    "10-50ms (Acceptable)" : 4
-    "50-100ms (Slow)" : 1
-    "100ms+ (Too Slow)" : 3
-    "Error" : 0
-```
-
-## Validation Functions
-
-The `TripleStore.Benchmark.Targets` module provides programmatic validation:
+To run at a different scale, modify the scale parameter in `scripts/run_benchmarks.exs`:
 
 ```elixir
-# Check individual targets
-Targets.check_simple_bgp(p95_us: 5000)
-# => :pass
-
-Targets.check_bulk_load(triples_per_sec: 50000)
-# => {:fail, "throughput 50K triples/sec below target >100K"}
-
-# Validate benchmark results
-{:ok, report} = Targets.validate(benchmark_results)
-Targets.print_report(report)
+# Generate WatDiv data at scale 10 (~1M triples)
+{time_us, graph} = :timer.tc(fn -> WatDiv.generate(10) end)
 ```
 
-## Target Definitions
+## Interpreting Results
 
-| Target | ID | Metric | Threshold | Unit | Dataset |
-|--------|----|--------|-----------|------|---------|
-| Simple BGP | `:simple_bgp` | p95 latency | < 10,000 | µs | 1M triples |
-| Complex Join | `:complex_join` | p95 latency | < 100,000 | µs | 1M triples |
-| Bulk Load | `:bulk_load` | throughput | > 100,000 | triples/sec | any |
-| BSBM Mix | `:bsbm_mix` | p95 latency | < 50,000 | µs | 1M triples |
+The benchmark output provides:
 
-## Improvement Roadmap
+```
+>>> WatDiv Benchmark (Scale 1, ~100K triples) <<<
 
-### High Priority
+Generated 38947 triples in 45.23ms
+Opening database at /tmp/watdiv_bench_12345...
+Loading data...
+  Loaded in 1234.56ms (31552 triples/sec)
 
-1. **Bulk Load Optimization**
-   - Implement batch dictionary encoding
-   - Use write batches for atomic multi-index updates
-   - Consider parallel ingestion
+Running WatDiv queries (warmup: 2, iterations: 5)...
 
-2. **Q7 Join Optimization**
-   - Add price index for range queries
-   - Implement join reordering based on selectivity
-   - Consider materialized views for common patterns
+  L1: p50=2.3ms, p95=2.8ms, results=42
+  L2: p50=1.9ms, p95=2.1ms, results=15
+  ...
+  S1: p50=8.5ms, p95=12.3ms, results=8
+  ...
 
-### Medium Priority
+WatDiv Summary:
+  Load throughput: 31552 triples/sec
+  Average p50: 5.4ms
+  Average p95: 8.2ms
+  Max p95: 45.1ms
 
-3. **Q6 Lookup Investigation**
-   - Profile single-product lookup path
-   - Check for unnecessary index scans
+  By Category:
+    LINEAR: avg p50=2.1ms, avg p95=2.8ms
+    STAR: avg p50=8.2ms, avg p95=11.5ms
+    SNOWFLAKE: avg p50=12.4ms, avg p95=18.2ms
+    COMPLEX: avg p50=15.8ms, avg p95=22.1ms
+```
 
-4. **Query Planning**
-   - Implement cost-based optimizer
-   - Add statistics-based join ordering
+### Key Metrics
 
-## Historical Trends
+- **Load throughput**: Higher is better (triples/second)
+- **p50 latency**: Median query time
+- **p95 latency**: 95th percentile (main target metric)
+- **p99 latency**: 99th percentile (tail latency)
+- **Result count**: Verify queries return expected data
 
-| Date | Notes | Simple BGP | Complex Join | Bulk Load | BSBM Mix |
-|------|-------|------------|--------------|-----------|----------|
-| 2025-12-31 | Baseline | Mixed | Pass (96ms) | 42K tps | 170ms |
-| 2026-01-03 | Phase 4 | Borderline | Pass (86ms) | 18K tps | 259ms |
+## Programmatic Validation
 
-**Phase 4 Changes:**
-- Query performance improved 5-10% across most queries
-- LUBM Q2 now clearly passes (86ms vs 96ms)
-- BSBM Q5 and Q11 now execute correctly (were errors)
-- Bulk load throughput decreased due to bloom filter overhead
-- BSBM average p95 increased because Q11 now executes (slowly) instead of erroring
+The `TripleStore.Benchmark.Targets` module provides validation functions:
+
+```elixir
+alias TripleStore.Benchmark.Targets
+
+# Check bulk load performance
+{:ok, report} = Targets.validate_bulk_load(100_000, 1000)
+# 100K triples loaded in 1000ms = 100K tps
+Targets.print_report(report)
+
+# Check simple query performance
+case Targets.check_simple_bgp(p95_us: 5000) do
+  :pass -> IO.puts("Simple queries meet target")
+  {:fail, reason} -> IO.puts("Failed: #{reason}")
+end
+```
+
+## WatDiv in Research
+
+WatDiv is the current standard for RDF store benchmarking in academic research. Unlike older benchmarks (BSBM, LUBM), WatDiv:
+
+- **Heterogeneous structure**: Same entity types don't always have the same attributes
+- **Probabilistic attributes**: Properties appear with specific probabilities, creating realistic data skew
+- **Correlated attributes**: The `pgroup` construct creates realistic attribute correlations
+- **Diverse query patterns**: 20 queries covering 4 structural categories
+
+This makes WatDiv results more representative of real-world RDF workloads and more effective at exposing optimizer weaknesses.
+
+When publishing performance results, always report:
+1. Scale factor (triples generated)
+2. Hardware configuration (CPU, RAM, storage)
+3. Per-query latencies (p50, p95, p99)
+4. Category averages
+5. Load throughput
+
+## Additional Benchmarks
+
+### Statistics & Cardinality Benchmarks
+
+Tests for statistics collection and cardinality estimation:
+
+```bash
+mix test test/triple_store/benchmark/phase_5_benchmark_test.exs
+```
+
+### Quad Store Benchmarks
+
+Tests for quad-specific operations (named graphs, N-Quads/TriG loading):
+
+```bash
+mix test test/triple_store/integration/quad_benchmark_test.exs --tag benchmark
+```
+
+### Reasoning Benchmarks
+
+Tests for OWL 2 RL reasoning performance:
+
+```bash
+mix test test/triple_store/reasoner/reasoning_benchmark_test.exs
+```
 
 ## References
 
-- [LUBM Benchmark Guide](./lubm.md)
-- [BSBM Benchmark Guide](./bsbm.md)
-- [Targets Module](../../lib/triple_store/benchmark/targets.ex)
+- [WatDiv Benchmark Module](../../lib/triple_store/benchmark/watdiv.ex)
+- [WatDiv Queries Module](../../lib/triple_store/benchmark/watdiv_queries.ex)
+- [Benchmark Runner Script](../../scripts/run_benchmarks.exs)
+- [Performance Tuning Guide](../ontology/performance_tuning.md)

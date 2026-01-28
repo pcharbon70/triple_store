@@ -253,31 +253,39 @@ end
 
 ## Benchmarking
 
-Use the built-in benchmark suite to measure performance:
+Use the built-in WatDiv benchmark to measure performance:
+
+```bash
+# Run the main WatDiv benchmark
+mix run scripts/run_benchmarks.exs
+```
+
+The benchmark generates test data, loads it, and runs 20 queries across 4 categories (linear, star, snowflake, complex).
+
+### Programmatic Benchmarking
 
 ```elixir
-# LUBM benchmark
-{:ok, results} = TripleStore.Benchmark.run(store, :lubm,
-  scale: 1,           # Number of universities
-  warmup: 3,          # Warmup iterations
-  iterations: 10      # Measurement iterations
-)
+alias TripleStore.Benchmark.{WatDiv, WatDivQueries}
 
-# BSBM benchmark
-{:ok, results} = TripleStore.Benchmark.run(store, :bsbm,
-  scale: 1000,        # Number of products
-  query_mix: true     # Run full query mix
-)
+# Generate data at scale 10 (~1M triples)
+graph = WatDiv.generate(10)
+
+# Run specific query category
+{:ok, query} = WatDivQueries.get(:l1)
+{:ok, results} = TripleStore.query(store, query.sparql)
 ```
 
 ### Performance Targets
 
 | Metric | Target |
 |--------|--------|
-| Simple BGP query | < 10ms p95 |
-| Complex join query | < 100ms p95 |
+| Simple query (L1-L5) | < 10ms p95 |
+| Complex query (F1-F5, C1-C3) | < 100ms p95 |
+| Query mix aggregate | < 50ms p95 |
 | Bulk load | > 100K triples/sec |
 | Point lookup | < 1ms p99 |
+
+See [Performance Targets](../benchmarks/performance-targets.md) for detailed WatDiv benchmark documentation.
 
 ## Common Performance Issues
 
