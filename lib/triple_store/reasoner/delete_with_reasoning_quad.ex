@@ -32,6 +32,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
       )
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.BackwardTraceQuad
@@ -266,7 +267,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
       operations =
         Enum.map(quads, fn {g, s, p, o} ->
           key = QuadIndex.gspo_key(g, s, p, o)
-          {:derived_cf, key}
+          {:derived, key}
         end)
 
       ErlangAdapter.delete_batch(db, operations, true)

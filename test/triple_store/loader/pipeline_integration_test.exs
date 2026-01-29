@@ -4,18 +4,14 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
 
   Tests complete bulk load operations with various configurations:
   - 1.6.1.1 Test parallel loading with 100K synthetic triples
-  - 1.6.1.2 Test parallel loading with LUBM dataset
-  - 1.6.1.3 Test parallel loading with BSBM dataset
-  - 1.6.1.4 Test error handling and recovery
-  - 1.6.1.5 Test memory usage stays bounded
-  - 1.6.1.6 Test CPU utilization across cores
+  - 1.6.1.2 Test error handling and recovery
+  - 1.6.1.3 Test memory usage stays bounded
+  - 1.6.1.4 Test CPU utilization across cores
   """
 
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Benchmark.BSBM
-  alias TripleStore.Benchmark.LUBM
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -111,110 +107,10 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
   end
 
   # ===========================================================================
-  # 1.6.1.2: Test parallel loading with LUBM dataset
+  # 1.6.1.2: Test error handling and recovery
   # ===========================================================================
 
-  describe "1.6.1.2 parallel loading with LUBM dataset" do
-    @tag :large_dataset
-    test "loads LUBM scale 1 dataset (~100K triples)", %{db: db, manager: manager} do
-      # Generate LUBM data for 1 university
-      graph = LUBM.generate(1, seed: 12_345)
-      triple_count = RDF.Graph.triple_count(graph)
-
-      start_time = System.monotonic_time(:millisecond)
-
-      {:ok, count} =
-        Loader.load_graph(db, manager, graph,
-          bulk_mode: true,
-          batch_size: 10_000
-        )
-
-      elapsed_ms = System.monotonic_time(:millisecond) - start_time
-
-      assert count == triple_count
-      throughput = count / (elapsed_ms / 1000)
-
-      IO.puts("\n  LUBM scale 1 (#{triple_count} triples) loaded in #{elapsed_ms}ms")
-      IO.puts("  Throughput: #{Float.round(throughput, 0)} triples/second")
-
-      # Verify we can query the data
-      {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
-      assert length(all_triples) == triple_count
-    end
-
-    @tag :large_dataset
-    test "loads LUBM data via stream", %{db: db, manager: manager} do
-      stream = LUBM.stream(1, seed: 12_345)
-
-      {:ok, count} =
-        Loader.load_stream(db, manager, stream,
-          bulk_mode: true,
-          batch_size: 10_000
-        )
-
-      assert count > 0
-
-      # Verify data is stored
-      {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
-      assert length(all_triples) == count
-    end
-  end
-
-  # ===========================================================================
-  # 1.6.1.3: Test parallel loading with BSBM dataset
-  # ===========================================================================
-
-  describe "1.6.1.3 parallel loading with BSBM dataset" do
-    @tag :large_dataset
-    test "loads BSBM 1000 products (~50K triples)", %{db: db, manager: manager} do
-      # Generate BSBM data for 1000 products
-      graph = BSBM.generate(1000, seed: 12_345)
-      triple_count = RDF.Graph.triple_count(graph)
-
-      start_time = System.monotonic_time(:millisecond)
-
-      {:ok, count} =
-        Loader.load_graph(db, manager, graph,
-          bulk_mode: true,
-          batch_size: 10_000
-        )
-
-      elapsed_ms = System.monotonic_time(:millisecond) - start_time
-
-      assert count == triple_count
-      throughput = count / (elapsed_ms / 1000)
-
-      IO.puts("\n  BSBM 1000 products (#{triple_count} triples) loaded in #{elapsed_ms}ms")
-      IO.puts("  Throughput: #{Float.round(throughput, 0)} triples/second")
-
-      # Verify data is queryable
-      {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
-      assert length(all_triples) == triple_count
-    end
-
-    @tag :large_dataset
-    test "loads BSBM data via stream", %{db: db, manager: manager} do
-      stream = BSBM.stream(1000, seed: 12_345)
-
-      {:ok, count} =
-        Loader.load_stream(db, manager, stream,
-          bulk_mode: true,
-          batch_size: 10_000
-        )
-
-      assert count > 0
-
-      # Verify data is stored
-      {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
-      assert length(all_triples) == count
-    end
-  end
-
-  # ===========================================================================
-  # 1.6.1.4: Test error handling and recovery
-  # ===========================================================================
-
-  describe "1.6.1.4 error handling and recovery" do
+  describe "1.6.1.2 error handling and recovery" do
     test "handles halting via progress callback", %{db: db, manager: manager} do
       # Use more triples with smaller batches so callback has time to halt
       triples = generate_synthetic_triples(50_000)
@@ -284,10 +180,10 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
   end
 
   # ===========================================================================
-  # 1.6.1.5: Test memory usage stays bounded
+  # 1.6.1.3: Test memory usage stays bounded
   # ===========================================================================
 
-  describe "1.6.1.5 memory usage stays bounded" do
+  describe "1.6.1.3 memory usage stays bounded" do
     @tag :large_dataset
     test "memory does not grow unboundedly during large load", %{db: db, manager: manager} do
       triple_count = 50_000
@@ -353,10 +249,10 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
   end
 
   # ===========================================================================
-  # 1.6.1.6: Test CPU utilization across cores
+  # 1.6.1.4: Test CPU utilization across cores
   # ===========================================================================
 
-  describe "1.6.1.6 CPU utilization across cores" do
+  describe "1.6.1.4 CPU utilization across cores" do
     @tag :large_dataset
     test "parallel loading uses multiple CPU cores", %{db: db, manager: manager} do
       triple_count = 50_000

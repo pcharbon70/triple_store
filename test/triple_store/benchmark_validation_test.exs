@@ -3,17 +3,16 @@ defmodule TripleStore.BenchmarkValidationTest do
   Benchmark validation tests for Task 5.7.2.
 
   These tests validate that the triple store meets its performance targets
-  by running LUBM and BSBM benchmarks and checking results against defined
-  thresholds.
+  by running benchmarks and checking results against defined thresholds.
 
   ## Performance Targets
 
   | Target | Metric | Threshold | Dataset |
   |--------|--------|-----------|---------|
-  | Simple BGP | p95 latency | <10ms | 1M triples |
-  | Complex Join | p95 latency | <100ms | 1M triples |
+  | Simple Query | p95 latency | <10ms | WatDiv (any scale) |
+  | Complex Query | p95 latency | <100ms | WatDiv (any scale) |
   | Bulk Load | throughput | >100K triples/sec | any |
-  | BSBM Mix | p95 latency | <50ms | 1M triples |
+  | Query Mix | p95 latency | <50ms | WatDiv (any scale) |
 
   Note: Tests use smaller datasets (1K-10K triples) for fast CI runs.
   Full validation with 1M triples requires the :benchmark tag.
@@ -21,7 +20,7 @@ defmodule TripleStore.BenchmarkValidationTest do
   ## Timeout Configuration
 
   Default timeout: 300 seconds (5 minutes)
-  Rationale: Benchmark tests with :benchmark tag may run full-scale tests
+  Rationale: Benchmark tests with :benchmark tag may run large-scale tests
   that load and query large datasets. Small-scale CI tests complete faster
   but we keep the timeout high for consistency.
   """
@@ -34,256 +33,17 @@ defmodule TripleStore.BenchmarkValidationTest do
       cleanup_test_store: 2
     ]
 
-  alias TripleStore.Benchmark.{BSBM, LUBM, Runner, Targets}
+  alias TripleStore.Benchmark.{Runner, Targets}
 
   @moduletag :integration
   # 5 minute timeout for benchmarks (may run large-scale tests with :benchmark tag)
   @moduletag timeout: 300_000
 
   # ===========================================================================
-  # 5.7.2.1: LUBM Benchmark Validation
+  # Profiling and Bottleneck Identification
   # ===========================================================================
 
-  describe "5.7.2.1: LUBM benchmark validation" do
-    @tag :benchmark
-    @tag timeout: 600_000
-    test "LUBM benchmark meets performance targets on scaled dataset" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        # Generate LUBM data at scale 1 (approximately 100K triples)
-        graph = LUBM.generate(1)
-        _triple_count = RDF.Graph.triple_count(graph)
-
-        # Load data and measure throughput
-        start_time = System.monotonic_time(:millisecond)
-        {:ok, loaded} = TripleStore.load_graph(store, graph)
-        end_time = System.monotonic_time(:millisecond)
-
-        load_duration_ms = max(end_time - start_time, 1)
-        triples_per_sec = loaded / (load_duration_ms / 1000)
-
-        IO.puts("\n=== LUBM Data Load ===")
-        IO.puts("Triples loaded: #{loaded}")
-        IO.puts("Duration: #{load_duration_ms}ms")
-        IO.puts("Throughput: #{Float.round(triples_per_sec, 0)} triples/sec")
-
-        # Run LUBM benchmark
-        {:ok, results} = Runner.run(store, :lubm, scale: 1, warmup: 3, iterations: 10)
-
-        # Print results
-        IO.puts("\n=== LUBM Benchmark Results ===")
-        IO.puts("Duration: #{results.duration_ms}ms")
-        IO.puts("Aggregate p95: #{Runner.format_duration(results.aggregate.p95_us)}")
-        IO.puts("Queries/sec: #{Float.round(results.aggregate.queries_per_sec, 1)}")
-
-        for qr <- results.query_results do
-          IO.puts(
-            "  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}"
-          )
-        end
-
-        # Validate targets and assert they pass
-        {:ok, validation} = Targets.validate(results)
-        Targets.print_report(validation)
-
-        # Assert validation passed - this is the primary goal of benchmark tests
-        assert validation.passed,
-               "LUBM benchmark did not meet all performance targets: #{inspect(validation)}"
-
-        # Store detailed metrics for documentation
-        assert is_list(results.query_results)
-        assert results.query_results != []
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-
-    @tag :slow
-    test "LUBM queries execute correctly on small dataset" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        # Use small scale for fast CI (1 university)
-        graph = LUBM.generate(1)
-        {:ok, _} = TripleStore.load_graph(store, graph)
-
-        # Run subset of LUBM queries
-        {:ok, results} =
-          Runner.run(store, :lubm,
-            scale: 1,
-            warmup: 1,
-            iterations: 3,
-            queries: [:q1, :q3, :q14]
-          )
-
-        # Verify queries executed
-        assert length(results.query_results) == 3
-
-        # Check each query returned some result
-        for qr <- results.query_results do
-          assert qr.iterations == 3
-          assert length(qr.latencies_us) == 3
-          # p50 and p95 can be 0 if queries complete within 1 microsecond
-          assert qr.p50_us >= 0
-          assert qr.p95_us >= qr.p50_us
-        end
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-
-    @tag :slow
-    test "LUBM simple BGP queries are fast" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        graph = LUBM.generate(1)
-        {:ok, _} = TripleStore.load_graph(store, graph)
-
-        # Run simple queries (single triple pattern)
-        {:ok, results} =
-          Runner.run(store, :lubm,
-            scale: 1,
-            warmup: 2,
-            iterations: 5,
-            # Simple BGP queries
-            queries: [:q3, :q14]
-          )
-
-        # Simple queries should complete quickly
-        for qr <- results.query_results do
-          # Even on small dataset, simple queries should be under 100ms
-          assert qr.p95_us < 100_000, "Query #{qr.query_id} p95 too slow: #{qr.p95_us}µs"
-        end
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-  end
-
-  # ===========================================================================
-  # 5.7.2.2: BSBM Benchmark Validation
-  # ===========================================================================
-
-  describe "5.7.2.2: BSBM benchmark validation" do
-    @tag :benchmark
-    @tag timeout: 600_000
-    test "BSBM benchmark meets performance targets on scaled dataset" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        # Generate BSBM data (e-commerce simulation)
-        graph = BSBM.generate(1000)
-        _triple_count = RDF.Graph.triple_count(graph)
-
-        # Load data
-        start_time = System.monotonic_time(:millisecond)
-        {:ok, loaded} = TripleStore.load_graph(store, graph)
-        end_time = System.monotonic_time(:millisecond)
-
-        load_duration_ms = max(end_time - start_time, 1)
-        triples_per_sec = loaded / (load_duration_ms / 1000)
-
-        IO.puts("\n=== BSBM Data Load ===")
-        IO.puts("Triples loaded: #{loaded}")
-        IO.puts("Duration: #{load_duration_ms}ms")
-        IO.puts("Throughput: #{Float.round(triples_per_sec, 0)} triples/sec")
-
-        # Run BSBM benchmark
-        {:ok, results} = Runner.run(store, :bsbm, scale: 1, warmup: 3, iterations: 10)
-
-        # Print results
-        IO.puts("\n=== BSBM Benchmark Results ===")
-        IO.puts("Duration: #{results.duration_ms}ms")
-        IO.puts("Aggregate p95: #{Runner.format_duration(results.aggregate.p95_us)}")
-        IO.puts("Queries/sec: #{Float.round(results.aggregate.queries_per_sec, 1)}")
-
-        for qr <- results.query_results do
-          IO.puts(
-            "  #{qr.query_id}: p95=#{Runner.format_duration(qr.p95_us)}, results=#{qr.result_count}"
-          )
-        end
-
-        # Validate targets and assert they pass
-        {:ok, validation} = Targets.validate(results)
-        Targets.print_report(validation)
-
-        # Assert validation passed - this is the primary goal of benchmark tests
-        assert validation.passed,
-               "BSBM benchmark did not meet all performance targets: #{inspect(validation)}"
-
-        # Store results
-        assert results.aggregate.p95_us > 0
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-
-    @tag :slow
-    test "BSBM queries execute correctly on small dataset" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        # Small scale for fast CI
-        graph = BSBM.generate(100)
-        {:ok, _} = TripleStore.load_graph(store, graph)
-
-        # Run BSBM queries
-        {:ok, results} =
-          Runner.run(store, :bsbm,
-            scale: 1,
-            warmup: 1,
-            iterations: 3,
-            queries: [:q1, :q2, :q7]
-          )
-
-        # Verify queries executed
-        assert length(results.query_results) == 3
-
-        for qr <- results.query_results do
-          assert qr.iterations == 3
-          # p95 can be 0 if queries complete within 1 microsecond
-          assert qr.p95_us >= 0
-        end
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-
-    @tag :slow
-    test "BSBM e-commerce query patterns complete" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        graph = BSBM.generate(50)
-        {:ok, _} = TripleStore.load_graph(store, graph)
-
-        # Test key BSBM query types
-        {:ok, results} =
-          Runner.run(store, :bsbm,
-            scale: 1,
-            warmup: 1,
-            iterations: 3
-          )
-
-        # Should have multiple query types
-        assert results.query_results != []
-
-        # Aggregate stats should be calculated
-        assert results.aggregate.total_queries > 0
-        assert results.aggregate.queries_per_sec > 0
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-  end
-
-  # ===========================================================================
-  # 5.7.2.3: Profiling and Bottleneck Identification
-  # ===========================================================================
-
-  describe "5.7.2.3: profiling and bottleneck identification" do
+  describe "profiling and bottleneck identification" do
     @tag :slow
     test "bulk load throughput measurement" do
       {store, path} = create_test_store(prefix: "bench_test")
@@ -428,56 +188,10 @@ defmodule TripleStore.BenchmarkValidationTest do
   end
 
   # ===========================================================================
-  # 5.7.2.4: Performance Characteristics Documentation
+  # Performance Characteristics Documentation
   # ===========================================================================
 
-  describe "5.7.2.4: performance characteristics documentation" do
-    @tag :slow
-    test "generates performance report" do
-      {store, path} = create_test_store(prefix: "bench_test")
-
-      try do
-        # Load representative dataset
-        graph = LUBM.generate(1)
-        {:ok, _loaded} = TripleStore.load_graph(store, graph)
-
-        # Run benchmarks
-        {:ok, lubm_results} =
-          Runner.run(store, :lubm,
-            scale: 1,
-            warmup: 2,
-            iterations: 5,
-            queries: [:q1, :q3, :q14]
-          )
-
-        # Generate reports
-        json_report = Runner.to_json(lubm_results)
-        csv_report = Runner.to_csv(lubm_results)
-
-        # Verify JSON report
-        assert is_binary(json_report)
-        {:ok, parsed} = Jason.decode(json_report)
-        assert Map.has_key?(parsed, "benchmark")
-        assert Map.has_key?(parsed, "query_results")
-        assert Map.has_key?(parsed, "aggregate")
-
-        # Verify CSV report
-        assert is_binary(csv_report)
-        lines = String.split(csv_report, "\n")
-        # Header + at least 1 row
-        assert length(lines) >= 2
-        assert String.contains?(hd(lines), "query_id")
-
-        IO.puts("\n=== Performance Report (JSON) ===")
-        IO.puts(String.slice(json_report, 0, 500) <> "...")
-
-        IO.puts("\n=== Performance Report (CSV) ===")
-        IO.puts(csv_report)
-      after
-        cleanup_test_store(store, path)
-      end
-    end
-
+  describe "performance characteristics documentation" do
     test "validates all performance targets" do
       # Document target definitions
       targets = Targets.all()
@@ -489,17 +203,16 @@ defmodule TripleStore.BenchmarkValidationTest do
         IO.puts("  Description: #{target.description}")
         IO.puts("  Metric: #{target.metric}")
         IO.puts("  Threshold: #{format_threshold(target)}")
-        IO.puts("  Dataset: #{format_dataset(target.dataset_size)}")
       end
 
       # Verify target definitions
       assert length(targets) == 4
 
       target_ids = Enum.map(targets, & &1.id)
-      assert :simple_bgp in target_ids
-      assert :complex_join in target_ids
+      assert :simple_query in target_ids
+      assert :complex_query in target_ids
       assert :bulk_load in target_ids
-      assert :bsbm_mix in target_ids
+      assert :query_mix in target_ids
     end
 
     test "bulk load target validation" do
@@ -553,7 +266,4 @@ defmodule TripleStore.BenchmarkValidationTest do
       :triples_per_sec -> "#{op}#{target.threshold} triples/sec"
     end
   end
-
-  defp format_dataset(:any), do: "any size"
-  defp format_dataset(size), do: "#{size} triples"
 end
