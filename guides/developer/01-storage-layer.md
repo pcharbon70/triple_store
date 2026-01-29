@@ -1,61 +1,89 @@
 # Storage Layer
 
-This document provides a deep dive into the TripleStore storage layer, including RocksDB integration, dictionary encoding, and triple indexing.
+This document provides a deep dive into the TripleStore storage layer, including RocksDB integration via erlang-rocksdb, dictionary encoding, and triple/quad indexing.
 
 ## Overview
 
 The storage layer is responsible for:
-- Persistent storage using RocksDB via Rustler NIFs
+- Persistent storage using RocksDB via erlang-rocksdb (C++ NIF library)
 - Encoding RDF terms as 64-bit integer IDs
-- Maintaining triple indices for efficient pattern matching
+- Maintaining triple/quad indices for efficient pattern matching
 - Transaction management for SPARQL UPDATE operations
 
 ```mermaid
 graph TB
     subgraph "Storage API"
         IDX[Index Layer]
+        QIDX[Quad Index Layer]
         DICT[Dictionary Layer]
         TXN[Transaction Manager]
     end
 
-    subgraph "NIF Boundary"
-        NIF[RocksDB.NIF]
+    subgraph "ErlangAdapter GenServer"
+        ADAPTER[ErlangAdapter]
     end
 
     subgraph "Column Families"
         SPO[(spo)]
         POS[(pos)]
         OSP[(osp)]
+        GSPO[(gspo)]
+        GPOS[(gpos)]
+        SPOG[(spog)]
+        POSG[(posg)]
         S2I[(str2id)]
         I2S[(id2str)]
         DER[(derived)]
+        DP[(derivation_provenance)]
+        NR[(numeric_range)]
+        ACL[(acl)]
     end
 
-    IDX --> NIF
-    DICT --> NIF
-    TXN --> NIF
+    IDX --> ADAPTER
+    QIDX --> ADAPTER
+    DICT --> ADAPTER
+    TXN --> ADAPTER
 
-    NIF --> SPO
-    NIF --> POS
-    NIF --> OSP
-    NIF --> S2I
-    NIF --> I2S
-    NIF --> DER
+    ADAPTER --> SPO
+    ADAPTER --> POS
+    ADAPTER --> OSP
+    ADAPTER --> GSPO
+    ADAPTER --> GPOS
+    ADAPTER --> SPOG
+    ADAPTER --> POSG
+    ADAPTER --> S2I
+    ADAPTER --> I2S
+    ADAPTER --> DER
+    ADAPTER --> DP
+    ADAPTER --> NR
+    ADAPTER --> ACL
 ```
 
 ## RocksDB Backend
 
-### NIF Architecture
+### erlang-rocksdb Architecture
 
-The `TripleStore.Backend.RocksDB.NIF` module provides Rust-based bindings to RocksDB. All database operations are implemented as NIFs scheduled on dirty CPU schedulers to prevent blocking BEAM schedulers.
+The storage layer uses the `erlang-rocksdb` C++ NIF library, which provides Erlang bindings to Facebook's RocksDB embedded key-value store. The `TripleStore.Backend.RocksDB.ErlangAdapter` GenServer manages the database connection and column family handles.
 
 ```elixir
-# NIF operations use dirty schedulers for >1ms operations
-# Defined in native/rocksdb_nif/src/lib.rs with:
-# #[rustler::nif(schedule = "DirtyCpu")]
+# ErlangAdapter owns the database and provides a GenServer API
+{:ok, adapter} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/db")
+
+# For quad store (schema v2)
+{:ok, adapter} = TripleStore.Backend.RocksDB.ErlangAdapter.open("/path/to/quad_db", schema: :quad)
 ```
 
+### Why erlang-rocksdb?
+
+The migration from a custom Rust NIF to erlang-rocksdb provides:
+- **Mature implementation**: Battle-tested in production at WhatsApp, Discord, etc.
+- **Active maintenance**: Regular updates and bug fixes from the Erlang community
+- **Better resource management**: Proper Erlang resource handling via GenServer pattern
+- **C++ performance**: Direct C++ NIF without Rust overhead
+
 ### Column Families
+
+#### Triple Store (Schema v1)
 
 | Column Family | Purpose | Key Format | Value Format |
 |---------------|---------|------------|--------------|
@@ -65,34 +93,49 @@ The `TripleStore.Backend.RocksDB.NIF` module provides Rust-based bindings to Roc
 | `str2id` | Term string → ID mapping | Encoded term binary | 8-byte ID |
 | `id2str` | ID → Term string mapping | 8-byte ID | Encoded term binary |
 | `derived` | Inferred triples from reasoning | 24-byte triple key | Empty |
+| `numeric_range` | Numeric range index | Encoded range key | Empty |
+
+#### Quad Store (Schema v2)
+
+| Column Family | Purpose | Key Format | Value Format |
+|---------------|---------|------------|--------------|
+| `gspo` | Graph-Subject-Predicate-Object index | 32-byte quad key | Empty |
+| `gpos` | Graph-Predicate-Object-Subject index | 32-byte quad key | Empty |
+| `spog` | Subject-Predicate-Object-Graph index | 32-byte quad key | Empty |
+| `posg` | Predicate-Object-Subject-Graph index | 32-byte quad key | Empty |
+| `str2id` | Term string → ID mapping | Encoded term binary | 8-byte ID |
+| `id2str` | ID → Term string mapping | 8-byte ID | Encoded term binary |
+| `derived` | Inferred quads from reasoning | 32-byte quad key | Empty |
+| `derivation_provenance` | Derivation tracking for provenance | Encoded provenance key | Provenance data |
+| `numeric_range` | Numeric range index | Encoded range key | Empty |
+| `acl` | Access control lists | Encoded ACL key | ACL data |
 
 ### Key Operations
 
 ```elixir
-# Basic operations
-NIF.open(path)              # Open database
-NIF.close(db)               # Close database
-NIF.get(db, cf, key)        # Get value
-NIF.put(db, cf, key, value) # Put value
-NIF.delete(db, cf, key)     # Delete value
-NIF.exists(db, cf, key)     # Check existence
+# Database operations (via ErlangAdapter GenServer)
+ErlangAdapter.open(path)              # Open database
+ErlangAdapter.close(adapter)          # Close database
+ErlangAdapter.get(adapter, cf, key)   # Get value
+ErlangAdapter.put(adapter, cf, key, value)  # Put value
+ErlangAdapter.delete(adapter, cf, key)      # Delete value
+ErlangAdapter.exists(adapter, cf, key)      # Check existence
 
 # Batch operations (atomic)
-NIF.write_batch(db, [{cf, key, value}, ...])
-NIF.delete_batch(db, [{cf, key}, ...])
-NIF.mixed_batch(db, [{:put, cf, key, value} | {:delete, cf, key}, ...])
+ErlangAdapter.write_batch(adapter, operations)
+ErlangAdapter.delete_batch(adapter, keys)
 
 # Iteration
-NIF.prefix_iterator(db, cf, prefix)
-NIF.iterator_next(iter)
-NIF.iterator_seek(iter, target)
-NIF.iterator_close(iter)
-NIF.prefix_stream(db, cf, prefix)  # Returns Elixir Stream
+ErlangAdapter.prefix_stream(adapter, cf, prefix)  # Returns Elixir Stream
 
 # Snapshots (for transaction isolation)
-NIF.snapshot(db)
-NIF.snapshot_get(snap, cf, key)
-NIF.release_snapshot(snap)
+{:ok, snapshot} = ErlangAdapter.snapshot(adapter)
+{:ok, value} = ErlangAdapter.snapshot_get(snapshot, cf, key)
+:ok = ErlangAdapter.release_snapshot(adapter, snapshot)
+
+# Fold operations
+ErlangAdapter.fold(adapter, cf, prefix, acc, fun)
+ErlangAdapter.fold_keys(adapter, cf, prefix, acc, fun)
 ```
 
 ## Dictionary Encoding
@@ -184,16 +227,16 @@ sequenceDiagram
     participant Client
     participant Manager as Dictionary.Manager
     participant Counter as SequenceCounter
-    participant DB as RocksDB
+    participant Adapter as ErlangAdapter
 
     Client->>Manager: get_or_create_id(term)
-    Manager->>DB: lookup str2id
+    Manager->>Adapter: lookup str2id
     alt Term exists
-        DB-->>Manager: existing_id
+        Adapter-->>Manager: existing_id
     else Term is new
         Manager->>Counter: allocate_id()
         Counter-->>Manager: new_sequence
-        Manager->>DB: write_batch [str2id, id2str]
+        Manager->>Adapter: write_batch [str2id, id2str]
     end
     Manager-->>Client: term_id
 ```
@@ -257,25 +300,54 @@ Index.delete_triple(db, {s, p, o})
 Index.delete_triples(db, triples)
 
 # Pattern lookup (returns Stream)
-{:ok, stream} = Index.lookup(db, {{:bound, s}, :var, :var})
+stream = Index.lookup(db, {{:bound, s}, :var, :var})
 triples = Enum.to_list(stream)
 
 # Count matching triples
 {:ok, count} = Index.count(db, pattern)
 ```
 
-### Index Selection Example
+## Quad Indices
+
+The `TripleStore.QuadIndex` module maintains four indices for efficient graph-scoped queries.
+
+### Index Key Structure
+
+All keys are 32 bytes (4 × 64-bit IDs) in big-endian format:
+
+```
+GSPO Key:  [graph:8][subject:8][predicate:8][object:8]
+GPOS Key:  [graph:8][predicate:8][object:8][subject:8]
+SPOG Key:  [subject:8][predicate:8][object:8][graph:8]
+POSG Key:  [predicate:8][object:8][subject:8][graph:8]
+```
+
+### Pattern to Index Mapping
+
+| Pattern | Index Used | Description |
+|---------|------------|-------------|
+| `(g, s, p, o)` | GSPO | Exact quad match |
+| `(g, s, p, ?)` | GSPO | Graph-scoped S-P |
+| `(g, ?, ?, ?)` | GSPO | All quads in graph |
+| `(g, ?, p, o)` | GPOS | Graph-scoped P-O |
+| `(?, p, o, g)` | POSG | Predicate-object in specific graph |
+| `(s, p, o, ?)` | SPOG | Triple across all graphs |
+| `(?, ?, ?, g)` | GSPO | All quads in graph |
+
+### Quad Operations
 
 ```elixir
-# Query: Find all objects for subject 123 and predicate 456
-pattern = {{:bound, 123}, {:bound, 456}, :var}
+# Insert single quad
+QuadIndex.insert_quad(db, {graph_id, subject_id, predicate_id, object_id})
 
-%{
-  index: :spo,
-  prefix: <<123::64-big, 456::64-big>>,
-  needs_filter: false,
-  filter_position: nil
-} = Index.select_index(pattern)
+# Pattern lookup
+quads = QuadIndex.lookup_quads(db, {:var, {:bound, s}, {:bound, p}, :var}, %{})
+
+# Count quads in graph
+{:ok, count} = QuadOperations.count_graph_quads(db, graph_id)
+
+# Clear all quads in a graph
+:ok = QuadOperations.clear_graph(db, manager, graph_id)
 ```
 
 ## Transaction Management
@@ -298,7 +370,7 @@ graph TB
         SNAP[Snapshot<br/>Read Isolation]
     end
 
-    subgraph "RocksDB"
+    subgraph "ErlangAdapter"
         WB[WriteBatch<br/>Atomic Commit]
         DB[(Database)]
     end
@@ -345,77 +417,63 @@ After successful writes:
 1. Plan cache is invalidated (query plans may be stale)
 2. Statistics callback is invoked (cardinality estimates need refresh)
 
-## RocksDB Configuration
+## Column Family Configuration
 
-The `TripleStore.Config.RocksDB` module provides intelligent memory tuning.
+The `TripleStore.Backend.RocksDB.ColumnFamilyConfig` module provides optimized column family options for different access patterns.
 
-### Memory Allocation
+### Dictionary CFs (id2str, str2id)
+- High bloom filter (14 bits/key) for point lookups
+- Small block size (2KB) for cache efficiency
+- Pinned L0 filter/index in cache
 
-```mermaid
-pie title Memory Distribution (8GB System)
-    "Block Cache (40%)" : 40
-    "Write Buffers" : 35
-    "Index/Filters" : 10
-    "Overhead" : 15
-```
+### Index CFs (spo, pos, osp)
+- Medium bloom filter (12 bits/key) for prefix scans
+- Medium block size (8KB)
+- Prefix extractor (8 bytes) for prefix-based scans
 
-| Component | Purpose | Guideline |
-|-----------|---------|-----------|
-| Block Cache | Caches uncompressed data blocks | 40% of available RAM |
-| Write Buffers | In-memory write batching | 32-256 MB per buffer |
-| Index/Filters | Bloom filters and block indices | ~10% of block cache |
+### Quad Index CFs (gspo, gpos, spog, posg)
+- Lower bloom filter (10 bits/key) for memory efficiency with 4 indices
+- Larger block size (16KB) for 32-byte keys
+- Larger memtable (128MB) for 4x write amplification
 
-### Configuration Presets
+### Derived CF
+- No bloom filter (sequential bulk access)
+- Large block size (32KB) for sequential scans
 
-```elixir
-# Automatic detection
-config = TripleStore.Config.RocksDB.recommended()
+## Bulk Loading
 
-# Specific presets
-config = TripleStore.Config.RocksDB.preset(:development)
-config = TripleStore.Config.RocksDB.preset(:production_low_memory)
-config = TripleStore.Config.RocksDB.preset(:production_high_memory)
-config = TripleStore.Config.RocksDB.preset(:write_heavy)
-
-# Custom memory budget
-config = TripleStore.Config.RocksDB.for_memory_budget(8 * 1024 * 1024 * 1024)
-```
-
-### Preset Comparison
-
-| Preset | Block Cache | Write Buffer | Max Open Files |
-|--------|-------------|--------------|----------------|
-| development | 128 MB | 32 MB × 2 | 256 |
-| production_low_memory | 256 MB | 32 MB × 2 | 512 |
-| production_high_memory | 4 GB | 128 MB × 4 | 4096 |
-| write_heavy | 1 GB | 256 MB × 4 | 2048 |
-
-### Memory Estimation
+For optimal bulk loading performance:
 
 ```elixir
-config = TripleStore.Config.RocksDB.recommended()
+# Open for bulk load
+{:ok, adapter} = ErlangAdapter.open_for_bulk_load("/path/to/db")
 
-# Estimate total memory usage
-bytes = TripleStore.Config.RocksDB.estimate_memory_usage(config)
-# => Accounts for: block_cache + (6 CFs × buffers × buffer_size) + overhead
+# Load with larger batch size
+TripleStore.load(store, "large_file.ttl", batch_size: 50_000)
 
-# Human-readable summary
-IO.puts(TripleStore.Config.RocksDB.format_summary(config))
+# Parallel loading with Flow
+Flow.from_stream([file1, file2, file3])
+|> Flow.map(&parse_rdf/1)
+|> Flow.partition(stages: 4)
+|> Flow.each(&TripleStore.insert/2)
+|> Flow.run()
 ```
 
 ## Module Reference
 
 | Module | Purpose |
 |--------|---------|
-| `TripleStore.Backend.RocksDB.NIF` | Rust NIF bindings |
+| `TripleStore.Backend.RocksDB.ErlangAdapter` | GenServer managing erlang-rocksdb |
+| `TripleStore.Backend.RocksDB.ColumnFamilyConfig` | Column family configuration |
 | `TripleStore.Dictionary` | Term encoding/decoding |
 | `TripleStore.Dictionary.Manager` | GenServer for ID allocation |
 | `TripleStore.Dictionary.SequenceCounter` | Atomic ID generation |
 | `TripleStore.Dictionary.StringToId` | Term → ID lookup |
 | `TripleStore.Dictionary.IdToString` | ID → Term lookup |
 | `TripleStore.Index` | Triple indexing |
+| `TripleStore.QuadIndex` | Quad indexing |
+| `TripleStore.QuadOperations` | Quad operations |
 | `TripleStore.Transaction` | Write coordination |
-| `TripleStore.Config.RocksDB` | Memory configuration |
 
 ## Next Steps
 

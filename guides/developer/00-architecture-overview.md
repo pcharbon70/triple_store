@@ -4,7 +4,7 @@ This document provides a high-level overview of the TripleStore architecture, it
 
 ## System Architecture
 
-The TripleStore is a layered system built on RocksDB with Rustler NIFs for high-performance storage operations.
+The TripleStore is a layered system built on RocksDB using the erlang-rocksdb C++ NIF library for high-performance storage operations.
 
 ```mermaid
 graph TB
@@ -32,7 +32,8 @@ graph TB
     end
 
     subgraph "Persistence Layer"
-        NIF[Rustler NIFs]
+        ADAPTER[ErlangAdapter GenServer]
+        ERLANG_ROCKSDB[erlang-rocksdb C++ NIF]
         ROCKS[(RocksDB)]
     end
 
@@ -52,9 +53,10 @@ graph TB
     TX --> DICT
     TX --> IDX
 
-    DICT --> NIF
-    IDX --> NIF
-    NIF --> ROCKS
+    DICT --> ADAPTER
+    IDX --> ADAPTER
+    ADAPTER --> ERLANG_ROCKSDB
+    ERLANG_ROCKSDB --> ROCKS
 ```
 
 ## Component Overview
@@ -72,7 +74,7 @@ The main entry point for all operations. Provides a unified interface for:
 
 | Component | Module | Description |
 |-----------|--------|-------------|
-| SPARQL Parser | `TripleStore.SPARQL.Parser` | Parses SPARQL via Rust NIF (spargebra) |
+| SPARQL Parser | `TripleStore.SPARQL.Parser` | Parses SPARQL via NIF (sparql_parser_nif) |
 | Algebra | `TripleStore.SPARQL.Algebra` | SPARQL algebra representation |
 | Optimizer | `TripleStore.SPARQL.Optimizer` | Cost-based query optimization |
 | Executor | `TripleStore.SPARQL.Executor` | Query execution engine |
@@ -93,6 +95,7 @@ The main entry point for all operations. Provides a unified interface for:
 |-----------|--------|-------------|
 | Dictionary | `TripleStore.Dictionary` | Term-to-ID encoding |
 | Index | `TripleStore.Index` | SPO/POS/OSP triple indices |
+| Quad Index | `TripleStore.QuadIndex` | GSPO/GPOS/SPOG/POSG quad indices |
 | Transaction | `TripleStore.Transaction` | Write coordination |
 | Loader | `TripleStore.Loader` | RDF loading/parsing |
 
@@ -100,8 +103,10 @@ The main entry point for all operations. Provides a unified interface for:
 
 | Component | Module | Description |
 |-----------|--------|-------------|
-| RocksDB NIF | `TripleStore.Backend.RocksDB.NIF` | Rust NIF for RocksDB |
-| Column Families | - | spo, pos, osp, id2str, str2id |
+| ErlangAdapter | `TripleStore.Backend.RocksDB.ErlangAdapter` | GenServer managing erlang-rocksdb |
+| Column Family Config | `TripleStore.Backend.RocksDB.ColumnFamilyConfig` | CF options and descriptors |
+| erlang-rocksdb | `:rocksdb` (C++ NIF) | C++ NIF library for RocksDB |
+| Column Families | - | spo, pos, osp, gspo, gpos, spog, posg, id2str, str2id, derived, derivation_provenance, numeric_range, acl |
 
 ## Data Flow
 
@@ -149,7 +154,7 @@ sequenceDiagram
     participant TX as Transaction
     participant Dict as Dictionary
     participant Idx as Index
-    participant NIF as RocksDB.NIF
+    participant Adapter as ErlangAdapter
 
     Client->>API: insert(store, triple)
     API->>TX: begin_write()
@@ -161,9 +166,9 @@ sequenceDiagram
     Dict-->>TX: o_id
 
     TX->>Idx: insert(s_id, p_id, o_id)
-    Idx->>NIF: put(spo_cf, key, value)
-    Idx->>NIF: put(pos_cf, key, value)
-    Idx->>NIF: put(osp_cf, key, value)
+    Idx->>Adapter: put(spo_cf, key, value)
+    Idx->>Adapter: put(pos_cf, key, value)
+    Idx->>Adapter: put(osp_cf, key, value)
 
     TX->>TX: commit()
     TX-->>API: :ok
@@ -182,6 +187,7 @@ graph LR
         subgraph "Per-Store Processes"
             DM[Dictionary.Manager]
             SC[SequenceCounter]
+            EA[ErlangAdapter]
         end
 
         subgraph "Optional Services"
@@ -193,6 +199,7 @@ graph LR
 
     APP --> DM
     DM --> SC
+    APP --> EA
     APP --> QC
     APP --> MET
     APP --> PROM
@@ -202,6 +209,7 @@ graph LR
 
 | Process | Purpose | State |
 |---------|---------|-------|
+| `ErlangAdapter` | Manages erlang-rocksdb DB and CF handles | Database reference, CF handle map |
 | `Dictionary.Manager` | Term encoding/decoding | ID counters, batch cache |
 | `SequenceCounter` | Unique ID generation | Atomic counters |
 | `Query.Cache` | Result caching | ETS table, predicate index |
@@ -212,9 +220,11 @@ graph LR
 
 RocksDB column families organize data for optimal access patterns:
 
+### Triple Store Schema (v1)
+
 ```mermaid
 graph TB
-    subgraph "RocksDB Instance"
+    subgraph "RocksDB Instance - Triple Store"
         subgraph "Triple Indices"
             SPO[spo<br/>Subject-Predicate-Object]
             POS[pos<br/>Predicate-Object-Subject]
@@ -228,6 +238,33 @@ graph TB
 
         subgraph "Derived Data"
             DER[derived<br/>Inferred Triples]
+            NR[numeric_range<br/>Range Queries]
+        end
+    end
+```
+
+### Quad Store Schema (v2)
+
+```mermaid
+graph TB
+    subgraph "RocksDB Instance - Quad Store"
+        subgraph "Quad Indices"
+            GSPO[gspo<br/>Graph-Subject-Predicate-Object]
+            GPOS[gpos<br/>Graph-Predicate-Object-Subject]
+            SPOG[spog<br/>Subject-Predicate-Object-Graph]
+            POSG[posg<br/>Predicate-Object-Subject-Graph]
+        end
+
+        subgraph "Dictionary"
+            S2I[str2id<br/>Term → ID]
+            I2S[id2str<br/>ID → Term]
+        end
+
+        subgraph "Derived Data"
+            DER[derived<br/>Inferred Quads]
+            DP[derivation_provenance<br/>Derivation Tracking]
+            NR[numeric_range<br/>Range Queries]
+            ACL[acl<br/>Access Control]
         end
     end
 ```
@@ -236,10 +273,19 @@ graph TB
 
 All keys use big-endian encoding for correct lexicographic ordering:
 
+**Triple Keys (24 bytes):**
 ```
 SPO Key: [s_id:8 bytes][p_id:8 bytes][o_id:8 bytes]
 POS Key: [p_id:8 bytes][o_id:8 bytes][s_id:8 bytes]
 OSP Key: [o_id:8 bytes][s_id:8 bytes][p_id:8 bytes]
+```
+
+**Quad Keys (32 bytes):**
+```
+GSPO Key:  [g_id:8 bytes][s_id:8 bytes][p_id:8 bytes][o_id:8 bytes]
+GPOS Key:  [g_id:8 bytes][p_id:8 bytes][o_id:8 bytes][s_id:8 bytes]
+SPOG Key:  [s_id:8 bytes][p_id:8 bytes][o_id:8 bytes][g_id:8 bytes]
+POSG Key:  [p_id:8 bytes][o_id:8 bytes][s_id:8 bytes][g_id:8 bytes]
 ```
 
 ## Module Organization
@@ -248,42 +294,41 @@ OSP Key: [o_id:8 bytes][s_id:8 bytes][p_id:8 bytes]
 lib/triple_store/
 ├── backend/
 │   └── rocksdb/
-│       └── nif.ex           # Rust NIF bindings
+│       ├── erlang_adapter.ex       # GenServer managing erlang-rocksdb
+│       ├── column_family_config.ex  # Column family configuration
+│       └── nif.ex                   # Deprecated: legacy NIF wrapper
 ├── dictionary/
-│   ├── manager.ex           # GenServer for encoding
-│   ├── sequence_counter.ex  # Atomic ID generation
-│   ├── string_to_id.ex      # Term → ID lookup
-│   └── id_to_string.ex      # ID → Term lookup
+│   ├── manager.ex                   # GenServer for encoding
+│   ├── sequence_counter.ex          # Atomic ID generation
+│   ├── string_to_id.ex              # Term → ID lookup
+│   └── id_to_string.ex              # ID → Term lookup
 ├── sparql/
-│   ├── parser.ex            # SPARQL parsing (NIF)
-│   ├── algebra.ex           # Algebra representation
-│   ├── optimizer.ex         # Query optimization
-│   ├── executor.ex          # Query execution
-│   ├── expression.ex        # FILTER expressions
-│   ├── property_path.ex     # Property path evaluation
-│   └── leapfrog/            # Worst-case optimal join
+│   ├── parser.ex                    # SPARQL parsing (Rust NIF)
+│   ├── algebra.ex                   # Algebra representation
+│   ├── optimizer.ex                 # Query optimization
+│   ├── executor.ex                  # Query execution
+│   ├── expression.ex                # FILTER expressions
+│   ├── property_path.ex             # Property path evaluation
+│   └── leapfrog/                    # Worst-case optimal join
 ├── reasoner/
-│   ├── rule_compiler.ex     # OWL 2 RL rules
-│   ├── semi_naive.ex        # Fixpoint evaluation
-│   ├── incremental.ex       # Incremental maintenance
-│   └── tbox_cache.ex        # Schema caching
+│   ├── rule_compiler.ex             # OWL 2 RL rules
+│   ├── semi_naive.ex                # Fixpoint evaluation
+│   ├── incremental.ex               # Incremental maintenance
+│   └── tbox_cache.ex                # Schema caching
 ├── query/
-│   └── cache.ex             # Result caching
-├── config/
-│   └── rocksdb.ex           # RocksDB configuration
-├── benchmark/
-│   ├── lubm.ex              # LUBM benchmark
-│   └── bsbm.ex              # BSBM benchmark
-├── index.ex                 # Triple indexing
-├── statistics.ex            # Cardinality statistics
-├── transaction.ex           # Write coordination
-├── loader.ex                # RDF loading
-├── exporter.ex              # RDF export
-├── backup.ex                # Backup/restore
-├── health.ex                # Health monitoring
-├── metrics.ex               # Telemetry metrics
-├── prometheus.ex            # Prometheus export
-└── telemetry.ex             # Event definitions
+│   └── cache.ex                     # Result caching
+├── index.ex                         # Triple indexing
+├── quad_index.ex                    # Quad indexing
+├── quad_operations.ex               # Quad operations
+├── statistics.ex                    # Cardinality statistics
+├── transaction.ex                   # Write coordination
+├── loader.ex                        # RDF loading
+├── exporter.ex                      # RDF export
+├── backup.ex                        # Backup/restore
+├── health.ex                        # Health monitoring
+├── metrics.ex                       # Telemetry metrics
+├── prometheus.ex                    # Prometheus export
+└── telemetry.ex                     # Event definitions
 ```
 
 ## Key Design Decisions
@@ -295,9 +340,11 @@ All RDF terms are encoded as 64-bit integers with type tagging:
 - Enables efficient key comparisons
 - Supports inline encoding for common numeric types
 
-### 2. Three-Index Strategy
+### 2. Three-Index Strategy (Triples) / Four-Index Strategy (Quads)
 
-Using SPO, POS, and OSP indices ensures O(log n) access for all 8 triple patterns:
+**Triple Store:** Using SPO, POS, and OSP indices ensures O(log n) access for all 8 triple patterns.
+
+**Quad Store:** Using GSPO, GPOS, SPOG, and POSG indices enables efficient graph-scoped queries.
 
 | Pattern | Index Used |
 |---------|------------|
@@ -312,7 +359,7 @@ Using SPO, POS, and OSP indices ensures O(log n) access for all 8 triple pattern
 
 ### 3. NIFs for I/O, Pure Elixir for Logic
 
-- **NIFs**: RocksDB operations, SPARQL parsing (via Rust)
+- **NIFs**: RocksDB operations (via erlang-rocksdb C++ NIF), SPARQL parsing (via sparql_parser_nif Rust NIF)
 - **Pure Elixir**: Query execution, reasoning, optimization
 
 This ensures query execution remains preemptible by the BEAM scheduler.
@@ -323,6 +370,14 @@ OWL 2 RL uses forward-chaining materialization:
 - Derived facts computed at materialize time
 - Queries see complete results without runtime inference
 - Incremental maintenance for updates
+
+### 5. ErlangAdapter GenServer Pattern
+
+The erlang-rocksdb NIF requires careful management of database and column family handles:
+- ErlangAdapter GenServer owns the database reference
+- Manages column family handle mapping
+- Provides GenServer call API for all operations
+- Ensures proper cleanup on termination
 
 ## Next Steps
 
