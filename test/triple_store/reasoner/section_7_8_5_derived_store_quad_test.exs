@@ -20,7 +20,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
 
@@ -30,12 +30,12 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
 
   defp create_test_db do
     path = Path.join(System.tmp_dir!(), "test_quad_#{System.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(path, schema: :quad, create_if_missing: true, create_if_necessary: true)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad, create_if_missing: true)
     {db, path}
   end
 
   defp cleanup_test_db(db, path) do
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(path)
   end
 

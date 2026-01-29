@@ -24,7 +24,7 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.Quad.BatchOptimizer
@@ -39,12 +39,12 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
       System.tmp_dir!() <>
         "/ts_phase81_bench_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

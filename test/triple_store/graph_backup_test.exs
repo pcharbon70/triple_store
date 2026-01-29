@@ -7,7 +7,7 @@ defmodule TripleStore.GraphBackupTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Backup
   alias TripleStore.GraphBackup
   alias TripleStore.Loader
@@ -34,7 +34,7 @@ defmodule TripleStore.GraphBackupTest do
     end
 
     if is_pid(db) and Process.alive?(db) do
-      NIF.close(db)
+      ErlangAdapter.close(db)
     end
 
     File.rm_rf!(path)
