@@ -54,7 +54,7 @@ defmodule TripleStore.SnapshotTest do
       :ok = ErlangAdapter.put(db, :spo, "key1", "updated_value")
 
       # Snapshot should still see old value
-      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
+      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key1")
 
       # Direct read should see new value
       assert {:ok, "updated_value"} = ErlangAdapter.get(db, :spo, "key1")
@@ -77,7 +77,7 @@ defmodule TripleStore.SnapshotTest do
       assert :ok = Snapshot.release(snapshot)
 
       # Second release should not error
-      assert {:error, :snapshot_released} = Snapshot.release(snapshot)
+      assert {:error, :snapshot_not_found} = Snapshot.release(snapshot)
     end
   end
 
@@ -85,7 +85,7 @@ defmodule TripleStore.SnapshotTest do
     test "executes function with snapshot", %{db: db} do
       result =
         Snapshot.with_snapshot(db, fn snapshot ->
-          {:ok, value} = ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
+          {:ok, value} = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key1")
           value
         end)
 

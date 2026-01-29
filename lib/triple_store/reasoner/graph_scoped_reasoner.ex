@@ -70,6 +70,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       IO.puts("Derived \#{count} facts for graph \#{gid}")
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
 
   alias TripleStore.Reasoner.{

@@ -43,6 +43,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
       {:ok, explanation} = DerivationProvenance.explain_inference(tracker, derived_quad, db)
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Reasoner.Rule
 
   # ============================================================================

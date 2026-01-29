@@ -21,6 +21,7 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       {:ok, fingerprint} = TBoxExtractor.tbox_fingerprint(db, 0)
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.IdToString
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.Namespaces

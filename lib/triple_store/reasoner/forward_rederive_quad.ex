@@ -35,6 +35,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
       )
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.PatternMatcher

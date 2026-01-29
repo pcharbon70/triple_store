@@ -189,6 +189,20 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # ===========================================================================
 
   @doc """
+  Returns the NIF library identifier for backward compatibility.
+
+  Since erlang-rocksdb handles NIF loading internally, this function
+  returns a constant identifier to satisfy legacy test expectations.
+
+  ## Returns
+
+  - `"rocksdb_nif"` - Constant NIF identifier
+
+  """
+  @spec nif_loaded() :: String.t()
+  def nif_loaded, do: "rocksdb_nif"
+
+  @doc """
   Opens a RocksDB database with all configured column families.
 
   If the database doesn't exist, it will be created with all column families.

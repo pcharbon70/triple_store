@@ -178,7 +178,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
       for _ <- 1..10 do
         Snapshot.with_snapshot(db, fn snapshot ->
           # Do some reads
-          ErlangAdapter.snapshot_get(snapshot, :spo, "test_key")
+          ErlangAdapter.snapshot_get(db, snapshot, :spo, "test_key")
         end)
       end
 
@@ -238,7 +238,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
 
       # Use stream API which handles cleanup
       for _ <- 1..50 do
-        {:ok, stream} = ErlangAdapter.prefix_stream(db, :spo, <<1::64>>)
+        stream = ErlangAdapter.prefix_stream(db, :spo, <<1::64>>)
         _ = Enum.take(stream, 2)
         # Stream cleanup happens automatically
       end
@@ -387,8 +387,8 @@ defmodule TripleStore.Integration.StorageLayerTest do
       :ok = ErlangAdapter.put(db, :spo, "key2", "new_value")
 
       # Snapshot should still see original value
-      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
-      assert :not_found = ErlangAdapter.snapshot_get(snapshot, :spo, "key2")
+      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key1")
+      assert :not_found = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key2")
 
       # Current view should see new values
       assert {:ok, "value2"} = ErlangAdapter.get(db, :spo, "key1")

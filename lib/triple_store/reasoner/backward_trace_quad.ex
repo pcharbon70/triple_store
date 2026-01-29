@@ -31,6 +31,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
       )
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule

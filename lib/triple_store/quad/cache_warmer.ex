@@ -50,6 +50,7 @@ defmodule TripleStore.Quad.CacheWarmer do
 
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
 
   # ===========================================================================
