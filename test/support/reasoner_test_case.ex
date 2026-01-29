@@ -57,6 +57,8 @@ defmodule TripleStore.ReasonerTestCase do
 
       alias TripleStore.Reasoner.{
         DeleteWithReasoning,
+        GraphReasoningStatus,
+        GraphScopedReasoner,
         Incremental,
         PatternMatcher,
         ReasoningConfig,
@@ -66,6 +68,9 @@ defmodule TripleStore.ReasonerTestCase do
         SemiNaive,
         TBoxCache
       }
+
+      alias TripleStore.Backend.RocksDB.NIF
+      alias TripleStore.QuadIndex
 
       @moduletag :integration
     end

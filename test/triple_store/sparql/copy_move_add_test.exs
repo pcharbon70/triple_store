@@ -6,7 +6,7 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
   """
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.UpdateExecutor
@@ -19,7 +19,7 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{
@@ -36,7 +36,7 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -47,10 +47,8 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
   defp insert_test_data(ctx, graph_iri, count \\ 3) do
     quads =
       for i <- 1..count do
-        {:quad, {:named_node, "http://example.org/s#{i}"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "o#{i}"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s#{i}"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "o#{i}"}, {:named_node, graph_iri}}
       end
 
     {:ok, _} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -60,9 +58,8 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
     quads =
       for i <- 1..count do
         {:quad, {:named_node, "http://example.org/default#{i}"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "default#{i}"},
-                :default_graph}
+         {:named_node, "http://example.org/p"}, {:literal, :simple, "default#{i}"},
+         :default_graph}
       end
 
     {:ok, _} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -87,7 +84,9 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert count == 3
 
       # Verify source still has 3 triples (COPY doesn't remove source)
-      {:ok, source_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+      {:ok, source_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+
       assert source_count == 3
     end
 
@@ -148,7 +147,8 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       insert_test_data(ctx, graph, 3)
 
       # With SILENT, should return ok
-      assert {:ok, 0} = UpdateExecutor.execute_copy(ctx, RDF.iri(graph), RDF.iri(graph), silent: true)
+      assert {:ok, 0} =
+               UpdateExecutor.execute_copy(ctx, RDF.iri(graph), RDF.iri(graph), silent: true)
     end
 
     test "COPY SILENT handles non-existent source gracefully", %{ctx: ctx} do
@@ -185,11 +185,15 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert {:ok, 3} = UpdateExecutor.execute_move(ctx, RDF.iri(source), RDF.iri(target))
 
       # Verify target has 3 triples
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
       assert target_count == 3
 
       # Verify source is empty
-      {:ok, source_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+      {:ok, source_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+
       assert source_count == 0
     end
 
@@ -217,7 +221,9 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert {:ok, 3} = UpdateExecutor.execute_move(ctx, :default, RDF.iri(target))
 
       # Verify target has 3 triples
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
       assert target_count == 3
 
       # Verify default is empty
@@ -238,7 +244,9 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert default_count == 3
 
       # Verify source is empty
-      {:ok, source_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+      {:ok, source_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+
       assert source_count == 0
     end
 
@@ -288,13 +296,17 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
 
       # Verify target has all quads (3 from source + 2 original)
       # Note: count may vary if there are duplicate quads between source and target
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
       # Target should have at least the original 2 plus the 3 new ones (5 total)
       # Assuming no overlap between source and target quads
       assert target_count >= 2
 
       # Verify source still has 3 triples (ADD doesn't remove source)
-      {:ok, source_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+      {:ok, source_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+
       assert source_count == 3
     end
 
@@ -322,7 +334,9 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert {:ok, 3} = UpdateExecutor.execute_add(ctx, :default, RDF.iri(target))
 
       # Verify target has 5 triples (3 from default + 2 original)
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
       assert target_count == 5
     end
 
@@ -336,7 +350,9 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert {:ok, 3} = UpdateExecutor.execute_add(ctx, RDF.iri(source), RDF.iri(target))
 
       # Verify target has 3 triples
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
       assert target_count == 3
     end
 
@@ -413,8 +429,11 @@ defmodule TripleStore.SPARQL.CopyMoveAddTest do
       assert {:ok, 3} = UpdateExecutor.execute_move(ctx, RDF.iri(source), RDF.iri(target))
 
       # Either both operations succeeded or both failed
-      {:ok, target_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
-      {:ok, source_count} = QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
+      {:ok, target_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(target))
+
+      {:ok, source_count} =
+        QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(source))
 
       # Target has data and source is empty (successful move)
       assert target_count == 3 and source_count == 0

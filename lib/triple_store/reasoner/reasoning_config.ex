@@ -53,11 +53,17 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
       config = ReasoningConfig.preset(:balanced)
   """
 
-  alias TripleStore.Reasoner.{ReasoningMode, ReasoningProfile, Rules}
+  alias TripleStore.Reasoner.{GraphReasoningConfig, ReasoningMode, ReasoningProfile, Rules}
 
   # ============================================================================
   # Types
   # ============================================================================
+
+  @typedoc "Reasoning scope for quad store"
+  @type reasoning_scope :: :local | :global | :hybrid
+
+  @typedoc "Derived quad storage strategy for global reasoning"
+  @type storage_strategy :: :same_as_premises | :separate_graph | :per_graph_cf
 
   @typedoc "Complete reasoning configuration"
   @type t :: %__MODULE__{
@@ -65,6 +71,11 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
           mode: ReasoningMode.mode_name(),
           mode_config: ReasoningMode.mode_config(),
           profile_opts: keyword(),
+          scope: reasoning_scope(),
+          graph_configs: %{non_neg_integer() => GraphReasoningConfig.t()} | nil,
+          tbox_graph: non_neg_integer() | nil,
+          inferred_graph: non_neg_integer() | :separate | nil,
+          storage_strategy: storage_strategy() | nil,
           created_at: DateTime.t()
         }
 
@@ -73,6 +84,11 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     :mode,
     :mode_config,
     :profile_opts,
+    :scope,
+    :graph_configs,
+    :tbox_graph,
+    :inferred_graph,
+    :storage_strategy,
     :created_at
   ]
 
@@ -99,6 +115,13 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   - `:materialized_rules` - Rules to materialize in hybrid mode
   - `:query_time_rules` - Rules for query-time in hybrid mode
 
+  ### Graph Scope Options (for quad store)
+  - `:scope` - Reasoning scope: `:local` (default), `:global`, or `:hybrid`
+  - `:graph_configs` - Map of graph_id to GraphReasoningConfig for per-graph configuration
+  - `:tbox_graph` - Graph ID containing shared TBox (nil = each graph has own TBox)
+  - `:inferred_graph` - Graph ID for global inferences (nil = same as premises, `:separate` = dedicated graph)
+  - `:storage_strategy` - Derived quad storage: `:same_as_premises` (default), `:separate_graph`, or `:per_graph_cf`
+
   ## Examples
 
       {:ok, config} = ReasoningConfig.new(profile: :rdfs, mode: :materialized)
@@ -108,11 +131,33 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         mode: :hybrid,
         materialized_rules: [:scm_sco, :cax_sco]
       )
+
+      # Graph-local reasoning (default)
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :local
+      )
+
+      # Global reasoning across all graphs
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :global,
+        tbox_graph: 0
+      )
+
+      # Hybrid with per-graph configuration
+      {:ok, config} = ReasoningConfig.new(
+        profile: :owl2rl,
+        scope: :hybrid,
+        tbox_graph: 0,
+        inferred_graph: :separate
+      )
   """
   @spec new(keyword()) :: {:ok, t()} | {:error, term()}
   def new(opts \\ []) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     mode = Keyword.get(opts, :mode, :materialized)
+    scope = Keyword.get(opts, :scope, :local)
 
     # Separate profile and mode options
     profile_opts = Keyword.take(opts, [:rules, :exclude])
@@ -127,13 +172,28 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
         :query_time_rules
       ])
 
+    graph_scope_opts =
+      Keyword.take(opts, [
+        :graph_configs,
+        :tbox_graph,
+        :inferred_graph,
+        :storage_strategy
+      ])
+
     with :ok <- validate_profile(profile, profile_opts),
+         :ok <- validate_scope(scope),
+         :ok <- validate_storage_strategy(graph_scope_opts),
          {:ok, mode_config} <- ReasoningMode.validate_config(mode, mode_opts) do
       config = %__MODULE__{
         profile: profile,
         mode: mode,
         mode_config: mode_config,
         profile_opts: profile_opts,
+        scope: scope,
+        graph_configs: Keyword.get(graph_scope_opts, :graph_configs),
+        tbox_graph: Keyword.get(graph_scope_opts, :tbox_graph),
+        inferred_graph: Keyword.get(graph_scope_opts, :inferred_graph),
+        storage_strategy: Keyword.get(graph_scope_opts, :storage_strategy, :same_as_premises),
         created_at: DateTime.utc_now()
       }
 
@@ -318,12 +378,336 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     %{
       profile: config.profile,
       mode: config.mode,
+      scope: config.scope,
       materialization_rules: materialization_rules(config),
       query_time_rules: query_time_rules(config),
       requires_materialization: requires_materialization?(config),
       requires_backward_chaining: requires_backward_chaining?(config),
-      parallel: config.mode_config.parallel
+      parallel: config.mode_config.parallel,
+      tbox_graph: config.tbox_graph,
+      inferred_graph: config.inferred_graph,
+      graph_config_count: graph_config_count(config)
     }
+  end
+
+  # ============================================================================
+  # Graph Scope Query Functions
+  # ============================================================================
+
+  @doc """
+  Returns the reasoning scope.
+  """
+  @spec scope(t()) :: reasoning_scope()
+  def scope(%__MODULE__{scope: scope}), do: scope
+
+  @doc """
+  Returns true if reasoning is graph-local (default).
+  """
+  @spec local?(t()) :: boolean()
+  def local?(%__MODULE__{scope: :local}), do: true
+  def local?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns true if reasoning is global across all graphs.
+  """
+  @spec global?(t()) :: boolean()
+  def global?(%__MODULE__{scope: :global}), do: true
+  def global?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns true if reasoning uses hybrid (per-graph) configuration.
+  """
+  @spec hybrid?(t()) :: boolean()
+  def hybrid?(%__MODULE__{scope: :hybrid}), do: true
+  def hybrid?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns the graph configuration for the given graph ID.
+  """
+  @spec graph_config(t(), non_neg_integer()) :: {:ok, GraphReasoningConfig.t()} | :error
+  def graph_config(%__MODULE__{graph_configs: nil}, _graph_id), do: :error
+
+  def graph_config(%__MODULE__{graph_configs: configs}, graph_id) when is_map(configs) do
+    case Map.get(configs, graph_id) do
+      nil -> :error
+      config -> {:ok, config}
+    end
+  end
+
+  @doc """
+  Returns all graph configurations.
+  """
+  @spec graph_configs(t()) :: %{non_neg_integer() => GraphReasoningConfig.t()} | nil
+  def graph_configs(%__MODULE__{graph_configs: configs}), do: configs
+
+  @doc """
+  Returns the number of configured graphs.
+  """
+  @spec graph_config_count(t()) :: non_neg_integer()
+  def graph_config_count(%__MODULE__{graph_configs: nil}), do: 0
+
+  def graph_config_count(%__MODULE__{graph_configs: configs}) when is_map(configs),
+    do: map_size(configs)
+
+  @doc """
+  Returns the TBox graph ID if configured.
+  """
+  @spec tbox_graph(t()) :: non_neg_integer() | nil
+  def tbox_graph(%__MODULE__{tbox_graph: graph_id}), do: graph_id
+
+  @doc """
+  Returns whether TBox is shared across graphs.
+  """
+  @spec shared_tbox?(t()) :: boolean()
+  def shared_tbox?(%__MODULE__{tbox_graph: nil}), do: false
+  def shared_tbox?(%__MODULE__{tbox_graph: _graph_id}), do: true
+
+  @doc """
+  Returns the inferred graph ID or :separate if configured.
+  """
+  @spec inferred_graph(t()) :: non_neg_integer() | :separate | nil
+  def inferred_graph(%__MODULE__{inferred_graph: graph}), do: graph
+
+  @doc """
+  Returns whether derived quads are stored in a separate graph.
+  """
+  @spec separate_inferred_graph?(t()) :: boolean()
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: :separate}), do: true
+
+  def separate_inferred_graph?(%__MODULE__{inferred_graph: graph_id}) when is_integer(graph_id),
+    do: true
+
+  def separate_inferred_graph?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns the storage strategy for derived quads.
+  """
+  @spec storage_strategy(t()) :: storage_strategy() | nil
+  def storage_strategy(%__MODULE__{storage_strategy: strategy}), do: strategy
+
+  @doc """
+  Sets the storage strategy for derived quads.
+  """
+  @spec put_storage_strategy(t(), storage_strategy()) :: t()
+  def put_storage_strategy(%__MODULE__{} = config, strategy)
+      when strategy in [:same_as_premises, :separate_graph, :per_graph_cf] do
+    %{config | storage_strategy: strategy}
+  end
+
+  @doc """
+  Adds a graph configuration to the reasoning config.
+  """
+  @spec put_graph_config(t(), GraphReasoningConfig.t()) :: t()
+  def put_graph_config(
+        %__MODULE__{graph_configs: nil} = config,
+        %GraphReasoningConfig{graph_id: graph_id} = graph_config
+      ) do
+    %{config | graph_configs: %{graph_id => graph_config}}
+  end
+
+  def put_graph_config(
+        %__MODULE__{} = config,
+        %GraphReasoningConfig{graph_id: graph_id} = graph_config
+      ) do
+    updated_configs = Map.put(config.graph_configs, graph_id, graph_config)
+    %{config | graph_configs: updated_configs}
+  end
+
+  @doc """
+  Removes a graph configuration from the reasoning config.
+  """
+  @spec remove_graph_config(t(), non_neg_integer()) :: t()
+  def remove_graph_config(%__MODULE__{graph_configs: nil} = config, _graph_id), do: config
+
+  def remove_graph_config(%__MODULE__{graph_configs: configs} = config, graph_id)
+      when is_map(configs) do
+    %{config | graph_configs: Map.delete(configs, graph_id)}
+  end
+
+  @doc """
+  Sets the reasoning scope.
+  """
+  @spec put_scope(t(), reasoning_scope()) :: t()
+  def put_scope(%__MODULE__{} = config, scope) when scope in [:local, :global, :hybrid] do
+    %{config | scope: scope}
+  end
+
+  @doc """
+  Sets the TBox graph ID.
+  """
+  @spec put_tbox_graph(t(), non_neg_integer() | nil) :: t()
+  def put_tbox_graph(%__MODULE__{} = config, tbox_graph), do: %{config | tbox_graph: tbox_graph}
+
+  @doc """
+  Sets the inferred graph location.
+  """
+  @spec put_inferred_graph(t(), non_neg_integer() | :separate | nil) :: t()
+  def put_inferred_graph(%__MODULE__{} = config, inferred_graph),
+    do: %{config | inferred_graph: inferred_graph}
+
+  # ============================================================================
+  # Persistent Term Storage
+  # ============================================================================
+
+  @doc """
+  Stores a reasoning configuration in `:persistent_term` for fast access.
+
+  Configuration is stored with a unique key (typically the store path)
+  allowing O(1) access from all processes.
+
+  ## Parameters
+
+  - `config` - The reasoning configuration to store
+  - `key` - Unique identifier for this configuration (e.g., store path)
+
+  ## Returns
+
+  - `:ok` on success
+
+  ## Examples
+
+      config = ReasoningConfig.new!(profile: :owl2rl, scope: :local)
+      :ok = ReasoningConfig.store(config, "/path/to/store")
+  """
+  @spec store(t(), term()) :: :ok
+  def store(%__MODULE__{} = config, key) do
+    :persistent_term.put({__MODULE__, key}, config)
+    :ok
+  end
+
+  @doc """
+  Loads a reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - `{:ok, config}` if found
+  - `{:error, :not_found}` if not stored
+
+  ## Examples
+
+      {:ok, config} = ReasoningConfig.load("/path/to/store")
+  """
+  @spec load(term()) :: {:ok, t()} | {:error, :not_found}
+  def load(key) do
+    case :persistent_term.get({__MODULE__, key}, nil) do
+      nil -> {:error, :not_found}
+      config -> {:ok, config}
+    end
+  end
+
+  @doc """
+  Loads a reasoning configuration from `:persistent_term`, returning default if not found.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - The stored configuration or a default configuration
+
+  ## Examples
+
+      config = ReasoningConfig.load!("/path/to/store")
+  """
+  @spec load!(term()) :: t()
+  def load!(key) do
+    case load(key) do
+      {:ok, config} -> config
+      {:error, :not_found} -> new!()
+    end
+  end
+
+  @doc """
+  Removes a reasoning configuration from `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier used when storing the configuration
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = ReasoningConfig.delete("/path/to/store")
+  """
+  @spec delete(term()) :: :ok
+  def delete(key) do
+    :persistent_term.erase({__MODULE__, key})
+    :ok
+  end
+
+  @doc """
+  Checks if a reasoning configuration exists in `:persistent_term`.
+
+  ## Parameters
+
+  - `key` - The unique identifier to check
+
+  ## Returns
+
+  - `true` if stored, `false` otherwise
+
+  ## Examples
+
+      exists? = ReasoningConfig.stored?("/path/to/store")
+  """
+  @spec stored?(term()) :: boolean()
+  def stored?(key) do
+    case :persistent_term.get({__MODULE__, key}, nil) do
+      nil -> false
+      _config -> true
+    end
+  end
+
+  @doc """
+  Lists all keys for stored reasoning configurations.
+
+  ## Returns
+
+  - List of keys for which configurations are stored
+
+  ## Examples
+
+      keys = ReasoningConfig.list_stored()
+  """
+  @spec list_stored() :: [term()]
+  def list_stored do
+    # Get all persistent_term keys and filter for this module
+    :persistent_term.get()
+    |> Enum.filter(fn
+      {{__MODULE__, _key}, _val} -> true
+      _ -> false
+    end)
+    |> Enum.map(fn {{__MODULE__, key}, _val} -> key end)
+  end
+
+  @doc """
+  Clears all stored reasoning configurations from `:persistent_term`.
+
+  Use with caution - this removes all stored configurations.
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      :ok = ReasoningConfig.clear_all()
+  """
+  @spec clear_all() :: :ok
+  def clear_all do
+    Enum.each(list_stored(), fn key ->
+      :persistent_term.erase({__MODULE__, key})
+    end)
+
+    :ok
   end
 
   # ============================================================================
@@ -334,6 +718,19 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
     case ReasoningProfile.rules_for(profile, opts) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_scope(scope) when scope in [:local, :global, :hybrid], do: :ok
+  defp validate_scope(_scope), do: {:error, :invalid_scope}
+
+  defp validate_storage_strategy(opts) do
+    case Keyword.get(opts, :storage_strategy, :same_as_premises) do
+      strategy when strategy in [:same_as_premises, :separate_graph, :per_graph_cf] ->
+        :ok
+
+      invalid ->
+        {:error, {:invalid_storage_strategy, invalid}}
     end
   end
 end

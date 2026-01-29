@@ -47,7 +47,7 @@ defmodule TripleStore.Index do
   ```
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
 
   import Bitwise, only: [<<<: 2]
@@ -531,12 +531,12 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triple(db, {1, 2, 3})
       :ok
 
   """
-  @spec insert_triple(NIF.db_ref(), triple()) :: :ok | {:error, term()}
+  @spec insert_triple(ErlangAdapter.db_ref(), triple()) :: :ok | {:error, term()}
   def insert_triple(db, {subject, predicate, object})
       when valid_triple?(subject, predicate, object) do
     operations =
@@ -544,7 +544,7 @@ defmodule TripleStore.Index do
         {cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
 
   @doc """
@@ -570,7 +570,7 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> triples = [{1, 2, 3}, {4, 5, 6}, {7, 8, 9}]
       iex> Index.insert_triples(db, triples)
       :ok
@@ -580,7 +580,7 @@ defmodule TripleStore.Index do
       :ok
 
   """
-  @spec insert_triples(NIF.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
+  @spec insert_triples(ErlangAdapter.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
   def insert_triples(db, triples, opts \\ [])
 
   def insert_triples(_db, [], _opts), do: :ok
@@ -594,7 +594,7 @@ defmodule TripleStore.Index do
         {cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations, sync)
+    ErlangAdapter.write_batch(db, operations, sync)
   end
 
   @doc """
@@ -615,7 +615,7 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triple(db, {1, 2, 3})
       :ok
       iex> Index.triple_exists?(db, {1, 2, 3})
@@ -624,11 +624,11 @@ defmodule TripleStore.Index do
       {:ok, false}
 
   """
-  @spec triple_exists?(NIF.db_ref(), triple()) :: {:ok, boolean()} | {:error, term()}
+  @spec triple_exists?(ErlangAdapter.db_ref(), triple()) :: {:ok, boolean()} | {:error, term()}
   def triple_exists?(db, {subject, predicate, object})
       when valid_triple?(subject, predicate, object) do
     key = spo_key(subject, predicate, object)
-    NIF.exists(db, :spo, key)
+    ErlangAdapter.exists(db, :spo, key)
   end
 
   # ===========================================================================
@@ -658,7 +658,7 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triple(db, {1, 2, 3})
       :ok
       iex> Index.delete_triple(db, {1, 2, 3})
@@ -667,7 +667,7 @@ defmodule TripleStore.Index do
       {:ok, false}
 
   """
-  @spec delete_triple(NIF.db_ref(), triple()) :: :ok | {:error, term()}
+  @spec delete_triple(ErlangAdapter.db_ref(), triple()) :: :ok | {:error, term()}
   def delete_triple(db, {subject, predicate, object})
       when valid_triple?(subject, predicate, object) do
     operations =
@@ -675,7 +675,7 @@ defmodule TripleStore.Index do
         {cf, key}
       end
 
-    NIF.delete_batch(db, operations, true)
+    ErlangAdapter.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -700,7 +700,7 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> triples = [{1, 2, 3}, {4, 5, 6}, {7, 8, 9}]
       iex> Index.insert_triples(db, triples)
       :ok
@@ -708,7 +708,7 @@ defmodule TripleStore.Index do
       :ok
 
   """
-  @spec delete_triples(NIF.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
+  @spec delete_triples(ErlangAdapter.db_ref(), [triple()], keyword()) :: :ok | {:error, term()}
   def delete_triples(db, triples, opts \\ [])
 
   def delete_triples(_db, [], _opts), do: :ok
@@ -722,7 +722,7 @@ defmodule TripleStore.Index do
         {cf, key}
       end
 
-    NIF.delete_batch(db, operations, sync)
+    ErlangAdapter.delete_batch(db, operations, sync)
   end
 
   # ===========================================================================
@@ -946,19 +946,19 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triple(db, {1, 2, 3})
       iex> {:ok, stream} = Index.lookup(db, {{:bound, 1}, :var, :var})
       iex> Enum.to_list(stream)
       [{1, 2, 3}]
 
   """
-  @spec lookup(NIF.db_ref(), pattern()) :: {:ok, Enumerable.t()}
+  @spec lookup(ErlangAdapter.db_ref(), pattern()) :: {:ok, Enumerable.t()}
   def lookup(db, pattern) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, index, prefix)
+    stream = ErlangAdapter.prefix_stream(db, index, prefix)
 
     decoded_stream = Stream.map(stream, fn {key, _value} -> key_to_triple(index, key) end)
 
@@ -989,13 +989,13 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 3, 5}])
       iex> Index.lookup_all(db, {{:bound, 1}, {:bound, 2}, :var})
       {:ok, [{1, 2, 3}, {1, 2, 4}]}
 
   """
-  @spec lookup_all(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
+  @spec lookup_all(ErlangAdapter.db_ref(), pattern()) :: {:ok, [triple()]}
   def lookup_all(db, pattern) do
     {:ok, stream} = lookup(db, pattern)
     {:ok, Enum.to_list(stream)}
@@ -1015,13 +1015,13 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 3, 5}])
       iex> Index.count(db, {{:bound, 1}, :var, :var})
       {:ok, 3}
 
   """
-  @spec count(NIF.db_ref(), pattern()) :: {:ok, non_neg_integer()}
+  @spec count(ErlangAdapter.db_ref(), pattern()) :: {:ok, non_neg_integer()}
   def count(db, pattern) do
     {:ok, stream} = lookup(db, pattern)
     {:ok, Enum.count(stream)}
@@ -1050,7 +1050,7 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> {:ok, props} = Index.lookup_all_properties(db, 1)
       iex> props
@@ -1061,13 +1061,13 @@ defmodule TripleStore.Index do
   Uses single SPO prefix scan, O(m) where m = number of properties for subject.
   This is more efficient than m separate point lookups when m > 1.
   """
-  @spec lookup_all_properties(NIF.db_ref(), term_id()) ::
+  @spec lookup_all_properties(ErlangAdapter.db_ref(), term_id()) ::
           {:ok, %{term_id() => [term_id()]}}
   def lookup_all_properties(db, subject_id) when valid_term_id?(subject_id) do
     prefix = spo_prefix(subject_id)
 
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, :spo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :spo, prefix)
 
     properties =
       stream
@@ -1099,18 +1099,18 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> {:ok, stream} = Index.stream_all_properties(db, 1)
       iex> Enum.to_list(stream)
       [{2, 3}, {2, 4}, {5, 6}]
   """
-  @spec stream_all_properties(NIF.db_ref(), term_id()) :: {:ok, Enumerable.t()}
+  @spec stream_all_properties(ErlangAdapter.db_ref(), term_id()) :: {:ok, Enumerable.t()}
   def stream_all_properties(db, subject_id) when valid_term_id?(subject_id) do
     prefix = spo_prefix(subject_id)
 
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, :spo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :spo, prefix)
 
     property_stream =
       Stream.map(stream, fn {key, _value} ->
@@ -1145,33 +1145,35 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> Index.lookup_fold(db, {{:bound, 1}, :var, :var}, [], fn triple, acc -> [triple | acc] end)
       [{1, 5, 6}, {1, 2, 4}, {1, 2, 3}]
 
   """
-  @spec lookup_fold(NIF.db_ref(), pattern(), term(), (triple(), term() -> term())) :: term()
+  @spec lookup_fold(ErlangAdapter.db_ref(), pattern(), term(), (triple(), term() -> term())) :: term()
   def lookup_fold(db, pattern, acc, fun) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun = if needs_filter do
-      fn {key, _value}, inner_acc ->
-        triple = key_to_triple(index, key)
-        if triple_matches_pattern?(triple, pattern) do
+    fold_fun =
+      if needs_filter do
+        fn {key, _value}, inner_acc ->
+          triple = key_to_triple(index, key)
+
+          if triple_matches_pattern?(triple, pattern) do
+            fun.(triple, inner_acc)
+          else
+            inner_acc
+          end
+        end
+      else
+        fn {key, _value}, inner_acc ->
+          triple = key_to_triple(index, key)
           fun.(triple, inner_acc)
-        else
-          inner_acc
         end
       end
-    else
-      fn {key, _value}, inner_acc ->
-        triple = key_to_triple(index, key)
-        fun.(triple, inner_acc)
-      end
-    end
 
-    NIF.fold(db, index, prefix, acc, fold_fun)
+    ErlangAdapter.fold(db, index, prefix, acc, fold_fun)
   end
 
   @doc """
@@ -1191,13 +1193,13 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> Index.count_fold(db, {{:bound, 1}, :var, :var})
       {:ok, 3}
 
   """
-  @spec count_fold(NIF.db_ref(), pattern()) :: {:ok, non_neg_integer()}
+  @spec count_fold(ErlangAdapter.db_ref(), pattern()) :: {:ok, non_neg_integer()}
   def count_fold(db, pattern) do
     count = lookup_fold(db, pattern, 0, fn _triple, acc -> acc + 1 end)
     {:ok, count}
@@ -1219,13 +1221,13 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> Index.lookup_all_fold(db, {{:bound, 1}, {:bound, 2}, :var})
       {:ok, [{1, 2, 3}, {1, 2, 4}]}
 
   """
-  @spec lookup_all_fold(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
+  @spec lookup_all_fold(ErlangAdapter.db_ref(), pattern()) :: {:ok, [triple()]}
   def lookup_all_fold(db, pattern) do
     results = lookup_fold(db, pattern, [], fn triple, acc -> [triple | acc] end)
     {:ok, Enum.reverse(results)}
@@ -1248,21 +1250,21 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}, {1, 5, 6}])
       iex> {:ok, props} = Index.lookup_all_properties_fold(db, 1)
       iex> props
       %{2 => [3, 4], 5 => [6]}
 
   """
-  @spec lookup_all_properties_fold(NIF.db_ref(), term_id()) ::
+  @spec lookup_all_properties_fold(ErlangAdapter.db_ref(), term_id()) ::
           {:ok, %{term_id() => [term_id()]}}
   def lookup_all_properties_fold(db, subject_id) when valid_term_id?(subject_id) do
     prefix = spo_prefix(subject_id)
 
     # Use fold to build the map directly, avoiding stream overhead
     properties =
-      NIF.fold(db, :spo, prefix, %{}, fn {key, _value}, acc ->
+      ErlangAdapter.fold(db, :spo, prefix, %{}, fn {key, _value}, acc ->
         {_s, p, o} = decode_spo_key(key)
         Map.update(acc, p, [o], fn objects -> [o | objects] end)
       end)
@@ -1289,33 +1291,35 @@ defmodule TripleStore.Index do
 
   ## Examples
 
-      iex> {:ok, db} = NIF.open("/tmp/test_db")
+      iex> {:ok, db} = ErlangAdapter.open("/tmp/test_db")
       iex> Index.insert_triples(db, [{1, 2, 3}, {1, 2, 4}])
       iex> Index.lookup_keys_fold(db, {{:bound, 1}, :var, :var})
       {:ok, [{1, 2, 3}, {1, 2, 4}]}
 
   """
-  @spec lookup_keys_fold(NIF.db_ref(), pattern()) :: {:ok, [triple()]}
+  @spec lookup_keys_fold(ErlangAdapter.db_ref(), pattern()) :: {:ok, [triple()]}
   def lookup_keys_fold(db, pattern) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun = if needs_filter do
-      fn key, inner_acc ->
-        triple = key_to_triple(index, key)
-        if triple_matches_pattern?(triple, pattern) do
+    fold_fun =
+      if needs_filter do
+        fn key, inner_acc ->
+          triple = key_to_triple(index, key)
+
+          if triple_matches_pattern?(triple, pattern) do
+            [triple | inner_acc]
+          else
+            inner_acc
+          end
+        end
+      else
+        fn key, inner_acc ->
+          triple = key_to_triple(index, key)
           [triple | inner_acc]
-        else
-          inner_acc
         end
       end
-    else
-      fn key, inner_acc ->
-        triple = key_to_triple(index, key)
-        [triple | inner_acc]
-      end
-    end
 
-    results = NIF.fold_keys(db, index, prefix, [], fold_fun)
+    results = ErlangAdapter.fold_keys(db, index, prefix, [], fold_fun)
     {:ok, Enum.reverse(results)}
   end
 end

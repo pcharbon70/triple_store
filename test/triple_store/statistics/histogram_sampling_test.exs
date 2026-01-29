@@ -12,7 +12,7 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
   use ExUnit.Case, async: false
   @moduletag :slow
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
   alias TripleStore.Statistics
 
@@ -21,10 +21,10 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
       System.tmp_dir!() <>
         "/ts_histsamp_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -35,10 +35,14 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
     test "full histogram (sample_rate: 1.0) produces exact counts", %{db: db} do
       # Insert known quads
       quads = [
-        {1, 10, 100, 0},  # graph 0, pred 10
-        {2, 10, 101, 0},  # graph 0, pred 10
-        {3, 11, 102, 0},  # graph 0, pred 11
-        {4, 10, 103, 1}   # graph 1, pred 10
+        # graph 0, pred 10
+        {1, 10, 100, 0},
+        # graph 0, pred 10
+        {2, 10, 101, 0},
+        # graph 0, pred 11
+        {3, 11, 102, 0},
+        # graph 1, pred 10
+        {4, 10, 103, 1}
       ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
@@ -184,10 +188,14 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
       # Insert quads to both default and named graph
       quads =
         [
-          {1, 10, 100, 0},   # default graph
-          {2, 10, 101, 0},   # default graph
-          {3, 11, 102, 1},   # named graph
-          {4, 11, 103, 1}    # named graph
+          # default graph
+          {1, 10, 100, 0},
+          # default graph
+          {2, 10, 101, 0},
+          # named graph
+          {3, 11, 102, 1},
+          # named graph
+          {4, 11, 103, 1}
         ]
 
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)

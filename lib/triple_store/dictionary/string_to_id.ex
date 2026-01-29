@@ -35,7 +35,7 @@ defmodule TripleStore.Dictionary.StringToId do
   ```
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Batch
 
@@ -192,7 +192,7 @@ defmodule TripleStore.Dictionary.StringToId do
   def lookup_id(db, term) do
     case encode_term(term) do
       {:ok, key} ->
-        case NIF.get(db, :str2id, key) do
+        case ErlangAdapter.get(db, :str2id, key) do
           {:ok, <<id::64-big>>} ->
             {:ok, id}
 

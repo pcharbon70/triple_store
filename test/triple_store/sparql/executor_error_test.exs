@@ -63,15 +63,22 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
 
     test "handles missing graph gracefully", %{ctx: ctx} do
       # Attempting to query a non-existent graph should not crash
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       # The executor should accept the call even if the graph doesn't exist
       # (results would be empty in real execution)
       assert is_function(fn ->
-        Executor.execute_in_named_graph(ctx, pattern, {:named_node, "http://example.org/nonexistent"}, %{})
-      end)
+               Executor.execute_in_named_graph(
+                 ctx,
+                 pattern,
+                 {:named_node, "http://example.org/nonexistent"},
+                 %{}
+               )
+             end)
     end
 
     test "returns empty results for missing graph in query context" do
@@ -98,19 +105,21 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
 
       # Should handle gracefully
       assert is_function(fn ->
-        Executor.execute_quad_pattern(ctx, {:bgp, [invalid_quad]}, %{})
-      end)
+               Executor.execute_quad_pattern(ctx, {:bgp, [invalid_quad]}, %{})
+             end)
     end
 
     test "handles patterns with invalid term types" do
       # Pattern with invalid term type
-      invalid_pattern = {:bgp, [
-        {:triple, :invalid_atom, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      invalid_pattern =
+        {:bgp,
+         [
+           {:triple, :invalid_atom, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       assert is_function(fn ->
-        Executor.execute_bgp(%{db: nil, dict_manager: nil}, invalid_pattern, %{})
-      end)
+               Executor.execute_bgp(%{db: nil, dict_manager: nil}, invalid_pattern, %{})
+             end)
     end
 
     test "handles empty pattern list" do
@@ -118,8 +127,8 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
       empty_pattern = {:bgp, []}
 
       assert is_function(fn ->
-        Executor.execute_bgp(%{db: nil, dict_manager: nil}, empty_pattern, %{})
-      end)
+               Executor.execute_bgp(%{db: nil, dict_manager: nil}, empty_pattern, %{})
+             end)
     end
   end
 
@@ -134,38 +143,46 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
 
     test "handles conflicting graph variable bindings", %{ctx: ctx} do
       # Pattern where graph variable is bound differently
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       # Should handle different graph variable references
       assert is_function(fn ->
-        Executor.execute_with_graph_variable(ctx, pattern, {:variable, "g"}, %{"g" => {:named_node, "http://example.org/g1"}})
-      end)
+               Executor.execute_with_graph_variable(ctx, pattern, {:variable, "g"}, %{
+                 "g" => {:named_node, "http://example.org/g1"}
+               })
+             end)
     end
 
     test "handles unbound graph variables", %{ctx: ctx} do
       # Graph variable that's never bound
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       # Should handle unbound variables
       assert is_function(fn ->
-        Executor.execute_with_graph_variable(ctx, pattern, {:variable, "unbound"}, %{})
-      end)
+               Executor.execute_with_graph_variable(ctx, pattern, {:variable, "unbound"}, %{})
+             end)
     end
 
     test "detects graph variable name conflicts", %{ctx: ctx} do
       # Same variable name used for different purposes
-      pattern = {:bgp, [
-        {:triple, {:variable, "g"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "g"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       # Variable "g" used both as subject and potential graph variable
       assert is_function(fn ->
-        Executor.execute_with_graph_variable(ctx, pattern, {:variable, "g"}, %{})
-      end)
+               Executor.execute_with_graph_variable(ctx, pattern, {:variable, "g"}, %{})
+             end)
     end
   end
 
@@ -177,14 +194,16 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
     test "handles nil database reference" do
       ctx = %{db: nil, dict_manager: nil}
 
-      pattern = {:bgp, [
-        {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
-      ]}
+      pattern =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}}
+         ]}
 
       # Should not crash with nil database
       assert is_function(fn ->
-        Executor.execute_bgp(ctx, pattern, %{})
-      end)
+               Executor.execute_bgp(ctx, pattern, %{})
+             end)
     end
 
     test "handles timeout during execution" do
@@ -200,8 +219,8 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
 
       # Should handle timeout gracefully
       assert is_function(fn ->
-        Executor.check_timeout(ctx)
-      end)
+               Executor.check_timeout(ctx)
+             end)
     end
 
     test "handles invalid column family access" do
@@ -210,8 +229,8 @@ defmodule TripleStore.SPARQL.ExecutorErrorTest do
       ctx = %{db: nil, dict_manager: nil}
 
       assert is_function(fn ->
-        Executor.execute_in_named_graph(ctx, {:bgp, []}, :default_graph, %{})
-      end)
+               Executor.execute_in_named_graph(ctx, {:bgp, []}, :default_graph, %{})
+             end)
     end
   end
 end

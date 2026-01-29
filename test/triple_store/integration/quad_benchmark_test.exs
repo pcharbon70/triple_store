@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -23,12 +23,18 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   @test_db_base "/tmp/quad_benchmark_test"
 
   # Performance targets (adjusted for test environment)
-  @nquads_load_target_ms 30_000  # 30 seconds for 1M quads
-  @trig_load_target_ms 30_000    # 30 seconds for 1M quads
-  @simple_query_target_ms 10     # 10ms for simple graph-scoped query
-  @cross_graph_query_target_ms 100 # 100ms for cross-graph query
-  @graph_enum_target_ms 100      # 100ms for 100 graphs
-  @insert_delete_target_ms 50    # 50ms for INSERT/DELETE operations
+  # 30 seconds for 1M quads
+  @nquads_load_target_ms 30_000
+  # 30 seconds for 1M quads
+  @trig_load_target_ms 30_000
+  # 10ms for simple graph-scoped query
+  @simple_query_target_ms 10
+  # 100ms for cross-graph query
+  @cross_graph_query_target_ms 100
+  # 100ms for 100 graphs
+  @graph_enum_target_ms 100
+  # 50ms for INSERT/DELETE operations
+  @insert_delete_target_ms 50
 
   # Small scale test sizes for faster CI
   @small_test_quads 1_000
@@ -36,41 +42,42 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   @benchmark_quads 10_000
 
   # ===========================================================================
-  # Helper Functions
+  # Helper Functions (using shared helpers from TripleStore.Integration.Helpers)
   # ===========================================================================
 
   defp unique_path do
-    time_component = System.system_time(:microsecond)
-    rand_component = :rand.uniform(1_000_000)
-    "#{@test_db_base}_#{time_component}_#{rand_component}"
+    TripleStore.Integration.Helpers.unique_path("quad_benchmark_test")
   end
 
   defp cleanup_path(path) do
-    File.rm_rf(path)
+    TripleStore.Integration.Helpers.cleanup_path(path)
   end
 
   defp generate_nquads_string(count) do
     Enum.map(1..count, fn i ->
       graph = rem(i, 10)
+
       "http://example.org/s#{i} <http://example.org/p> \"o#{i}\" <http://example.org/graph#{graph}> ."
     end)
     |> Enum.join("\n")
   end
 
   defp generate_trig_string(count, graph_count \\ 5) do
-    graph_blocks = Enum.map(0..(graph_count - 1), fn graph_num ->
-      quads = Enum.map(1..div(count, graph_count), fn i ->
-        idx = i + (graph_num * div(count, graph_count))
-        "  ex:s#{idx} ex:p \"o#{idx}\" ."
-      end)
-      |> Enum.join("\n")
+    graph_blocks =
+      Enum.map(0..(graph_count - 1), fn graph_num ->
+        quads =
+          Enum.map(1..div(count, graph_count), fn i ->
+            idx = i + graph_num * div(count, graph_count)
+            "  ex:s#{idx} ex:p \"o#{idx}\" ."
+          end)
+          |> Enum.join("\n")
 
-      """
-      GRAPH ex:graph#{graph_num} {
-      #{quads}
-      }
-      """
-    end)
+        """
+        GRAPH ex:graph#{graph_num} {
+        #{quads}
+        }
+        """
+      end)
 
     """
     @prefix ex: <http://example.org/> .
@@ -86,14 +93,14 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -118,7 +125,9 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       time_ms = div(time, 1000)
       quads_per_sec = div(@small_test_quads * 1_000_000, time)
 
-      IO.puts("N-Quads load: #{@small_test_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)")
+      IO.puts(
+        "N-Quads load: #{@small_test_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)"
+      )
 
       assert count == @small_test_quads
       # Should load quickly - adjust target based on scale
@@ -137,7 +146,9 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       time_ms = div(time, 1000)
       quads_per_sec = div(@benchmark_quads * 1_000_000, time)
 
-      IO.puts("N-Quads load: #{@benchmark_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)")
+      IO.puts(
+        "N-Quads load: #{@benchmark_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)"
+      )
 
       assert count == @benchmark_quads
       # Linear scaling of target
@@ -163,7 +174,9 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       time_ms = div(time, 1000)
       quads_per_sec = div(@small_test_quads * 1_000_000, time)
 
-      IO.puts("TriG load: #{@small_test_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)")
+      IO.puts(
+        "TriG load: #{@small_test_quads} quads in #{time_ms}ms (#{quads_per_sec} quads/sec)"
+      )
 
       assert count == @small_test_quads
       assert time_ms < div(@trig_load_target_ms, 100) * @small_test_quads
@@ -228,7 +241,8 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
 
       IO.puts("Graph-scoped query: #{time_ms}ms, #{length(results)} results")
 
-      assert time_ms < @simple_query_target_ms * 10 # Scaled target for test environment
+      # Scaled target for test environment
+      assert time_ms < @simple_query_target_ms * 10
       assert length(results) > 0
     end
 
@@ -240,9 +254,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       @prefix ex: <http://example.org/> .
 
       GRAPH ex:benchmark {
-        #{Enum.map(1..100, fn i ->
-          "ex:s#{i} ex:p1 \"v1\" ; ex:p2 \"v2\" ; ex:p3 \"v3\" ."
-        end) |> Enum.join("\n")}
+        #{Enum.map(1..100, fn i -> "ex:s#{i} ex:p1 \"v1\" ; ex:p2 \"v2\" ; ex:p3 \"v3\" ." end) |> Enum.join("\n")}
       }
       """
 
@@ -364,13 +376,14 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       # Create multiple graphs using TriG loader (proper API)
       graph_count = @small_test_graphs
 
-      graph_blocks = Enum.map(1..graph_count, fn i ->
-        """
-        GRAPH ex:graph#{i} {
-          ex:s#{i} ex:p "o#{i}" .
-        }
-        """
-      end)
+      graph_blocks =
+        Enum.map(1..graph_count, fn i ->
+          """
+          GRAPH ex:graph#{i} {
+            ex:s#{i} ex:p "o#{i}" .
+          }
+          """
+        end)
 
       trig_content = """
         @prefix ex: <http://example.org/> .
@@ -441,9 +454,11 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       :ok = Authorization.set_public(ctx, "http://example.org/test")
 
       quad_count = 100
+
       quads =
         Enum.map(1..quad_count, fn i ->
-          {:"http://example.org/s#{i}", :"http://example.org/p", "o#{i}", :"http://example.org/test"}
+          {:"http://example.org/s#{i}", :"http://example.org/p", "o#{i}",
+           :"http://example.org/test"}
         end)
 
       {time, {:ok, _}} =
@@ -463,9 +478,11 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       :ok = Authorization.set_public(ctx, "http://example.org/test")
 
       quad_count = 100
+
       quads =
         Enum.map(1..quad_count, fn i ->
-          {:"http://example.org/s#{i}", :"http://example.org/p", "o#{i}", :"http://example.org/test"}
+          {:"http://example.org/s#{i}", :"http://example.org/p", "o#{i}",
+           :"http://example.org/test"}
         end)
 
       {:ok, _} = QuadOperations.insert_quads(ctx.db, ctx.dict_manager, quads)

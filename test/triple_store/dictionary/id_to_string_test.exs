@@ -10,13 +10,13 @@ defmodule TripleStore.Dictionary.IdToStringTest do
   """
   use TripleStore.PooledDbCase
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.Manager
 
   setup %{db: db} do
-    assert NIF.is_open(db)
+    assert ErlangAdapter.is_open(db)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->

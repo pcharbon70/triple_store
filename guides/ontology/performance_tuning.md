@@ -53,6 +53,23 @@ config :triple_store, :rocksdb,
 
 ## Bulk Loading Optimization
 
+Bulk loading large datasets (>100K triples) can be optimized with the following approaches.
+
+### Open Database for Bulk Load
+
+Use the `open_for_bulk_load/2` function when preparing for a large import:
+
+```elixir
+alias TripleStore.Backend.RocksDB.ErlangAdapter
+
+# Open database optimized for bulk loading
+{:ok, adapter} = ErlangAdapter.open_for_bulk_load("/path/to/db")
+```
+
+**Note:** The erlang-rocksdb library doesn't support runtime configuration changes.
+This function documents intent and provides forward compatibility. Actual optimization
+comes from the practices below.
+
 ### Batch Size
 
 Larger batches reduce per-triple overhead:
@@ -68,17 +85,52 @@ Larger batches reduce per-triple overhead:
 - Large files (>100K triples): 10,000
 - Very large files (>1M triples): 50,000
 
-### Disable WAL for Bulk Loads
+### Disable WAL for Initial Bulk Load
 
-For initial bulk loading, consider disabling the Write-Ahead Log:
+For initial bulk loading into a new database, consider disabling the Write-Ahead Log:
 
 ```elixir
-# Warning: Data may be lost on crash during load
-config :triple_store, :rocksdb,
-  disable_wal: true
+# Open without WAL for initial bulk load (use with caution)
+# Data may be lost on crash during load
+{:ok, adapter} = ErlangAdapter.open(path, disable_wal: true)
+
+# Load data...
+
+# Re-open with WAL enabled for normal operation
+:ok = ErlangAdapter.close(adapter)
+{:ok, adapter} = ErlangAdapter.open(path)
 ```
 
-Re-enable WAL after bulk loading completes.
+**Warning:** Only disable WAL for initial bulk loads into new databases.
+Never disable WAL for databases with important data.
+
+### Parallel Loading with Flow
+
+For multiple files, use Flow for concurrent loading:
+
+```elixir
+use Flow
+
+paths = ["file1.nt", "file2.nt", "file3.nt"]
+
+paths
+|> Flow.from_enumerable()
+|> Flow.map(fn path ->
+  Task.async(fn ->
+    TripleStore.load(store, path, batch_size: 50_000)
+  end)
+end)
+|> Flow.await()  # Wait for all loads to complete
+```
+
+### Manual Compaction After Load
+
+After bulk loading completes, the database will automatically compact in the background.
+For large loads, consider allowing extra time for compaction before putting the database
+into production use.
+
+The erlang-rocksdb library handles background compaction automatically based on
+the configured options.
 
 ## Query Optimization
 
@@ -253,31 +305,39 @@ end
 
 ## Benchmarking
 
-Use the built-in benchmark suite to measure performance:
+Use the built-in WatDiv benchmark to measure performance:
+
+```bash
+# Run the main WatDiv benchmark
+mix run scripts/run_benchmarks.exs
+```
+
+The benchmark generates test data, loads it, and runs 20 queries across 4 categories (linear, star, snowflake, complex).
+
+### Programmatic Benchmarking
 
 ```elixir
-# LUBM benchmark
-{:ok, results} = TripleStore.Benchmark.run(store, :lubm,
-  scale: 1,           # Number of universities
-  warmup: 3,          # Warmup iterations
-  iterations: 10      # Measurement iterations
-)
+alias TripleStore.Benchmark.{WatDiv, WatDivQueries}
 
-# BSBM benchmark
-{:ok, results} = TripleStore.Benchmark.run(store, :bsbm,
-  scale: 1000,        # Number of products
-  query_mix: true     # Run full query mix
-)
+# Generate data at scale 10 (~1M triples)
+graph = WatDiv.generate(10)
+
+# Run specific query category
+{:ok, query} = WatDivQueries.get(:l1)
+{:ok, results} = TripleStore.query(store, query.sparql)
 ```
 
 ### Performance Targets
 
 | Metric | Target |
 |--------|--------|
-| Simple BGP query | < 10ms p95 |
-| Complex join query | < 100ms p95 |
+| Simple query (L1-L5) | < 10ms p95 |
+| Complex query (F1-F5, C1-C3) | < 100ms p95 |
+| Query mix aggregate | < 50ms p95 |
 | Bulk load | > 100K triples/sec |
 | Point lookup | < 1ms p99 |
+
+See [Performance Targets](../benchmarks/performance-targets.md) for detailed WatDiv benchmark documentation.
 
 ## Common Performance Issues
 

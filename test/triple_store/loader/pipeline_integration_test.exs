@@ -13,10 +13,9 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Benchmark.BSBM
   alias TripleStore.Benchmark.LUBM
-  alias TripleStore.Config.Runtime
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -28,7 +27,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -38,7 +37,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -282,40 +281,6 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
       {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
       assert length(all_triples) == count1 + count2
     end
-
-    test "runtime config is restored after error in with_bulk_config", %{db: db, manager: manager} do
-      triples = generate_synthetic_triples(1000)
-      graph = RDF.Graph.new(triples)
-
-      # This should restore config even after the function returns an error
-      {:ok, {:error, :simulated}} =
-        Runtime.with_bulk_config(db, [], fn _db ->
-          {:error, :simulated}
-        end)
-
-      # Verify database still works
-      {:ok, count} = Loader.load_graph(db, manager, graph, batch_size: 500)
-      assert count == 1000
-    end
-
-    test "runtime config is restored after exception in with_bulk_config", %{
-      db: db,
-      manager: manager
-    } do
-      triples = generate_synthetic_triples(1000)
-      graph = RDF.Graph.new(triples)
-
-      # This should restore config after exception
-      assert_raise RuntimeError, fn ->
-        Runtime.with_bulk_config(db, [], fn _db ->
-          raise "simulated error"
-        end)
-      end
-
-      # Verify database still works
-      {:ok, count} = Loader.load_graph(db, manager, graph, batch_size: 500)
-      assert count == 1000
-    end
   end
 
   # ===========================================================================
@@ -442,7 +407,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
       # Clear data for parallel test
       # Need to create a new database
       path2 = "#{@test_db_base}_parallel_#{:erlang.unique_integer([:positive])}"
-      {:ok, db2} = NIF.open(path2)
+      {:ok, db2} = ErlangAdapter.open(path2)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       cores = System.schedulers_online()
@@ -460,7 +425,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
 
       # Cleanup
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       File.rm_rf(path2)
 
       IO.puts("\n  Sequential vs Parallel (#{cores} cores):")
@@ -482,7 +447,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
       for stages <- [1, 2, 4] do
         # Create new db for each test
         path = "#{@test_db_base}_stages_#{stages}_#{:erlang.unique_integer([:positive])}"
-        {:ok, test_db} = NIF.open(path)
+        {:ok, test_db} = ErlangAdapter.open(path)
         {:ok, test_manager} = Manager.start_link(db: test_db)
 
         {:ok, count} =
@@ -494,7 +459,7 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
         assert count == 5000
 
         Manager.stop(test_manager)
-        NIF.close(test_db)
+        ErlangAdapter.close(test_db)
         File.rm_rf(path)
       end
     end

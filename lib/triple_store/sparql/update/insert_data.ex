@@ -88,12 +88,19 @@ defmodule TripleStore.SPARQL.Update.InsertData do
       end)
 
     # Convert terms to IDs (graph terms separately as they may be :default)
-    with {:ok, subject_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(subjects)),
-         {:ok, predicate_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(predicates)),
+    with {:ok, subject_ids} <-
+           convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(subjects)),
+         {:ok, predicate_ids} <-
+           convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(predicates)),
          {:ok, object_ids} <- convert_terms_to_id_map(ctx.dict_manager, MapSet.to_list(objects)),
          {:ok, graph_ids} <- convert_graph_terms_to_id_map(ctx, MapSet.to_list(graphs)) do
       # Build all quad tuples with their IDs
-      all_maps = %{subject: subject_ids, predicate: predicate_ids, object: object_ids, graph: graph_ids}
+      all_maps = %{
+        subject: subject_ids,
+        predicate: predicate_ids,
+        object: object_ids,
+        graph: graph_ids
+      }
 
       internal_quads =
         Enum.reduce(rdf_quads, [], fn {s, p, o, g}, acc ->
@@ -169,10 +176,11 @@ defmodule TripleStore.SPARQL.Update.InsertData do
 
   defp quads_to_rdf_triples(quads) do
     # Convert AST quads to RDF triples (extract from default graph quads)
-    triples = Enum.map(quads, fn
-      {:quad, s, p, o, _g} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
-      quad -> ast_to_triple(quad)
-    end)
+    triples =
+      Enum.map(quads, fn
+        {:quad, s, p, o, _g} -> {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o)}
+        quad -> ast_to_triple(quad)
+      end)
 
     {:ok, triples}
   end
@@ -184,8 +192,12 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   end
 
   # Converts AST quad to RDF quad
-  defp ast_to_rdf_quad({:quad, s, p, o, g}), do: {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), ast_graph_to_rdf(g)}
-  defp ast_to_rdf_quad({:triple, s, p, o}), do: {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), :default}
+  defp ast_to_rdf_quad({:quad, s, p, o, g}),
+    do: {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), ast_graph_to_rdf(g)}
+
+  defp ast_to_rdf_quad({:triple, s, p, o}),
+    do: {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), :default}
+
   defp ast_to_rdf_quad({s, p, o}), do: {ast_to_rdf(s), ast_to_rdf(p), ast_to_rdf(o), :default}
 
   # Converts AST triple to RDF triple
@@ -197,9 +209,16 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   defp ast_to_rdf({:blank_node, id}), do: RDF.bnode(id)
   defp ast_to_rdf({:literal, :simple, value}), do: RDF.literal(value)
   defp ast_to_rdf({:literal, :lang, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :language_tagged, value, lang}), do: RDF.literal(value, language: lang)
-  defp ast_to_rdf({:literal, :typed, value, datatype}), do: RDF.literal(value, datatype: RDF.iri(datatype))
-  defp ast_to_rdf({:variable, _name}), do: raise(ArgumentError, "Variables not allowed in INSERT DATA")
+
+  defp ast_to_rdf({:literal, :language_tagged, value, lang}),
+    do: RDF.literal(value, language: lang)
+
+  defp ast_to_rdf({:literal, :typed, value, datatype}),
+    do: RDF.literal(value, datatype: RDF.iri(datatype))
+
+  defp ast_to_rdf({:variable, _name}),
+    do: raise(ArgumentError, "Variables not allowed in INSERT DATA")
+
   defp ast_to_rdf(term), do: term
 
   # Converts AST graph term to RDF graph term

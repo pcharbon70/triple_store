@@ -2,6 +2,35 @@
 
 This guide will help you get up and running with TripleStore quickly.
 
+## Triple Store vs Quad Store
+
+TripleStore supports two storage schemas:
+
+| Feature | Triple Store (v1) | Quad Store (v2) |
+|---------|-------------------|-----------------|
+| **Data Model** | `{subject, predicate, object}` | `{graph, subject, predicate, object}` |
+| **Named Graphs** | No (implicit default) | Yes (explicit graphs) |
+| **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) |
+| **Write Speed** | Faster (~33% faster writes) | Slower (more indices) |
+| **Use Case** | Simple datasets | Multi-tenancy, provenance, data isolation |
+
+## Which Should You Choose?
+
+### Choose Triple Store when:
+- You have a simple, single-context dataset
+- Maximum write performance is critical
+- You don't need named graphs
+- You're migrating from an existing triple store system
+
+### Choose Quad Store when:
+- You need data isolation (multi-tenancy)
+- You want to track data provenance
+- You have multiple data sources to merge
+- You need graph-scoped reasoning
+- You're starting a new project
+
+**Recommendation**: Use quad store (`schema: :quad`) for new projects. It supports everything triple store does plus named graphs for data isolation and provenance tracking.
+
 ## Installation
 
 Add `triple_store` to your dependencies in `mix.exs`:
@@ -20,215 +49,137 @@ Then fetch dependencies:
 mix deps.get
 ```
 
-The first compilation will build the Rust NIFs for RocksDB:
+The first compilation will build the native dependencies:
 
 ```bash
 mix compile
 ```
 
-> **Note**: You need Rust installed for NIF compilation. Install via [rustup](https://rustup.rs/).
+> **Note**: You need librocksdb-dev installed:
+> - Ubuntu/Debian: `sudo apt-get install librocksdb-dev`
+> - macOS: `brew install rocksdb`
 
 ## Quick Start
 
-### Opening a Store
+### Triple Store Quick Start
 
 ```elixir
-# Open or create a store
-{:ok, store} = TripleStore.open("./my_database")
+# Open a triple store
+{:ok, store} = TripleStore.open("./my_database", schema: :triple)
 
-# The store is now ready for use
-```
+# Insert some triples
+TripleStore.update(store, """
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
-The database directory will be created if it doesn't exist.
-
-### Loading Data
-
-Load RDF data from a file:
-
-```elixir
-# Load Turtle file
-{:ok, count} = TripleStore.load(store, "data.ttl")
-IO.puts("Loaded #{count} triples")
-
-# Load N-Triples
-{:ok, count} = TripleStore.load(store, "data.nt")
-```
-
-Or insert triples directly:
-
-```elixir
-# Using RDF.ex sigils
-import RDF.Sigils
-
-{:ok, 1} = TripleStore.insert(store, {
-  ~I<http://example.org/alice>,
-  ~I<http://example.org/knows>,
-  ~I<http://example.org/bob>
-})
-```
-
-### Querying with SPARQL
-
-Execute SPARQL queries:
-
-```elixir
-# SELECT query
-{:ok, results} = TripleStore.query(store, """
-  SELECT ?person ?name
-  WHERE {
-    ?person <http://example.org/name> ?name
+  INSERT DATA {
+    <http://example.org/alice> a foaf:Person ;
+                              foaf:name "Alice" .
   }
 """)
 
-# Process results
-for row <- results do
-  IO.puts("Person: #{inspect(row["person"])}, Name: #{inspect(row["name"])}")
-end
+# Query
+{:ok, results} = TripleStore.query(store, """
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+  SELECT ?name
+  WHERE {
+    ?person foaf:name ?name
+  }
+""")
+
+# Close when done
+TripleStore.close(store)
 ```
 
-### Closing the Store
-
-Always close the store when done:
+### Quad Store Quick Start
 
 ```elixir
-:ok = TripleStore.close(store)
+# Open a quad store
+{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+
+# Insert into a named graph
+TripleStore.update(store, """
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+  INSERT DATA {
+    GRAPH <http://example.org/people> {
+      <http://example.org/alice> a foaf:Person ;
+                                foaf:name "Alice" .
+    }
+  }
+""")
+
+# Query a specific graph
+{:ok, results} = TripleStore.query(store, """
+  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+  SELECT ?name
+  WHERE {
+    GRAPH <http://example.org/people> {
+      ?person foaf:name ?name
+    }
+  }
+""")
+
+# Close when done
+TripleStore.close(store)
 ```
 
-## Complete Example
+## Continue Your Journey
 
-Here's a complete example demonstrating common operations:
+### Triple Store Path
 
-```elixir
-defmodule MyApp.Example do
-  import RDF.Sigils
+If you chose **triple store**, continue to the triple-specific guides:
 
-  def run do
-    # 1. Open the store
-    {:ok, store} = TripleStore.open("./example_db")
+1. [Data Management](triples/02-data-management.md) - Loading, exporting, and backing up triples
+2. [SPARQL Queries](triples/03-sparql-queries.md) - Querying your data
+3. [SPARQL Updates](triples/04-sparql-updates.md) - Modifying data with SPARQL
+4. [Reasoning](triples/05-reasoning.md) - OWL 2 RL inference
+5. [Configuration & Performance](triples/06-configuration.md) - Tuning your triple store
 
-    # 2. Define some data
-    data = """
-    @prefix ex: <http://example.org/> .
-    @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+### Quad Store Path
 
-    ex:alice a foaf:Person ;
-             foaf:name "Alice" ;
-             foaf:age 30 ;
-             foaf:knows ex:bob .
+If you chose **quad store**, continue to the quad-specific guides:
 
-    ex:bob a foaf:Person ;
-           foaf:name "Bob" ;
-           foaf:age 25 .
-    """
-
-    # 3. Load the data
-    {:ok, count} = TripleStore.load_string(store, data, :turtle)
-    IO.puts("Loaded #{count} triples")
-
-    # 4. Query for people
-    {:ok, results} = TripleStore.query(store, """
-      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-
-      SELECT ?person ?name ?age
-      WHERE {
-        ?person a foaf:Person ;
-                foaf:name ?name ;
-                foaf:age ?age .
-      }
-      ORDER BY ?name
-    """)
-
-    IO.puts("\nPeople in the database:")
-    for row <- results do
-      IO.puts("  #{row["name"]} (age #{row["age"]})")
-    end
-
-    # 5. Add a new person
-    {:ok, _} = TripleStore.update(store, """
-      PREFIX ex: <http://example.org/>
-      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-
-      INSERT DATA {
-        ex:charlie a foaf:Person ;
-                   foaf:name "Charlie" ;
-                   foaf:age 35 .
-      }
-    """)
-
-    # 6. Check count
-    {:ok, stats} = TripleStore.stats(store)
-    IO.puts("\nTotal triples: #{stats.triple_count}")
-
-    # 7. Clean up
-    :ok = TripleStore.close(store)
-  end
-end
-```
+1. [Data Management](quads/02-data-management.md) - Loading, exporting, and backing up quads with named graphs
+2. [SPARQL Queries](quads/03-sparql-queries.md) - Querying with GRAPH clauses
+3. [SPARQL Updates](quads/04-sparql-updates.md) - Modifying data in named graphs
+4. [Reasoning](quads/05-reasoning.md) - Graph-scoped OWL 2 RL inference
+5. [Configuration & Performance](quads/06-configuration.md) - Quad-specific tuning
+6. [Named Graphs](quads/07-named-graphs.md) - Advanced named graph patterns
 
 ## Supported RDF Formats
 
 TripleStore supports these formats for loading and exporting:
 
-| Format | Extension | Description |
-|--------|-----------|-------------|
-| Turtle | `.ttl` | Human-readable, compact notation |
-| N-Triples | `.nt` | Simple line-based format, good for streaming |
-| N-Quads | `.nq` | N-Triples with named graphs |
-| TriG | `.trig` | Turtle with named graphs |
-| RDF/XML | `.rdf` | XML-based (requires optional dependency) |
-| JSON-LD | `.jsonld` | JSON-based (requires optional dependency) |
-
-The format is auto-detected from the file extension, or you can specify it explicitly:
-
-```elixir
-{:ok, count} = TripleStore.load(store, "data.xml", format: :rdfxml)
-```
+| Format | Extension | Triple Store | Quad Store |
+|--------|-----------|--------------|------------|
+| **N-Triples** | `.nt` | Yes | Default graph only |
+| **Turtle** | `.ttl` | Yes | Default graph only |
+| **N-Quads** | `.nq` | Loads to default | Full quad support |
+| **TriG** | `.trig` | Loads to default | Full quad support |
+| **RDF/XML** | `.rdf` | Yes | Default graph only |
 
 ## Using RDF.ex Terms
 
-TripleStore uses [RDF.ex](https://hex.pm/packages/rdf) for RDF data structures. Here's a quick reference:
-
-### IRIs
+TripleStore uses [RDF.ex](https://hex.pm/packages/rdf) for RDF data structures:
 
 ```elixir
 import RDF.Sigils
 
-# Using sigil
+# IRIs
 ~I<http://example.org/resource>
-
-# Using function
 RDF.iri("http://example.org/resource")
 
-# With namespace
-alias RDF.NS.RDFS
-RDFS.label  # => ~I<http://www.w3.org/2000/01/rdf-schema#label>
-```
-
-### Literals
-
-```elixir
-import RDF.Sigils
-
-# Plain literal
+# Literals
 ~L"Hello, World!"
-
-# Typed literal
 RDF.literal(42)           # xsd:integer
 RDF.literal(3.14)         # xsd:double
-RDF.literal(true)         # xsd:boolean
-RDF.literal(~D[2024-01-15])  # xsd:date
-
-# Language-tagged literal
 RDF.literal("Bonjour", language: "fr")
-```
 
-### Blank Nodes
-
-```elixir
-import RDF.Sigils
-
-~B<b1>  # Named blank node
-RDF.bnode()  # Anonymous blank node
+# Blank Nodes
+~B<b1>
+RDF.bnode()
 ```
 
 ## Error Handling
@@ -261,16 +212,14 @@ For scripts or when you want exceptions on error:
 
 ```elixir
 # Raises TripleStore.Error on failure
-store = TripleStore.open!("./my_database")
-count = TripleStore.load!(store, "data.ttl")
+store = TripleStore.open!("./my_database", schema: :quad)
+count = TripleStore.load!(store, "data.nq")
 results = TripleStore.query!(store, "SELECT * WHERE { ?s ?p ?o }")
 ```
 
 ## Tips
 
 ### Use Prefixes in SPARQL
-
-Define prefixes to make queries more readable:
 
 ```elixir
 TripleStore.query(store, """
@@ -279,38 +228,21 @@ TripleStore.query(store, """
 
   SELECT ?name
   WHERE {
-    ?person a foaf:Person ;
-            foaf:name ?name .
+    ?person foaf:name ?name
   }
 """)
 ```
 
+### Check Your Schema
+
+```elixir
+{:ok, schema} = TripleStore.schema(store)
+IO.puts("Schema: #{schema}")  # => :triple or :quad
+```
+
 ### Batch Loading for Performance
 
-When loading large datasets, use batch loading:
-
 ```elixir
-# Load with larger batch size for better throughput
+# Larger batches = fewer commits, faster loading
 {:ok, count} = TripleStore.load(store, "large_file.nt", batch_size: 10_000)
 ```
-
-### Check Health Before Critical Operations
-
-```elixir
-{:ok, health} = TripleStore.health(store)
-
-if health.status == :healthy do
-  # Safe to proceed
-  perform_critical_operation(store)
-else
-  Logger.warn("Store health: #{health.status}")
-end
-```
-
-## Next Steps
-
-- [Data Management](02-data-management.md) - Loading, exporting, and backing up data
-- [SPARQL Queries](03-sparql-queries.md) - Query syntax and examples
-- [SPARQL Updates](04-sparql-updates.md) - Modifying data with SPARQL
-- [Reasoning](05-reasoning.md) - Using OWL 2 RL inference
-- [Configuration & Performance](06-configuration.md) - Tuning your store

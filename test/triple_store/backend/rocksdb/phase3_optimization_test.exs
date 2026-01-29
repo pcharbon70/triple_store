@@ -8,7 +8,7 @@ defmodule TripleStore.Backend.RocksDB.Phase3OptimizationTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.Reasoner.DerivedStore
 
@@ -29,10 +29,10 @@ defmodule TripleStore.Backend.RocksDB.Phase3OptimizationTest do
     File.mkdir_p!(db_path)
 
     # Open database (erlang-rocksdb adapter handles create_if_missing by default)
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(db_path)
     end)
 

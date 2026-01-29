@@ -50,7 +50,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
 
   require Logger
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
 
   # ===========================================================================
@@ -619,7 +619,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   defp load_counter(db, type) do
     key = counter_key(type)
 
-    case NIF.get(db, :str2id, key) do
+    case ErlangAdapter.get(db, :str2id, key) do
       {:ok, binary} ->
         <<value::64-big>> = binary
         {:ok, value}
@@ -638,7 +638,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
     key = counter_key(type)
     binary = <<value::64-big>>
 
-    case NIF.put(db, :str2id, key, binary) do
+    case ErlangAdapter.put(db, :str2id, key, binary) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
     end

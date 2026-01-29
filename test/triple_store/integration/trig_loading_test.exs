@@ -13,7 +13,7 @@ defmodule TripleStore.Integration.TriGLoadingTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -22,17 +22,15 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   @ex "http://example.org/"
 
   # ===========================================================================
-  # Helper Functions
+  # Helper Functions (using shared helpers from TripleStore.Integration.Helpers)
   # ===========================================================================
 
   defp unique_path do
-    time_component = System.system_time(:microsecond)
-    rand_component = :rand.uniform(1_000_000)
-    "#{@test_db_base}_#{time_component}_#{rand_component}"
+    TripleStore.Integration.Helpers.unique_path("trig_loading_test")
   end
 
   defp cleanup_path(path) do
-    File.rm_rf(path)
+    TripleStore.Integration.Helpers.cleanup_path(path)
   end
 
   defp create_test_trig_file(path, content) do
@@ -51,12 +49,12 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -163,7 +161,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
       assert count3 == 1
     end
 
-    test "handles graphs with interleaved declarations", %{db: db, manager: manager, db_path: db_path} do
+    test "handles graphs with interleaved declarations", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "interleaved.trig")
 
       content = """
@@ -198,7 +200,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.3 load TriG with default graph block" do
-    test "loads default graph triples (outside GRAPH blocks)", %{db: db, manager: manager, db_path: db_path} do
+    test "loads default graph triples (outside GRAPH blocks)", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "default_graph.trig")
 
       content = """
@@ -230,7 +236,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
       assert named_count == 1
     end
 
-    test "handles file with only default graph content", %{db: db, manager: manager, db_path: db_path} do
+    test "handles file with only default graph content", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "only_default.trig")
 
       content = """
@@ -255,7 +265,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.4 load TriG with multiple graphs in one file" do
-    test "handles multiple GRAPH blocks for the same graph", %{db: db, manager: manager, db_path: db_path} do
+    test "handles multiple GRAPH blocks for the same graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "same_graph_multiple.trig")
 
       content = """
@@ -334,7 +348,11 @@ defmodule TripleStore.Integration.TriGLoadingTest do
   # ===========================================================================
 
   describe "6.2.2.5 load large TriG file" do
-    test "handles large files efficiently (10k+ quads)", %{db: db, manager: manager, db_path: db_path} do
+    test "handles large files efficiently (10k+ quads)", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       trig_file = Path.join(db_path, "large.trig")
 
       # Generate 10,000 quads across 10 graphs

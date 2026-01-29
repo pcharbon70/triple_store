@@ -5,7 +5,7 @@ defmodule TripleStore.Statistics.LazyTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadOperations
   alias TripleStore.Statistics
 
@@ -14,7 +14,7 @@ defmodule TripleStore.Statistics.LazyTest do
       System.tmp_dir!() <>
         "/ts_lazy_" <> Integer.to_string(System.unique_integer([:positive]))
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
 
     # Insert test data
     quads =
@@ -25,7 +25,7 @@ defmodule TripleStore.Statistics.LazyTest do
     Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

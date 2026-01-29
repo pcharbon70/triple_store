@@ -4,8 +4,9 @@ defmodule TripleStore.Test.DbPool do
   """
 
   use GenServer
+  require Logger
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.TestHelpers
 
   @column_families [:id2str, :str2id, :spo, :pos, :osp, :derived]
@@ -37,7 +38,7 @@ defmodule TripleStore.Test.DbPool do
       databases =
         for id <- 1..pool_size do
           path = TestHelpers.test_db_path("pool_#{id}")
-          {:ok, db} = NIF.open(path)
+          {:ok, db} = ErlangAdapter.open(path)
           %{db: db, path: path, id: id}
         end
 
@@ -50,9 +51,9 @@ defmodule TripleStore.Test.DbPool do
       {:ok, state}
     rescue
       e ->
-        # If NIF is not implemented, skip the DbPool
+        # If ErlangAdapter is not ready, skip the DbPool
         # Some tests will be skipped during migration phases
-        {:stop, {:nif_not_ready, e}}
+        {:stop, {:adapter_not_ready, e}}
     end
   end
 
@@ -75,23 +76,65 @@ defmodule TripleStore.Test.DbPool do
 
   @impl true
   def handle_cast({:checkin, db_info}, state) do
-    clear_database(db_info.db)
     new_in_use = Map.delete(state.in_use, db_info.id)
+
+    # Check if database is still alive - if not, replace it with a fresh one
+    {db_to_return, state} =
+      if Process.alive?(db_info.db) do
+        clear_database(db_info.db)
+        {db_info, state}
+      else
+        # Database died during test - close it (safely) and create a replacement
+        try do
+          ErlangAdapter.close(db_info.db)
+        rescue
+          _ -> :ok
+        end
+
+        # Remove old database files (including lock file)
+        File.rm_rf(db_info.path)
+
+        # Create new database with retry logic
+        case create_database_with_retry(db_info.path) do
+          {:ok, new_db} ->
+            new_db_info = %{db_info | db: new_db}
+            {new_db_info, state}
+
+          {:error, reason} ->
+            # If we still can't open after retries, log and remove from pool
+            require Logger
+            Logger.warning("Failed to recreate database at #{db_info.path}: #{inspect(reason)}")
+
+            # Don't return this database to the pool - shrink the pool
+          {nil, %{state | available: []}}
+        end
+      end
 
     case :queue.out(state.waiters) do
       {{:value, waiter}, new_waiters} ->
-        GenServer.reply(waiter, db_info)
+        # If we don't have a valid database, tell the waiter to try again later
+        if db_to_return == nil do
+          # Re-queue the waiter at the front
+          {:noreply, %{state | waiters: :queue.in(waiter, new_waiters)}}
+        else
+          GenServer.reply(waiter, db_to_return)
 
-        new_state = %{
-          state
-          | in_use: Map.put(new_in_use, db_info.id, db_info),
-            waiters: new_waiters
-        }
+          new_state = %{
+            state
+            | in_use: Map.put(new_in_use, db_to_return.id, db_to_return),
+              waiters: new_waiters
+          }
 
-        {:noreply, new_state}
+          {:noreply, new_state}
+        end
 
       {:empty, _} ->
-        {:noreply, %{state | available: [db_info | state.available], in_use: new_in_use}}
+        if db_to_return == nil do
+          # No valid database to return, just update state
+          {:noreply, state}
+        else
+          {:noreply, %{state | available: [db_to_return | state.available], in_use: new_in_use}}
+        end
     end
   end
 
@@ -100,7 +143,7 @@ defmodule TripleStore.Test.DbPool do
     state.available
     |> Enum.concat(Map.values(state.in_use))
     |> Enum.each(fn db_info ->
-      NIF.close(db_info.db)
+      ErlangAdapter.close(db_info.db)
       File.rm_rf(db_info.path)
     end)
 
@@ -122,37 +165,80 @@ defmodule TripleStore.Test.DbPool do
     end
   end
 
+  defp create_database_with_retry(path, retries \\ 3, delay \\ 100) do
+    create_database_with_retry(path, retries, delay, nil)
+  end
+
+  defp create_database_with_retry(_path, retries, _delay, last_error) when retries <= 0 do
+    {:error, last_error}
+  end
+
+  defp create_database_with_retry(path, retries, delay, _last_error) do
+    case ErlangAdapter.open(path) do
+      {:ok, db} ->
+        {:ok, db}
+
+      {:error, reason} = error ->
+        # If there's a lock error, wait and retry
+        if String.contains?(inspect(reason), "lock") or
+           String.contains?(inspect(reason), "LOCK") do
+          Process.sleep(delay)
+          create_database_with_retry(path, retries - 1, delay, error)
+        else
+          error
+        end
+    end
+  end
+
   defp clear_database(db) do
-    Enum.each(@column_families, fn cf ->
-      clear_column_family(db, cf)
-    end)
+    # Check if database is still alive before attempting to clear
+    if Process.alive?(db) do
+      Enum.each(@column_families, fn cf ->
+        clear_column_family(db, cf)
+      end)
+    else
+      :ok
+    end
   end
 
   defp clear_column_family(db, cf) do
-    case NIF.prefix_iterator(db, cf, <<>>) do
-      {:ok, iter} ->
-        try do
-          delete_all_keys(db, cf, iter)
-        after
-          NIF.iterator_close(iter)
-        end
+    # Only attempt to clear if database is still alive
+    if Process.alive?(db) do
+      case ErlangAdapter.prefix_iterator(db, cf, <<>>) do
+        {:ok, iter} ->
+          try do
+            delete_all_keys(db, cf, iter)
+          after
+            # Only close iterator if the database is still alive
+            if Process.alive?(db) do
+              ErlangAdapter.iterator_close(iter)
+            end
+          end
 
-      {:error, _} ->
-        :ok
+        {:error, _} ->
+          :ok
+      end
+    else
+      :ok
     end
   end
 
   defp delete_all_keys(db, cf, iter) do
-    case NIF.iterator_next(iter) do
-      {:ok, key, _value} ->
-        _ = NIF.delete(db, cf, key)
-        delete_all_keys(db, cf, iter)
+    # Stop if database dies during iteration
+    if Process.alive?(db) do
+      case ErlangAdapter.iterator_next(iter) do
+        {:ok, key, _value} ->
+          _ = ErlangAdapter.delete(db, cf, key)
+          delete_all_keys(db, cf, iter)
 
-      :iterator_end ->
-        :ok
+        :iterator_end ->
+          :ok
 
-      {:error, _} ->
-        :ok
+        {:error, _} ->
+          :ok
+      end
+    else
+      :ok
     end
   end
 end

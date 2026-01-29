@@ -13,7 +13,7 @@ defmodule TripleStore.GraphScopedLoadingTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
@@ -22,7 +22,7 @@ defmodule TripleStore.GraphScopedLoadingTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -30,7 +30,7 @@ defmodule TripleStore.GraphScopedLoadingTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -43,7 +43,12 @@ defmodule TripleStore.GraphScopedLoadingTest do
 
   # Create a temporary test file with given content and extension
   defp create_test_file(name, content, ext) do
-    path = Path.join([System.tmp_dir!(), "triple_store_test_#{name}_#{:erlang.unique_integer()}.#{ext}"])
+    path =
+      Path.join([
+        System.tmp_dir!(),
+        "triple_store_test_#{name}_#{:erlang.unique_integer()}.#{ext}"
+      ])
+
     File.write!(path, content)
     path
   end
@@ -320,7 +325,8 @@ defmodule TripleStore.GraphScopedLoadingTest do
         graph3 => path3
       }
 
-      {:ok, summary} = Loader.load_files_to_graphs(db, manager, graph_files, on_conflict: :continue)
+      {:ok, summary} =
+        Loader.load_files_to_graphs(db, manager, graph_files, on_conflict: :continue)
 
       # Should have results for all graphs, with error for graph2
       assert map_size(summary) == 3

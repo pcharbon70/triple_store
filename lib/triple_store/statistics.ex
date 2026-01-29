@@ -68,7 +68,7 @@ defmodule TripleStore.Statistics do
 
   ## Stream Performance and Memory Characteristics
 
-  This module uses RocksDB prefix iterators via `NIF.prefix_stream/3` to efficiently
+  This module uses RocksDB prefix iterators via `ErlangAdapter.prefix_stream/3` to efficiently
   scan large datasets without loading everything into memory. Understanding the
   performance characteristics is important for optimal usage.
 
@@ -143,7 +143,7 @@ defmodule TripleStore.Statistics do
   - `[:triple_store, :statistics, :cache_miss]` - Cache misses requiring recomputation
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Index
 
@@ -185,7 +185,7 @@ defmodule TripleStore.Statistics do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "64-bit term ID"
   @type term_id :: non_neg_integer()
@@ -340,8 +340,10 @@ defmodule TripleStore.Statistics do
   @default_quad_count 10_000
 
   # Cache warming limits
-  @cache_warm_timeout 30_000  # 30 seconds per graph
-  @max_graphs_to_warm 100  # Maximum graphs to warm in parallel
+  # 30 seconds per graph
+  @cache_warm_timeout 30_000
+  # Maximum graphs to warm in parallel
+  @max_graphs_to_warm 100
 
   # ===========================================================================
   # Column Family Validation
@@ -597,7 +599,8 @@ defmodule TripleStore.Statistics do
                 # Read and return the cached value to ensure consistency
                 case :ets.lookup(@quad_cache_table, cache_key) do
                   [{^cache_key, cached_summary}] -> {:ok, cached_summary}
-                  [] -> result  # Cache was cleared, return our computed value
+                  # Cache was cleared, return our computed value
+                  [] -> result
                 end
             end
 
@@ -766,13 +769,11 @@ defmodule TripleStore.Statistics do
 
         # Warm all-graphs summary
         cache_key = all_graphs_cache_key()
+
         case all_graphs_summary(db, opts) do
           {:ok, summary} ->
             # Use insert_new to avoid overwriting a more recent cache entry
             :ets.insert_new(@quad_cache_table, {cache_key, summary})
-
-          {:error, _} ->
-            :ok
         end
 
         duration = System.monotonic_time() - start_time
@@ -784,9 +785,6 @@ defmodule TripleStore.Statistics do
         )
 
         :ok
-
-      {:error, _} = error ->
-        error
     end
   end
 
@@ -892,7 +890,7 @@ defmodule TripleStore.Statistics do
          :ok <- validate_stats_size(stats) do
       encoded = :erlang.term_to_binary(stats, [:compressed])
 
-      case NIF.put(db, :id2str, @stats_key_prefix, encoded) do
+      case ErlangAdapter.put(db, :id2str, @stats_key_prefix, encoded) do
         :ok -> :ok
         {:error, _} = error -> error
       end
@@ -956,8 +954,8 @@ defmodule TripleStore.Statistics do
     end
   end
 
-  def validate_stats!(_stats) do
-    raise ArgumentError, "Invalid statistics: expected a map, got: #{inspect(_stats)}"
+  def validate_stats!(stats) do
+    raise ArgumentError, "Invalid statistics: expected a map, got: #{inspect(stats)}"
   end
 
   # Validate that all required keys are present
@@ -983,22 +981,23 @@ defmodule TripleStore.Statistics do
       {:distinct_predicates, &validate_non_neg_integer/1},
       {:distinct_objects, &validate_non_neg_integer/1},
       {:version, &validate_non_neg_integer/1},
-      {:collected_at, fn
-        %DateTime{} -> :ok
-        _ -> {:error, :invalid_datetime}
-      end}
+      {:collected_at,
+       fn
+         %DateTime{} -> :ok
+         _ -> {:error, :invalid_datetime}
+       end}
     ]
 
     errors =
       validators
-    |> Enum.filter(fn {key, _validator} -> Map.has_key?(stats, key) end)
-    |> Enum.map(fn {key, validator} ->
-      case validator.(Map.get(stats, key)) do
-        :ok -> nil
-        error -> {key, error}
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
+      |> Enum.filter(fn {key, _validator} -> Map.has_key?(stats, key) end)
+      |> Enum.map(fn {key, validator} ->
+        case validator.(Map.get(stats, key)) do
+          :ok -> nil
+          error -> {key, error}
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
 
     if Enum.empty?(errors) do
       :ok
@@ -1015,6 +1014,7 @@ defmodule TripleStore.Statistics do
     # Use :erlang.external_size to estimate binary size without creating it
     try do
       size = :erlang.external_size(stats, [:compressed])
+
       if size > @max_term_size do
         {:error, {:stats_too_large, size, @max_term_size}}
       else
@@ -1024,23 +1024,6 @@ defmodule TripleStore.Statistics do
       _ -> {:error, :cannot_estimate_size}
     end
   end
-
-  @doc """
-  Loads persisted statistics from the database.
-
-  Reads statistics that were previously saved with `save/2`.
-  Returns `{:ok, nil}` if no statistics have been saved.
-
-  ## Arguments
-
-  - `db` - Database reference
-
-  ## Returns
-
-  - `{:ok, stats}` - Previously saved statistics
-  - `{:ok, nil}` - No statistics saved
-  - `{:error, reason}` - On failure
-  """
 
   # ===========================================================================
   # Lazy Statistics Collection
@@ -1111,6 +1094,7 @@ defmodule TripleStore.Statistics do
           if lazy_stats.__cache__ do
             update_lazy_cache(lazy_stats, key, value)
           end
+
           {:ok, value}
 
         error ->
@@ -1233,7 +1217,7 @@ defmodule TripleStore.Statistics do
 
   @spec load(db_ref()) :: {:ok, stats() | nil} | {:error, term()}
   def load(db) do
-    case NIF.get(db, :id2str, @stats_key_prefix) do
+    case ErlangAdapter.get(db, :id2str, @stats_key_prefix) do
       {:ok, encoded} when is_binary(encoded) ->
         # Check size before deserialization to prevent memory exhaustion
         if byte_size(encoded) > @max_term_size do
@@ -1518,7 +1502,7 @@ defmodule TripleStore.Statistics do
   @spec build_predicate_histogram(db_ref()) :: {:ok, %{term_id() => non_neg_integer()}}
   def build_predicate_histogram(db) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, :pos, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, :pos, <<>>)
 
     histogram =
       stream
@@ -1569,7 +1553,7 @@ defmodule TripleStore.Statistics do
     # Two-pass streaming to avoid loading all values into memory (B2 fix)
     # Pass 1: Find min, max, and count by streaming
     # prefix_stream now returns the stream directly (may raise on error)
-    stream1 = NIF.prefix_stream(db, :pos, prefix)
+    stream1 = ErlangAdapter.prefix_stream(db, :pos, prefix)
 
     {min_val, max_val, count} =
       stream1
@@ -1589,7 +1573,7 @@ defmodule TripleStore.Statistics do
       {:ok, histogram} = build_histogram_from_values(min_val, max_val, count, bucket_count)
 
       # prefix_stream now returns the stream directly
-      stream2 = NIF.prefix_stream(db, :pos, prefix)
+      stream2 = ErlangAdapter.prefix_stream(db, :pos, prefix)
 
       value_stream =
         stream2
@@ -1743,7 +1727,7 @@ defmodule TripleStore.Statistics do
     prefix = <<graph_id::64-big>>
 
     # Use prefix_stream and count results
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
     count = Enum.count(stream)
     {:ok, count}
   end
@@ -1763,10 +1747,11 @@ defmodule TripleStore.Statistics do
   - `{:ok, count}` - Number of distinct subjects in this graph
   - `{:error, reason}` - On failure
   """
-  @spec graph_distinct_subjects(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec graph_distinct_subjects(db_ref(), term_id()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def graph_distinct_subjects(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     count =
       stream
@@ -1808,7 +1793,7 @@ defmodule TripleStore.Statistics do
           {:ok, %{term_id() => non_neg_integer()}} | {:error, term()}
   def graph_predicate_histogram(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     histogram =
       stream
@@ -1889,7 +1874,7 @@ defmodule TripleStore.Statistics do
     # Stream GSPO index and build histogram
     histogram =
       db
-      |> NIF.prefix_stream(:gspo, <<>>)
+      |> ErlangAdapter.prefix_stream(:gspo, <<>>)
       |> Stream.filter(fn {key, _value} ->
         # GSPO key: graph_id | subject_id | predicate_id | object_id
         <<graph_id::64-big, _rest::binary>> = key
@@ -1924,7 +1909,7 @@ defmodule TripleStore.Statistics do
               scaled_count = max(trunc(count * scale_factor), 1)
               {pred_id, scaled_count}
             end)
-          |> Map.new()
+            |> Map.new()
 
           {graph_id, scaled_predicates}
         end)
@@ -1954,7 +1939,7 @@ defmodule TripleStore.Statistics do
   @spec graph_object_count(db_ref(), term_id()) :: {:ok, non_neg_integer()} | {:error, term()}
   def graph_object_count(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     prefix = <<graph_id::64-big>>
-    stream = NIF.prefix_stream(db, :gspo, prefix)
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
     count =
       stream
@@ -2131,7 +2116,7 @@ defmodule TripleStore.Statistics do
           {:ok, non_neg_integer()}
   defp count_distinct_by_position(db, cf) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, cf, <<>>)
 
     count =
       stream
@@ -2158,17 +2143,14 @@ defmodule TripleStore.Statistics do
   # Private Helpers - Graph Existence
   # ===========================================================================
 
-  @doc """
-  Checks if a graph exists based on quad count and whether it's the default graph.
-
-  Returns `:ok` if the graph exists or is the default graph (which always exists).
-  Returns `{:error, :not_found}` if a named graph has no quads.
-
-  For the default graph (ID 0), we allow empty graphs as valid since it
-  represents the default unnamed graph.
-  """
+  # Checks if a graph exists based on quad count and whether it's the default graph.
+  # Returns `:ok` if the graph exists or is the default graph (which always exists).
+  # Returns `{:error, :not_found}` if a named graph has no quads.
+  # For the default graph (ID 0), we allow empty graphs as valid since it
+  # represents the default unnamed graph.
   @spec maybe_check_graph_exists(non_neg_integer(), term_id()) :: :ok | {:error, :not_found}
-  defp maybe_check_graph_exists(_count, 0), do: :ok  # Default graph always exists
+  # Default graph always exists
+  defp maybe_check_graph_exists(_count, 0), do: :ok
   defp maybe_check_graph_exists(count, _graph_id) when count > 0, do: :ok
   defp maybe_check_graph_exists(0, _graph_id), do: {:error, :not_found}
 
@@ -2431,7 +2413,8 @@ defmodule TripleStore.Statistics do
   - `{:ok, stats}` - Computed statistics map
   - `{:error, reason}` - On failure
   """
-  @spec compute_and_cache_graph_stats(db_ref(), term_id()) :: {:ok, graph_stats()} | {:error, term()}
+  @spec compute_and_cache_graph_stats(db_ref(), term_id()) ::
+          {:ok, graph_stats()} | {:error, term()}
   def compute_and_cache_graph_stats(db, graph_id) when is_integer(graph_id) and graph_id >= 0 do
     case graph_summary(db, graph_id) do
       {:ok, summary} = result ->

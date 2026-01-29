@@ -49,7 +49,7 @@ defmodule TripleStore.Health do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Statistics
 
   require Logger
@@ -147,7 +147,7 @@ defmodule TripleStore.Health do
   """
   @spec liveness(store()) :: :ok | {:error, :database_closed}
   def liveness(%{db: db}) do
-    if NIF.is_open(db) do
+    if ErlangAdapter.is_open(db) do
       :ok
     else
       {:error, :database_closed}
@@ -181,7 +181,7 @@ defmodule TripleStore.Health do
   """
   @spec readiness(store()) :: {:ok, readiness_status()} | {:error, term()}
   def readiness(%{db: db, dict_manager: dict_manager}) do
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
 
     cond do
@@ -275,7 +275,7 @@ defmodule TripleStore.Health do
     include_compaction = Keyword.get(opts, :include_compaction, false) or include_all
 
     # Check component status
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
     plan_cache_alive = plan_cache_running?()
     query_cache_alive = query_cache_running?()
@@ -373,7 +373,7 @@ defmodule TripleStore.Health do
       # => %{spo: 10000, pos: 10000, osp: 10000, derived: 500, dictionary: 2500}
 
   """
-  @spec get_index_sizes(NIF.db_ref()) :: index_sizes()
+  @spec get_index_sizes(ErlangAdapter.db_ref()) :: index_sizes()
   def get_index_sizes(db) do
     %{
       spo: count_index_entries(db, :spo),
@@ -396,7 +396,7 @@ defmodule TripleStore.Health do
   Estimated size in bytes.
 
   """
-  @spec estimate_data_size(NIF.db_ref()) :: non_neg_integer()
+  @spec estimate_data_size(ErlangAdapter.db_ref()) :: non_neg_integer()
   def estimate_data_size(db) do
     sizes = get_index_sizes(db)
 
@@ -565,7 +565,7 @@ defmodule TripleStore.Health do
   """
   @spec component_status(atom(), store()) :: {:ok, :running | :stopped} | {:error, term()}
   def component_status(:database, %{db: db}) do
-    if NIF.is_open(db), do: {:ok, :running}, else: {:ok, :stopped}
+    if ErlangAdapter.is_open(db), do: {:ok, :running}, else: {:ok, :stopped}
   end
 
   def component_status(:dict_manager, %{dict_manager: dict_manager}) do
@@ -590,6 +590,201 @@ defmodule TripleStore.Health do
 
   def component_status(component, _store) do
     {:error, {:unknown_component, component}}
+  end
+
+  # ===========================================================================
+  # Graph Health (Quad Store)
+  # ===========================================================================
+
+  @doc """
+  Returns health information for a specific graph.
+
+  ## Arguments
+
+  - `store` - Store handle from `TripleStore.open/2`
+  - `graph_id` - The graph ID to check (0 for default, or named graph ID)
+
+  ## Options
+
+  - `:include_query_stats` - Include query statistics for this graph (default: false)
+  - `:include_predicate_counts` - Include predicate breakdown (default: false)
+  - `:size_alert_threshold` - Quad count before degraded status (default: 10_000_000)
+
+  ## Returns
+
+  - `{:ok, health}` - Graph health status map
+  - `{:error, reason}` - On failure
+
+  ## Graph Health Map
+
+  - `:status` - Health status (`:healthy`, `:degraded`, `:unhealthy`, `:empty`, `:not_found`)
+  - `:graph_id` - The graph ID
+  - `:quad_count` - Number of quads in the graph
+  - `:distinct_subjects` - Number of distinct subjects
+  - `:distinct_predicates` - Number of distinct predicates
+  - `:checked_at` - Timestamp of health check
+
+  ## Examples
+
+      {:ok, health} = TripleStore.Health.graph_health(store, 0)
+      # => {:ok, %{
+      #      status: :healthy,
+      #      graph_id: 0,
+      #      quad_count: 1000,
+      #      distinct_subjects: 100,
+      #      distinct_predicates: 15,
+      #      checked_at: ~U[2025-12-27 10:00:00Z]
+      #    }}
+
+  """
+  @spec graph_health(store(), non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def graph_health(%{db: db}, graph_id, opts \\ [])
+      when is_integer(graph_id) and graph_id >= 0 do
+    include_query_stats = Keyword.get(opts, :include_query_stats, false)
+    include_predicate_counts = Keyword.get(opts, :include_predicate_counts, false)
+    size_threshold = Keyword.get(opts, :size_alert_threshold, 10_000_000)
+
+    with {:ok, quad_count} <- Statistics.graph_quad_count(db, graph_id),
+         {:ok, summary} <- Statistics.graph_summary(db, graph_id) do
+      # Determine status based on quad count and summary
+      status = determine_graph_health_status(quad_count, summary, size_threshold)
+
+      health = %{
+        status: status,
+        graph_id: graph_id,
+        quad_count: quad_count,
+        distinct_subjects: Map.get(summary, :distinct_subjects, 0),
+        distinct_predicates: Map.get(summary, :distinct_predicates, 0),
+        checked_at: DateTime.utc_now()
+      }
+
+      # Add optional distinct_objects if available
+      health = maybe_add(health, :distinct_objects, Map.get(summary, :distinct_objects))
+
+      # Add predicate counts if requested
+      health =
+        if include_predicate_counts do
+          Map.put(health, :predicate_counts, Map.get(summary, :predicate_counts, %{}))
+        else
+          health
+        end
+
+      # Add query stats if requested
+      health =
+        if include_query_stats do
+          Map.put(health, :query_stats, get_graph_query_stats(graph_id))
+        else
+          health
+        end
+
+      {:ok, health}
+    else
+      {:error, :not_found} ->
+        {:ok, %{status: :not_found, graph_id: graph_id, checked_at: DateTime.utc_now()}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Returns health summary for all graphs in the store.
+
+  ## Arguments
+
+  - `store` - Store handle from `TripleStore.open/2`
+
+  ## Options
+
+  - `:include_empty` - Include empty graphs in results (default: true)
+  - `:size_threshold` - Quad count for large graph alert (default: 1_000_000)
+
+  ## Returns
+
+  - `{:ok, graphs}` - Map of graph_id => health_info
+
+  ## Examples
+
+      {:ok, graphs} = TripleStore.Health.all_graphs_health(store)
+      # => {:ok, %{
+      #      0 => %{status: :healthy, quad_count: 1000, ...},
+      #      1 => %{status: :healthy, quad_count: 500, ...}
+      #    }}
+
+  """
+  @spec all_graphs_health(store(), keyword()) :: {:ok, %{non_neg_integer() => map()}}
+  def all_graphs_health(%{db: db} = _store, opts \\ []) do
+    include_empty = Keyword.get(opts, :include_empty, true)
+    size_threshold = Keyword.get(opts, :size_threshold, 1_000_000)
+
+    case Statistics.build_per_graph_histograms(db, []) do
+      {:ok, histograms} ->
+        graphs =
+          histograms
+          |> Enum.map(fn {graph_id, _histogram} ->
+            case graph_health(%{db: db}, graph_id, size_alert_threshold: size_threshold) do
+              {:ok, health} -> {graph_id, health}
+              _ -> {graph_id, %{status: :error, graph_id: graph_id}}
+            end
+          end)
+          |> Map.new()
+          |> filter_empty_graphs(include_empty)
+
+        {:ok, graphs}
+    end
+  end
+
+  @doc """
+  Checks for abnormal patterns in graph health.
+
+  Returns alerts for graphs that exhibit concerning patterns:
+  - Rapidly growing graphs (potential data ingestion issues)
+  - Empty graphs with high query count (potential data loss)
+  - Stale graphs (not accessed recently but still large)
+  - Large graphs exceeding thresholds
+
+  ## Arguments
+
+  - `store` - Store handle
+  - `opts` - Options:
+    - `:large_graph_threshold` - Size considered large (default: 1_000_000)
+    - `:empty_threshold` - Size considered empty (default: 0)
+
+  ## Returns
+
+  - `{:ok, alerts}` - List of alert maps
+
+  ## Alert Types
+
+  - `:large_graph` - Graph exceeds size threshold
+  - `:empty_graph` - Graph has no quads
+  - `:stale_graph` - Graph hasn't been accessed recently (if tracking available)
+
+  """
+  @spec graph_health_alerts(store(), keyword()) :: {:ok, [map()]}
+  def graph_health_alerts(%{db: db}, opts \\ []) do
+    large_threshold = Keyword.get(opts, :large_graph_threshold, 1_000_000)
+    empty_threshold = Keyword.get(opts, :empty_threshold, 0)
+
+    _alerts = []
+
+    with {:ok, histograms} <- Statistics.build_per_graph_histograms(db, []) do
+      alerts =
+        Enum.flat_map(histograms, fn {graph_id, _histogram} ->
+          case graph_health(%{db: db}, graph_id) do
+            {:ok, health} ->
+              check_graph_for_alerts(health, large_threshold, empty_threshold)
+
+            _ ->
+              []
+          end
+        end)
+
+      {:ok, alerts}
+    else
+      _ ->
+        {:ok, []}
+    end
   end
 
   # ===========================================================================
@@ -696,7 +891,90 @@ defmodule TripleStore.Health do
 
   defp count_index_entries(db, cf) do
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, cf, <<>>)
     Enum.count(stream)
+  end
+
+  # ===========================================================================
+  # Graph Health Helpers
+  # ===========================================================================
+
+  defp determine_graph_health_status(0, _summary, _threshold), do: :empty
+
+  defp determine_graph_health_status(quad_count, _summary, threshold) do
+    cond do
+      quad_count > threshold -> :degraded
+      true -> :healthy
+    end
+  end
+
+  defp get_graph_query_stats(graph_id) do
+    case TripleStore.Metrics.get_all() do
+      metrics when is_map(metrics) ->
+        # Extract graph-specific query stats if available
+        %{
+          query_count: Map.get(metrics, :graph_queries, %{}) |> Map.get(graph_id, 0),
+          total_duration_ms:
+            Map.get(metrics, :graph_query_durations, %{}) |> Map.get(graph_id, 0),
+          last_query_at: Map.get(metrics, :graph_last_query, %{}) |> Map.get(graph_id, nil)
+        }
+
+      _ ->
+        %{
+          query_count: 0,
+          total_duration_ms: 0,
+          last_query_at: nil
+        }
+    end
+  end
+
+  defp filter_empty_graphs(graphs, true), do: graphs
+
+  defp filter_empty_graphs(graphs, false) do
+    Enum.filter(graphs, fn {_graph_id, health} ->
+      Map.get(health, :status) != :empty
+    end)
+    |> Map.new()
+  end
+
+  defp check_graph_for_alerts(health, large_threshold, empty_threshold) do
+    alerts = []
+
+    # Check for large graph
+    alerts =
+      if health.quad_count > large_threshold do
+        [
+          %{
+            type: :large_graph,
+            graph_id: health.graph_id,
+            severity: :info,
+            message: "Graph has #{health.quad_count} quads",
+            quad_count: health.quad_count,
+            threshold: large_threshold
+          }
+          | alerts
+        ]
+      else
+        alerts
+      end
+
+    # Check for empty graph
+    alerts =
+      if health.quad_count <= empty_threshold do
+        [
+          %{
+            type: :empty_graph,
+            graph_id: health.graph_id,
+            severity: :info,
+            message: "Graph is empty",
+            quad_count: health.quad_count
+          }
+          | alerts
+        ]
+      else
+        alerts
+      end
+
+    alerts
   end
 end

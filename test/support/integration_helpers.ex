@@ -20,7 +20,7 @@ defmodule TripleStore.Test.IntegrationHelpers do
   - **Database Setup**: `setup_test_db/1`, `cleanup_test_db/1`
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
 
@@ -156,7 +156,7 @@ defmodule TripleStore.Test.IntegrationHelpers do
   """
   def setup_test_db(tmp_dir) do
     db_path = Path.join(tmp_dir, "test_db_#{:erlang.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
     {db, manager}
   end

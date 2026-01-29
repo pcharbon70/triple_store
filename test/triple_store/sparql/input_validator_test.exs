@@ -42,6 +42,7 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
       }
       LIMIT 10
       """
+
       assert :ok = InputValidator.validate_query(query)
     end
 
@@ -70,7 +71,9 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
 
     test "rejects invalid pattern format" do
       assert {:error, :invalid_pattern_format} = InputValidator.validate_quad_pattern(:invalid)
-      assert {:error, :invalid_pattern_format} = InputValidator.validate_quad_pattern({:invalid, :data})
+
+      assert {:error, :invalid_pattern_format} =
+               InputValidator.validate_quad_pattern({:invalid, :data})
     end
 
     test "accepts quad with term IDs" do
@@ -92,14 +95,19 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
 
     test "rejects variable name that is too long" do
       long_var = String.duplicate("x", 300)
+
       assert {:error, :variable_name_too_long} =
-        InputValidator.validate_term({:variable, long_var}, :subject)
+               InputValidator.validate_term({:variable, long_var}, :subject)
     end
 
     test "accepts IRI term" do
       assert :ok = InputValidator.validate_term({:iri, "http://example.org"}, :subject)
+
       assert :ok =
-        InputValidator.validate_term({:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"}, :predicate)
+               InputValidator.validate_term(
+                 {:iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"},
+                 :predicate
+               )
     end
 
     test "rejects IRI that is too long" do
@@ -108,26 +116,30 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
     end
 
     test "rejects IRI with invalid format" do
-      assert {:error, :invalid_iri_format} = InputValidator.validate_term({:iri, "not-an-iri"}, :subject)
+      assert {:error, :invalid_iri_format} =
+               InputValidator.validate_term({:iri, "not-an-iri"}, :subject)
     end
 
     test "accepts literal term" do
       assert :ok = InputValidator.validate_term({:literal, "hello"}, :object)
+
       assert :ok =
-        InputValidator.validate_term(
-          {:literal, "123", "http://www.w3.org/2001/XMLSchema#integer"},
-          :object
-        )
+               InputValidator.validate_term(
+                 {:literal, "123", "http://www.w3.org/2001/XMLSchema#integer"},
+                 :object
+               )
     end
 
     test "accepts literal with language tag" do
       assert :ok =
-        InputValidator.validate_term({:literal, "hello", nil, "en"}, :object)
+               InputValidator.validate_term({:literal, "hello", nil, "en"}, :object)
     end
 
     test "rejects literal that is too long" do
       long_literal = String.duplicate("x", 100_000)
-      assert {:error, :literal_too_long} = InputValidator.validate_term({:literal, long_literal}, :object)
+
+      assert {:error, :literal_too_long} =
+               InputValidator.validate_term({:literal, long_literal}, :object)
     end
 
     test "accepts term ID" do
@@ -167,85 +179,82 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
     end
 
     test "accepts BGP with multiple patterns" do
-      algebra = {:bgp, [
-        {:triple, {:variable, "s"}, 1, {:variable, "o"}},
-        {:triple, {:variable, "s"}, 2, {:variable, "p"}}
-      ]}
+      algebra =
+        {:bgp,
+         [
+           {:triple, {:variable, "s"}, 1, {:variable, "o"}},
+           {:triple, {:variable, "s"}, 2, {:variable, "p"}}
+         ]}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts nested join" do
-      algebra = {:join,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
-        {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}
-      }
+      algebra =
+        {:join, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
+         {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts filter with expression" do
-      algebra = {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, "5"}},
-        {:bgp, [{:triple, {:variable, "x"}, 1, {:variable, "o"}}]}
-      }
+      algebra =
+        {:filter, {:binary_op, :>, {:variable, "x"}, {:literal, "5"}},
+         {:bgp, [{:triple, {:variable, "x"}, 1, {:variable, "o"}}]}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts union" do
-      algebra = {:union,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
-        {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}
-      }
+      algebra =
+        {:union, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
+         {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts project" do
-      algebra = {:project, ["s", "o"],
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}
-      }
+      algebra = {:project, ["s", "o"], {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}}
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts distinct" do
-      algebra = {:distinct,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}
-      }
+      algebra = {:distinct, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}}
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts reduced" do
-      algebra = {:reduced,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}
-      }
+      algebra = {:reduced, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}}
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts slice" do
-      algebra = {:slice,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
-        0, 10
-      }
+      algebra = {:slice, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}, 0, 10}
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts order by" do
-      algebra = {:order, [{:asc, {:variable, "o"}}],
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}
-      }
+      algebra =
+        {:order, [{:asc, {:variable, "o"}}],
+         {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts left join" do
-      algebra = {:left_join,
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
-        {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]},
-        {:binary_op, :>, {:variable, "o"}, {:literal, "5"}}
-      }
+      algebra =
+        {:left_join, {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]},
+         {:bgp, [{:triple, {:variable, "s"}, 2, {:variable, "p"}}]},
+         {:binary_op, :>, {:variable, "o"}, {:literal, "5"}}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
     test "accepts extend" do
-      algebra = {:extend, "newVar", {:literal, "42"},
-        {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}
-      }
+      algebra =
+        {:extend, "newVar", {:literal, "42"},
+         {:bgp, [{:triple, {:variable, "s"}, 1, {:variable, "o"}}]}}
+
       assert :ok = InputValidator.validate_algebra(algebra)
     end
 
@@ -307,11 +316,11 @@ defmodule TripleStore.SPARQL.InputValidatorTest do
 
     test "rejects invalid options" do
       assert {:error, {:invalid_stats_option, :invalid_option}} =
-        InputValidator.validate_stats_options([:invalid_option])
+               InputValidator.validate_stats_options([:invalid_option])
     end
 
     test "accepts keyword list options" do
-      assert :ok = InputValidator.validate_stats_options([cache: true, ttl: 5000])
+      assert :ok = InputValidator.validate_stats_options(cache: true, ttl: 5000)
     end
   end
 

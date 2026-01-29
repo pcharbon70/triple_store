@@ -351,7 +351,14 @@ defmodule TripleStore.Telemetry do
       @prefix ++ [:quad, :delete, :stop],
       @prefix ++ [:quad, :delete, :exception],
       @prefix ++ [:quad, :lookup, :start],
-      @prefix ++ [:quad, :lookup, :stop]
+      @prefix ++ [:quad, :lookup, :stop],
+      # Graph-specific events
+      @prefix ++ [:quad, :count_by_graph, :start],
+      @prefix ++ [:quad, :count_by_graph, :stop],
+      @prefix ++ [:graph, :health_check, :start],
+      @prefix ++ [:graph, :health_check, :stop],
+      @prefix ++ [:graph, :enumeration, :start],
+      @prefix ++ [:graph, :enumeration, :stop]
     ]
   end
 

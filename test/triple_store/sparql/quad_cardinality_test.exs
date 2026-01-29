@@ -210,7 +210,14 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
 
     test "sums predicate counts across all graphs", %{stats: stats} do
       # Predicate 42: 1000 + 2000 + 500 = 3500
-      card = QuadCardinality.estimate_cross_graph_pattern({:variable, "s"}, 42, {:variable, "o"}, stats)
+      card =
+        QuadCardinality.estimate_cross_graph_pattern(
+          {:variable, "s"},
+          42,
+          {:variable, "o"},
+          stats
+        )
+
       assert card == 3500.0
     end
 
@@ -231,7 +238,12 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
       # Base sum: 15000
       # Subject selectivity varies by graph
       card =
-        QuadCardinality.estimate_cross_graph_pattern(999, {:variable, "p"}, {:variable, "o"}, stats)
+        QuadCardinality.estimate_cross_graph_pattern(
+          999,
+          {:variable, "p"},
+          {:variable, "o"},
+          stats
+        )
 
       # Should be significantly less than base
       assert card < 15_000.0
@@ -259,7 +271,15 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
     test "returns minimum for empty per_graph_stats" do
       # Empty per_graph_stats falls back to aggregate with default quad_count
       stats = %{per_graph_stats: %{}}
-      card = QuadCardinality.estimate_cross_graph_pattern({:variable, "s"}, 42, {:variable, "o"}, stats)
+
+      card =
+        QuadCardinality.estimate_cross_graph_pattern(
+          {:variable, "s"},
+          42,
+          {:variable, "o"},
+          stats
+        )
+
       # Default quad_count is 10000, default distinct_predicates is 100
       # Predicate selectivity: 1/100 = 0.01
       # Expected: 10000 * 0.01 = 100
@@ -576,6 +596,7 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
         predicate_histogram: %{42 => 100},
         per_graph_stats: %{0 => %{quad_count: 500}}
       }
+
       assert QuadCardinality.validate_stats(stats) == :ok
     end
 
@@ -599,6 +620,7 @@ defmodule TripleStore.SPARQL.QuadCardinalityTest do
         quad_count: 1000,
         per_graph_stats: %{0 => "not a map"}
       }
+
       assert QuadCardinality.validate_stats(stats) == {:error, :invalid_graph_stats}
     end
   end

@@ -33,7 +33,7 @@ defmodule TripleStore.Dictionary.IdToString do
   ```
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Batch
 
@@ -188,7 +188,7 @@ defmodule TripleStore.Dictionary.IdToString do
   defp lookup_dictionary_term(db, id) do
     id_binary = <<id::64-big>>
 
-    case NIF.get(db, :id2str, id_binary) do
+    case ErlangAdapter.get(db, :id2str, id_binary) do
       {:ok, term_binary} ->
         decode_term(term_binary)
 

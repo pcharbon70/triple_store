@@ -1,7 +1,7 @@
 defmodule TripleStore.SPARQL.AuthorizationTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Authorization
 
@@ -16,7 +16,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -63,7 +63,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       assert {:ok, true} = Authorization.can_access_graph?(ctx, :default_graph, :public, :read)
     end
 
-    test "returns true for public graph when public ACL is set", %{db: db, ctx: ctx, manager: manager} do
+    test "returns true for public graph when public ACL is set", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/public_graph"
       insert_test_quad(db, manager, graph_iri)
 
@@ -72,7 +76,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       assert {:ok, true} = Authorization.can_read?(ctx, graph_iri, :public)
     end
 
-    test "returns false for private graph when no ACL is set", %{db: db, ctx: ctx, manager: manager} do
+    test "returns false for private graph when no ACL is set", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/private_graph"
       insert_test_quad(db, manager, graph_iri)
 
@@ -252,7 +260,8 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       rdf_iri = RDF.iri(graph_iri)
       assert {:ok, true} = Authorization.can_access_graph?(ctx, rdf_iri, :public, :read)
 
-      assert {:ok, true} = Authorization.can_access_graph?(ctx, {:named_node, graph_iri}, :public, :read)
+      assert {:ok, true} =
+               Authorization.can_access_graph?(ctx, {:named_node, graph_iri}, :public, :read)
 
       assert {:ok, true} = Authorization.can_access_graph?(ctx, :default_graph, :public, :read)
 
@@ -279,7 +288,7 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       # Get the actual graph ID
       {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
       acl_key = "acl:graph:#{graph_id}:user:#{user_id}"
-      {:ok, binary} = NIF.get(db, :acl, acl_key)
+      {:ok, binary} = ErlangAdapter.get(db, :acl, acl_key)
       acl_entry = :erlang.binary_to_term(binary)
       assert Map.has_key?(acl_entry, "user:#{user_id}")
       assert :read in acl_entry["user:#{user_id}"]
@@ -321,7 +330,11 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       :telemetry.detach(handler_id)
     end
 
-    test "emits telemetry when role-based permission is denied", %{db: db, ctx: ctx, manager: manager} do
+    test "emits telemetry when role-based permission is denied", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
       graph_iri = "http://example.org/restricted"
       insert_test_quad(db, manager, graph_iri)
 

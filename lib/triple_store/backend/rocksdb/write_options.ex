@@ -37,13 +37,13 @@ defmodule TripleStore.Backend.RocksDB.WriteOptions do
 
   ```elixir
   # For critical writes that must persist
-  NIF.put(db, :spo, key, value, WriteOptions.sync())
+  ErlangAdapter.put(db, :spo, key, value, WriteOptions.sync())
 
   # For bulk loading where performance matters more than immediate sync
-  NIF.write_batch(db, operations, WriteOptions.bulk_load())
+  ErlangAdapter.write_batch(db, operations, WriteOptions.bulk_load())
 
   # For temporary derived data that can be rebuilt
-  NIF.put(db, :derived, key, value, WriteOptions.disable_wal())
+  ErlangAdapter.put(db, :derived, key, value, WriteOptions.disable_wal())
   ```
 
   ## Option Details

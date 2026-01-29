@@ -12,7 +12,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
   use ExUnit.Case, async: false
   use ExUnitProperties
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.SPARQL.Query
   alias TripleStore.Update
@@ -29,7 +29,7 @@ defmodule TripleStore.SPARQL.PropertyBasedTest do
     test_id = :erlang.unique_integer([:positive])
     db_path = Path.join(System.tmp_dir!(), "property_based_#{test_id}")
 
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{db: db, dict_manager: manager}

@@ -21,14 +21,17 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
 
   ## Quad Store Column Families (Schema v2)
 
-  The quad store uses four quad indices for named graph support:
+  The quad store includes all triple store column families plus quad-specific ones:
 
-  | CF Name | Key Ordering | Primary Use Case |
-  |---------|-------------|------------------|
-  | `gspo` | Graph-Subject-Predicate-Object | All quads in specific graph |
-  | `gpos` | Graph-Predicate-Object-Subject | All predicates in specific graph |
-  | `spog` | Subject-Predicate-Object-Graph | Subject-scoped queries across graphs |
-  | `posg` | Predicate-Object-Subject-Graph | Predicate-scoped queries across graphs |
+  | CF Name | Purpose | Access Pattern |
+  |---------|---------|----------------|
+  | (All triple CFs) | Same as triple store | Same patterns |
+  | `gspo` | Graph-Subject-Predicate-Object index | All quads in specific graph |
+  | `gpos` | Graph-Predicate-Object-Subject index | All predicates in specific graph |
+  | `spog` | Subject-Predicate-Object-Graph index | Subject-scoped across graphs |
+  | `posg` | Predicate-Object-Subject-Graph index | Predicate-scoped across graphs |
+  | `derivation_provenance` | Derivation tracking for provenance | Point lookups and scans |
+  | `acl` | Access control lists | Permission checks |
 
   ## Storage Tradeoffs
 
@@ -51,10 +54,28 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   - **Prefix extractor** (8 bytes) for optimized prefix-based scans
   - **Memtable prefix bloom** for efficient in-memory prefix filtering
 
+  ### Quad Index CFs (gspo, gpos, spog, posg)
+  - **Quad-specific tuning** for 32-byte keys (vs 24-byte triple keys)
+  - **Lower bloom filter** (10 bits/key) to control memory with 4 indices
+  - **Larger block size** (16KB) to maintain keys-per-block ratio
+  - **Larger memtable** (128MB vs 64MB) to handle 4x write amplification
+  - **Higher L0 triggers** to reduce compaction interference during bulk writes
+
   ### Derived CF
   - **No bloom filter** (sequential bulk access)
   - **Large block size** (32KB) for sequential scan efficiency
   - **No cache pinning** (sequential access pattern)
+
+  ## Quad vs Triple Tuning Rationale
+
+  Quad operations have different performance characteristics:
+
+  | Parameter | Triple Indices | Quad Indices | Reason |
+  |-----------|---------------|--------------|--------|
+  | Block Size | 8KB | 16KB | 33% larger keys need larger blocks |
+  | Bloom Filter | 12 bits/key | 10 bits/key | 4 indices require memory tradeoff |
+  | Memtable | 64MB | 128MB | 4x write amplification |
+  | L0 Trigger | 4 files | 6 files | Reduce compaction overhead |
 
   ## Usage
 
@@ -82,6 +103,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
           | :pos
           | :osp
           | :derived
+          | :derivation_provenance
           | :numeric_range
           | :gspo
           | :gpos
@@ -100,6 +122,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @bloom_dict_bits 14
   # Index CFs: balanced for prefix scans
   @bloom_index_bits 12
+  # Quad Index CFs: slightly lower bloom filter (10 bits/key)
+  # Quad keys are larger (32 bytes) and we have 4 indices, so we reduce
+  # bloom filter size to control memory while maintaining good selectivity
+  @bloom_quad_index_bits 10
   # Derived CF: no bloom filter (sequential access)
   @bloom_derived_bits 0
 
@@ -108,6 +134,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   @block_size_dict 2 * 1024
   # 8KB for indices (balanced)
   @block_size_index 8 * 1024
+  # 16KB for quad indices (larger keys need larger blocks for efficiency)
+  # Quad keys are 33% larger (32 bytes vs 24 bytes for triples)
+  # Using 16KB blocks maintains similar keys-per-block ratio as triple indices
+  @block_size_quad_index 16 * 1024
   # 32KB for derived (large blocks, sequential)
   @block_size_derived 32 * 1024
 
@@ -141,10 +171,10 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   ## Examples
 
       iex> length(ColumnFamilyConfig.cf_descriptors())
-      7
+      8
 
       iex> length(ColumnFamilyConfig.cf_descriptors(:quad))
-      8
+      9
 
   """
   @spec cf_descriptors(:triple | :quad) :: [cf_descriptor()]
@@ -173,6 +203,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       {"spog", quad_index_cf_options()},
       {"posg", quad_index_cf_options()},
       {"derived", derived_cf_options()},
+      {"derivation_provenance", derivation_provenance_cf_options()},
       {"numeric_range", numeric_range_cf_options()},
       {"acl", acl_cf_options()}
     ]
@@ -217,11 +248,32 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def column_family_names(schema \\ :triple)
 
   def column_family_names(:triple) do
-    ["default", "id2str", "str2id", "spo", "pos", "osp", "derived", "numeric_range"]
+    [
+      "default",
+      "id2str",
+      "str2id",
+      "spo",
+      "pos",
+      "osp",
+      "derived",
+      "numeric_range"
+    ]
   end
 
   def column_family_names(:quad) do
-    ["default", "id2str", "str2id", "gspo", "gpos", "spog", "posg", "derived", "numeric_range", "acl"]
+    [
+      "default",
+      "id2str",
+      "str2id",
+      "gspo",
+      "gpos",
+      "spog",
+      "posg",
+      "derived",
+      "derivation_provenance",
+      "numeric_range",
+      "acl"
+    ]
   end
 
   @doc """
@@ -247,6 +299,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def get_cf_options(:spog), do: quad_index_cf_options()
   def get_cf_options(:posg), do: quad_index_cf_options()
   def get_cf_options(:derived), do: derived_cf_options()
+  def get_cf_options(:derivation_provenance), do: derivation_provenance_cf_options()
   def get_cf_options(:numeric_range), do: numeric_range_cf_options()
   def get_cf_options(:acl), do: acl_cf_options()
   def get_cf_options(_), do: nil
@@ -284,6 +337,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
              :pos,
              :osp,
              :derived,
+             :derivation_provenance,
              :numeric_range,
              :default,
              :gspo,
@@ -418,6 +472,51 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     ]
   end
 
+  @doc """
+  Returns compaction options optimized for quad index column families.
+
+  Quad indices have 4x write amplification (writes to 4 indices vs 3 for triples),
+  so we increase memtable size to reduce flush frequency and improve write throughput.
+
+  Additional tuning:
+  - 128MB memtable (vs 64MB for triple indices) to handle 4-index writes
+  - Higher L0 triggers to reduce compaction interference
+  - Optimized for graph-scoped queries with prefix-based scans
+  """
+  @spec quad_index_compaction_options() :: keyword()
+  def quad_index_compaction_options do
+    [
+      # Use level compaction for balanced performance
+      compaction_style: :level,
+      # Larger write buffer for quad store (128MB vs 64MB)
+      # Quad operations write to 4 indices, so we need 2x the memtable
+      write_buffer_size: 128 * 1024 * 1024,
+      # Maximum number of write buffers (memtables)
+      max_write_buffer_number: 3,
+      # Minimum number of write buffers to flush
+      min_write_buffer_number_to_merge: 1,
+      # Target file size for L1 (64MB)
+      target_file_size_base: 64 * 1024 * 1024,
+      # Target file size multiplier for each level
+      target_file_size_multiplier: 1,
+      # Level 0 file size limit (higher for quad indices)
+      level0_file_num_compaction_trigger: 6,
+      # Level 0 slowdown trigger
+      level0_slowdown_writes_trigger: 12,
+      # Level 0 stop trigger
+      level0_stop_writes_trigger: 18,
+      # Max bytes for each level
+      max_bytes_for_level_base: 256 * 1024 * 1024,
+      # Multiplier for each level's size
+      max_bytes_for_level_multiplier: 10,
+      # Number of levels
+      num_levels: 7,
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    ]
+  end
+
   # Dictionary CF options (id2str, str2id)
   # Optimized for random point lookups with high cache hit rates
   defp dictionary_cf_options do
@@ -475,18 +574,23 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   # Quad Index CF options (gspo, gpos, spog, posg)
   # Optimized for 32-byte quad keys with prefix-based scans
   #
-  # Quad keys are larger (32 bytes vs 24 bytes for triples), so we use similar
-  # tuning but adjust for the different access patterns:
+  # Quad keys are larger (32 bytes vs 24 bytes for triples), so we use
+  # quad-specific tuning:
+  # - 16KB block size (vs 8KB for triples) maintains keys-per-block ratio
+  # - 10 bits/key bloom filter (vs 12 for triples) controls memory
+  # - 128MB memtable (vs 64MB for triples) handles 4x write amplification
+  #
+  # Access patterns:
   # - GSPO/GPOS: Graph-scoped queries (prefix on graph ID)
   # - SPOG/POSG: Cross-graph queries (prefix on subject/predicate)
   defp quad_index_cf_options do
     base_options()
-    |> Keyword.merge(index_compaction_options())
+    |> Keyword.merge(quad_index_compaction_options())
     |> Keyword.merge(
-      # Medium bloom filter for prefix scan filtering
+      # Quad-specific bloom filter and block size
       block_based_table_options: [
-        bloom_filter_policy: @bloom_index_bits,
-        block_size: @block_size_index,
+        bloom_filter_policy: @bloom_quad_index_bits,
+        block_size: @block_size_quad_index,
         cache_index_and_filter_blocks: true,
         # Don't pin L0 blocks (sequential scan pattern)
         pin_l0_filter_and_index_blocks_in_cache: false,
@@ -567,6 +671,29 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
     )
   end
 
+  # Derivation Provenance CF options
+  # Optimized for mixed point lookups and scans of derivation records
+  # Similar to derived CF but with moderate bloom filter for point lookups
+  defp derivation_provenance_cf_options do
+    base_options()
+    |> Keyword.merge(index_compaction_options())
+    |> Keyword.merge(
+      # Medium bloom filter (balances point lookups and scans)
+      block_based_table_options: [
+        bloom_filter_policy: @bloom_index_bits,
+        block_size: @block_size_index,
+        cache_index_and_filter_blocks: true,
+        pin_l0_filter_and_index_blocks_in_cache: false,
+        # No whole key filtering (need prefix scans on graph ID)
+        whole_key_filtering: false
+      ],
+      # No prefix extractor (custom key encoding)
+      # Compression
+      compression: @compression_l1_l6,
+      bottommost_compression: @compression_l1_l6
+    )
+  end
+
   # Base options shared by all column families (minimal common settings)
   defp base_options do
     [
@@ -604,6 +731,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_name_to_string(:spog), do: "spog"
   def cf_name_to_string(:posg), do: "posg"
   def cf_name_to_string(:derived), do: "derived"
+  def cf_name_to_string(:derivation_provenance), do: "derivation_provenance"
   def cf_name_to_string(:numeric_range), do: "numeric_range"
   def cf_name_to_string(:acl), do: "acl"
 
@@ -630,6 +758,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def cf_string_to_name("spog"), do: :spog
   def cf_string_to_name("posg"), do: :posg
   def cf_string_to_name("derived"), do: :derived
+  def cf_string_to_name("derivation_provenance"), do: :derivation_provenance
   def cf_string_to_name("numeric_range"), do: :numeric_range
   def cf_string_to_name("acl"), do: :acl
   def cf_string_to_name(_), do: nil
@@ -643,6 +772,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       14
 
       iex> ColumnFamilyConfig.bloom_bits(:gspo)
+      10
+
+      iex> ColumnFamilyConfig.bloom_bits(:spo)
       12
 
   """
@@ -652,11 +784,13 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def bloom_bits(:spo), do: @bloom_index_bits
   def bloom_bits(:pos), do: @bloom_index_bits
   def bloom_bits(:osp), do: @bloom_index_bits
-  def bloom_bits(:gspo), do: @bloom_index_bits
-  def bloom_bits(:gpos), do: @bloom_index_bits
-  def bloom_bits(:spog), do: @bloom_index_bits
-  def bloom_bits(:posg), do: @bloom_index_bits
+  # Quad indices use 10 bits/key (optimized for 32-byte keys)
+  def bloom_bits(:gspo), do: @bloom_quad_index_bits
+  def bloom_bits(:gpos), do: @bloom_quad_index_bits
+  def bloom_bits(:spog), do: @bloom_quad_index_bits
+  def bloom_bits(:posg), do: @bloom_quad_index_bits
   def bloom_bits(:derived), do: @bloom_derived_bits
+  def bloom_bits(:derivation_provenance), do: @bloom_index_bits
   def bloom_bits(:numeric_range), do: @bloom_index_bits
   def bloom_bits(:acl), do: @bloom_dict_bits
 
@@ -669,6 +803,9 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
       2048
 
       iex> ColumnFamilyConfig.block_size(:gspo)
+      16384
+
+      iex> ColumnFamilyConfig.block_size(:spo)
       8192
 
   """
@@ -678,11 +815,13 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def block_size(:spo), do: @block_size_index
   def block_size(:pos), do: @block_size_index
   def block_size(:osp), do: @block_size_index
-  def block_size(:gspo), do: @block_size_index
-  def block_size(:gpos), do: @block_size_index
-  def block_size(:spog), do: @block_size_index
-  def block_size(:posg), do: @block_size_index
+  # Quad indices use 16KB blocks (optimized for 32-byte keys)
+  def block_size(:gspo), do: @block_size_quad_index
+  def block_size(:gpos), do: @block_size_quad_index
+  def block_size(:spog), do: @block_size_quad_index
+  def block_size(:posg), do: @block_size_quad_index
   def block_size(:derived), do: @block_size_derived
+  def block_size(:derivation_provenance), do: @block_size_index
   def block_size(:numeric_range), do: @block_size_index
   def block_size(:acl), do: @block_size_dict
 
@@ -722,6 +861,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfig do
   def has_prefix_extractor?(:id2str), do: false
   def has_prefix_extractor?(:str2id), do: false
   def has_prefix_extractor?(:derived), do: false
+  def has_prefix_extractor?(:derivation_provenance), do: false
   def has_prefix_extractor?(:numeric_range), do: false
+  def has_prefix_extractor?(:acl), do: false
   def has_prefix_extractor?(:default), do: false
 end

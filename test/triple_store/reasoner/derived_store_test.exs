@@ -1,7 +1,7 @@
 defmodule TripleStore.Reasoner.DerivedStoreTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
   alias TripleStore.Reasoner.DerivedStore
 
@@ -20,10 +20,10 @@ defmodule TripleStore.Reasoner.DerivedStoreTest do
     db_path = "#{@test_db_path}_#{:erlang.unique_integer([:positive])}"
 
     # Open database
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(db_path)
     end)
 

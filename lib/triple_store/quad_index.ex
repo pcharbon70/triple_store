@@ -1020,7 +1020,7 @@ defmodule TripleStore.QuadIndex do
   @spec select_index_for_quad(quad_pattern()) :: :no_match | pattern_match()
   def select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
       when s_pat in [:bound, :var] and p_pat in [:bound, :var] and
-           o_pat in [:bound, :var] and g_pat in [:bound, :var] do
+             o_pat in [:bound, :var] and g_pat in [:bound, :var] do
     do_select_index_for_quad({s_pat, p_pat, o_pat, g_pat})
   end
 
@@ -1117,7 +1117,12 @@ defmodule TripleStore.QuadIndex do
       iex> QuadIndex.build_quad_prefix(pattern, values)
       %{index: :gspo, prefix: <<0::64-big, 100::64-big>>, needs_filter: true, filter_positions: [:p]}
   """
-  @spec build_quad_prefix(quad_pattern(), %{s: term_id(), p: term_id(), o: term_id(), g: term_id()}) ::
+  @spec build_quad_prefix(quad_pattern(), %{
+          s: term_id(),
+          p: term_id(),
+          o: term_id(),
+          g: term_id()
+        }) ::
           pattern_match()
   def build_quad_prefix(pattern, values) when is_tuple(pattern) and is_map(values) do
     selection = select_index_for_quad(pattern)
@@ -1126,9 +1131,20 @@ defmodule TripleStore.QuadIndex do
       :no_match ->
         %{index: :gspo, prefix: <<>>, needs_filter: false, filter_positions: []}
 
-      %{index: index, prefix_len: len, needs_filter: needs_filter, filter_positions: filter_positions} ->
+      %{
+        index: index,
+        prefix_len: len,
+        needs_filter: needs_filter,
+        filter_positions: filter_positions
+      } ->
         prefix = build_prefix_for_index(index, pattern, values, len)
-        %{index: index, prefix: prefix, needs_filter: needs_filter, filter_positions: filter_positions}
+
+        %{
+          index: index,
+          prefix: prefix,
+          needs_filter: needs_filter,
+          filter_positions: filter_positions
+        }
     end
   end
 
@@ -1265,4 +1281,89 @@ defmodule TripleStore.QuadIndex do
   defp matches_position?(:o, value, :bound, values), do: Map.get(values, :o) == value
   defp matches_position?(:g, value, :bound, values), do: Map.get(values, :g) == value
   defp matches_position?(_, _value, :var, _values), do: true
+
+  # ===========================================================================
+  # Quad Lookup Operations (for IncrementalQuad)
+  # ===========================================================================
+
+  @doc """
+  Looks up all quads matching a pattern within a specific graph using fold.
+
+  Returns all matching quads as a list (not a stream). This is more efficient
+  than stream-based operations when you need all results at once.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements (subject, predicate, object)
+
+  ## Returns
+
+  - `{:ok, [triple]}` with matching triples (without graph component)
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, triples} = QuadIndex.lookup_all_fold(db, 1, {{:bound, 100}, :var, :var})
+      # => [{100, 200, 300}, {100, 400, 500}]
+  """
+  @spec lookup_all_fold(term(), term_id(), TripleStore.Reasoner.PatternMatcher.index_pattern()) ::
+          {:ok, [TripleStore.Reasoner.PatternMatcher.term_triple()]} | {:error, term()}
+  def lookup_all_fold(db, graph_id, pattern) do
+    prefix = graph_pattern_to_lookup_prefix(graph_id, pattern)
+
+    results =
+      TripleStore.Backend.RocksDB.ErlangAdapter.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+        {g, s, p, o} = decode_gspo_key(key)
+
+        if g == graph_id and triple_matches_index_pattern?({s, p, o}, pattern) do
+          [{s, p, o} | acc]
+        else
+          acc
+        end
+      end)
+
+    {:ok, Enum.reverse(results)}
+  end
+
+  defp graph_pattern_to_lookup_prefix(graph_id, pattern) do
+    case pattern do
+      {{:bound, s}, {:bound, p}, {:bound, o}} ->
+        gspo_key(graph_id, s, p, o)
+
+      {{:bound, s}, {:bound, p}, :var} ->
+        gspo_prefix(graph_id, s, p)
+
+      {{:bound, s}, :var, :var} ->
+        gspo_prefix(graph_id, s)
+
+      _ ->
+        # For patterns that don't start with bound subject,
+        # scan this graph and filter
+        <<graph_id::64-big>>
+    end
+  end
+
+  defp triple_matches_index_pattern?({s, p, o}, pattern) do
+    case pattern do
+      {{:bound, s_exp}, {:bound, p_exp}, {:bound, o_exp}} ->
+        s == s_exp and p == p_exp and o == o_exp
+
+      {{:bound, s_exp}, {:bound, p_exp}, :var} ->
+        s == s_exp and p == p_exp
+
+      {{:bound, s_exp}, :var, :var} ->
+        s == s_exp
+
+      {{:bound, s_exp}, :var, {:bound, o_exp}} ->
+        s == s_exp and o == o_exp
+
+      :var ->
+        true
+
+      _ ->
+        true
+    end
+  end
 end

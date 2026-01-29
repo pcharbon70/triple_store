@@ -337,4 +337,277 @@ defmodule TripleStore.Reasoner.ReasoningConfigTest do
       assert config.mode_config.cache_results == true
     end
   end
+
+  # ============================================================================
+  # Tests: Graph-Aware Reasoning Scope Options (Section 7.1)
+  # ============================================================================
+
+  describe "graph-aware reasoning scope" do
+    test "creates config with local scope (default)" do
+      {:ok, config} = ReasoningConfig.new()
+      assert config.scope == :local
+    end
+
+    test "creates config with global scope" do
+      {:ok, config} = ReasoningConfig.new(scope: :global)
+      assert config.scope == :global
+    end
+
+    test "creates config with hybrid scope" do
+      {:ok, config} = ReasoningConfig.new(scope: :hybrid)
+      assert config.scope == :hybrid
+    end
+
+    test "returns error for invalid scope" do
+      {:error, reason} = ReasoningConfig.new(scope: :invalid)
+      assert reason == :invalid_scope
+    end
+
+    test "creates config with tbox_graph option" do
+      {:ok, config} = ReasoningConfig.new(scope: :global, tbox_graph: 0)
+      assert config.tbox_graph == 0
+    end
+
+    test "creates config with inferred_graph option" do
+      {:ok, config} = ReasoningConfig.new(scope: :global, inferred_graph: 99)
+      assert config.inferred_graph == 99
+    end
+
+    test "creates config with graph_configs map" do
+      {:ok, config} =
+        ReasoningConfig.new(
+          scope: :hybrid,
+          graph_configs: %{
+            1 => [scope: :local],
+            2 => [scope: :global]
+          }
+        )
+
+      assert config.graph_configs[1][:scope] == :local
+      assert config.graph_configs[2][:scope] == :global
+    end
+
+    test "accepts empty graph_configs" do
+      {:ok, config} = ReasoningConfig.new(scope: :hybrid, graph_configs: %{})
+      assert config.graph_configs == %{}
+    end
+  end
+
+  # ============================================================================
+  # Tests: Persistent Term Storage (Section 7.7.1.5)
+  # ============================================================================
+
+  describe "persistent_term storage" do
+    # These tests cannot be async because they share persistent_term storage
+    # and need sequential execution for correct cleanup
+
+    setup do
+      # Clean up all entries from previous test runs
+      ReasoningConfig.clear_all()
+
+      on_exit(fn ->
+        ReasoningConfig.clear_all()
+      end)
+
+      :ok
+    end
+
+    test "stores configuration in persistent_term" do
+      key = :test_store_key
+      config = ReasoningConfig.preset(:full_materialization)
+      assert :ok = ReasoningConfig.store(config, key)
+      assert ReasoningConfig.stored?(key)
+    end
+
+    test "loads stored configuration from persistent_term" do
+      key = :test_load_key
+      original = ReasoningConfig.preset(:rdfs_only)
+      :ok = ReasoningConfig.store(original, key)
+
+      assert {:ok, loaded} = ReasoningConfig.load(key)
+      assert loaded.profile == original.profile
+      assert loaded.mode == original.mode
+    end
+
+    test "returns error for non-existent configuration" do
+      assert {:error, :not_found} = ReasoningConfig.load(:non_existent_key)
+    end
+
+    test "load! returns default for non-existent configuration" do
+      loaded = ReasoningConfig.load!(:non_existent_key)
+      assert loaded.profile == :owl2rl
+      assert loaded.mode == :materialized
+    end
+
+    test "load! returns stored config if it exists" do
+      key = :test_load_bang_key
+      original = ReasoningConfig.preset(:minimal_memory)
+      :ok = ReasoningConfig.store(original, key)
+
+      loaded = ReasoningConfig.load!(key)
+      # minimal_memory preset has :owl2rl profile
+      assert loaded.profile == :owl2rl
+      assert loaded.mode == :query_time
+    end
+
+    test "stored? checks if configuration exists" do
+      key = :test_stored_key
+      refute ReasoningConfig.stored?(key)
+
+      config = ReasoningConfig.preset(:balanced)
+      :ok = ReasoningConfig.store(config, key)
+
+      assert ReasoningConfig.stored?(key)
+    end
+
+    test "delete removes configuration from persistent_term" do
+      key = :test_delete_key
+      config = ReasoningConfig.preset(:full_materialization)
+      :ok = ReasoningConfig.store(config, key)
+      assert ReasoningConfig.stored?(key)
+
+      :ok = ReasoningConfig.delete(key)
+      refute ReasoningConfig.stored?(key)
+    end
+
+    test "list_stored returns all stored keys" do
+      config1 = ReasoningConfig.preset(:full_materialization)
+      config2 = ReasoningConfig.preset(:rdfs_only)
+
+      :ok = ReasoningConfig.store(config1, :list_test1)
+      :ok = ReasoningConfig.store(config2, :list_test2)
+
+      keys = ReasoningConfig.list_stored()
+      assert :list_test1 in keys
+      assert :list_test2 in keys
+    end
+
+    test "clear_all removes all stored configurations" do
+      # Store multiple configs
+      ReasoningConfig.store(ReasoningConfig.preset(:full_materialization), :clear_test1)
+      ReasoningConfig.store(ReasoningConfig.preset(:rdfs_only), :clear_test2)
+
+      assert ReasoningConfig.stored?(:clear_test1)
+      assert ReasoningConfig.stored?(:clear_test2)
+
+      :ok = ReasoningConfig.clear_all()
+
+      refute ReasoningConfig.stored?(:clear_test1)
+      refute ReasoningConfig.stored?(:clear_test2)
+    end
+
+    test "overwrites existing configuration with same key" do
+      key = :test_overwrite_key
+      config1 = ReasoningConfig.preset(:full_materialization)
+      config2 = ReasoningConfig.preset(:rdfs_only)
+
+      :ok = ReasoningConfig.store(config1, key)
+      :ok = ReasoningConfig.store(config2, key)
+
+      assert {:ok, loaded} = ReasoningConfig.load(key)
+      # rdfs_only preset has :rdfs profile
+      assert loaded.profile == :rdfs
+      assert loaded.mode == :materialized
+    end
+  end
+
+  # ============================================================================
+  # Tests: Graph Configuration Management
+  # ============================================================================
+
+  describe "graph configuration management" do
+    alias TripleStore.Reasoner.GraphReasoningConfig
+
+    test "adds graph configuration to reasoning config" do
+      {:ok, config} = ReasoningConfig.new(scope: :hybrid)
+      graph_config = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+
+      updated = ReasoningConfig.put_graph_config(config, graph_config)
+
+      assert {:ok, retrieved} = ReasoningConfig.graph_config(updated, 1)
+      assert retrieved.graph_id == 1
+      assert retrieved.scope == :local
+    end
+
+    test "removes graph configuration from reasoning config" do
+      graph_config = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+
+      {:ok, config} =
+        ReasoningConfig.new(
+          scope: :hybrid,
+          graph_configs: %{1 => graph_config}
+        )
+
+      assert ReasoningConfig.graph_config_count(config) == 1
+
+      updated = ReasoningConfig.remove_graph_config(config, 1)
+      assert ReasoningConfig.graph_config_count(updated) == 0
+    end
+
+    test "returns graph_configs map" do
+      graph_config1 = GraphReasoningConfig.new!(graph_id: 1, scope: :local)
+      graph_config2 = GraphReasoningConfig.new!(graph_id: 2, scope: :global)
+
+      {:ok, config} =
+        ReasoningConfig.new(
+          scope: :hybrid,
+          graph_configs: %{1 => graph_config1, 2 => graph_config2}
+        )
+
+      configs = ReasoningConfig.graph_configs(config)
+      assert map_size(configs) == 2
+      assert configs[1].scope == :local
+      assert configs[2].scope == :global
+    end
+
+    test "sets reasoning scope" do
+      {:ok, config} = ReasoningConfig.new(scope: :local)
+      updated = ReasoningConfig.put_scope(config, :global)
+      assert ReasoningConfig.scope(updated) == :global
+    end
+
+    test "sets TBox graph" do
+      {:ok, config} = ReasoningConfig.new()
+      updated = ReasoningConfig.put_tbox_graph(config, 0)
+      assert ReasoningConfig.tbox_graph(updated) == 0
+    end
+
+    test "sets inferred graph" do
+      {:ok, config} = ReasoningConfig.new()
+      updated = ReasoningConfig.put_inferred_graph(config, 99)
+      assert ReasoningConfig.inferred_graph(updated) == 99
+    end
+
+    test "sets storage strategy" do
+      {:ok, config} = ReasoningConfig.new()
+      updated = ReasoningConfig.put_storage_strategy(config, :separate_graph)
+      assert ReasoningConfig.storage_strategy(updated) == :separate_graph
+    end
+  end
+
+  # ============================================================================
+  # Tests: Storage Strategy Validation
+  # ============================================================================
+
+  describe "storage strategy validation" do
+    test "accepts same_as_premises strategy" do
+      {:ok, config} = ReasoningConfig.new(storage_strategy: :same_as_premises)
+      assert config.storage_strategy == :same_as_premises
+    end
+
+    test "accepts separate_graph strategy" do
+      {:ok, config} = ReasoningConfig.new(storage_strategy: :separate_graph)
+      assert config.storage_strategy == :separate_graph
+    end
+
+    test "accepts per_graph_cf strategy" do
+      {:ok, config} = ReasoningConfig.new(storage_strategy: :per_graph_cf)
+      assert config.storage_strategy == :per_graph_cf
+    end
+
+    test "returns error for invalid storage strategy" do
+      {:error, reason} = ReasoningConfig.new(storage_strategy: :invalid)
+      assert {:invalid_storage_strategy, :invalid} = reason
+    end
+  end
 end

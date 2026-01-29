@@ -12,7 +12,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.ShardedManager
@@ -27,7 +27,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -37,7 +37,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -161,10 +161,10 @@ defmodule TripleStore.Loader.ConsistencyTest do
         {:ok, key} = StringToId.encode_term(term)
 
         # str2id lookup
-        {:ok, <<id::64-big>>} = NIF.get(db, :str2id, key)
+        {:ok, <<id::64-big>>} = ErlangAdapter.get(db, :str2id, key)
 
         # id2str lookup
-        {:ok, recovered_key} = NIF.get(db, :id2str, <<id::64-big>>)
+        {:ok, recovered_key} = ErlangAdapter.get(db, :id2str, <<id::64-big>>)
 
         assert recovered_key == key,
                "Roundtrip failed for term #{inspect(term)}: key mismatch"
@@ -196,8 +196,8 @@ defmodule TripleStore.Loader.ConsistencyTest do
       # Verify each term type
       for {s, p, o} <- triples, term <- [s, p, o] do
         {:ok, key} = StringToId.encode_term(term)
-        {:ok, <<id::64-big>>} = NIF.get(db, :str2id, key)
-        {:ok, recovered_key} = NIF.get(db, :id2str, <<id::64-big>>)
+        {:ok, <<id::64-big>>} = ErlangAdapter.get(db, :str2id, key)
+        {:ok, recovered_key} = ErlangAdapter.get(db, :id2str, <<id::64-big>>)
 
         assert recovered_key == key,
                "Roundtrip failed for #{inspect(term)}"
@@ -316,15 +316,15 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
         # Check SPO
         spo_key = Index.spo_key(s_id, p_id, o_id)
-        {:ok, true} = NIF.exists(db, :spo, spo_key)
+        {:ok, true} = ErlangAdapter.exists(db, :spo, spo_key)
 
         # Check POS
         pos_key = Index.pos_key(p_id, o_id, s_id)
-        {:ok, true} = NIF.exists(db, :pos, pos_key)
+        {:ok, true} = ErlangAdapter.exists(db, :pos, pos_key)
 
         # Check OSP
         osp_key = Index.osp_key(o_id, s_id, p_id)
-        {:ok, true} = NIF.exists(db, :osp, osp_key)
+        {:ok, true} = ErlangAdapter.exists(db, :osp, osp_key)
       end
     end
   end
@@ -446,13 +446,13 @@ defmodule TripleStore.Loader.ConsistencyTest do
     test "data persists after close and reopen", %{db: db, manager: manager, path: path} do
       # Close setup db first
       Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Use a fresh path for this test to avoid conflicts
       test_path = "#{path}_persist_test"
 
       # First session: load data
-      {:ok, db1} = NIF.open(test_path)
+      {:ok, db1} = ErlangAdapter.open(test_path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       triples =
@@ -470,14 +470,14 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
       # Close first session
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure db is fully released before reopening
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Second session: verify data
-      {:ok, db2} = NIF.open(test_path)
+      {:ok, db2} = ErlangAdapter.open(test_path)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       # Query should return all triples
@@ -490,20 +490,20 @@ defmodule TripleStore.Loader.ConsistencyTest do
       assert is_integer(id)
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       File.rm_rf(test_path)
     end
 
     test "dictionary state persists correctly", %{db: db, manager: manager, path: path} do
       # Close setup db first
       Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Use a fresh path for this test
       test_path = "#{path}_dict_persist"
 
       # First session: create terms
-      {:ok, db1} = NIF.open(test_path)
+      {:ok, db1} = ErlangAdapter.open(test_path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       terms = [
@@ -519,14 +519,14 @@ defmodule TripleStore.Loader.ConsistencyTest do
         end
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure db is fully released before reopening
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Second session: verify same IDs
-      {:ok, db2} = NIF.open(test_path)
+      {:ok, db2} = ErlangAdapter.open(test_path)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       ids2 =
@@ -538,20 +538,20 @@ defmodule TripleStore.Loader.ConsistencyTest do
       assert ids1 == ids2, "IDs changed after restart!"
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       File.rm_rf(test_path)
     end
 
     test "index consistency maintained after restart", %{db: db, manager: manager, path: path} do
       # Close setup db first
       Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Use a fresh path for this test
       test_path = "#{path}_index_persist"
 
       # First session: load data
-      {:ok, db1} = NIF.open(test_path)
+      {:ok, db1} = ErlangAdapter.open(test_path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       triples = generate_triples_with_reuse(1000)
@@ -559,14 +559,14 @@ defmodule TripleStore.Loader.ConsistencyTest do
       {:ok, _} = Loader.load_graph(db1, manager1, graph, bulk_mode: true)
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure db is fully released before reopening
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Second session: verify index consistency
-      {:ok, db2} = NIF.open(test_path)
+      {:ok, db2} = ErlangAdapter.open(test_path)
 
       {:ok, spo_triples} = scan_index(db2, :spo)
       {:ok, pos_triples} = scan_index(db2, :pos)
@@ -580,7 +580,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
       assert MapSet.equal?(spo_set, osp_set)
       assert MapSet.size(spo_set) == 1000
 
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       File.rm_rf(test_path)
     end
 
@@ -591,13 +591,13 @@ defmodule TripleStore.Loader.ConsistencyTest do
     } do
       # Close setup db first
       Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
 
       # Use a fresh path for this test
       test_path = "#{path}_seq_persist"
 
       # First session: create terms
-      {:ok, db1} = NIF.open(test_path)
+      {:ok, db1} = ErlangAdapter.open(test_path)
       {:ok, manager1} = Manager.start_link(db: db1)
 
       terms1 = for i <- 1..100, do: RDF.iri("http://example.org/seq/#{i}")
@@ -617,14 +617,14 @@ defmodule TripleStore.Loader.ConsistencyTest do
         |> Enum.max()
 
       Manager.stop(manager1)
-      NIF.close(db1)
+      ErlangAdapter.close(db1)
 
       # Ensure db is fully released before reopening
       :erlang.garbage_collect()
       Process.sleep(200)
 
       # Second session: create more terms
-      {:ok, db2} = NIF.open(test_path)
+      {:ok, db2} = ErlangAdapter.open(test_path)
       {:ok, manager2} = Manager.start_link(db: db2)
 
       terms2 = for i <- 101..200, do: RDF.iri("http://example.org/seq/#{i}")
@@ -648,7 +648,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
              "Sequence counter did not resume correctly: min_seq2=#{min_seq2}, max_seq1=#{max_seq1}"
 
       Manager.stop(manager2)
-      NIF.close(db2)
+      ErlangAdapter.close(db2)
       File.rm_rf(test_path)
     end
   end
@@ -682,7 +682,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
   defp lookup_id(db, term) do
     {:ok, key} = StringToId.encode_term(term)
 
-    case NIF.get(db, :str2id, key) do
+    case ErlangAdapter.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} -> id
       {:error, :not_found} -> nil
     end
@@ -696,7 +696,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
   # Scan an index and convert keys to canonical {s, p, o} triples
   defp scan_index(db, index) do
     # Use prefix_stream with empty prefix to get all entries
-    case NIF.prefix_stream(db, index, <<>>) do
+    case ErlangAdapter.prefix_stream(db, index, <<>>) do
       {:ok, stream} ->
         triples =
           stream

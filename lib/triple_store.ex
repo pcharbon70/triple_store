@@ -63,7 +63,18 @@ defmodule TripleStore do
 
   ### Reasoning
   - `materialize/2` - Compute OWL 2 RL inferences
+  - `materialize_graph/3` - Compute inferences for a specific graph
+  - `materialize_graphs/3` - Compute inferences for multiple graphs
+  - `materialize_all/2` - Compute inferences across all graphs (global reasoning)
   - `reasoning_status/1` - Get reasoning subsystem status
+  - `reasoning_status/2` - Get reasoning status for a specific graph
+
+  ### Derivation Explanation
+  - `explain_inference/4` - Explain how a derived quad was inferred
+
+  ### Incremental Maintenance (Graph-Aware)
+  - `add_quads_with_reasoning/4` - Incrementally add quads with reasoning
+  - `delete_quads_with_reasoning/4` - Incrementally delete quads with reasoning
 
   ### Operations
   - `backup/2` - Create a backup of the store
@@ -146,7 +157,7 @@ defmodule TripleStore do
   - `:all` - All available reasoning rules
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager, as: DictManager
   alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Loader
@@ -194,7 +205,23 @@ defmodule TripleStore do
   @typedoc "Options for materialization"
   @type materialize_opts :: [
           profile: :rdfs | :owl2rl | :all,
-          parallel: boolean()
+          parallel: boolean(),
+          scope: :local | :global | :hybrid,
+          graph_configs: %{non_neg_integer() => keyword()},
+          tbox_graph: non_neg_integer() | nil,
+          inferred_graph: non_neg_integer() | nil
+        ]
+
+  @typedoc "Options for graph-specific materialization"
+  @type materialize_graph_opts :: [
+          profile: :rdfs | :owl2rl | :all,
+          parallel: boolean(),
+          tbox_graph: non_neg_integer() | nil
+        ]
+
+  @typedoc "Options for reasoning status"
+  @type reasoning_status_opts :: [
+          graph_id: non_neg_integer() | nil
         ]
 
   @typedoc "Health status"
@@ -251,6 +278,7 @@ defmodule TripleStore do
   def open(path, opts \\ []) do
     create_if_missing = Keyword.get(opts, :create_if_missing, true)
     dictionary_shards = Keyword.get(opts, :dictionary_shards)
+    schema = Keyword.get(opts, :schema, :triple)
 
     with :ok <- validate_path(path) do
       Telemetry.span(:store, :open, %{path: Path.basename(path)}, fn ->
@@ -258,13 +286,14 @@ defmodule TripleStore do
         if not create_if_missing and not File.exists?(path) do
           {{:error, :database_not_found}, %{}}
         else
-          with {:ok, db} <- NIF.open(path),
+          with {:ok, db} <- ErlangAdapter.open(path, schema: schema),
                {:ok, dict_manager} <- start_dict_manager(db, dictionary_shards) do
             store = %{
               db: db,
               dict_manager: dict_manager,
               transaction: nil,
-              path: path
+              path: path,
+              schema: schema
             }
 
             {{:ok, store}, %{}}
@@ -304,7 +333,7 @@ defmodule TripleStore do
   @spec close(store()) :: :ok | {:error, term()}
   def close(%{db: db, dict_manager: dict_manager} = _store) do
     stop_dict_manager(dict_manager)
-    NIF.close(db)
+    ErlangAdapter.close(db)
   end
 
   @spec stop_dict_manager(pid() | term()) :: :ok | nil
@@ -713,6 +742,13 @@ defmodule TripleStore do
     - `:owl2rl` - OWL 2 RL profile (includes RDFS)
     - `:all` - All available rules
   - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:scope` - Graph-aware reasoning scope (default: :local)
+    - `:local` - Each graph materializes independently
+    - `:global` - All graphs in single inference closure
+    - `:hybrid` - Per-graph configuration
+  - `:graph_configs` - Per-graph reasoning configs (for :hybrid scope)
+  - `:tbox_graph` - Graph ID containing shared TBox
+  - `:inferred_graph` - Graph ID to store inferences (for :global)
 
   ## Returns
 
@@ -729,10 +765,35 @@ defmodule TripleStore do
 
       {:ok, stats} = TripleStore.materialize(store, profile: :rdfs)
 
+      # Global reasoning across all graphs
+      {:ok, stats} = TripleStore.materialize(store, scope: :global)
+
+      # Hybrid with per-graph configuration
+      {:ok, stats} = TripleStore.materialize(store,
+        scope: :hybrid,
+        graph_configs: %{1 => [scope: :local], 2 => [scope: :local]}
+      )
+
   """
   @spec materialize(store(), materialize_opts()) ::
           {:ok, map()} | {:error, term()}
-  def materialize(%{db: db, dict_manager: _dict_manager}, opts \\ []) do
+  def materialize(store, opts \\ []) do
+    scope = Keyword.get(opts, :scope, :local)
+
+    case scope do
+      :local ->
+        materialize_triples(store, opts)
+
+      :global ->
+        materialize_global(store, opts)
+
+      :hybrid ->
+        materialize_hybrid(store, opts)
+    end
+  end
+
+  # Legacy triple materialization
+  defp materialize_triples(%{db: db, dict_manager: _dict_manager}, opts) do
     profile = Keyword.get(opts, :profile, :owl2rl)
     _parallel = Keyword.get(opts, :parallel, true)
 
@@ -759,6 +820,210 @@ defmodule TripleStore do
     # Convert internal triple list to MapSet of tuples
     facts = MapSet.new(triples)
     {:ok, facts}
+  end
+
+  # Global reasoning using GraphScopedReasoner
+  defp materialize_global(store, opts) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    inferred_graph = Keyword.get(opts, :inferred_graph)
+
+    config_opts = [
+      profile: profile,
+      tbox_graph: tbox_graph,
+      inferred_graph: inferred_graph
+    ]
+
+    GraphScopedReasoner.materialize_all(store, config_opts)
+  end
+
+  # Hybrid reasoning using GraphScopedReasoner
+  defp materialize_hybrid(store, opts) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    graph_configs = Keyword.get(opts, :graph_configs, %{})
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      profile: profile,
+      graph_configs: graph_configs,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_hybrid(store, config_opts)
+  end
+
+  @doc """
+  Computes inferences for a specific graph using graph-local reasoning.
+
+  This function materializes inferences for a single graph, keeping all
+  derived quads within that graph. Use this for per-graph reasoning
+  without cross-graph inference.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Graph identifier to materialize
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:tbox_graph` - Graph ID containing shared TBox (optional)
+
+  ## Returns
+
+  - `{:ok, stats}` - Materialization statistics for the graph
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize graph 1
+      {:ok, stats} = TripleStore.materialize_graph(store, 1)
+
+      # Materialize graph 2 with TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_graph(store, 2,
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_graph(store(), non_neg_integer(), materialize_graph_opts()) ::
+          {:ok, map()} | {:error, term()}
+  def materialize_graph(store, graph_id, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      graph_id: graph_id,
+      profile: profile,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_graph(store, config_opts)
+  end
+
+  @doc """
+  Materializes inferences for multiple graphs independently.
+
+  Each graph is materialized separately, optionally in parallel. All derived
+  facts are stored within their respective source graphs.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_ids` - List of graph identifiers to materialize
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:parallel` - Enable parallel graph materialization (default: true)
+  - `:tbox_graph` - Graph ID containing shared TBox (optional)
+
+  ## Returns
+
+  - `{:ok, stats_map}` - Map of graph_id to materialization statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize graphs 1, 2, and 3 in parallel
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3])
+
+      # Materialize graphs sequentially
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3],
+        parallel: false
+      )
+
+      # Materialize with shared TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_graphs(store, [1, 2, 3],
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_graphs(store(), [non_neg_integer()], keyword()) ::
+          {:ok, %{non_neg_integer() => map()}} | {:error, term()}
+  def materialize_graphs(store, graph_ids, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    parallel = Keyword.get(opts, :parallel, true)
+
+    config_opts = [
+      graph_ids: graph_ids,
+      profile: profile,
+      tbox_graph: tbox_graph,
+      parallel: parallel
+    ]
+
+    GraphScopedReasoner.materialize_graphs(store, config_opts)
+  end
+
+  @doc """
+  Materializes inferences across all graphs (global reasoning).
+
+  All quads from all graphs participate in a single inference closure.
+  Derived quads are stored according to the configured storage strategy.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+
+  ## Options
+
+  - `:profile` - Reasoning profile to use (default: :owl2rl)
+  - `:storage_strategy` - How to store derived quads:
+    - `:same_as_premises` - Store in same graph as premises (default)
+    - `:separate_graph` - Store in designated inference graph
+    - `:per_graph_cf` - Store only in derived column family
+  - `:inferred_graph` - Graph ID for derived quads (for :separate_graph strategy)
+  - `:tbox_graph` - Graph ID containing shared TBox schema (optional)
+  - `:parallel` - Enable parallel rule evaluation (default: true)
+
+  ## Returns
+
+  - `{:ok, stats}` - Materialization statistics
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Materialize all graphs globally
+      {:ok, stats} = TripleStore.materialize_all(store)
+
+      # Materialize with separate inference graph
+      {:ok, stats} = TripleStore.materialize_all(store,
+        storage_strategy: :separate_graph,
+        inferred_graph: 100
+      )
+
+      # Materialize with shared TBox from graph 0
+      {:ok, stats} = TripleStore.materialize_all(store,
+        tbox_graph: 0
+      )
+
+  """
+  @spec materialize_all(store(), keyword()) :: {:ok, map()} | {:error, term()}
+  def materialize_all(store, opts \\ []) do
+    alias TripleStore.Reasoner.GraphScopedReasoner
+
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    storage_strategy = Keyword.get(opts, :storage_strategy, :same_as_premises)
+    inferred_graph = Keyword.get(opts, :inferred_graph)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+
+    config_opts = [
+      profile: profile,
+      storage_strategy: storage_strategy,
+      inferred_graph: inferred_graph,
+      tbox_graph: tbox_graph
+    ]
+
+    GraphScopedReasoner.materialize_all(store, config_opts)
   end
 
   @doc """
@@ -841,6 +1106,415 @@ defmodule TripleStore do
     end
   end
 
+  @doc """
+  Returns reasoning status for a specific graph or with graph filtering.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `opts` - Options for filtering
+    - `:graph_id` - Get status for a specific graph
+
+  ## Returns
+
+  - `{:ok, status}` - Reasoning status map
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      # Get status for graph 1
+      {:ok, status} = TripleStore.reasoning_status(store, graph_id: 1)
+
+  """
+  @spec reasoning_status(store(), reasoning_status_opts()) :: {:ok, map()} | {:error, term()}
+  def reasoning_status(%{db: db} = _store, opts) when is_list(opts) do
+    graph_id = Keyword.get(opts, :graph_id)
+
+    if graph_id do
+      reasoning_status_for_graph(db, graph_id)
+    else
+      # Return aggregate status for all graphs
+      reasoning_status_all_graphs(db)
+    end
+  end
+
+  # Get reasoning status for a specific graph
+  defp reasoning_status_for_graph(_db, graph_id) do
+    alias TripleStore.Reasoner.GraphReasoningStatus
+
+    key = {:graph, graph_id}
+
+    case GraphReasoningStatus.load(key) do
+      {:ok, status} ->
+        {:ok, GraphReasoningStatus.summary(status)}
+
+      {:error, :not_found} ->
+        # No status for this graph - return default
+        {:ok,
+         %{
+           graph_id: graph_id,
+           state: :initialized,
+           scope: nil,
+           enabled: true,
+           derived_count: 0,
+           explicit_count: 0,
+           total_count: 0,
+           last_materialization: nil,
+           materialization_count: 0,
+           needs_rematerialization: false,
+           error: nil
+         }}
+    end
+  end
+
+  # Get aggregate reasoning status for all graphs
+  defp reasoning_status_all_graphs(_db) do
+    alias TripleStore.Reasoner.GraphReasoningStatus
+
+    # List all stored graph statuses
+    stored_keys = GraphReasoningStatus.list_stored()
+
+    # Load all statuses
+    statuses =
+      Enum.map(stored_keys, fn key ->
+        case GraphReasoningStatus.load(key) do
+          {:ok, status} -> status
+          {:error, _} -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    # Get aggregate stats
+    aggregate = GraphReasoningStatus.aggregate(statuses)
+
+    {:ok,
+     %{
+       total_graphs: aggregate.total_graphs,
+       materialized: aggregate.materialized,
+       stale: aggregate.stale,
+       error: aggregate.error,
+       initialized: aggregate.initialized,
+       total_derived: aggregate.total_derived,
+       total_explicit: aggregate.total_explicit,
+       total_quads: aggregate.total_quads
+     }}
+  end
+
+  # ===========================================================================
+  # Incremental Maintenance (Graph-Aware)
+  # ===========================================================================
+
+  @doc """
+  Adds quads to a graph and computes incremental reasoning.
+
+  This function performs graph-scoped incremental addition:
+  1. Inserts the new explicit quads into the target graph
+  2. Computes new derivations using semi-naive evaluation
+  3. Stores derived quads in the appropriate graph
+  4. Respects TBox sharing and graph scope configuration
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Target graph ID for the quads
+  - `quads` - List of `{subject, predicate, object}` tuples (RDF terms)
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, `:none`). Default: `:owl2rl`
+  - `:tbox_graph` - Graph ID containing shared TBox. Default: `nil` (no TBox sharing)
+  - `:scope` - Reasoning scope: `:local` (default) or `:global`
+  - `:parallel` - Enable parallel rule evaluation. Default: `false`
+  - `:max_iterations` - Maximum fixpoint iterations. Default: `1000`
+
+  ## Returns
+
+  - `{:ok, stats}` - Addition completed with statistics
+  - `{:error, reason}` - On failure
+
+  ## Statistics
+
+  - `:explicit_added` - Number of explicit quads added
+  - `:derived_count` - Number of new derived quads
+  - `:iterations` - Number of fixpoint iterations
+  - `:duration_ms` - Time taken in milliseconds
+
+  ## Examples
+
+      # Add quads to graph 1 with OWL 2 RL reasoning
+      quads = [
+        {~I<http://example.org/alice>, ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, ~I<http://example.org/Student>}
+      ]
+      {:ok, stats} = TripleStore.add_quads_with_reasoning(store, 1, quads)
+
+      # Add with TBox sharing from graph 0
+      {:ok, stats} = TripleStore.add_quads_with_reasoning(store, 1, quads,
+        tbox_graph: 0,
+        scope: :local
+      )
+  """
+  @spec add_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def add_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Reasoner.IncrementalQuad
+    alias TripleStore.Reasoner.ReasoningProfile
+    alias TripleStore.Adapter
+
+    db = store.db
+    manager = store.dict_manager
+
+    # Get options
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    scope = Keyword.get(opts, :scope, :local)
+    parallel = Keyword.get(opts, :parallel, false)
+    max_iterations = Keyword.get(opts, :max_iterations, 1000)
+
+    # Get rules for the profile
+    {:ok, rules} = ReasoningProfile.rules_for(profile, [])
+
+    # Convert RDF statements to ID quads
+    # Add graph context to each statement for quad conversion
+    quads_with_graph =
+      Enum.map(quads, fn
+        {s, p, o} -> {s, p, o, graph_id}
+        quad -> quad
+      end)
+
+    case Adapter.from_rdf_quads(manager, quads_with_graph) do
+      {:ok, id_quads} ->
+        # Add with reasoning
+        IncrementalQuad.add_quads_with_reasoning(
+          db,
+          id_quads,
+          rules,
+          graph_id: graph_id,
+          tbox_graph_id: tbox_graph,
+          scope: scope,
+          parallel: parallel,
+          max_iterations: max_iterations
+        )
+
+      {:error, reason} ->
+        {:error, {:conversion_failed, reason}}
+    end
+  end
+
+  @doc """
+  Deletes quads from a graph and performs incremental reasoning retraction.
+
+  This function implements the Backward/Forward algorithm for graph-scoped deletion:
+  1. Deletes the specified explicit quads from the graph
+  2. Traces backward to find potentially invalid derived quads
+  3. Attempts to re-derive each potentially invalid quad
+  4. Keeps quads that can be re-derived, deletes others
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `graph_id` - Target graph ID
+  - `quads` - List of `{subject, predicate, object}` tuples to delete (RDF terms)
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:profile` - Reasoning profile (`:rdfs`, `:owl2rl`, `:none`). Default: `:owl2rl`
+  - `:tbox_graph` - Graph ID containing shared TBox. Default: `nil`
+  - `:scope` - Reasoning scope: `:local` (default) or `:global`
+
+  ## Returns
+
+  - `{:ok, stats}` - Deletion completed with statistics
+  - `{:error, reason}` - On failure
+
+  ## Statistics
+
+  - `:explicit_deleted` - Number of explicit quads deleted
+  - `:derived_deleted` - Number of derived quads deleted
+  - `:derived_kept` - Number of derived quads kept via re-derivation
+  - `:potentially_invalid_count` - Number of quads examined in backward trace
+  - `:duration_ms` - Time taken in milliseconds
+
+  ## Examples
+
+      quads = [
+        {~I<http://example.org/alice>, ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, ~I<http://example.org/Student>}
+      ]
+      {:ok, stats} = TripleStore.delete_quads_with_reasoning(store, 1, quads)
+  """
+  @spec delete_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def delete_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Reasoner.DeleteWithReasoningQuad
+    alias TripleStore.Reasoner.ReasoningProfile
+    alias TripleStore.Adapter
+
+    db = store.db
+    manager = store.dict_manager
+
+    # Get options
+    profile = Keyword.get(opts, :profile, :owl2rl)
+    tbox_graph = Keyword.get(opts, :tbox_graph)
+    scope = Keyword.get(opts, :scope, :local)
+
+    # Get rules for the profile
+    {:ok, rules} = ReasoningProfile.rules_for(profile, [])
+
+    # Convert RDF statements to ID quads
+    quads_with_graph =
+      Enum.map(quads, fn
+        {s, p, o} -> {s, p, o, graph_id}
+        quad -> quad
+      end)
+
+    case Adapter.from_rdf_quads(manager, quads_with_graph) do
+      {:ok, id_quads} ->
+        # Delete with reasoning
+        DeleteWithReasoningQuad.delete_quads_with_reasoning(
+          db,
+          id_quads,
+          rules,
+          graph_id: graph_id,
+          tbox_graph_id: tbox_graph,
+          scope: scope
+        )
+
+      {:error, reason} ->
+        {:error, {:conversion_failed, reason}}
+    end
+  end
+
+  # ===========================================================================
+  # Derivation Explanation
+  # ===========================================================================
+
+  @doc """
+  Explains how a derived quad was inferred.
+
+  Returns detailed provenance information about how a specific quad was
+  derived through reasoning, including the rule used, the premises,
+  and variable bindings.
+
+  ## Arguments
+
+  - `store` - Store handle from `open/2`
+  - `quad` - The derived quad to explain {subject, predicate, object}
+  - `graph_id` - Graph ID containing the quad
+  - `opts` - Options (see below)
+
+  ## Options
+
+  - `:provenance_source` - Where to get provenance:
+    - `:memory` - Load from in-memory tracker (fast, requires recent reasoning)
+    - `:database` - Load from persistent provenance storage (slower, historical)
+    - Default: `:memory`
+
+  ## Returns
+
+  - `{:ok, explanation}` - Explanation map with:
+    - `:derived_quad` - The quad being explained
+    - `:rule_name` - The rule that produced it
+    - `:premises` - The premise quads used
+    - `:bindings` - Variable bindings
+    - `:formatted` - Human-readable string
+
+  - `:error` - If no derivation is found or on error
+
+  ## Examples
+
+      quad = {~I<http://example.org/alice>,
+              ~I<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>,
+              ~I<http://example.org/Person>}
+
+      {:ok, explanation} = TripleStore.explain_inference(store, quad, 1)
+
+      explanation.formatted
+      # => \"""
+      #     Derived: [g:1 (alice rdf:type Person)]
+      #     Rule: cax_sco
+      #     Premises: [g:1 (alice rdf:type Student), g:1 (Student rdfs:subClassOf Person)]
+      #     Bindings: {x=alice, c1=Student, c2=Person}
+      #     \"""
+  """
+  @spec explain_inference(store(), RDF.Statement.t(), non_neg_integer(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def explain_inference(store, quad, graph_id, opts \\ []) do
+    alias TripleStore.Adapter
+    alias TripleStore.Reasoner.DerivationProvenance
+    alias TripleStore.Reasoner.DerivedStore
+
+    db = store.db
+    manager = store.dict_manager
+    provenance_source = Keyword.get(opts, :provenance_source, :memory)
+
+    # Convert RDF terms to dictionary-encoded IDs
+    {s_id, _} =
+      case Adapter.term_to_id(manager, elem(quad, 0)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    {p_id, _} =
+      case Adapter.term_to_id(manager, elem(quad, 1)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    {o_id, _} =
+      case Adapter.term_to_id(manager, elem(quad, 2)) do
+        {:ok, id} -> id
+        error -> throw(error)
+      end
+
+    id_quad = {graph_id, s_id, p_id, o_id}
+
+    # Get provenance tracker
+    tracker =
+      case provenance_source do
+        :database ->
+          case DerivationProvenance.load(db, graph_id) do
+            {:ok, loaded} -> loaded
+            _error -> DerivationProvenance.new()
+          end
+
+        :memory ->
+          # For in-memory, we'd need to track during reasoning
+          # For now, fall back to database
+          case DerivationProvenance.load(db, graph_id) do
+            {:ok, loaded} -> loaded
+            _error -> DerivationProvenance.new()
+          end
+      end
+
+    # Check if this is a derived quad
+    case DerivedStore.derived_quad_exists?(db, id_quad) do
+      {:ok, true} ->
+        # Try to explain the derivation
+        case DerivationProvenance.explain_inference(tracker, id_quad, db) do
+          {:ok, explanation} ->
+            # Add RDF term version to the explanation
+            explanation_with_terms =
+              Map.put(explanation, :quad, quad)
+              |> Map.put(:graph_id, graph_id)
+
+            {:ok, explanation_with_terms}
+
+          :error ->
+            {:error, :no_provenance_found}
+        end
+
+      {:ok, false} ->
+        {:error, :not_a_derived_quad}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  catch
+    :throw, {:error, reason} -> {:error, reason}
+    error -> {:error, error}
+  end
+
   # ===========================================================================
   # Health & Status
   # ===========================================================================
@@ -879,7 +1553,7 @@ defmodule TripleStore do
   """
   @spec health(store()) :: {:ok, health_result()} | {:error, term()}
   def health(%{db: db, dict_manager: dict_manager}) do
-    database_open = NIF.is_open(db)
+    database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
 
     triple_count =

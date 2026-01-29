@@ -17,7 +17,7 @@ defmodule TripleStore.NQuadsTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.Exporter
@@ -27,7 +27,7 @@ defmodule TripleStore.NQuadsTest do
 
   setup do
     test_path = "#{@test_db_base}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
@@ -35,7 +35,7 @@ defmodule TripleStore.NQuadsTest do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -235,7 +235,12 @@ defmodule TripleStore.NQuadsTest do
 
       # Export only default graph
       output_file = "#{@test_db_base}_output_#{:erlang.unique_integer()}.nq"
-      {:ok, count} = Exporter.export_nquads_file(db, output_file, pattern: {:var, :var, :var, :bound}, graph_id: 0)
+
+      {:ok, count} =
+        Exporter.export_nquads_file(db, output_file,
+          pattern: {:var, :var, :var, :bound},
+          graph_id: 0
+        )
 
       assert count == 1
 
@@ -304,7 +309,8 @@ defmodule TripleStore.NQuadsTest do
       assert String.contains?(exported_content, "<http://example.org/g2>")
 
       # Check that default graph is preserved (no graph name)
-      assert exported_content =~ ~r/<http:\/\/example\.org\/s3>.*<http:\/\/example\.org\/p>.*"o3"\s*\./
+      assert exported_content =~
+               ~r/<http:\/\/example\.org\/s3>.*<http:\/\/example\.org\/p>.*"o3"\s*\./
 
       File.rm_rf(nq_file)
       File.rm_rf(output_file)
@@ -389,7 +395,8 @@ defmodule TripleStore.NQuadsTest do
           batch_size: 100,
           progress_callback: progress_callback,
           progress_interval: 1,
-          parallel: false  # Use sequential loading for deterministic halting
+          # Use sequential loading for deterministic halting
+          parallel: false
         )
 
       assert {:halted, halted_count} = result

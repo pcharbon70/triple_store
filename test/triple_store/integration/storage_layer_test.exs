@@ -15,7 +15,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Snapshot
 
   @moduletag :integration
@@ -26,10 +26,10 @@ defmodule TripleStore.Integration.StorageLayerTest do
     path =
       Path.join(System.tmp_dir!(), "storage_layer_test_#{System.unique_integer([:positive])}")
 
-    {:ok, db} = NIF.open(path)
+    {:ok, db} = ErlangAdapter.open(path)
 
     on_exit(fn ->
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf!(path)
     end)
 
@@ -44,13 +44,13 @@ defmodule TripleStore.Integration.StorageLayerTest do
       # Create SPO key (simulating encoded triple)
       key = <<s::64, p::64, o::64>>
       value = "value_#{s}_#{p}_#{o}"
-      :ok = NIF.put(db, :spo, key, value)
+      :ok = ErlangAdapter.put(db, :spo, key, value)
     end
 
     # Also add some dictionary entries
     for i <- 1..100 do
-      :ok = NIF.put(db, :str2id, "uri_#{i}", <<i::64>>)
-      :ok = NIF.put(db, :id2str, <<i::64>>, "uri_#{i}")
+      :ok = ErlangAdapter.put(db, :str2id, "uri_#{i}", <<i::64>>)
+      :ok = ErlangAdapter.put(db, :id2str, <<i::64>>, "uri_#{i}")
     end
 
     :ok
@@ -64,12 +64,12 @@ defmodule TripleStore.Integration.StorageLayerTest do
 
       for p <- 1..5, o <- 1..3 do
         key = <<subject_id::64, p::64, o::64>>
-        :ok = NIF.put(db, :spo, key, "value")
+        :ok = ErlangAdapter.put(db, :spo, key, "value")
       end
 
       # Create prefix iterator for subject 42
       prefix = <<subject_id::64>>
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, prefix)
 
       # Collect all results
       results = collect_iterator(iter)
@@ -89,14 +89,14 @@ defmodule TripleStore.Integration.StorageLayerTest do
       # Insert ordered keys
       for i <- 1..10 do
         key = <<i::64, 1::64, 1::64>>
-        :ok = NIF.put(db, :spo, key, "value_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, key, "value_#{i}")
       end
 
       # Seek to middle key
       prefix = <<5::64>>
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, prefix)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, prefix)
 
-      case NIF.iterator_next(iter) do
+      case ErlangAdapter.iterator_next(iter) do
         {:ok, key, _value} ->
           <<s::64, _::binary>> = key
           assert s == 5
@@ -105,28 +105,28 @@ defmodule TripleStore.Integration.StorageLayerTest do
           flunk("Expected to find key with prefix 5")
       end
 
-      NIF.iterator_close(iter)
+      ErlangAdapter.iterator_close(iter)
     end
 
     @tag :storage_ops
     test "bloom filter reduces lookups for non-existent keys", %{db: db} do
       # Insert some dictionary entries
       for i <- 1..100 do
-        :ok = NIF.put(db, :str2id, "existing_uri_#{i}", <<i::64>>)
+        :ok = ErlangAdapter.put(db, :str2id, "existing_uri_#{i}", <<i::64>>)
       end
 
       # Flush WAL to ensure data is persisted (bloom filters built during compaction)
-      NIF.flush_wal(db, true)
+      ErlangAdapter.flush_wal(db, true)
 
       # Lookup existing keys - should all succeed
       for i <- 1..100 do
-        assert {:ok, <<^i::64>>} = NIF.get(db, :str2id, "existing_uri_#{i}")
+        assert {:ok, <<^i::64>>} = ErlangAdapter.get(db, :str2id, "existing_uri_#{i}")
       end
 
       # Lookup non-existent keys - bloom filter should help reject quickly
       # (We can't directly measure bloom filter hits, but we verify correctness)
       for i <- 101..200 do
-        assert :not_found = NIF.get(db, :str2id, "nonexistent_uri_#{i}")
+        assert :not_found = ErlangAdapter.get(db, :str2id, "nonexistent_uri_#{i}")
       end
     end
 
@@ -136,11 +136,11 @@ defmodule TripleStore.Integration.StorageLayerTest do
       compressible_value = String.duplicate("ABCDEFGH", 100)
 
       for i <- 1..1000 do
-        :ok = NIF.put(db, :spo, <<i::64, 1::64, 1::64>>, compressible_value)
+        :ok = ErlangAdapter.put(db, :spo, <<i::64, 1::64, 1::64>>, compressible_value)
       end
 
       # Flush to disk
-      NIF.flush_wal(db, true)
+      ErlangAdapter.flush_wal(db, true)
 
       # Get directory size
       {:ok, files} = File.ls(path)
@@ -178,7 +178,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
       for _ <- 1..10 do
         Snapshot.with_snapshot(db, fn snapshot ->
           # Do some reads
-          NIF.snapshot_get(snapshot, :spo, "test_key")
+          ErlangAdapter.snapshot_get(db, snapshot, :spo, "test_key")
         end)
       end
 
@@ -221,24 +221,24 @@ defmodule TripleStore.Integration.StorageLayerTest do
     test "no iterator leaks after workload", %{db: db} do
       # Insert some data
       for i <- 1..100 do
-        :ok = NIF.put(db, :spo, <<i::64, 1::64, 1::64>>, "value")
+        :ok = ErlangAdapter.put(db, :spo, <<i::64, 1::64, 1::64>>, "value")
       end
 
       # Create and close many iterators
       for _ <- 1..50 do
-        {:ok, iter} = NIF.prefix_iterator(db, :spo, <<1::64>>)
+        {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<1::64>>)
 
         # Read some data
-        _ = NIF.iterator_next(iter)
-        _ = NIF.iterator_next(iter)
+        _ = ErlangAdapter.iterator_next(iter)
+        _ = ErlangAdapter.iterator_next(iter)
 
         # Close iterator
-        :ok = NIF.iterator_close(iter)
+        :ok = ErlangAdapter.iterator_close(iter)
       end
 
       # Use stream API which handles cleanup
       for _ <- 1..50 do
-        {:ok, stream} = NIF.prefix_stream(db, :spo, <<1::64>>)
+        stream = ErlangAdapter.prefix_stream(db, :spo, <<1::64>>)
         _ = Enum.take(stream, 2)
         # Stream cleanup happens automatically
       end
@@ -257,39 +257,39 @@ defmodule TripleStore.Integration.StorageLayerTest do
       :ok = Snapshot.release(snap)
 
       # Create and close iterators
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, <<1::64>>)
-      :ok = NIF.iterator_close(iter)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<1::64>>)
+      :ok = ErlangAdapter.iterator_close(iter)
 
       # Verify database is open
-      assert NIF.is_open(db) == true
+      assert ErlangAdapter.is_open(db) == true
 
       # Close database
-      assert :ok = NIF.close(db)
+      assert :ok = ErlangAdapter.close(db)
 
       # Verify database is closed
-      assert NIF.is_open(db) == false
+      assert ErlangAdapter.is_open(db) == false
     end
 
     @tag :resource_cleanup
     test "storage can be reclaimed after delete", %{db: db, path: _path} do
       # Insert data
       for i <- 1..1000 do
-        :ok = NIF.put(db, :spo, <<i::64, 1::64, 1::64>>, String.duplicate("X", 100))
+        :ok = ErlangAdapter.put(db, :spo, <<i::64, 1::64, 1::64>>, String.duplicate("X", 100))
       end
 
-      NIF.flush_wal(db, true)
+      ErlangAdapter.flush_wal(db, true)
 
       # Delete all data
       for i <- 1..1000 do
-        :ok = NIF.delete(db, :spo, <<i::64, 1::64, 1::64>>)
+        :ok = ErlangAdapter.delete(db, :spo, <<i::64, 1::64, 1::64>>)
       end
 
       # Flush WAL
-      NIF.flush_wal(db, true)
+      ErlangAdapter.flush_wal(db, true)
 
       # Verify delete operations work correctly - all keys should be gone
       for i <- 1..1000 do
-        assert :not_found = NIF.get(db, :spo, <<i::64, 1::64, 1::64>>)
+        assert :not_found = ErlangAdapter.get(db, :spo, <<i::64, 1::64, 1::64>>)
       end
     end
   end
@@ -301,11 +301,11 @@ defmodule TripleStore.Integration.StorageLayerTest do
       num_keys = 10_000
 
       for i <- 1..num_keys do
-        :ok = NIF.put(db, :spo, <<1::64, i::64, 1::64>>, "value_#{i}")
+        :ok = ErlangAdapter.put(db, :spo, <<1::64, i::64, 1::64>>, "value_#{i}")
       end
 
       # Measure iteration time
-      {:ok, iter} = NIF.prefix_iterator(db, :spo, <<1::64>>)
+      {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<1::64>>)
 
       {time_us, count} =
         :timer.tc(fn ->
@@ -327,14 +327,14 @@ defmodule TripleStore.Integration.StorageLayerTest do
     test "point lookup latency is acceptable", %{db: db} do
       # Insert test data
       for i <- 1..1000 do
-        :ok = NIF.put(db, :str2id, "uri_#{i}", <<i::64>>)
+        :ok = ErlangAdapter.put(db, :str2id, "uri_#{i}", <<i::64>>)
       end
 
       # Measure lookup time for 1000 lookups
       {time_us, _} =
         :timer.tc(fn ->
           for i <- 1..1000 do
-            {:ok, _} = NIF.get(db, :str2id, "uri_#{i}")
+            {:ok, _} = ErlangAdapter.get(db, :str2id, "uri_#{i}")
           end
         end)
 
@@ -361,7 +361,7 @@ defmodule TripleStore.Integration.StorageLayerTest do
                 {:spo, key, "value_#{batch}_#{i}"}
               end
 
-            :ok = NIF.write_batch(db, operations, false)
+            :ok = ErlangAdapter.write_batch(db, operations, false)
           end
         end)
 
@@ -377,22 +377,22 @@ defmodule TripleStore.Integration.StorageLayerTest do
     @tag :performance
     test "snapshot reads provide consistent view without blocking", %{db: db} do
       # Insert initial data
-      :ok = NIF.put(db, :spo, "key1", "value1")
+      :ok = ErlangAdapter.put(db, :spo, "key1", "value1")
 
       # Create snapshot
       {:ok, snapshot} = Snapshot.create(db)
 
       # Modify data after snapshot
-      :ok = NIF.put(db, :spo, "key1", "value2")
-      :ok = NIF.put(db, :spo, "key2", "new_value")
+      :ok = ErlangAdapter.put(db, :spo, "key1", "value2")
+      :ok = ErlangAdapter.put(db, :spo, "key2", "new_value")
 
       # Snapshot should still see original value
-      assert {:ok, "value1"} = NIF.snapshot_get(snapshot, :spo, "key1")
-      assert :not_found = NIF.snapshot_get(snapshot, :spo, "key2")
+      assert {:ok, "value1"} = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key1")
+      assert :not_found = ErlangAdapter.snapshot_get(db, snapshot, :spo, "key2")
 
       # Current view should see new values
-      assert {:ok, "value2"} = NIF.get(db, :spo, "key1")
-      assert {:ok, "new_value"} = NIF.get(db, :spo, "key2")
+      assert {:ok, "value2"} = ErlangAdapter.get(db, :spo, "key1")
+      assert {:ok, "new_value"} = ErlangAdapter.get(db, :spo, "key2")
 
       :ok = Snapshot.release(snapshot)
     end
@@ -401,23 +401,23 @@ defmodule TripleStore.Integration.StorageLayerTest do
   # Helper functions
 
   defp collect_iterator(iter, acc \\ []) do
-    case NIF.iterator_next(iter) do
+    case ErlangAdapter.iterator_next(iter) do
       {:ok, key, value} ->
         collect_iterator(iter, [{key, value} | acc])
 
       :iterator_end ->
-        NIF.iterator_close(iter)
+        ErlangAdapter.iterator_close(iter)
         Enum.reverse(acc)
     end
   end
 
   defp count_iterator(iter, count \\ 0) do
-    case NIF.iterator_next(iter) do
+    case ErlangAdapter.iterator_next(iter) do
       {:ok, _key, _value} ->
         count_iterator(iter, count + 1)
 
       :iterator_end ->
-        NIF.iterator_close(iter)
+        ErlangAdapter.iterator_close(iter)
         count
     end
   end

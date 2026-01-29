@@ -12,7 +12,7 @@ defmodule TripleStore.Integration.FormatConversionTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
   alias TripleStore.Exporter
@@ -22,17 +22,15 @@ defmodule TripleStore.Integration.FormatConversionTest do
   @ex "http://example.org/"
 
   # ===========================================================================
-  # Helper Functions
+  # Helper Functions (using shared helpers from TripleStore.Integration.Helpers)
   # ===========================================================================
 
   defp unique_path do
-    time_component = System.system_time(:microsecond)
-    rand_component = :rand.uniform(1_000_000)
-    "#{@test_db_base}_#{time_component}_#{rand_component}"
+    TripleStore.Integration.Helpers.unique_path("format_conversion_test")
   end
 
   defp cleanup_path(path) do
-    File.rm_rf(path)
+    TripleStore.Integration.Helpers.cleanup_path(path)
   end
 
   defp count_all_quads(db) do
@@ -47,12 +45,12 @@ defmodule TripleStore.Integration.FormatConversionTest do
   setup do
     db_path = unique_path()
 
-    {:ok, db} = NIF.open(db_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(db_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     on_exit(fn ->
       if Process.alive?(manager), do: Manager.stop(manager)
-      NIF.close(db)
+      ErlangAdapter.close(db)
       cleanup_path(db_path)
     end)
 
@@ -64,7 +62,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
   # ===========================================================================
 
   describe "6.2.4.1 load Turtle to named graph" do
-    test "loads Turtle file content to specified named graph", %{db: db, manager: manager, db_path: db_path} do
+    test "loads Turtle file content to specified named graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       turtle_file = Path.join(db_path, "data.ttl")
 
       content = """
@@ -92,7 +94,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
       refute QuadOperations.default_graph_exists?(db)
     end
 
-    test "loads same Turtle file to different graphs", %{db: db, manager: manager, db_path: db_path} do
+    test "loads same Turtle file to different graphs", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       turtle_file = Path.join(db_path, "shared.ttl")
 
       content = """
@@ -236,7 +242,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
   # ===========================================================================
 
   describe "6.2.4.4 convert N-Quads to Turtle (per graph)" do
-    test "converts N-Quads dataset to RDF.Graph for specific graph", %{db: db, manager: manager, db_path: db_path} do
+    test "converts N-Quads dataset to RDF.Graph for specific graph", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "input.nq")
 
       # Create N-Quads with multiple graphs
@@ -312,7 +322,11 @@ defmodule TripleStore.Integration.FormatConversionTest do
       assert String.contains?(content, "#{@ex}g1")
     end
 
-    test "conversion preserves all graphs from TriG", %{db: db, manager: manager, db_path: db_path} do
+    test "conversion preserves all graphs from TriG", %{
+      db: db,
+      manager: manager,
+      db_path: db_path
+    } do
       input_file = Path.join(db_path, "complex.trig")
       output_file = Path.join(db_path, "output.nq")
 

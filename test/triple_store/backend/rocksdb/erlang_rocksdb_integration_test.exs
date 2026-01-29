@@ -726,13 +726,17 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
 
     test "1.5.5.2 Verify column family configuration module" do
       # Test that our configuration module provides the expected data
-      cf_descriptors = ColumnFamilyConfig.cf_descriptors()
 
-      # Should have 8 column families
-      assert length(cf_descriptors) == 8
+      # Test triple schema (8 column families)
+      triple_cfs = ColumnFamilyConfig.cf_descriptors(:triple)
+      assert length(triple_cfs) == 8
+
+      # Test quad schema (10 column families)
+      quad_cfs = ColumnFamilyConfig.cf_descriptors(:quad)
+      assert length(quad_cfs) == 10
 
       # Each should be a {name, options} tuple
-      Enum.each(cf_descriptors, fn {name, opts} ->
+      Enum.each(triple_cfs ++ quad_cfs, fn {name, opts} ->
         assert is_binary(name)
         assert is_list(opts)
       end)

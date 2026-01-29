@@ -14,7 +14,7 @@ defmodule TripleStore.Snapshot do
 
       TripleStore.Snapshot.with_snapshot(db_ref, fn snapshot ->
         # Use snapshot for consistent reads
-        NIF.snapshot_get(snapshot, :spo, key)
+        ErlangAdapter.snapshot_get(snapshot, :spo, key)
       end)
 
   ### Manual Management
@@ -40,7 +40,7 @@ defmodule TripleStore.Snapshot do
 
   require Logger
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   # Default TTL: 5 minutes
   @default_ttl :timer.minutes(5)
@@ -85,7 +85,7 @@ defmodule TripleStore.Snapshot do
     ttl = Keyword.get(opts, :ttl, @default_ttl)
     owner = self()
 
-    case NIF.snapshot(db_ref) do
+    case ErlangAdapter.snapshot(db_ref) do
       {:ok, snapshot_ref} ->
         case GenServer.call(__MODULE__, {:register, snapshot_ref, owner, ttl, db_ref}) do
           :ok ->
@@ -94,7 +94,7 @@ defmodule TripleStore.Snapshot do
 
           {:error, _} = error ->
             # Registration failed, release the snapshot
-            NIF.release_snapshot(db_ref, snapshot_ref)
+            ErlangAdapter.release_snapshot(db_ref, snapshot_ref)
             error
         end
 
@@ -115,7 +115,7 @@ defmodule TripleStore.Snapshot do
   def release(snapshot_ref) do
     case GenServer.call(__MODULE__, {:unregister, snapshot_ref}) do
       {:ok, db_ref} ->
-        result = NIF.release_snapshot(db_ref, snapshot_ref)
+        result = ErlangAdapter.release_snapshot(db_ref, snapshot_ref)
         emit_released(snapshot_ref, :manual)
         result
 
@@ -151,7 +151,7 @@ defmodule TripleStore.Snapshot do
   @spec get(snapshot_ref(), atom(), binary()) :: {:ok, binary()} | :not_found | {:error, term()}
   def get(snapshot_ref, cf, key) do
     case GenServer.call(__MODULE__, {:lookup_db_ref, snapshot_ref}) do
-      {:ok, db_ref} -> NIF.snapshot_get(db_ref, snapshot_ref, cf, key)
+      {:ok, db_ref} -> ErlangAdapter.snapshot_get(db_ref, snapshot_ref, cf, key)
       {:error, _reason} = error -> error
     end
   end
@@ -169,7 +169,7 @@ defmodule TripleStore.Snapshot do
   ## Examples
 
       result = TripleStore.Snapshot.with_snapshot(db_ref, fn snapshot ->
-        NIF.snapshot_get(snapshot, :spo, "key1")
+        ErlangAdapter.snapshot_get(snapshot, :spo, "key1")
       end)
 
       # With custom TTL
@@ -394,7 +394,7 @@ defmodule TripleStore.Snapshot do
   end
 
   defp release_snapshot_internal(db_ref, snapshot_ref, reason) do
-    case NIF.release_snapshot(db_ref, snapshot_ref) do
+    case ErlangAdapter.release_snapshot(db_ref, snapshot_ref) do
       :ok ->
         emit_released(snapshot_ref, reason)
         :ok

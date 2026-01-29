@@ -13,7 +13,7 @@ defmodule TripleStore.RdfIntegrationTestHelper do
   block that provides `db`, `manager`, and `path` in the test context.
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Loader
 
@@ -44,7 +44,7 @@ defmodule TripleStore.RdfIntegrationTestHelper do
   @spec setup_test_db() :: {:ok, map()}
   def setup_test_db do
     test_path = "/tmp/triple_store_rdf_test_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(test_path)
+    {:ok, db} = ErlangAdapter.open(test_path)
     {:ok, manager} = Manager.start_link(db: db)
 
     ExUnit.Callbacks.on_exit(fn ->
@@ -52,7 +52,7 @@ defmodule TripleStore.RdfIntegrationTestHelper do
         Manager.stop(manager)
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 

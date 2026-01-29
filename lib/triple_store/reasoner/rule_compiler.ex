@@ -87,6 +87,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
           specialized_rules: [Rule.t()],
           profile: :rdfs | :owl2rl | :all,
           schema_info: SchemaInfo.t() | map(),
+          graph_id: non_neg_integer() | nil,
+          tbox_graph: non_neg_integer() | nil,
           compiled_at: DateTime.t(),
           version: String.t()
         }
@@ -98,7 +100,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
           exclude: [atom()],
           specialize: boolean(),
           max_specializations: pos_integer(),
-          max_properties: pos_integer()
+          max_properties: pos_integer(),
+          graph_id: non_neg_integer(),
+          tbox_graph: non_neg_integer()
         ]
 
   # ============================================================================
@@ -119,14 +123,18 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   - `:specialize` - Whether to create specialized rules. Default: `true`
   - `:max_specializations` - Maximum specialized rules to create. Default: #{@default_max_specializations}
   - `:max_properties` - Maximum properties per type to extract. Default: #{@default_max_properties_per_type}
+  - `:graph_id` - Which graph these rules apply to. Default: `nil` (applies to all graphs)
+  - `:tbox_graph` - Which graph contains TBox axioms. Default: `0` (default graph)
 
   ## Returns
 
   `{:ok, compiled}` where `compiled` contains:
-  - `:rules` - Applicable generic rules
+  - `:rules` - Applicable generic rules with graph metadata
   - `:specialized_rules` - Rules specialized with ontology constants
   - `:profile` - The reasoning profile used
   - `:schema_info` - Extracted schema information
+  - `:graph_id` - Graph these rules apply to
+  - `:tbox_graph` - Designated TBox graph
   - `:compiled_at` - Compilation timestamp
   - `:version` - Version identifier for cache invalidation
 
@@ -134,6 +142,16 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
       {:ok, compiled} = RuleCompiler.compile(ctx, profile: :rdfs)
       length(compiled.rules)  # Number of applicable rules
+
+      # Compile for a specific graph
+      {:ok, compiled} = RuleCompiler.compile(ctx, profile: :owl2rl, graph_id: 1)
+
+      # Compile with TBox in graph 0 and data in graph 1
+      {:ok, compiled} = RuleCompiler.compile(ctx,
+        profile: :owl2rl,
+        tbox_graph: 0,
+        graph_id: 1
+      )
   """
   @spec compile(map(), compile_opts()) :: {:ok, compiled()} | {:error, term()}
   def compile(ctx, opts \\ []) do
@@ -141,6 +159,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     specialize = Keyword.get(opts, :specialize, true)
     max_specs = Keyword.get(opts, :max_specializations, @default_max_specializations)
     max_props = Keyword.get(opts, :max_properties, @default_max_properties_per_type)
+    graph_id = Keyword.get(opts, :graph_id)
+    tbox_graph = Keyword.get(opts, :tbox_graph, 0)
 
     # Build profile options for ReasoningProfile
     profile_opts = [
@@ -151,6 +171,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     with {:ok, schema_info} <- extract_schema_info(ctx, max_properties: max_props),
          {:ok, base_rules} <- ReasoningProfile.rules_for(profile, profile_opts) do
       applicable_rules = filter_applicable_rules(base_rules, schema_info)
+
+      # Add graph metadata to rules
+      applicable_rules = add_graph_metadata(applicable_rules, graph_id, tbox_graph)
 
       specialized_rules =
         if specialize do
@@ -164,6 +187,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         specialized_rules: specialized_rules,
         profile: profile,
         schema_info: schema_info,
+        graph_id: graph_id,
+        tbox_graph: tbox_graph,
         compiled_at: DateTime.utc_now(),
         version: generate_version()
       }
@@ -178,6 +203,16 @@ defmodule TripleStore.Reasoner.RuleCompiler do
   This is useful for testing or when you want to create rules based on
   explicit schema information rather than querying a database.
 
+  ## Options
+
+  - `:profile` - Reasoning profile (:rdfs, :owl2rl, :custom, or :none). Default: `:owl2rl`
+  - `:rules` - List of rule names for custom profile. Required when profile is `:custom`
+  - `:exclude` - List of rule names to exclude from the profile
+  - `:specialize` - Whether to create specialized rules. Default: `true`
+  - `:max_specializations` - Maximum specialized rules to create. Default: #{@default_max_specializations}
+  - `:graph_id` - Which graph these rules apply to. Default: `nil` (applies to all graphs)
+  - `:tbox_graph` - Which graph contains TBox axioms. Default: `0` (default graph)
+
   ## Examples
 
       schema_info = SchemaInfo.new(
@@ -185,6 +220,12 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         transitive_properties: ["http://example.org/contains"]
       )
       {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info, profile: :owl2rl)
+
+      # Compile for a specific graph
+      {:ok, compiled} = RuleCompiler.compile_with_schema(schema_info,
+        profile: :owl2rl,
+        graph_id: 1
+      )
   """
   @spec compile_with_schema(SchemaInfo.t() | map(), compile_opts()) ::
           {:ok, compiled()} | {:error, term()}
@@ -192,6 +233,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     profile = Keyword.get(opts, :profile, :owl2rl)
     specialize = Keyword.get(opts, :specialize, true)
     max_specs = Keyword.get(opts, :max_specializations, @default_max_specializations)
+    graph_id = Keyword.get(opts, :graph_id)
+    tbox_graph = Keyword.get(opts, :tbox_graph, 0)
 
     # Build profile options for ReasoningProfile
     profile_opts = [
@@ -205,6 +248,9 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     with {:ok, base_rules} <- ReasoningProfile.rules_for(profile, profile_opts) do
       applicable_rules = filter_applicable_rules(base_rules, schema_info)
 
+      # Add graph metadata to rules
+      applicable_rules = add_graph_metadata(applicable_rules, graph_id, tbox_graph)
+
       specialized_rules =
         if specialize do
           specialize_rules(applicable_rules, schema_info, max_specs)
@@ -217,6 +263,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
         specialized_rules: specialized_rules,
         profile: profile,
         schema_info: schema_info,
+        graph_id: graph_id,
+        tbox_graph: tbox_graph,
         compiled_at: DateTime.utc_now(),
         version: generate_version()
       }
@@ -560,9 +608,13 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
         new_head = Rule.substitute_pattern(rule.head, binding)
 
+        # Preserve graph metadata from the original rule
+        specialized_metadata = copy_graph_metadata(rule.metadata)
+
         Rule.new(new_name, new_body, new_head,
           description: "#{rule.description} (specialized for #{prop_local})",
-          profile: rule.profile
+          profile: rule.profile,
+          metadata: specialized_metadata
         )
 
       {:error, _} ->
@@ -593,9 +645,13 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
       new_head = Rule.substitute_pattern(rule.head, binding)
 
+      # Preserve graph metadata from the original rule
+      specialized_metadata = copy_graph_metadata(rule.metadata)
+
       Rule.new(new_name, new_body, new_head,
         description: "#{rule.description} (specialized for #{p1_local}/#{p2_local})",
-        profile: rule.profile
+        profile: rule.profile,
+        metadata: specialized_metadata
       )
     else
       {:error, _} ->
@@ -805,5 +861,79 @@ defmodule TripleStore.Reasoner.RuleCompiler do
 
   defp generate_version do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  # Adds graph metadata to rules based on compilation context.
+  #
+  # This function annotates each rule with:
+  # - `:graph_id` - Which graph the rule applies to (nil for global)
+  # - `:scope` - :local (single graph) or :global (all graphs)
+  # - `:tbox_rule` - true if the rule derives to the TBox graph
+  #
+  # Parameters:
+  # - `rules` - List of rules to annotate
+  # - `graph_id` - Target graph ID (nil means global)
+  # - `tbox_graph` - Graph ID containing TBox axioms
+  #
+  # Returns:
+  # List of rules with updated metadata.
+  defp add_graph_metadata(rules, graph_id, tbox_graph) do
+    scope = if is_nil(graph_id), do: :global, else: :local
+
+    Enum.map(rules, fn rule ->
+      rule
+      |> Rule.put_graph_id(graph_id)
+      |> Rule.put_scope(scope)
+      |> maybe_mark_tbox_rule(tbox_graph)
+    end)
+  end
+
+  # Marks a rule as a TBox rule if it derives facts to the TBox graph.
+  # This is determined by checking if the rule head is a quad pattern
+  # with a bound graph term matching the tbox_graph ID.
+  defp maybe_mark_tbox_rule(rule, tbox_graph) do
+    tbox_rule? = derives_to_tbox_graph?(rule, tbox_graph)
+
+    if tbox_rule? do
+      put_in(rule.metadata[:tbox_rule], true)
+    else
+      rule
+    end
+  end
+
+  # Checks if a rule derives facts to the TBox graph.
+  # For quad patterns with a bound graph matching tbox_graph, returns true.
+  # For triple patterns, assumes they derive to the target graph_id if set.
+  defp derives_to_tbox_graph?(rule, tbox_graph) do
+    case rule.head do
+      {:quad_pattern, [{:bound, g}, _, _, _]} when is_integer(g) ->
+        g == tbox_graph
+
+      {:quad_pattern, [g, _, _, _]} when is_integer(g) ->
+        g == tbox_graph
+
+      {:pattern, _} ->
+        # Triple patterns derive to the rule's graph_id if set
+        # If the rule's graph_id matches tbox_graph, it's a TBox rule
+        Rule.graph_id(rule) == tbox_graph
+
+      _ ->
+        false
+    end
+  end
+
+  # Copies graph-related metadata from a rule for specialized rules.
+  #
+  # Preserves the following metadata fields:
+  # - :graph_id - Which graph the rule applies to
+  # - :scope - :local or :global scope
+  # - :tbox_rule - Whether this is a TBox rule
+  #
+  # Other metadata like delta_positions are not copied as they may
+  # not apply to specialized rules.
+  defp copy_graph_metadata(nil), do: %{}
+
+  defp copy_graph_metadata(metadata) when is_map(metadata) do
+    :maps.with([:graph_id, :scope, :tbox_rule], metadata)
   end
 end

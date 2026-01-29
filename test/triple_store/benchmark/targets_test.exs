@@ -3,8 +3,6 @@ defmodule TripleStore.Benchmark.TargetsTest do
 
   alias TripleStore.Benchmark.Targets
 
-  @moduletag :benchmark
-
   describe "all/0" do
     test "returns 4 targets" do
       targets = Targets.all()
@@ -20,7 +18,6 @@ defmodule TripleStore.Benchmark.TargetsTest do
         assert Map.has_key?(target, :threshold)
         assert Map.has_key?(target, :unit)
         assert Map.has_key?(target, :operator)
-        assert Map.has_key?(target, :dataset_size)
       end
     end
 
@@ -32,8 +29,8 @@ defmodule TripleStore.Benchmark.TargetsTest do
 
   describe "get/1" do
     test "returns target by ID" do
-      {:ok, target} = Targets.get(:simple_bgp)
-      assert target.id == :simple_bgp
+      {:ok, target} = Targets.get(:simple_query)
+      assert target.id == :simple_query
     end
 
     test "returns error for unknown ID" do
@@ -41,34 +38,30 @@ defmodule TripleStore.Benchmark.TargetsTest do
     end
 
     test "can retrieve all targets by ID" do
-      for id <- [:simple_bgp, :complex_join, :bulk_load, :bsbm_mix] do
+      for id <- [:simple_query, :complex_query, :bulk_load, :query_mix] do
         {:ok, target} = Targets.get(id)
         assert target.id == id
       end
     end
   end
 
-  describe "reference_dataset_size/0" do
-    test "returns 1 million" do
-      assert Targets.reference_dataset_size() == 1_000_000
-    end
-  end
-
-  describe "simple_bgp_target/0" do
+  describe "simple_query_target/0" do
     test "has correct threshold of 10ms" do
-      target = Targets.simple_bgp_target()
+      target = Targets.simple_query_target()
       assert target.threshold == 10_000
       assert target.unit == :microseconds
       assert target.operator == :lt
+      assert target.description =~ "WatDiv"
     end
   end
 
-  describe "complex_join_target/0" do
+  describe "complex_query_target/0" do
     test "has correct threshold of 100ms" do
-      target = Targets.complex_join_target()
+      target = Targets.complex_query_target()
       assert target.threshold == 100_000
       assert target.unit == :microseconds
       assert target.operator == :lt
+      assert target.description =~ "WatDiv"
     end
   end
 
@@ -81,39 +74,40 @@ defmodule TripleStore.Benchmark.TargetsTest do
     end
   end
 
-  describe "bsbm_mix_target/0" do
+  describe "query_mix_target/0" do
     test "has correct threshold of 50ms" do
-      target = Targets.bsbm_mix_target()
+      target = Targets.query_mix_target()
       assert target.threshold == 50_000
       assert target.unit == :microseconds
       assert target.operator == :lt
+      assert target.description =~ "WatDiv"
     end
   end
 
-  describe "check_simple_bgp/1" do
+  describe "check_simple_query/1" do
     test "passes when latency is below threshold" do
-      assert :pass = Targets.check_simple_bgp(p95_us: 5000)
-      assert :pass = Targets.check_simple_bgp(p95_us: 9999)
+      assert :pass = Targets.check_simple_query(p95_us: 5000)
+      assert :pass = Targets.check_simple_query(p95_us: 9999)
     end
 
     test "fails when latency exceeds threshold" do
-      assert {:fail, msg} = Targets.check_simple_bgp(p95_us: 10_001)
+      assert {:fail, msg} = Targets.check_simple_query(p95_us: 10_001)
       assert String.contains?(msg, "exceeds target")
     end
 
     test "fails when latency equals threshold" do
-      assert {:fail, _} = Targets.check_simple_bgp(p95_us: 10_000)
+      assert {:fail, _} = Targets.check_simple_query(p95_us: 10_000)
     end
   end
 
-  describe "check_complex_join/1" do
+  describe "check_complex_query/1" do
     test "passes when latency is below threshold" do
-      assert :pass = Targets.check_complex_join(p95_us: 50_000)
-      assert :pass = Targets.check_complex_join(p95_us: 99_999)
+      assert :pass = Targets.check_complex_query(p95_us: 50_000)
+      assert :pass = Targets.check_complex_query(p95_us: 99_999)
     end
 
     test "fails when latency exceeds threshold" do
-      assert {:fail, msg} = Targets.check_complex_join(p95_us: 100_001)
+      assert {:fail, msg} = Targets.check_complex_query(p95_us: 100_001)
       assert String.contains?(msg, "exceeds target")
     end
   end
@@ -134,53 +128,15 @@ defmodule TripleStore.Benchmark.TargetsTest do
     end
   end
 
-  describe "check_bsbm_mix/1" do
+  describe "check_query_mix/1" do
     test "passes when latency is below threshold" do
-      assert :pass = Targets.check_bsbm_mix(p95_us: 25_000)
-      assert :pass = Targets.check_bsbm_mix(p95_us: 49_999)
+      assert :pass = Targets.check_query_mix(p95_us: 25_000)
+      assert :pass = Targets.check_query_mix(p95_us: 49_999)
     end
 
     test "fails when latency exceeds threshold" do
-      assert {:fail, msg} = Targets.check_bsbm_mix(p95_us: 50_001)
+      assert {:fail, msg} = Targets.check_query_mix(p95_us: 50_001)
       assert String.contains?(msg, "exceeds target")
-    end
-  end
-
-  describe "validate/1" do
-    test "validates BSBM benchmark results" do
-      result = mock_bsbm_result(p95: 25_000)
-      {:ok, report} = Targets.validate(result)
-
-      assert report.passed == true
-      assert report.targets_checked == 1
-      assert report.targets_passed == 1
-      assert report.targets_failed == 0
-    end
-
-    test "reports failure for BSBM exceeding threshold" do
-      result = mock_bsbm_result(p95: 75_000)
-      {:ok, report} = Targets.validate(result)
-
-      assert report.passed == false
-      assert report.targets_failed == 1
-    end
-
-    test "validates LUBM benchmark results" do
-      result = mock_lubm_result(simple_p95: 5000, complex_p95: 50_000)
-      {:ok, report} = Targets.validate(result)
-
-      assert report.passed == true
-      assert report.targets_checked == 2
-      assert report.targets_passed == 2
-    end
-
-    test "reports mixed results for LUBM" do
-      result = mock_lubm_result(simple_p95: 5000, complex_p95: 150_000)
-      {:ok, report} = Targets.validate(result)
-
-      assert report.passed == false
-      assert report.targets_passed == 1
-      assert report.targets_failed == 1
     end
   end
 
@@ -204,7 +160,7 @@ defmodule TripleStore.Benchmark.TargetsTest do
 
   describe "format_report/1" do
     test "includes status line" do
-      {:ok, report} = Targets.validate(mock_bsbm_result(p95: 25_000))
+      {:ok, report} = Targets.validate_bulk_load(1_000_000, 5000)
       formatted = Targets.format_report(report)
 
       assert String.contains?(formatted, "PASSED")
@@ -212,63 +168,35 @@ defmodule TripleStore.Benchmark.TargetsTest do
     end
 
     test "includes target details" do
-      {:ok, report} = Targets.validate(mock_bsbm_result(p95: 25_000))
+      {:ok, report} = Targets.validate_bulk_load(1_000_000, 5000)
       formatted = Targets.format_report(report)
 
-      assert String.contains?(formatted, "BSBM Query Mix")
+      assert String.contains?(formatted, "Bulk Load Throughput")
       assert String.contains?(formatted, "PASS")
     end
 
     test "shows failure status" do
-      {:ok, report} = Targets.validate(mock_bsbm_result(p95: 75_000))
+      {:ok, report} = Targets.validate_bulk_load(100_000, 2000)
       formatted = Targets.format_report(report)
 
       assert String.contains?(formatted, "FAILED")
       assert String.contains?(formatted, "FAIL")
     end
+
+    test "formats throughput numbers correctly" do
+      {:ok, report} = Targets.validate_bulk_load(1_500_000, 10_000)
+      formatted = Targets.format_report(report)
+
+      # 1.5M triples in 10 seconds = 150K/sec
+      assert String.contains?(formatted, "150")
+    end
   end
 
-  # ===========================================================================
-  # Helper Functions
-  # ===========================================================================
+  describe "print_report/1" do
+    test "outputs formatted report to stdout" do
+      {:ok, report} = Targets.validate_bulk_load(1_000_000, 5000)
 
-  defp mock_bsbm_result(opts) do
-    p95 = Keyword.get(opts, :p95, 25_000)
-
-    %{
-      benchmark: :bsbm,
-      aggregate: %{
-        p95_us: p95,
-        total_queries: 100,
-        total_time_us: 1_000_000,
-        queries_per_sec: 100.0
-      },
-      query_results: []
-    }
-  end
-
-  defp mock_lubm_result(opts) do
-    simple_p95 = Keyword.get(opts, :simple_p95, 5000)
-    complex_p95 = Keyword.get(opts, :complex_p95, 50_000)
-
-    # Create latencies that will produce the desired p95 values
-    simple_latencies = List.duplicate(simple_p95, 100)
-    complex_latencies = List.duplicate(complex_p95, 100)
-
-    %{
-      benchmark: :lubm,
-      aggregate: %{
-        p95_us: max(simple_p95, complex_p95),
-        total_queries: 200,
-        total_time_us: 2_000_000,
-        queries_per_sec: 100.0
-      },
-      query_results: [
-        %{query_id: :q3, latencies_us: simple_latencies, p95_us: simple_p95},
-        %{query_id: :q14, latencies_us: simple_latencies, p95_us: simple_p95},
-        %{query_id: :q2, latencies_us: complex_latencies, p95_us: complex_p95},
-        %{query_id: :q7, latencies_us: complex_latencies, p95_us: complex_p95}
-      ]
-    }
+      assert :ok = Targets.print_report(report)
+    end
   end
 end

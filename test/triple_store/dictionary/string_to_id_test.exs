@@ -13,7 +13,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
 
   alias RDF.NS.XSD
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.StringToId
@@ -276,7 +276,7 @@ defmodule TripleStore.Dictionary.StringToIdTest do
 
       # Check id2str has the reverse mapping
       id_binary = <<id::64-big>>
-      {:ok, stored_key} = NIF.get(db, :id2str, id_binary)
+      {:ok, stored_key} = ErlangAdapter.get(db, :id2str, id_binary)
 
       # The stored key should be the encoded term
       {:ok, expected_key} = StringToId.encode_term(uri)

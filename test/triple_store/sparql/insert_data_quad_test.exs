@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.UpdateExecutor
@@ -21,7 +21,7 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
     # Ensure clean directory
     File.rm_rf(test_path)
 
-    {:ok, db} = NIF.open(test_path, schema: :quad)
+    {:ok, db} = ErlangAdapter.open(test_path, schema: :quad)
     {:ok, manager} = Manager.start_link(db: db)
 
     ctx = %{
@@ -38,7 +38,7 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
         :exit, _ -> :ok
       end
 
-      NIF.close(db)
+      ErlangAdapter.close(db)
       File.rm_rf(test_path)
     end)
 
@@ -52,10 +52,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
   describe "INSERT DATA to default graph" do
     test "inserts single triple to default graph", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -67,14 +65,10 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
 
     test "inserts multiple triples to default graph", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s1"},
-                {:named_node, "http://example.org/p1"},
-                {:literal, :simple, "value1"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s2"},
-                {:named_node, "http://example.org/p2"},
-                {:literal, :simple, "value2"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s1"}, {:named_node, "http://example.org/p1"},
+         {:literal, :simple, "value1"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s2"}, {:named_node, "http://example.org/p2"},
+         {:literal, :simple, "value2"}, :default_graph}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -85,18 +79,12 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
 
     test "inserts with different literal types", %{ctx: ctx} do
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p1"},
-                {:literal, :simple, "simple"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p2"},
-                {:literal, :lang, "hello", "en"},
-                :default_graph},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p3"},
-                {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p1"},
+         {:literal, :simple, "simple"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p2"},
+         {:literal, :lang, "hello", "en"}, :default_graph},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p3"},
+         {:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}, :default_graph}
       ]
 
       assert {:ok, 3} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -113,10 +101,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
       graph_iri = "http://example.org/named"
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph_iri}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -131,14 +117,10 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
       graph2 = "http://example.org/g2"
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "v1"},
-                {:named_node, graph1}},
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "v2"},
-                {:named_node, graph2}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v1"}, {:named_node, graph1}},
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "v2"}, {:named_node, graph2}}
       ]
 
       assert {:ok, 2} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -159,10 +141,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
                QuadOperations.graph_quad_count(ctx.db, ctx.dict_manager, RDF.iri(graph_iri))
 
       quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph_iri}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -240,9 +220,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
       quads =
         for i <- 1..(max + 1) do
           {:quad, {:named_node, "http://example.org/s#{i}"},
-                  {:named_node, "http://example.org/p"},
-                  {:literal, :simple, "value#{i}"},
-                  :default_graph}
+           {:named_node, "http://example.org/p"}, {:literal, :simple, "value#{i}"},
+           :default_graph}
         end
 
       assert {:error, :too_many_triples} = UpdateExecutor.execute_insert_data(ctx, quads)
@@ -260,10 +239,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
   describe "quads_to_rdf_quads conversion" do
     test "converts AST quads with default graph via execute", %{ctx: ctx} do
       ast_quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                :default_graph}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, :default_graph}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, ast_quads)
@@ -273,10 +250,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
       graph_iri = "http://example.org/named"
 
       ast_quads = [
-        {:quad, {:named_node, "http://example.org/s"},
-                {:named_node, "http://example.org/p"},
-                {:literal, :simple, "value"},
-                {:named_node, graph_iri}}
+        {:quad, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}, {:named_node, graph_iri}}
       ]
 
       assert {:ok, 1} = UpdateExecutor.execute_insert_data(ctx, ast_quads)
@@ -288,9 +263,8 @@ defmodule TripleStore.SPARQL.InsertDataQuadTest do
 
     test "handles legacy triple format via execute", %{ctx: ctx} do
       ast_quads = [
-        {:triple, {:named_node, "http://example.org/s"},
-                 {:named_node, "http://example.org/p"},
-                 {:literal, :simple, "value"}}
+        {:triple, {:named_node, "http://example.org/s"}, {:named_node, "http://example.org/p"},
+         {:literal, :simple, "value"}}
       ]
 
       # Legacy triples default to default graph

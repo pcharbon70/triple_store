@@ -10,12 +10,56 @@ defmodule TripleStore.Reasoner.DerivedStore do
   2. **Provenance tracking**: Distinguish explicit from inferred knowledge
   3. **Query optimization**: Query only explicit, only derived, or both
 
+  ## API Design: Triple vs Quad
+
+  This module provides both **triple** and **quad** APIs to support different
+  reasoning modes:
+
+  ### Triple API (Legacy, Single Graph)
+
+  For single-graph reasoning (no named graphs), use the triple functions:
+
+  - `insert_derived/2` - Store `{s, p, o}` triples
+  - `delete_derived/2` - Delete `{s, p, o}` triples
+  - `lookup_derived/2` - Query derived triples
+  - `make_lookup_fn/2` - Create lookup function for SemiNaive
+  - `make_store_fn/1` - Create store function for SemiNaive
+
+  **Use when**: You don't need graph tracking or are working with legacy
+  triple-only code.
+
+  ### Quad API (Graph-Aware Reasoning)
+
+  For multi-graph reasoning, use the quad functions:
+
+  - `insert_derived_quads/2` - Store `{g, s, p, o}` quads
+  - `insert_derived_quads_batch/3` - Store quads in specific graph
+  - `delete_derived_quads/2` - Delete `{g, s, p, o}` quads
+  - `lookup_derived_quads/3` - Query derived quads for a graph
+  - `make_graph_lookup_fn/2` - Create graph-scoped lookup function
+  - `make_graph_store_fn/2` - Create graph-scoped store function
+
+  **Use when**: You need graph-scoped reasoning, multi-tenant isolation,
+  or want to track which graph each derived fact belongs to.
+
   ## Storage Design
 
-  Derived facts use a single `derived` column family with the same key encoding
-  as the SPO index. This provides O(log n) lookups for any pattern.
+  ### Triple Store (Legacy)
+
+  For triple store mode, derived facts use a single `derived` column family
+  with the same key encoding as the SPO index:
 
   Key format: `<<subject::64-big, predicate::64-big, object::64-big>>`
+
+  ### Quad Store (Graph-Aware)
+
+  For quad store mode with graph-aware reasoning, derived facts are stored
+  using quad key encoding that includes the graph component:
+
+  Key format: `<<graph::64-big, subject::64-big, predicate::64-big, object::64-big>>`
+
+  This enables graph-scoped derivation queries and efficient per-graph
+  rematerialization.
 
   ## Integration with SemiNaive
 
@@ -27,23 +71,42 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
       {:ok, stats} = SemiNaive.materialize(lookup_fn, store_fn, rules, initial)
 
+  For graph-local reasoning:
+
+      lookup_fn = DerivedStore.make_graph_lookup_fn(db, graph_id)
+      store_fn = DerivedStore.make_graph_store_fn(db, graph_id)
+
+      {:ok, stats} = SemiNaive.materialize(lookup_fn, store_fn, rules, initial)
+
+  ## Migration Path
+
+  When migrating from triple to quad reasoning:
+
+  1. Replace triple functions with quad equivalents
+  2. Add `graph_id` parameter to all reasoning operations
+  3. Use `insert_derived_quads/2` instead of `insert_derived/2`
+  4. Update lookup functions to use graph-scoped variants
+
   ## Usage Examples
 
-      # Store derived facts
+      # Store derived facts (triple mode - legacy)
       DerivedStore.insert_derived(db, [{s1, p1, o1}, {s2, p2, o2}])
+
+      # Store derived quads (quad mode - recommended)
+      DerivedStore.insert_derived_quads(db, [{g, s1, p1, o1}, {g, s2, p2, o2}])
 
       # Query derived facts only
       {:ok, stream} = DerivedStore.lookup_derived(db, pattern)
 
-      # Query both explicit and derived
-      {:ok, stream} = DerivedStore.lookup_all(db, pattern)
+      # Query derived quads for specific graph
+      {:ok, stream} = DerivedStore.lookup_derived_quads(db, graph_id, pattern)
 
       # Clear all derived facts for rematerialization
       DerivedStore.clear_all(db)
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
-  alias TripleStore.Index
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.{Index, QuadIndex}
   alias TripleStore.Reasoner.PatternMatcher
   alias TripleStore.Reasoner.Rule
 
@@ -52,13 +115,16 @@ defmodule TripleStore.Reasoner.DerivedStore do
   # ============================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: NIF.db_ref()
+  @type db_ref :: ErlangAdapter.db_ref()
 
   @typedoc "A triple as term IDs"
   @type id_triple :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
 
   @typedoc "A triple as rule terms"
   @type term_triple :: {Rule.rule_term(), Rule.rule_term(), Rule.rule_term()}
+
+  @typedoc "A quad as term IDs {graph, subject, predicate, object}"
+  @type id_quad :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
 
   @typedoc "Query source specification"
   @type source :: :explicit | :derived | :both
@@ -68,6 +134,14 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
   @typedoc "Lookup pattern for derived facts"
   @type pattern :: {pattern_element(), pattern_element(), pattern_element()}
+
+  @typedoc "Quad pattern element for lookups"
+  @type quad_pattern ::
+          {pattern_element(), pattern_element(), pattern_element(), pattern_element()}
+
+  @typedoc "Quad pattern with graph binding"
+  @type graph_scoped_pattern ::
+          {{:bound, non_neg_integer()}, pattern_element(), pattern_element(), pattern_element()}
 
   # ============================================================================
   # Constants
@@ -111,7 +185,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key, @empty_value}
       end
 
-    NIF.write_batch(db, operations, true)
+    ErlangAdapter.write_batch(db, operations, true)
   end
 
   @doc """
@@ -130,7 +204,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec insert_derived_single(db_ref(), id_triple()) :: :ok | {:error, term()}
   def insert_derived_single(db, {s, p, o}) do
     key = Index.spo_key(s, p, o)
-    NIF.put(db, @derived_cf, key, @empty_value)
+    ErlangAdapter.put(db, @derived_cf, key, @empty_value)
   end
 
   @doc """
@@ -156,7 +230,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
         {@derived_cf, key}
       end
 
-    NIF.delete_batch(db, operations, true)
+    ErlangAdapter.delete_batch(db, operations, true)
   end
 
   @doc """
@@ -176,7 +250,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec derived_exists?(db_ref(), id_triple()) :: {:ok, boolean()} | {:error, term()}
   def derived_exists?(db, {s, p, o}) do
     key = Index.spo_key(s, p, o)
-    NIF.exists(db, @derived_cf, key)
+    ErlangAdapter.exists(db, @derived_cf, key)
   end
 
   @doc """
@@ -206,13 +280,13 @@ defmodule TripleStore.Reasoner.DerivedStore do
   def clear_all(db) do
     # Use batched deletion to avoid loading all keys into memory
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, @derived_cf, <<>>)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, <<>>)
 
     stream
     |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
     |> Stream.chunk_every(@clear_batch_size)
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
-      case NIF.delete_batch(db, chunk, true) do
+      case ErlangAdapter.delete_batch(db, chunk, true) do
         :ok -> {:cont, {:ok, acc + length(chunk)}}
         error -> {:halt, error}
       end
@@ -234,7 +308,173 @@ defmodule TripleStore.Reasoner.DerivedStore do
   @spec count(db_ref()) :: {:ok, non_neg_integer()}
   def count(db) do
     # Use fold for efficient counting without creating a stream
-    count = NIF.fold(db, @derived_cf, <<>>, 0, fn {_key, _value}, acc -> acc + 1 end)
+    count = ErlangAdapter.fold(db, @derived_cf, <<>>, 0, fn {_key, _value}, acc -> acc + 1 end)
+    {:ok, count}
+  end
+
+  # ============================================================================
+  # Quad Storage Operations (Graph-Aware Reasoning)
+  # ============================================================================
+
+  @doc """
+  Inserts derived quads into the derived column family.
+
+  Quads are stored using the GSPO key encoding (graph, subject, predicate, object)
+  for graph-scoped reasoning.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `quads` - List of `{graph_id, subject_id, predicate_id, object_id}` tuples
+
+  ## Returns
+
+  - `:ok` on success
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      quads = [{1, 10, 20, 30}, {1, 11, 21, 31}]
+      :ok = DerivedStore.insert_derived_quads(db, quads)
+  """
+  @spec insert_derived_quads(db_ref(), [id_quad()]) :: :ok | {:error, term()}
+  def insert_derived_quads(_db, []), do: :ok
+
+  def insert_derived_quads(db, quads) when is_list(quads) do
+    operations =
+      for {g, s, p, o} <- quads do
+        key = QuadIndex.gspo_key(g, s, p, o)
+        {@derived_cf, key, @empty_value}
+      end
+
+    ErlangAdapter.write_batch(db, operations, true)
+  end
+
+  @doc """
+  Inserts a single derived quad.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `quad` - Tuple `{graph_id, subject_id, predicate_id, object_id}`
+
+  ## Returns
+
+  - `:ok` on success
+  - `{:error, reason}` on failure
+  """
+  @spec insert_derived_quad_single(db_ref(), id_quad()) :: :ok | {:error, term()}
+  def insert_derived_quad_single(db, {g, s, p, o}) do
+    key = QuadIndex.gspo_key(g, s, p, o)
+    ErlangAdapter.put(db, @derived_cf, key, @empty_value)
+  end
+
+  @doc """
+  Deletes derived quads from the derived column family.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `quads` - List of `{graph_id, subject_id, predicate_id, object_id}` tuples
+
+  ## Returns
+
+  - `:ok` on success
+  - `{:error, reason}` on failure
+  """
+  @spec delete_derived_quads(db_ref(), [id_quad()]) :: :ok | {:error, term()}
+  def delete_derived_quads(_db, []), do: :ok
+
+  def delete_derived_quads(db, quads) when is_list(quads) do
+    operations =
+      for {g, s, p, o} <- quads do
+        key = QuadIndex.gspo_key(g, s, p, o)
+        {@derived_cf, key}
+      end
+
+    ErlangAdapter.delete_batch(db, operations, true)
+  end
+
+  @doc """
+  Checks if a derived quad exists.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `quad` - Tuple `{graph_id, subject_id, predicate_id, object_id}`
+
+  ## Returns
+
+  - `{:ok, true}` if exists
+  - `{:ok, false}` if not exists
+  - `{:error, reason}` on failure
+  """
+  @spec derived_quad_exists?(db_ref(), id_quad()) :: {:ok, boolean()} | {:error, term()}
+  def derived_quad_exists?(db, {g, s, p, o}) do
+    key = QuadIndex.gspo_key(g, s, p, o)
+    ErlangAdapter.exists(db, @derived_cf, key)
+  end
+
+  @doc """
+  Clears all derived quads for a specific graph.
+
+  This is used for graph-local rematerialization - clearing all inferred
+  quads for a specific graph before recomputing them.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier
+
+  ## Returns
+
+  - `{:ok, count}` with number of quads deleted
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, 523} = DerivedStore.clear_graph_quads(db, 1)
+  """
+  @spec clear_graph_quads(db_ref(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def clear_graph_quads(db, graph_id) do
+    # Create prefix for this graph (graph is first component of GSPO key)
+    prefix = <<graph_id::64-big>>
+
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
+
+    result =
+      stream
+      |> Stream.map(fn {key, _value} -> {@derived_cf, key} end)
+      |> Stream.chunk_every(@clear_batch_size)
+      |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, acc} ->
+        case ErlangAdapter.delete_batch(db, chunk, true) do
+          :ok -> {:cont, {:ok, acc + length(chunk)}}
+          error -> {:halt, error}
+        end
+      end)
+
+    result
+  end
+
+  @doc """
+  Counts derived quads for a specific graph.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier
+
+  ## Returns
+
+  - `{:ok, count}` with the count
+  - `{:error, reason}` on failure
+  """
+  @spec count_graph_quads(db_ref(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def count_graph_quads(db, graph_id) do
+    prefix = <<graph_id::64-big>>
+    count = ErlangAdapter.fold(db, @derived_cf, prefix, 0, fn {_key, _value}, acc -> acc + 1 end)
     {:ok, count}
   end
 
@@ -267,7 +507,7 @@ defmodule TripleStore.Reasoner.DerivedStore do
     prefix = pattern_to_prefix(pattern)
 
     # prefix_stream now returns the stream directly (may raise on error)
-    stream = NIF.prefix_stream(db, @derived_cf, prefix)
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
 
     decoded_stream =
       stream
@@ -369,8 +609,9 @@ defmodule TripleStore.Reasoner.DerivedStore do
 
     # Use fold to collect results directly, avoiding stream overhead
     results =
-      NIF.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+      ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
         triple = Index.decode_spo_key(key)
+
         if triple_matches_pattern?(triple, pattern) do
           [triple | acc]
         else
@@ -379,6 +620,165 @@ defmodule TripleStore.Reasoner.DerivedStore do
       end)
 
     {:ok, Enum.reverse(results)}
+  end
+
+  # ============================================================================
+  # Quad Query Operations (Graph-Aware Reasoning)
+  # ============================================================================
+
+  @doc """
+  Looks up derived quads matching a pattern within a specific graph.
+
+  Returns a stream of quads from the derived column family for the given graph.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements (subject, predicate, object)
+
+  ## Returns
+
+  - `{:ok, Stream.t()}` with matching quads (each quad includes graph_id)
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      # Find all derived quads in graph 1 with subject 123
+      {:ok, stream} = DerivedStore.lookup_derived_quads(db, 1, {{:bound, 123}, :var, :var})
+  """
+  @spec lookup_derived_quads(db_ref(), non_neg_integer(), pattern()) :: {:ok, Enumerable.t()}
+  def lookup_derived_quads(db, graph_id, pattern) do
+    prefix = graph_pattern_to_prefix(graph_id, pattern)
+
+    stream = ErlangAdapter.prefix_stream(db, @derived_cf, prefix)
+
+    decoded_stream =
+      stream
+      |> Stream.map(fn {key, _value} -> QuadIndex.decode_gspo_key(key) end)
+      |> Stream.filter(fn {_g, s, p, o} -> triple_matches_pattern?({s, p, o}, pattern) end)
+
+    {:ok, decoded_stream}
+  end
+
+  @doc """
+  Collects all derived quads matching a pattern within a specific graph.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements
+
+  ## Returns
+
+  - `{:ok, [quad]}` with matching quads
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_derived_quads_all(db_ref(), non_neg_integer(), pattern()) ::
+          {:ok, [id_quad()]} | {:error, term()}
+  def lookup_derived_quads_all(db, graph_id, pattern) do
+    lookup_derived_quads_fold(db, graph_id, pattern)
+  end
+
+  @doc """
+  Looks up derived quads using fold operation for better performance.
+
+  More efficient than `lookup_derived_quads_all/3` for materializing all results.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements
+
+  ## Returns
+
+  - `{:ok, [quad]}` with matching quads
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_derived_quads_fold(db_ref(), non_neg_integer(), pattern()) ::
+          {:ok, [id_quad()]} | {:error, term()}
+  def lookup_derived_quads_fold(db, graph_id, pattern) do
+    prefix = graph_pattern_to_prefix(graph_id, pattern)
+
+    results =
+      ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+        {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+
+        if g == graph_id and triple_matches_pattern?({s, p, o}, pattern) do
+          [{g, s, p, o} | acc]
+        else
+          acc
+        end
+      end)
+
+    {:ok, Enum.reverse(results)}
+  end
+
+  @doc """
+  Looks up explicit quads matching a pattern within a specific graph.
+
+  Queries the GSPO index for explicit facts.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements (or :var for all)
+
+  ## Returns
+
+  - `{:ok, [triple]}` with matching triples (without graph component)
+  - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, triples} = DerivedStore.lookup_explicit_quads(db, 1, {{:bound, 100}, :var, :var})
+      # => [{100, 200, 300}, {100, 400, 500}]
+
+      {:ok, all} = DerivedStore.lookup_explicit_quads(db, 1, :var)
+      # => All triples in graph 1
+  """
+  @spec lookup_explicit_quads(db_ref(), non_neg_integer(), pattern() | :var) ::
+          {:ok, [id_triple()]} | {:error, term()}
+  def lookup_explicit_quads(db, graph_id, pattern) do
+    # Normalize :var to {:var, :var, :var} for lookup
+    normalized_pattern =
+      case pattern do
+        :var -> {:var, :var, :var}
+        {_, _, _} = p -> p
+      end
+
+    QuadIndex.lookup_all_fold(db, graph_id, normalized_pattern)
+  end
+
+  @doc """
+  Looks up quads from both explicit and derived stores for a specific graph.
+
+  Combines results from GSPO index and derived column family, removing duplicates.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope the query
+  - `pattern` - Triple pattern with bound/var elements
+
+  ## Returns
+
+  - `{:ok, Stream.t()}` with matching quads (deduplicated)
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_all_quads(db_ref(), non_neg_integer(), pattern()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
+  def lookup_all_quads(db, graph_id, pattern) do
+    with {:ok, explicit_list} <- lookup_explicit_quads(db, graph_id, pattern),
+         {:ok, derived_stream} <- lookup_derived_quads(db, graph_id, pattern) do
+      # Convert explicit list to stream for concatenation
+      explicit_stream = Stream.map(explicit_list, fn triple -> triple end)
+      combined = Stream.concat(explicit_stream, derived_stream)
+      {:ok, combined}
+    end
   end
 
   # ============================================================================
@@ -458,6 +858,121 @@ defmodule TripleStore.Reasoner.DerivedStore do
     end
   end
 
+  @doc """
+  Creates a graph-scoped lookup function for use with `SemiNaive.materialize/5`.
+
+  The lookup function queries facts within a specific graph based on the source:
+  - `:explicit` - Query only explicit facts (GSPO index)
+  - `:derived` - Query only derived facts
+  - `:both` - Query both explicit and derived facts
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to scope queries
+  - `source` - Which facts to query
+
+  ## Returns
+
+  A function `(pattern) -> {:ok, [quad]} | {:error, reason}`
+
+  ## Examples
+
+      lookup_fn = DerivedStore.make_graph_lookup_fn(db, 1, :both)
+      {:ok, quads} = lookup_fn.(pattern)
+  """
+  @spec make_graph_lookup_fn(db_ref(), non_neg_integer(), source()) ::
+          (pattern() -> {:ok, [id_quad()]} | {:error, term()})
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+  def make_graph_lookup_fn(db, graph_id, source) do
+    fn pattern ->
+      lookup_pattern = convert_rule_pattern(pattern)
+
+      case source do
+        :explicit ->
+          QuadIndex.lookup_all_fold(db, graph_id, lookup_pattern)
+
+        :derived ->
+          lookup_derived_quads_fold(db, graph_id, lookup_pattern)
+
+        :both ->
+          {:ok, explicit} = QuadIndex.lookup_all_fold(db, graph_id, lookup_pattern)
+          {:ok, derived} = lookup_derived_quads_fold(db, graph_id, lookup_pattern)
+          {:ok, explicit ++ derived}
+      end
+    end
+  end
+
+  @doc """
+  Creates a graph-scoped store function for use with `SemiNaive.materialize/5`.
+
+  The store function inserts derived quads into the derived column family
+  with the specified graph_id.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to store quads under
+
+  ## Returns
+
+  A function `(fact_set) -> :ok | {:error, reason}` where fact_set contains
+  `{subject_id, predicate_id, object_id}` tuples (triples without graph).
+
+  The function will prefix each triple with the graph_id to create quads.
+
+  ## Examples
+
+      store_fn = DerivedStore.make_graph_store_fn(db, 1)
+      :ok = store_fn.(MapSet.new([{1, 2, 3}]))
+  """
+  @spec make_graph_store_fn(db_ref(), non_neg_integer()) ::
+          (MapSet.t(id_triple()) -> :ok | {:error, term()})
+  def make_graph_store_fn(db, graph_id) do
+    fn fact_set ->
+      quads =
+        fact_set
+        |> MapSet.to_list()
+        |> Enum.map(fn {s, p, o} -> {graph_id, s, p, o} end)
+
+      insert_derived_quads(db, quads)
+    end
+  end
+
+  @doc """
+  Creates a graph-scoped store function that works with quad facts.
+
+  Unlike `make_graph_store_fn/2`, this expects facts that already include
+  the graph component.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier to validate/store quads under
+
+  ## Returns
+
+  A function `(fact_set) -> :ok | {:error, reason}` where fact_set contains
+  `{graph_id, subject_id, predicate_id, object_id}` tuples.
+
+  ## Examples
+
+      store_fn = DerivedStore.make_graph_quad_store_fn(db, 1)
+      :ok = store_fn.(MapSet.new([{1, 10, 20, 30}]))
+  """
+  @spec make_graph_quad_store_fn(db_ref(), non_neg_integer()) ::
+          (MapSet.t(id_quad()) -> :ok | {:error, term()})
+  def make_graph_quad_store_fn(db, graph_id) do
+    fn fact_set ->
+      quads =
+        fact_set
+        |> MapSet.to_list()
+        |> Enum.filter(fn {g, _s, _p, _o} -> g == graph_id end)
+
+      insert_derived_quads(db, quads)
+    end
+  end
+
   # ============================================================================
   # Private Functions
   # ============================================================================
@@ -465,6 +980,8 @@ defmodule TripleStore.Reasoner.DerivedStore do
   # Convert from Rule pattern format {:pattern, [s, p, o]} to Index pattern format
   # Rule patterns use {:var, name}, {:const, value}, or raw values
   # Index patterns use :var or {:bound, value}
+  defp convert_rule_pattern(:var), do: {:var, :var, :var}
+
   defp convert_rule_pattern({:pattern, [s, p, o]}) do
     {convert_term(s), convert_term(p), convert_term(o)}
   end
@@ -498,7 +1015,91 @@ defmodule TripleStore.Reasoner.DerivedStore do
     end
   end
 
-  defp triple_matches_pattern?(triple, pattern) do
-    PatternMatcher.matches_index_pattern?(triple, pattern)
+  defp graph_pattern_to_prefix(graph_id, pattern) do
+    case pattern do
+      {{:bound, s}, {:bound, p}, {:bound, o}} ->
+        QuadIndex.gspo_key(graph_id, s, p, o)
+
+      {{:bound, s}, {:bound, p}, :var} ->
+        QuadIndex.gspo_prefix(graph_id, s, p)
+
+      {{:bound, s}, :var, :var} ->
+        QuadIndex.gspo_prefix(graph_id, s)
+
+      _ ->
+        # For patterns that don't start with bound subject,
+        # scan this graph and filter
+        <<graph_id::64-big>>
+    end
   end
+
+  defp triple_matches_pattern?(triple, pattern) do
+    # Normalize :var to {:var, :var, :var} for pattern matching
+    normalized_pattern =
+      case pattern do
+        :var -> {:var, :var, :var}
+        {_, _, _} = p -> p
+      end
+
+    PatternMatcher.matches_index_pattern?(triple, normalized_pattern)
+  end
+
+  # ===========================================================================
+  # Backward/Forward Support Functions
+  # ===========================================================================
+
+  @doc """
+  Looks up all derived quads in a specific graph.
+
+  Returns all derived quads for the given graph, regardless of pattern.
+  Used by BackwardTraceQuad to find potentially affected derivations.
+
+  ## Parameters
+
+  - `db` - Database reference
+  - `graph_id` - Graph identifier
+
+  ## Returns
+
+  - `{:ok, [quad]}` with all derived quads in the graph
+  - `{:error, reason}` on failure
+  """
+  @spec lookup_derived_quads_in_graph(db_ref(), non_neg_integer()) ::
+          {:ok, [id_quad()]} | {:error, term()}
+  def lookup_derived_quads_in_graph(db, graph_id) do
+    prefix = <<graph_id::64-big>>
+
+    try do
+      results =
+        ErlangAdapter.fold(db, @derived_cf, prefix, [], fn {key, _value}, acc ->
+          {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+          [{g, s, p, o} | acc]
+        end)
+
+      {:ok, Enum.reverse(results)}
+    rescue
+      error -> {:error, error}
+    end
+  end
+
+  @doc """
+  Decodes a derived quad key from the derived column family.
+
+  The key is a GSPO-encoded quad key.
+
+  ## Parameters
+
+  - `key` - Binary key from derived column family (32 bytes)
+
+  ## Returns
+
+  - `{:ok, {graph, subject, predicate, object}}` on success
+  - `{:error, :invalid_key}` on failure
+  """
+  @spec decode_derived_key(binary()) :: {:ok, id_quad()} | {:error, :invalid_key}
+  def decode_derived_key(<<g::64-big, s::64-big, p::64-big, o::64-big>>) do
+    {:ok, {g, s, p, o}}
+  end
+
+  def decode_derived_key(_key), do: {:error, :invalid_key}
 end

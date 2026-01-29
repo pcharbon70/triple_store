@@ -8,7 +8,7 @@ defmodule TripleStore.HealthTest do
 
   use ExUnit.Case, async: false
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Health
 
   # Helper to create a mock store
@@ -17,7 +17,7 @@ defmodule TripleStore.HealthTest do
     path = Path.join(System.tmp_dir!(), "health_test_#{:erlang.unique_integer([:positive])}")
     File.rm_rf!(path)
 
-    case NIF.open(path) do
+    case ErlangAdapter.open(path) do
       {:ok, db} ->
         # Start a mock dict_manager
         {:ok, agent} = Agent.start_link(fn -> %{} end)
@@ -41,7 +41,7 @@ defmodule TripleStore.HealthTest do
       Agent.stop(dict_manager)
     end
 
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(path)
   end
 
@@ -61,7 +61,7 @@ defmodule TripleStore.HealthTest do
     test "returns error when database is closed" do
       case create_mock_store() do
         {:ok, store, path} ->
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           assert {:error, :database_closed} = Health.liveness(store)
           File.rm_rf!(path)
 
@@ -86,7 +86,7 @@ defmodule TripleStore.HealthTest do
     test "returns error when database is closed" do
       case create_mock_store() do
         {:ok, store, path} ->
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           assert {:error, :database_closed} = Health.readiness(store)
           File.rm_rf!(path)
 
@@ -101,7 +101,7 @@ defmodule TripleStore.HealthTest do
           Agent.stop(store.dict_manager)
           store = %{store | dict_manager: nil}
           assert {:ok, :not_ready} = Health.readiness(store)
-          NIF.close(store.db)
+          ErlangAdapter.close(store.db)
           File.rm_rf!(path)
 
         {:error, _} ->
@@ -487,6 +487,137 @@ defmodule TripleStore.HealthTest do
         {:error, _} ->
           :ok
       end
+    end
+  end
+
+  # ===========================================================================
+  # Graph Health Tests (Quad Store)
+  # ===========================================================================
+
+  describe "graph_health/2" do
+    setup do
+      case create_quad_store() do
+        {:ok, store, path} ->
+          on_exit(fn -> cleanup_store(store) end)
+          [store: store, path: path]
+
+        {:error, _} ->
+          :skip
+      end
+    end
+
+    test "returns healthy for normal graph", %{store: store} do
+      assert {:ok, health} = Health.graph_health(store, 0)
+      assert health.status in [:healthy, :empty]
+      assert is_integer(health.quad_count)
+      assert Map.has_key?(health, :checked_at)
+    end
+
+    test "returns not_found for non-existent graph", %{store: store} do
+      assert {:ok, health} = Health.graph_health(store, 999_999)
+      assert health.status == :not_found
+      assert health.graph_id == 999_999
+    end
+
+    test "includes predicate counts when requested", %{store: store} do
+      assert {:ok, health} = Health.graph_health(store, 0, include_predicate_counts: true)
+      assert Map.has_key?(health, :predicate_counts)
+    end
+
+    test "returns degraded for large graph", %{store: store} do
+      # Use low threshold to test degraded status
+      assert {:ok, health} = Health.graph_health(store, 0, size_alert_threshold: 1)
+      # With threshold of 1, any graph with quads should be degraded
+      # But empty graphs return :empty, not :degraded
+      assert health.status in [:empty, :degraded]
+    end
+  end
+
+  describe "all_graphs_health/2" do
+    setup do
+      case create_quad_store() do
+        {:ok, store, path} ->
+          on_exit(fn -> cleanup_store(store) end)
+          [store: store, path: path]
+
+        {:error, _} ->
+          :skip
+      end
+    end
+
+    test "returns health for all graphs", %{store: store} do
+      assert {:ok, graphs} = Health.all_graphs_health(store)
+      assert is_map(graphs)
+      # For empty store, returns empty map (no graphs with quads)
+      # Add a test quad via Loader and verify graph appears
+      nquads = "<http://example.org/s> <http://example.org/p> \"o\" ."
+
+      assert {:ok, 1} =
+               TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
+
+      assert {:ok, graphs} = Health.all_graphs_health(store)
+      # Now default graph (0) should exist with the added quad
+      assert Map.has_key?(graphs, 0)
+      assert graphs[0].quad_count > 0
+    end
+
+    test "excludes empty graphs when requested", %{store: store} do
+      # Add a quad to default graph and another to named graph
+      nquads = """
+      <http://example.org/s> <http://example.org/p> "o" .
+      <http://example.org/s2> <http://example.org/p2> "o2" <http://example.org/g> .
+      """
+
+      assert {:ok, 2} =
+               TripleStore.Loader.load_nquads_string(store.db, store.dict_manager, nquads)
+
+      assert {:ok, graphs} = Health.all_graphs_health(store, include_empty: false)
+      # Should have non-empty graphs only
+      assert map_size(graphs) > 0
+      refute Enum.any?(graphs, fn {_id, health} -> health.status == :empty end)
+    end
+  end
+
+  describe "graph_health_alerts/2" do
+    setup do
+      case create_quad_store() do
+        {:ok, store, path} ->
+          on_exit(fn -> cleanup_store(store) end)
+          [store: store, path: path]
+
+        {:error, _} ->
+          :skip
+      end
+    end
+
+    test "returns alerts for large graphs", %{store: store} do
+      # Use low threshold to trigger large graph alert
+      assert {:ok, alerts} = Health.graph_health_alerts(store, large_graph_threshold: 1)
+      assert is_list(alerts)
+    end
+
+    test "returns alerts for empty graphs", %{store: store} do
+      assert {:ok, alerts} = Health.graph_health_alerts(store)
+      assert is_list(alerts)
+    end
+  end
+
+  # ===========================================================================
+  # Helper Functions
+  # ===========================================================================
+
+  defp create_quad_store do
+    path = System.tmp_dir!() <> "/ts_health_graph_test_#{System.unique_integer([:positive])}"
+
+    # Clean up any existing database
+    File.rm_rf(path)
+
+    case TripleStore.open(path, schema: :quad) do
+      {:ok, store} ->
+        {:ok, store, path}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

@@ -9,13 +9,13 @@ defmodule TripleStore.Backend.RocksDBTest do
     end
   end
 
-  describe "NIF" do
-    test "NIF module is defined" do
-      assert Code.ensure_loaded?(RocksDB.NIF)
+  describe "ErlangAdapter" do
+    test "ErlangAdapter module is defined" do
+      assert Code.ensure_loaded?(RocksDB.ErlangAdapter)
     end
 
     test "NIF loads successfully" do
-      assert RocksDB.NIF.nif_loaded() == "rocksdb_nif"
+      assert RocksDB.ErlangAdapter.nif_loaded() == "rocksdb_nif"
     end
   end
 end

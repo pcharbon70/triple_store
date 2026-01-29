@@ -43,8 +43,14 @@ defmodule TripleStore.SPARQL.SerializationTest do
     test "includes graph variable in results" do
       # Bindings with graph variable
       bindings = [
-        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}},
-        %{"s" => {:named_node, "http://example.org/Bob"}, "g" => {:named_node, "http://example.org/graph2"}}
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "g" => {:named_node, "http://example.org/graph1"}
+        },
+        %{
+          "s" => {:named_node, "http://example.org/Bob"},
+          "g" => {:named_node, "http://example.org/graph2"}
+        }
       ]
 
       stream = to_stream(bindings)
@@ -58,7 +64,11 @@ defmodule TripleStore.SPARQL.SerializationTest do
 
     test "projects graph variable when specified" do
       bindings = [
-        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}, "o" => {:literal, :simple, "Name"}}
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "g" => {:named_node, "http://example.org/graph1"},
+          "o" => {:literal, :simple, "Name"}
+        }
       ]
 
       stream = to_stream(bindings)
@@ -75,7 +85,10 @@ defmodule TripleStore.SPARQL.SerializationTest do
 
     test "graph IRI is returned as standard RDF term" do
       bindings = [
-        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}}
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "g" => {:named_node, "http://example.org/graph1"}
+        }
       ]
 
       stream = to_stream(bindings)
@@ -233,7 +246,8 @@ defmodule TripleStore.SPARQL.SerializationTest do
     test "returns RDF.Dataset for CONSTRUCT with multiple named graphs", %{ctx: ctx} do
       # Template with variables
       template = [
-        {:triple, {:variable, "s"}, {:named_node, "http://example.org/type"}, {:named_node, "http://example.org/Person"}}
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/type"},
+         {:named_node, "http://example.org/Person"}}
       ]
 
       # Bindings from multiple named graphs
@@ -271,7 +285,8 @@ defmodule TripleStore.SPARQL.SerializationTest do
       # Template with different literal types
       template = [
         {:triple, {:variable, "s"}, {:named_node, "http://example.org/age"}, {:variable, "age"}},
-        {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"}, {:variable, "name"}},
+        {:triple, {:variable, "s"}, {:named_node, "http://example.org/name"},
+         {:variable, "name"}},
         {:triple, {:variable, "s"}, {:named_node, "http://example.org/tag"}, {:variable, "tag"}}
       ]
 
@@ -341,7 +356,10 @@ defmodule TripleStore.SPARQL.SerializationTest do
     test "T3.1 ASK query with named graph", %{ctx: ctx} do
       # ASK query should work with named graph context
       bindings = [
-        %{"s" => {:named_node, "http://example.org/Alice"}, "g" => {:named_node, "http://example.org/graph1"}}
+        %{
+          "s" => {:named_node, "http://example.org/Alice"},
+          "g" => {:named_node, "http://example.org/graph1"}
+        }
       ]
 
       stream = to_stream(bindings)

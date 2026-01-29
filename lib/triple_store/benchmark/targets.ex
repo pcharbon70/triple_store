@@ -1,8 +1,6 @@
 defmodule TripleStore.Benchmark.Targets do
-  alias TripleStore.Benchmark.Runner
-
   @moduledoc """
-  Performance targets for the triple store benchmark suite.
+  Performance targets for the TripleStore benchmark suite.
 
   Defines measurable performance goals and provides validation functions
   to check whether benchmark results meet the defined targets.
@@ -11,30 +9,28 @@ defmodule TripleStore.Benchmark.Targets do
 
   | Target | Metric | Threshold | Dataset |
   |--------|--------|-----------|---------|
-  | Simple BGP | p95 latency | <10ms | 1M triples |
-  | Complex Join | p95 latency | <100ms | 1M triples |
+  | Simple Query | p95 latency | <10ms | WatDiv (any scale) |
+  | Complex Query | p95 latency | <100ms | WatDiv (any scale) |
   | Bulk Load | throughput | >100K triples/sec | any |
-  | BSBM Mix | p95 latency | <50ms | 1M triples |
+  | Query Mix | p95 latency | <50ms | WatDiv (any scale) |
 
   ## Usage
 
-      # Get all targets
-      targets = Targets.all()
-
-      # Validate benchmark results
-      {:ok, validation} = Targets.validate(benchmark_results)
-
-      # Check specific target
-      Targets.check_simple_bgp(p95_us: 5000)
+      # Check individual targets
+      Targets.check_simple_query(p95_us: 5000)
       # => :pass
 
-      Targets.check_simple_bgp(p95_us: 15000)
-      # => {:fail, "p95 latency 15.0ms exceeds target <10ms"}
+      Targets.check_bulk_load(triples_per_sec: 50000)
+      # => {:fail, "throughput 50K triples/sec below target >100K"}
+
+      # Validate bulk load performance
+      {:ok, report} = Targets.validate_bulk_load(100_000, 1000)
+      Targets.print_report(report)
 
   """
 
   @typedoc "Target identifier"
-  @type target_id :: :simple_bgp | :complex_join | :bulk_load | :bsbm_mix
+  @type target_id :: :simple_query | :complex_query | :bulk_load | :query_mix
 
   @typedoc "Target definition"
   @type target :: %{
@@ -44,8 +40,7 @@ defmodule TripleStore.Benchmark.Targets do
           metric: :p95_latency | :throughput,
           threshold: number(),
           unit: :microseconds | :milliseconds | :triples_per_sec,
-          operator: :lt | :gt,
-          dataset_size: pos_integer() | :any
+          operator: :lt | :gt
         }
 
   @typedoc "Validation result for a single target"
@@ -63,13 +58,10 @@ defmodule TripleStore.Benchmark.Targets do
   # Performance target thresholds
   # All latency values in microseconds for consistency
 
-  @simple_bgp_p95_us 10_000
-  @complex_join_p95_us 100_000
+  @simple_query_p95_us 10_000
+  @complex_query_p95_us 100_000
   @bulk_load_tps 100_000
-  @bsbm_mix_p95_us 50_000
-
-  # Reference dataset size (1 million triples)
-  @reference_dataset_size 1_000_000
+  @query_mix_p95_us 50_000
 
   @doc """
   Returns all defined performance targets.
@@ -77,10 +69,10 @@ defmodule TripleStore.Benchmark.Targets do
   @spec all() :: [target()]
   def all do
     [
-      simple_bgp_target(),
-      complex_join_target(),
+      simple_query_target(),
+      complex_query_target(),
       bulk_load_target(),
-      bsbm_mix_target()
+      query_mix_target()
     ]
   end
 
@@ -95,51 +87,47 @@ defmodule TripleStore.Benchmark.Targets do
     end
   end
 
-  @doc """
-  Returns the reference dataset size for performance targets (1M triples).
-  """
-  @spec reference_dataset_size() :: pos_integer()
-  def reference_dataset_size, do: @reference_dataset_size
-
   # ===========================================================================
   # Target Definitions
   # ===========================================================================
 
   @doc """
-  Returns the simple BGP query target.
+  Returns the simple query target.
 
-  Target: p95 latency <10ms on 1M triples
+  Target: p95 latency <10ms
+
+  Applies to WatDiv linear queries (L1-L5).
   """
-  @spec simple_bgp_target() :: target()
-  def simple_bgp_target do
+  @spec simple_query_target() :: target()
+  def simple_query_target do
     %{
-      id: :simple_bgp,
-      name: "Simple BGP Query",
-      description: "Single triple pattern query with one bound term",
+      id: :simple_query,
+      name: "Simple Query",
+      description: "Linear WatDiv queries (L1-L5) - single pattern queries",
       metric: :p95_latency,
-      threshold: @simple_bgp_p95_us,
+      threshold: @simple_query_p95_us,
       unit: :microseconds,
-      operator: :lt,
-      dataset_size: @reference_dataset_size
+      operator: :lt
     }
   end
 
   @doc """
-  Returns the complex join query target.
+  Returns the complex query target.
 
-  Target: p95 latency <100ms on 1M triples
+  Target: p95 latency <100ms
+
+  Applies to WatDiv snowflake (F1-F5) and complex (C1-C3) queries.
   """
-  @spec complex_join_target() :: target()
-  def complex_join_target do
+  @spec complex_query_target() :: target()
+  def complex_query_target do
     %{
-      id: :complex_join,
-      name: "Complex Join Query",
-      description: "Multi-pattern query with 3+ triple patterns and joins",
+      id: :complex_query,
+      name: "Complex Query",
+      description: "WatDiv snowflake and complex queries with 3+ patterns",
       metric: :p95_latency,
-      threshold: @complex_join_p95_us,
+      threshold: @complex_query_p95_us,
       unit: :microseconds,
-      operator: :lt,
-      dataset_size: @reference_dataset_size
+      operator: :lt
     }
   end
 
@@ -157,27 +145,27 @@ defmodule TripleStore.Benchmark.Targets do
       metric: :throughput,
       threshold: @bulk_load_tps,
       unit: :triples_per_sec,
-      operator: :gt,
-      dataset_size: :any
+      operator: :gt
     }
   end
 
   @doc """
-  Returns the BSBM query mix target.
+  Returns the query mix target.
 
   Target: p95 latency <50ms for overall query mix
+
+  Applies to aggregate WatDiv query performance.
   """
-  @spec bsbm_mix_target() :: target()
-  def bsbm_mix_target do
+  @spec query_mix_target() :: target()
+  def query_mix_target do
     %{
-      id: :bsbm_mix,
-      name: "BSBM Query Mix",
-      description: "Overall p95 latency for BSBM benchmark query mix",
+      id: :query_mix,
+      name: "Query Mix",
+      description: "Overall p95 latency for WatDiv query mix (all 20 queries)",
       metric: :p95_latency,
-      threshold: @bsbm_mix_p95_us,
+      threshold: @query_mix_p95_us,
       unit: :microseconds,
-      operator: :lt,
-      dataset_size: @reference_dataset_size
+      operator: :lt
     }
   end
 
@@ -186,7 +174,7 @@ defmodule TripleStore.Benchmark.Targets do
   # ===========================================================================
 
   @doc """
-  Checks if simple BGP query performance meets the target.
+  Checks if simple query performance meets the target.
 
   ## Options
 
@@ -194,31 +182,31 @@ defmodule TripleStore.Benchmark.Targets do
 
   ## Examples
 
-      Targets.check_simple_bgp(p95_us: 5000)
+      Targets.check_simple_query(p95_us: 5000)
       # => :pass
 
-      Targets.check_simple_bgp(p95_us: 15000)
+      Targets.check_simple_query(p95_us: 15000)
       # => {:fail, "p95 latency 15.0ms exceeds target <10ms"}
 
   """
-  @spec check_simple_bgp(keyword()) :: check_result()
-  def check_simple_bgp(opts) do
+  @spec check_simple_query(keyword()) :: check_result()
+  def check_simple_query(opts) do
     p95_us = Keyword.fetch!(opts, :p95_us)
-    check_latency(p95_us, @simple_bgp_p95_us)
+    check_latency(p95_us, @simple_query_p95_us)
   end
 
   @doc """
-  Checks if complex join query performance meets the target.
+  Checks if complex query performance meets the target.
 
   ## Options
 
   - `:p95_us` - The p95 latency in microseconds (required)
 
   """
-  @spec check_complex_join(keyword()) :: check_result()
-  def check_complex_join(opts) do
+  @spec check_complex_query(keyword()) :: check_result()
+  def check_complex_query(opts) do
     p95_us = Keyword.fetch!(opts, :p95_us)
-    check_latency(p95_us, @complex_join_p95_us)
+    check_latency(p95_us, @complex_query_p95_us)
   end
 
   @doc """
@@ -236,51 +224,17 @@ defmodule TripleStore.Benchmark.Targets do
   end
 
   @doc """
-  Checks if BSBM query mix performance meets the target.
+  Checks if query mix performance meets the target.
 
   ## Options
 
   - `:p95_us` - The aggregate p95 latency in microseconds (required)
 
   """
-  @spec check_bsbm_mix(keyword()) :: check_result()
-  def check_bsbm_mix(opts) do
+  @spec check_query_mix(keyword()) :: check_result()
+  def check_query_mix(opts) do
     p95_us = Keyword.fetch!(opts, :p95_us)
-    check_latency(p95_us, @bsbm_mix_p95_us)
-  end
-
-  @doc """
-  Validates benchmark results against all applicable targets.
-
-  Takes a benchmark result from `Runner.run/3` and checks each target
-  that can be evaluated from the results.
-
-  ## Returns
-
-  A validation report with pass/fail status for each checked target.
-
-  """
-  @spec validate(map()) :: {:ok, validation_report()}
-  def validate(benchmark_result) do
-    results =
-      case benchmark_result.benchmark do
-        :lubm -> validate_lubm(benchmark_result)
-        :bsbm -> validate_bsbm(benchmark_result)
-        _ -> []
-      end
-
-    passed_count = Enum.count(results, fn r -> r.result == :pass end)
-    failed_count = Enum.count(results, fn r -> r.result != :pass end)
-
-    report = %{
-      passed: failed_count == 0,
-      targets_checked: length(results),
-      targets_passed: passed_count,
-      targets_failed: failed_count,
-      results: results
-    }
-
-    {:ok, report}
+    check_latency(p95_us, @query_mix_p95_us)
   end
 
   @doc """
@@ -348,58 +302,8 @@ defmodule TripleStore.Benchmark.Targets do
   end
 
   # ===========================================================================
-  # Private: Validation Helpers
+  # Private Helpers
   # ===========================================================================
-
-  defp validate_lubm(result) do
-    # For LUBM, we check simple and complex queries based on query characteristics
-    simple_queries = [:q3, :q14]
-    complex_queries = [:q2, :q7, :q8, :q9]
-
-    simple_p95 = aggregate_p95(result.query_results, simple_queries)
-    complex_p95 = aggregate_p95(result.query_results, complex_queries)
-
-    results = []
-
-    results =
-      if simple_p95 do
-        check = check_simple_bgp(p95_us: simple_p95)
-        [%{target: :simple_bgp, result: check, value: simple_p95} | results]
-      else
-        results
-      end
-
-    results =
-      if complex_p95 do
-        check = check_complex_join(p95_us: complex_p95)
-        [%{target: :complex_join, result: check, value: complex_p95} | results]
-      else
-        results
-      end
-
-    Enum.reverse(results)
-  end
-
-  defp validate_bsbm(result) do
-    # For BSBM, we check overall query mix performance
-    p95 = result.aggregate.p95_us
-
-    check = check_bsbm_mix(p95_us: p95)
-    [%{target: :bsbm_mix, result: check, value: p95}]
-  end
-
-  defp aggregate_p95(query_results, query_ids) do
-    relevant =
-      query_results
-      |> Enum.filter(fn qr -> qr.query_id in query_ids end)
-      |> Enum.flat_map(& &1.latencies_us)
-
-    if Enum.empty?(relevant) do
-      nil
-    else
-      Runner.percentile(relevant, 95)
-    end
-  end
 
   defp check_latency(actual_us, threshold_us) do
     if actual_us < threshold_us do
@@ -420,8 +324,8 @@ defmodule TripleStore.Benchmark.Targets do
     end
   end
 
-  defp format_result(:pass), do: "✓ PASS"
-  defp format_result({:fail, _}), do: "✗ FAIL"
+  defp format_result(:pass), do: "PASS"
+  defp format_result({:fail, _}), do: "FAIL"
 
   defp format_value(value, :microseconds), do: "#{Float.round(value / 1000, 2)}ms"
   defp format_value(value, :milliseconds), do: "#{Float.round(value, 2)}ms"

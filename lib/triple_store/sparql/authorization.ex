@@ -8,6 +8,7 @@ defmodule TripleStore.SPARQL.Authorization do
   - Role-based permissions
   - Public/private graphs
   - Graph ownership
+  - Permit-all mode for open-access scenarios
 
   ## Permission Model
 
@@ -23,6 +24,26 @@ defmodule TripleStore.SPARQL.Authorization do
   `%{id: "user123", roles: [:admin, :editor], name: "Alice"}`
 
   For public/unauthenticated access, use `:public` atom.
+
+  ## Permit-All Mode (Open Access)
+
+  For scenarios where authorization is not needed (public datasets, internal tools,
+  development environments), permit-all mode bypasses ACL checks entirely:
+
+  ```elixir
+  # Enable permit-all mode
+  Authorization.set_permit_all(true)
+
+  # All authorization checks return true
+  {:ok, true} = Authorization.can_read?(ctx, "any-graph", :public)
+
+  # Disable permit-all mode (use ACLs)
+  Authorization.set_permit_all(false)
+  ```
+
+  Permit-all mode is **process-global** and affects all authorization checks
+  in the calling process. This allows different parts of an application to
+  have different authorization policies.
 
   ## ACL Storage
 
@@ -44,10 +65,13 @@ defmodule TripleStore.SPARQL.Authorization do
       # List graphs accessible to user
       {:ok, [graph1, graph2]} = Authorization.list_accessible_graphs(ctx, user)
 
+      # Enable permit-all for open-access scenarios
+      Authorization.set_permit_all(true)
+
   """
 
   alias TripleStore.Adapter
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
 
@@ -55,10 +79,15 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @telemetry_event_prefix [:triple_store, :sparql, :authorization]
 
+  # Module attributes for permit-all mode
+  @permit_all_key :triple_store_authorization_permit_all
+  @default_permit_all false
+
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
           optional(:db) => pid() | term(),
-          optional(:dict_manager) => pid()
+          optional(:dict_manager) => pid(),
+          optional(:permit_all) => boolean()
         }
 
   @typedoc "User identifier - either an atom for special users or a string ID"
@@ -66,17 +95,85 @@ defmodule TripleStore.SPARQL.Authorization do
 
   @typedoc "User object with id and optional roles"
   @type user :: %{
-            optional(:id) => user_id(),
-            optional(:roles) => [atom()],
-            optional(:name) => String.t(),
-            optional(atom()) => term()
-          }
+          optional(:id) => user_id(),
+          optional(:roles) => [atom()],
+          optional(:name) => String.t(),
+          optional(atom()) => term()
+        }
 
   @typedoc "Permission type"
   @type permission :: :read | :write | :admin | :owner
 
   @typedoc "ACL entry"
   @type acl_entry :: %{(String.t() | atom()) => [permission()]}
+
+  # ===========================================================================
+  # Permit-All Mode (Open Access)
+  # ===========================================================================
+
+  @doc """
+  Checks if permit-all mode is enabled for the current process.
+
+  When permit-all mode is enabled, authorization checks return `true` for
+  all graphs and users, bypassing ACL lookups.
+
+  ## Returns
+
+  - `true` if permit-all mode is enabled
+  - `false` if ACL-based authorization is active
+
+  ## Examples
+
+      iex> Authorization.permit_all?()
+      false
+
+      iex> Authorization.set_permit_all(true)
+      :ok
+
+      iex> Authorization.permit_all?()
+      true
+
+  """
+  @spec permit_all?() :: boolean()
+  def permit_all? do
+    case Process.get(@permit_all_key) do
+      nil -> @default_permit_all
+      value -> value
+    end
+  end
+
+  @doc """
+  Sets permit-all mode for the current process.
+
+  When enabled, all authorization checks bypass ACL lookups and return `true`.
+  This is useful for:
+  - Public datasets with open access
+  - Development and testing environments
+  - Internal tools that don't need user-based authorization
+  - Migrated triple stores that don't have ACLs configured
+
+  ## Parameters
+
+  - `enabled` - `true` to enable permit-all mode, `false` to use ACLs
+
+  ## Returns
+
+  - `:ok`
+
+  ## Examples
+
+      # Enable for open-access scenario
+      Authorization.set_permit_all(true)
+
+      # Disable to use ACLs
+      Authorization.set_permit_all(false)
+
+  """
+  @spec set_permit_all(boolean()) :: :ok
+  def set_permit_all(enabled) when is_boolean(enabled) do
+    Process.put(@permit_all_key, enabled)
+    :ok
+  end
 
   # ===========================================================================
   # Public API
@@ -186,7 +283,7 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission)
+    check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission)
   end
 
   @doc """
@@ -363,7 +460,14 @@ defmodule TripleStore.SPARQL.Authorization do
         # Filter by permission
         accessible =
           Enum.filter(all_graphs, fn graph_term ->
-            case check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission) do
+            case check_permission_for_term(
+                   ctx,
+                   db,
+                   dict_manager,
+                   graph_term,
+                   user_or_public,
+                   permission
+                 ) do
               {:ok, true} -> true
               {:ok, false} -> false
               {:error, _} -> false
@@ -372,7 +476,8 @@ defmodule TripleStore.SPARQL.Authorization do
 
         graph_iris =
           Enum.map(accessible, fn
-            :default -> nil  # Don't include default in IRIs
+            # Don't include default in IRIs
+            :default -> nil
             %RDF.IRI{value: iri} -> iri
             %RDF.BlankNode{value: id} -> "_:#{id}"
             {:named_node, iri} -> iri
@@ -442,7 +547,7 @@ defmodule TripleStore.SPARQL.Authorization do
       acl_prefix = "acl:graph:#{graph_id}:"
 
       result =
-        NIF.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
+        ErlangAdapter.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
           # If we already found the owner, skip
           if acc != nil do
             {:halt, acc}
@@ -490,26 +595,31 @@ defmodule TripleStore.SPARQL.Authorization do
     # Convert graph IRI to term for lookup
     graph_term = {:named_node, graph_iri}
 
-    check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission)
+    check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission)
   end
 
-  defp check_permission_for_term(db, dict_manager, graph_term, user_or_public, permission) do
-    # Special case: default graph is always readable
-    if graph_term in [:default, :default_graph] and permission == :read do
+  defp check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission) do
+    # Permit-all mode bypasses all ACL checks (checked from both context and process)
+    if ctx[:permit_all] == true or permit_all?() do
       {:ok, true}
     else
-      # Check if graph exists and get permissions
-      with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term),
-           {:ok, acl_entry} <- get_acl_entry(db, graph_id, "__public__"),
-           {:ok, has_perm} <- check_public_permission(acl_entry, permission) do
-        {:ok, has_perm}
+      # Special case: default graph is always readable
+      if graph_term in [:default, :default_graph] and permission == :read do
+        {:ok, true}
       else
-        {:error, _} ->
-          # If public check fails or graph not found, check user/role permissions
-          check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
+        # Check if graph exists and get permissions
+        with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term),
+             {:ok, acl_entry} <- get_acl_entry(db, graph_id, "__public__"),
+             {:ok, has_perm} <- check_public_permission(acl_entry, permission) do
+          {:ok, has_perm}
+        else
+          {:error, _} ->
+            # If public check fails or graph not found, check user/role permissions
+            check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
 
-        other ->
-          other
+          other ->
+            other
+        end
       end
     end
   end
@@ -544,6 +654,7 @@ defmodule TripleStore.SPARQL.Authorization do
           case get_acl_entry(db, graph_id, "user:#{user_id}") do
             {:ok, acl_entry} ->
               permissions = Map.get(acl_entry, "user:#{user_id}", [])
+
               if permission in permissions do
                 {:ok, true}
               else
@@ -607,7 +718,7 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Get existing ACL entry for this key
     current_entry =
-      case NIF.get(db, @acl_cf, acl_key) do
+      case ErlangAdapter.get(db, @acl_cf, acl_key) do
         {:ok, <<>>} -> %{}
         {:ok, binary} when is_binary(binary) -> :erlang.binary_to_term(binary)
         :not_found -> %{}
@@ -622,13 +733,13 @@ defmodule TripleStore.SPARQL.Authorization do
 
     # Store back
     encoded = :erlang.term_to_binary(updated_entry)
-    NIF.put(db, @acl_cf, acl_key, encoded)
+    ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
   end
 
   defp remove_acl_entry(db, graph_id, key, permission) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 
@@ -643,14 +754,14 @@ defmodule TripleStore.SPARQL.Authorization do
             # Remove the only permission, delete the key
             updated_entry = Map.delete(current_entry, key)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
 
           permissions ->
             # Remove this permission, keep others
             updated_permissions = List.delete(permissions, permission)
             updated_entry = Map.put(current_entry, key, updated_permissions)
             encoded = :erlang.term_to_binary(updated_entry)
-            NIF.put(db, @acl_cf, acl_key, encoded)
+            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
         end
 
       :not_found ->
@@ -664,7 +775,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp get_acl_entry(db, graph_id, key) do
     acl_key = encode_acl_key(graph_id, key)
 
-    case NIF.get(db, @acl_cf, acl_key) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
         {:error, :not_found}
 
@@ -707,6 +818,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp term_to_graph_id(_db, dict_manager, {:named_node, iri}) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error
@@ -724,6 +836,7 @@ defmodule TripleStore.SPARQL.Authorization do
   defp graph_name_to_id(dict_manager, graph_iri) do
     # Convert string IRI to RDF.IRI, then get ID
     rdf_iri = RDF.iri(graph_iri)
+
     case Adapter.from_rdf_iri(dict_manager, rdf_iri) do
       {:ok, id} -> {:ok, id}
       {:error, _} = error -> error
@@ -741,27 +854,21 @@ defmodule TripleStore.SPARQL.Authorization do
   # Telemetry Functions
   # ===========================================================================
 
-  @doc """
-  Emits a telemetry event for authorization denial.
-
-  ## Telemetry Event
-
-  Event: `[:triple_store, :sparql, :authorization, :denied]`
-
-  Measurements:
-  - `%{system_time: integer()}` - Timestamp of the denial
-
-  Metadata:
-  - `%{graph: String.t() | atom, user: String.t() | :public | nil, permission: atom(), reason: atom()}`
-
-  ## Parameters
-
-  - graph_iri - The graph IRI being accessed
-  - user - The user object or :public
-  - permission - The permission requested (:read, :write, :admin)
-  - reason - The reason for denial (:no_public_access, :not_owner, :no_user_permission, :no_role_permission)
-
-  """
+  # Emits a telemetry event for authorization denial.
+  #
+  # Telemetry Event: `[:triple_store, :sparql, :authorization, :denied]`
+  #
+  # Measurements:
+  # - `%{system_time: integer()}` - Timestamp of the denial
+  #
+  # Metadata:
+  # - `%{graph: String.t() | atom, user: String.t() | :public | nil, permission: atom(), reason: atom()}`
+  #
+  # Parameters:
+  # - graph_iri - The graph IRI being accessed
+  # - user - The user object or :public
+  # - permission - The permission requested (:read, :write, :admin)
+  # - reason - The reason for denial (:no_public_access, :not_owner, :no_user_permission, :no_role_permission)
   @spec emit_auth_denied_telemetry(String.t() | atom, user() | :public, atom(), atom()) :: :ok
   defp emit_auth_denied_telemetry(graph_iri, user_or_public, permission, reason) do
     user_id =

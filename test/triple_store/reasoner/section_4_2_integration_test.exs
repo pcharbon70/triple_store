@@ -15,7 +15,7 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Reasoner.{DeltaComputation, DerivedStore, Rule, Rules, SemiNaive}
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
 
   @moduletag :integration
@@ -55,12 +55,12 @@ defmodule TripleStore.Reasoner.Section42IntegrationTest do
 
   defp setup_db do
     db_path = "#{@test_db_path}_#{:erlang.unique_integer([:positive])}"
-    {:ok, db} = NIF.open(db_path)
+    {:ok, db} = ErlangAdapter.open(db_path)
     {db, db_path}
   end
 
   defp cleanup_db(db, db_path) do
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(db_path)
   end
 

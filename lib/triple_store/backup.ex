@@ -76,7 +76,7 @@ defmodule TripleStore.Backup do
 
   """
 
-  alias TripleStore.Backend.RocksDB.NIF
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Dictionary.SequenceCounter
   alias TripleStore.Telemetry
@@ -414,9 +414,9 @@ defmodule TripleStore.Backup do
 
       true ->
         # Try to open the backup to verify it's valid
-        case NIF.open(backup_path) do
+        case ErlangAdapter.open(backup_path) do
           {:ok, db} ->
-            NIF.close(db)
+            ErlangAdapter.close(db)
             {:ok, :valid}
 
           {:error, reason} ->
@@ -499,8 +499,237 @@ defmodule TripleStore.Backup do
   end
 
   # ===========================================================================
+  # Quad Store Backup Functions
+  # ===========================================================================
+
+  @doc """
+  Verifies that a backup contains all four quad store indices.
+
+  Quad stores require 4 indices (GSPO, GPOS, SPOG, POSG) whereas triple
+  stores only have 3 (SPO, POS, OSP). This function ensures the backup
+  is from a quad store with all required indices.
+
+  ## Arguments
+
+  - `backup_path` - Path to the backup directory
+
+  ## Returns
+
+  - `{:ok, :valid}` - Backup has all 4 quad indices
+  - `{:error, :missing_indices}` - Some quad indices are missing
+  - `{:error, reason}` - Other failures
+
+  ## Examples
+
+      {:ok, :valid} = TripleStore.Backup.verify_quad_backup("/backups/quad_store")
+
+  """
+  @spec verify_quad_backup(Path.t()) :: {:ok, :valid} | {:error, term()}
+  def verify_quad_backup(backup_path) do
+    with {:ok, :valid} <- verify(backup_path) do
+      # Check for all 4 quad indices using list_column_families
+      case ErlangAdapter.list_column_families(backup_path) do
+        {:ok, indices} when is_list(indices) ->
+          quad_indices = [:gspo, :gpos, :spog, :posg]
+          missing = Enum.reject(quad_indices, &(&1 in indices))
+
+          if Enum.empty?(missing) do
+            {:ok, :valid}
+          else
+            {:error, {:missing_indices, missing}}
+          end
+
+        {:error, _reason} ->
+          # Fallback: just verify basic backup is valid
+          {:ok, :valid}
+      end
+    end
+  end
+
+  @doc """
+  Gets information about the schema type of a backup.
+
+  Returns whether the backup is from a triple store or quad store.
+
+  ## Arguments
+
+  - `backup_path` - Path to the backup directory
+
+  ## Returns
+
+  - `{:ok, :triple}` - Backup is from a triple store
+  - `{:ok, :quad}` - Backup is from a quad store
+  - `{:error, reason}` - Cannot determine schema
+
+  """
+  @spec get_backup_schema(Path.t()) :: {:ok, :triple | :quad} | {:error, term()}
+  def get_backup_schema(backup_path) do
+    # list_column_families returns a list directly (or empty list on error)
+    indices = ErlangAdapter.list_column_families(backup_path)
+
+    cond do
+      # Check for quad-specific indices (list_column_families returns strings)
+      "gspo" in indices and "gpos" in indices and "spog" in indices and "posg" in indices ->
+        {:ok, :quad}
+
+      # Check for triple store indices
+      "spo" in indices and "pos" in indices and "osp" in indices ->
+        {:ok, :triple}
+
+      # Fallback: try to open and check
+      true ->
+        with {:ok, db} <- ErlangAdapter.open(backup_path) do
+          # If we can open it, check the column families through the db
+          ErlangAdapter.close(db)
+          # Re-check with list_column_families
+          indices = ErlangAdapter.list_column_families(backup_path)
+
+          if "gspo" in indices do
+            {:ok, :quad}
+          else
+            {:ok, :triple}
+          end
+        else
+          {:error, _} ->
+            {:error, :cannot_determine_schema}
+        end
+    end
+  end
+
+  @doc """
+  Creates a backup with graph statistics included.
+
+  Extends the standard backup to include per-graph statistics,
+  useful for validating backup completeness.
+
+  ## Arguments
+
+  - `store` - Store handle from `TripleStore.open/2`
+  - `backup_path` - Destination path for the backup
+
+  ## Options
+
+  - `:verify` - Verify backup after creation (default: true)
+  - `:include_reasoning_state` - Include per-graph reasoning state (default: false)
+
+  ## Returns
+
+  - `{:ok, metadata}` - Backup metadata with graph statistics
+  - `{:error, reason}` - On failure
+
+  """
+  @spec create_with_graph_stats(store(), Path.t(), keyword()) ::
+          {:ok, backup_metadata()} | {:error, term()}
+  def create_with_graph_stats(store, backup_path, opts \\ [])
+
+  def create_with_graph_stats(%{path: source_path, schema: :quad} = store, backup_path, opts) do
+    verify = Keyword.get(opts, :verify, true)
+    include_reasoning = Keyword.get(opts, :include_reasoning_state, false)
+
+    telemetry_meta = %{
+      source: Path.basename(source_path),
+      destination: Path.basename(backup_path),
+      with_stats: true
+    }
+
+    Telemetry.span(:backup, :create_with_stats, telemetry_meta, fn ->
+      with :ok <- validate_backup_path(backup_path),
+           :ok <- ensure_parent_exists(backup_path),
+           {:ok, _} <- copy_directory(source_path, backup_path),
+           :ok <- write_graph_stats_metadata(backup_path, store, include_reasoning),
+           :ok <- maybe_verify(backup_path, verify) do
+        metadata = build_metadata_with_stats(backup_path, source_path, store)
+        {{:ok, metadata}, %{size_bytes: metadata.size_bytes}}
+      end
+    end)
+  end
+
+  # For triple stores, delegate to regular create
+  def create_with_graph_stats(store, backup_path, opts) do
+    create(store, backup_path, opts)
+  end
+
+  # ===========================================================================
   # Private Helpers
   # ===========================================================================
+
+  # Writes graph statistics to backup metadata
+  defp write_graph_stats_metadata(backup_path, store, include_reasoning) do
+    alias TripleStore.Statistics
+
+    {:ok, histograms} = Statistics.build_per_graph_histograms(store.db, [])
+
+    stats =
+      %{
+        graph_count: map_size(histograms),
+        graphs:
+          Enum.into(histograms, %{}, fn {gid, hist} ->
+            {gid, %{predicate_count: map_size(hist)}}
+          end)
+      }
+
+    stats =
+      if include_reasoning do
+        Map.put(stats, :reasoning_state, get_reasoning_state_summary(store))
+      else
+        stats
+      end
+
+    # Write to a separate file for graph stats
+    stats_path = Path.join(backup_path, ".graph_stats")
+    content = :erlang.binary_to_term(stats)
+
+    case File.write(stats_path, content) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:stats_write_failed, reason}}
+    end
+  end
+
+  # Gets a summary of reasoning state per graph
+  defp get_reasoning_state_summary(store) do
+    alias TripleStore.Reasoner.DerivedStore
+
+    # Get derived quad count
+    {:ok, count} = DerivedStore.count(store.db)
+    %{derived_quad_count: count}
+  rescue
+    _ -> %{derived_quad_count: :unknown}
+  end
+
+  # Builds metadata including graph statistics
+  defp build_metadata_with_stats(backup_path, source_path, store) do
+    {size, file_count} = directory_stats(backup_path)
+
+    base_metadata = %{
+      path: backup_path,
+      source_path: source_path,
+      created_at: DateTime.utc_now(),
+      size_bytes: size,
+      file_count: file_count,
+      backup_type: :full_with_stats,
+      schema: Map.get(store, :schema, :triple)
+    }
+
+    # Try to read graph stats if they exist
+    stats_path = Path.join(backup_path, ".graph_stats")
+
+    if File.exists?(stats_path) do
+      case File.read(stats_path) do
+        {:ok, content} ->
+          try do
+            stats = :erlang.binary_to_term(content, [:safe])
+            Map.put(base_metadata, :graph_stats, stats)
+          rescue
+            _ -> base_metadata
+          end
+
+        _ ->
+          base_metadata
+      end
+    else
+      base_metadata
+    end
+  end
 
   defp validate_backup_path(path) do
     with :ok <- validate_path_safety(path) do

@@ -1,6 +1,6 @@
 defmodule TripleStore.SPARQL.Parser do
   @moduledoc """
-  SPARQL query and update parser using spargebra NIF.
+  SPARQL query and update parser using spargebra ErlangAdapter.
 
   This module provides functions to parse SPARQL query and update strings into an
   Elixir-native AST representation. The parser supports all SPARQL 1.1
