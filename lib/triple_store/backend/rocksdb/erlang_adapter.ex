@@ -272,6 +272,53 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @doc """
+  Opens a database optimized for bulk loading large datasets.
+
+  This is a convenience function that opens a database with settings
+  suitable for bulk loading. Note that erlang-rocksdb doesn't support
+  runtime option changes, so bulk load optimization must be done through
+  other means (larger batch sizes, disabling WAL during initial load, etc.).
+
+  ## Parameters
+
+  - `path`: Path to the database directory
+  - `opts`: Additional options (same as `open/2`)
+    - `:schema` - Schema type: `:triple` (default) or `:quad`
+
+  ## Returns
+
+  - `{:ok, adapter}` - Database opened successfully
+  - `{:error, reason}` - Failed to open database
+
+  ## Bulk Loading Best Practices
+
+  Since erlang-rocksdb doesn't support runtime option changes:
+
+  1. **Use larger batch sizes**: Pass larger `batch_size` to load operations
+  2. **Disable WAL for initial load**: Set `disable_wal: true` in options (use with caution)
+  3. **Load in parallel**: Use Flow for concurrent loading from multiple files
+  4. **Compact after load**: Call manual compaction after bulk loading completes
+
+  ## Examples
+
+      # Open for bulk load
+      {:ok, adapter} = ErlangAdapter.open_for_bulk_load("/path/to/db")
+
+      # Load large dataset
+      TripleStore.load(store, "large_file.ttl", batch_size: 50_000)
+
+      # After load completes, compact the database
+      :ok = ErlangAdapter.compact(adapter)
+
+  """
+  @spec open_for_bulk_load(String.t(), keyword()) :: {:ok, adapter()} | {:error, term()}
+  def open_for_bulk_load(path, opts \\ []) do
+    # Note: erlang-rocksdb doesn't support runtime option changes
+    # This function serves as documentation and a forward-compatible API
+    open(path, opts)
+  end
+
+  @doc """
   Closes the database and releases all resources.
 
   ## Parameters

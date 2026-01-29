@@ -79,36 +79,36 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
   defp create_test_db do
     path = Path.join(System.tmp_dir!(), "test_quad_global_#{System.unique_integer([:positive])}")
-    {:ok, db} = NIF.open(path, schema: :quad, create_if_missing: true, create_if_necessary: true)
+    {:ok, db} = ErlangAdapter.open(path, schema: :quad, create_if_missing: true)
     {db, path}
   end
 
   defp cleanup_db(db, path) do
-    NIF.close(db)
+    ErlangAdapter.close(db)
     File.rm_rf!(path)
   end
 
   defp insert_facts(db, facts, graph_id) do
     operations =
       Enum.map(facts, fn {s, p, o} ->
-        {s_id, _} = NIF.get_or_put_str2id(db, s)
-        {p_id, _} = NIF.get_or_put_str2id(db, p)
-        {o_id, _} = NIF.get_or_put_str2id(db, o)
+        {s_id, _} = ErlangAdapter.get_or_put_str2id(db, s)
+        {p_id, _} = ErlangAdapter.get_or_put_str2id(db, p)
+        {o_id, _} = ErlangAdapter.get_or_put_str2id(db, o)
         key = QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
         {:spo, key, <<>>}
       end)
 
-    :ok = NIF.write_batch(db, operations, true)
+    :ok = ErlangAdapter.write_batch(db, operations, true)
   end
 
   defp count_quads_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold(db, :spo, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
+    ErlangAdapter.fold(db, :spo, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   defp count_derived_in_graph(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
-    NIF.fold(db, :derived_cf, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
+    ErlangAdapter.fold(db, :derived, prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
   end
 
   # ============================================================================

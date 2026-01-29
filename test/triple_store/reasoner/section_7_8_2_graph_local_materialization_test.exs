@@ -261,7 +261,7 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
 
         # Check for alice rdf:type Person in graph 2's derived quads
         g2_prefix = QuadIndex.gspo_prefix(2)
-        alice_in_g2 = NIF.fold(db, :derived, g2_prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
+        alice_in_g2 = ErlangAdapter.fold(db, :derived, g2_prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
         assert alice_in_g2 == 0
       after
         cleanup_db(db, path)
@@ -528,10 +528,10 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           )
 
         # Clear derived quads
-        NIF.fold_keys(db, :derived_cf, <<>>, [], fn key, acc ->
+        ErlangAdapter.fold_keys(db, :derived, <<>>, [], fn key, acc ->
           [key | acc]
         end)
-        |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)
+        |> Enum.each(fn key -> ErlangAdapter.delete(db, :derived, key) end)
 
         # Second: parallel materialization
         {:ok, par_stats} =
@@ -584,10 +584,10 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
           end)
 
         # Clear derived
-        NIF.fold_keys(db, :derived_cf, <<>>, [], fn key, acc ->
+        ErlangAdapter.fold_keys(db, :derived, <<>>, [], fn key, acc ->
           [key | acc]
         end)
-        |> Enum.each(fn key -> NIF.delete(db, :derived_cf, key) end)
+        |> Enum.each(fn key -> ErlangAdapter.delete(db, :derived, key) end)
 
         # Measure parallel time
         {par_duration, _} =

@@ -69,7 +69,7 @@ defmodule TripleStore.ReasonerTestCase do
         TBoxCache
       }
 
-      alias TripleStore.Backend.RocksDB.NIF
+      alias TripleStore.Backend.RocksDB.ErlangAdapter
       alias TripleStore.QuadIndex
 
       @moduletag :integration
