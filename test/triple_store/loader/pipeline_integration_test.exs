@@ -16,7 +16,6 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Benchmark.BSBM
   alias TripleStore.Benchmark.LUBM
-  alias TripleStore.Config.Runtime
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
   alias TripleStore.Loader
@@ -281,40 +280,6 @@ defmodule TripleStore.Loader.PipelineIntegrationTest do
       # Total should be sum of first load + second load
       {:ok, all_triples} = Index.lookup_all(db, {:var, :var, :var})
       assert length(all_triples) == count1 + count2
-    end
-
-    test "runtime config is restored after error in with_bulk_config", %{db: db, manager: manager} do
-      triples = generate_synthetic_triples(1000)
-      graph = RDF.Graph.new(triples)
-
-      # This should restore config even after the function returns an error
-      {:ok, {:error, :simulated}} =
-        Runtime.with_bulk_config(db, [], fn _db ->
-          {:error, :simulated}
-        end)
-
-      # Verify database still works
-      {:ok, count} = Loader.load_graph(db, manager, graph, batch_size: 500)
-      assert count == 1000
-    end
-
-    test "runtime config is restored after exception in with_bulk_config", %{
-      db: db,
-      manager: manager
-    } do
-      triples = generate_synthetic_triples(1000)
-      graph = RDF.Graph.new(triples)
-
-      # This should restore config after exception
-      assert_raise RuntimeError, fn ->
-        Runtime.with_bulk_config(db, [], fn _db ->
-          raise "simulated error"
-        end)
-      end
-
-      # Verify database still works
-      {:ok, count} = Loader.load_graph(db, manager, graph, batch_size: 500)
-      assert count == 1000
     end
   end
 

@@ -53,6 +53,23 @@ config :triple_store, :rocksdb,
 
 ## Bulk Loading Optimization
 
+Bulk loading large datasets (>100K triples) can be optimized with the following approaches.
+
+### Open Database for Bulk Load
+
+Use the `open_for_bulk_load/2` function when preparing for a large import:
+
+```elixir
+alias TripleStore.Backend.RocksDB.ErlangAdapter
+
+# Open database optimized for bulk loading
+{:ok, adapter} = ErlangAdapter.open_for_bulk_load("/path/to/db")
+```
+
+**Note:** The erlang-rocksdb library doesn't support runtime configuration changes.
+This function documents intent and provides forward compatibility. Actual optimization
+comes from the practices below.
+
 ### Batch Size
 
 Larger batches reduce per-triple overhead:
@@ -68,17 +85,52 @@ Larger batches reduce per-triple overhead:
 - Large files (>100K triples): 10,000
 - Very large files (>1M triples): 50,000
 
-### Disable WAL for Bulk Loads
+### Disable WAL for Initial Bulk Load
 
-For initial bulk loading, consider disabling the Write-Ahead Log:
+For initial bulk loading into a new database, consider disabling the Write-Ahead Log:
 
 ```elixir
-# Warning: Data may be lost on crash during load
-config :triple_store, :rocksdb,
-  disable_wal: true
+# Open without WAL for initial bulk load (use with caution)
+# Data may be lost on crash during load
+{:ok, adapter} = ErlangAdapter.open(path, disable_wal: true)
+
+# Load data...
+
+# Re-open with WAL enabled for normal operation
+:ok = ErlangAdapter.close(adapter)
+{:ok, adapter} = ErlangAdapter.open(path)
 ```
 
-Re-enable WAL after bulk loading completes.
+**Warning:** Only disable WAL for initial bulk loads into new databases.
+Never disable WAL for databases with important data.
+
+### Parallel Loading with Flow
+
+For multiple files, use Flow for concurrent loading:
+
+```elixir
+use Flow
+
+paths = ["file1.nt", "file2.nt", "file3.nt"]
+
+paths
+|> Flow.from_enumerable()
+|> Flow.map(fn path ->
+  Task.async(fn ->
+    TripleStore.load(store, path, batch_size: 50_000)
+  end)
+end)
+|> Flow.await()  # Wait for all loads to complete
+```
+
+### Manual Compaction After Load
+
+After bulk loading completes, the database will automatically compact in the background.
+For large loads, consider allowing extra time for compaction before putting the database
+into production use.
+
+The erlang-rocksdb library handles background compaction automatically based on
+the configured options.
 
 ## Query Optimization
 
