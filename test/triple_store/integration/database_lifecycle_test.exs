@@ -287,7 +287,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
       {:ok, snapshot} = ErlangAdapter.snapshot(db)
 
       # Count at snapshot time using snapshot_stream
-      {:ok, snapshot_stream} = ErlangAdapter.snapshot_stream(db, snapshot, :spo, <<>>)
+      snapshot_stream = ErlangAdapter.snapshot_stream(db, snapshot, :spo, <<>>)
 
       snapshot_count =
         snapshot_stream
