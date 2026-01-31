@@ -486,7 +486,7 @@ defmodule TripleStore.TrigTest do
 
       # Verify callback was invoked
       invocations = Agent.get(callback_invocations, fn list -> list end)
-      assert length(invocations) > 0
+      refute Enum.empty?(invocations)
 
       Agent.stop(callback_invocations)
       File.rm_rf(trig_file)

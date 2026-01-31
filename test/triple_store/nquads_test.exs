@@ -368,7 +368,7 @@ defmodule TripleStore.NQuadsTest do
 
       # Verify callback was invoked
       invocations = Agent.get(callback_invocations, & &1)
-      assert length(invocations) > 0
+      refute Enum.empty?(invocations)
 
       Agent.stop(callback_invocations)
       File.rm_rf(nq_file)

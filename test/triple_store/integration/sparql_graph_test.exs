@@ -120,7 +120,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Should query from default graph
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "GRAPH clause with named graph", %{ctx: ctx} do
@@ -187,7 +187,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
       """
 
       assert {:ok, results} = Query.query(ctx, query)
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "nested SELECT with GRAPH in outer query", %{ctx: ctx} do
@@ -254,7 +254,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Bob is in graph1 and knows someone
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "NOT EXISTS with GRAPH clause", %{ctx: ctx} do
@@ -318,7 +318,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Bob is known by someone in graph2
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -340,7 +340,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Should find grandparent relationships
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       # With ?ancestor ex:childOf/ex:childOf ?descendant:
       # - a ex:childOf b, b ex:childOf c → a is the ancestor, c is the descendant
@@ -365,7 +365,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Should find both parent and child relationships
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
 
     @tag :skip
@@ -383,7 +383,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Should include all transitive relationships including self
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
 
     @tag :skip
@@ -402,7 +402,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
       assert {:ok, results} = Query.query(ctx, query)
       # Should find all ancestor relationships excluding self
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
 
     test "property path with filter in GRAPH clause", %{ctx: ctx} do
@@ -425,7 +425,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
       # a->b->c->d, so a is the grandchild of c
       # The path ex:childOf/ex:childOf from a: a->b->c, so ?end = c, not d
       # Let's check what we actually get
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 end

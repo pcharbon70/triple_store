@@ -123,7 +123,7 @@ defmodule TripleStore.GraphScopedLoadingTest do
 
       # Verify quads are NOT in default graph
       default_quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: 0})
-      assert length(default_quads) == 0
+      assert Enum.empty?(default_quads)
 
       # Verify quads ARE in target graph
       {:ok, graph_id} = TripleStore.Adapter.term_to_id(manager, graph)

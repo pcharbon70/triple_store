@@ -117,7 +117,7 @@ defmodule TripleStore.SPARQL.Benchmark do
       median_us: median(times),
       p95_us: percentile(times, 95),
       p99_us: percentile(times, 99),
-      memory_mb: if(length(memory_values) > 0, do: average(memory_values), else: 0.0)
+      memory_mb: if(not Enum.empty?(memory_values), do: average(memory_values), else: 0.0)
     }
   end
 

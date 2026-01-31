@@ -292,7 +292,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       {:ok, stream} = DerivedStore.lookup_derived_quads(db, 1, {{:bound, 999}, :var, :var})
       results = Enum.to_list(stream)
 
-      assert length(results) == 0
+      assert Enum.empty?(results)
     end
 
     test "returns empty stream for non-existent graph", %{db: db} do
@@ -303,7 +303,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       {:ok, stream} = DerivedStore.lookup_derived_quads(db, 2, :var)
       results = Enum.to_list(stream)
 
-      assert length(results) == 0
+      assert Enum.empty?(results)
     end
   end
 
@@ -529,7 +529,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
       results = Enum.to_list(stream)
 
       # Should at least have the derived quad
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -555,7 +555,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
 
       {:ok, results} = lookup_fn.({{:bound, 100}, :var, :var})
 
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "creates lookup function for both sources", %{db: db} do
@@ -572,7 +572,7 @@ defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
 
       {:ok, results} = lookup_fn.(:var)
 
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "lookup function handles bound pattern", %{db: db} do

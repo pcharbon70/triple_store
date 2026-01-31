@@ -161,8 +161,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoningIntegrationTest do
       graph1_quads = Enum.filter(all_facts, fn {g, _s, _p, _o} -> g == 1 end)
       graph2_quads = Enum.filter(all_facts, fn {g, _s, _p, _o} -> g == 2 end)
 
-      assert length(graph1_quads) > 0
-      assert length(graph2_quads) > 0
+      refute Enum.empty?(graph1_quads)
+      refute Enum.empty?(graph2_quads)
       assert length(graph1_quads) != length(graph2_quads)
     end
 

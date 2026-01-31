@@ -3309,7 +3309,7 @@ defmodule TripleStore.SPARQL.Executor do
           {vars, nil}
       end
 
-    has_graph_vars? = length(detected_graph_vars) > 0
+    has_graph_vars? = not Enum.empty?(detected_graph_vars)
 
     # Reconstruct stream if we consumed it for detection
     stream_to_process =

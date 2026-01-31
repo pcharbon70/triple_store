@@ -636,7 +636,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
 
       # Note: With single iterator, stream may not return all results
       # The stream implementation is designed for multi-iterator joins
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       # All results should have bindings
       Enum.each(results, fn bindings ->

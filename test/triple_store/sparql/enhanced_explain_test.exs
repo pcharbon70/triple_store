@@ -181,7 +181,7 @@ defmodule TripleStore.SPARQL.EnhancedExplainTest do
       {:explain, details} = Optimizer.explain_detailed(algebra, stats: @sample_stats)
 
       assert is_list(details.recommended_plan.steps)
-      assert length(details.recommended_plan.steps) > 0
+      refute Enum.empty?(details.recommended_plan.steps)
     end
   end
 

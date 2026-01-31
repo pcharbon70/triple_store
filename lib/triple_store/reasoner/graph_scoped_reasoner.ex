@@ -1195,7 +1195,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       end)
 
     # Emit warning if hybrid mode has unconfigured graphs
-    if hybrid_mode? and length(unconfigured_graphs) > 0 do
+    if hybrid_mode? and not Enum.empty?(unconfigured_graphs) do
       Logger.warning("""
       Hybrid reasoning mode: #{length(unconfigured_graphs)} graphs have no explicit configuration.
       Using local scope as default for graphs: #{inspect(Enum.reverse(unconfigured_graphs))}

@@ -62,11 +62,6 @@ defmodule TripleStore.Benchmark.WatDivTest do
       # WatDiv entity types
       assert Enum.any?(types, &String.contains?(&1, "User"))
       assert Enum.any?(types, &String.contains?(&1, "Product"))
-
-      assert Enum.any?(types, fn t ->
-               String.contains?(t, "Offer") or String.contains?(t, "Offer")
-             end)
-
       assert Enum.any?(types, &String.contains?(&1, "Retailer"))
       assert Enum.any?(types, &String.contains?(&1, "Genre"))
     end
@@ -84,7 +79,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have some friendships
-      assert length(friendships) > 0
+      refute Enum.empty?(friendships)
 
       # Check for likes relationships
       likes =
@@ -93,7 +88,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have some likes
-      assert length(likes) > 0
+      refute Enum.empty?(likes)
     end
 
     test "generates products with offers" do
@@ -109,7 +104,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have offer entities
-      assert length(offer_triples) > 0
+      refute Enum.empty?(offer_triples)
 
       # Check for product-offer relationships
       product_offer_triples =
@@ -118,7 +113,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have product relationships
-      assert length(product_offer_triples) > 0
+      refute Enum.empty?(product_offer_triples)
     end
 
     test "heterogeneous structure - not all entities have same attributes" do
@@ -152,7 +147,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # At least some users should not have certain attributes
-      assert homepage_attr or length(users) == 0
+      assert homepage_attr or Enum.empty?(users)
     end
   end
 
@@ -325,7 +320,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have at least one price
-      assert length(price_triples) > 0
+      refute Enum.empty?(price_triples)
 
       # Check that prices are numeric
       for {_s, _p, o} <- price_triples do
@@ -351,7 +346,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have genre assignments
-      assert length(genre_triples) > 0
+      refute Enum.empty?(genre_triples)
     end
 
     test "generates purchase relationships" do
@@ -367,7 +362,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
         end)
 
       # Should have purchase entities
-      assert length(purchase_triples) > 0
+      refute Enum.empty?(purchase_triples)
     end
 
     test "generates multiple entity categories" do

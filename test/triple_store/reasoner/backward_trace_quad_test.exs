@@ -82,7 +82,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
       deriving_rules = BackwardTraceQuad.find_deriving_rules(derived_quad, rules)
 
       # cax_sco should match because it derives rdf:type through subClassOf
-      assert length(deriving_rules) > 0
+      refute Enum.empty?(deriving_rules)
       assert Rules.cax_sco() in deriving_rules
     end
 
@@ -103,7 +103,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
       deriving_rules = BackwardTraceQuad.find_deriving_rules(derived_quad, rules)
 
       # scm_sco should match (it derives subClassOf transitivity)
-      assert length(deriving_rules) >= 1
+      refute Enum.empty?(deriving_rules)
     end
   end
 
