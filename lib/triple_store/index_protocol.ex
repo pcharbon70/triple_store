@@ -69,7 +69,7 @@ defmodule TripleStore.IndexProtocol do
   @doc """
   Checks if this is a quad index (4 components) vs triple index (3 components).
   """
-  @callback is_quad?() :: boolean()
+  @callback quad?() :: boolean()
 end
 
 # ===========================================================================
@@ -88,7 +88,7 @@ defmodule TripleStore.IndexProtocol.SPO do
   def column_family, do: :spo
   def name, do: "Subject-Predicate-Object"
   def key_order, do: [:subject, :predicate, :object]
-  def is_quad?, do: false
+  def quad?, do: false
 end
 
 defmodule TripleStore.IndexProtocol.POS do
@@ -103,7 +103,7 @@ defmodule TripleStore.IndexProtocol.POS do
   def column_family, do: :pos
   def name, do: "Predicate-Object-Subject"
   def key_order, do: [:predicate, :object, :subject]
-  def is_quad?, do: false
+  def quad?, do: false
 end
 
 defmodule TripleStore.IndexProtocol.OSP do
@@ -118,7 +118,7 @@ defmodule TripleStore.IndexProtocol.OSP do
   def column_family, do: :osp
   def name, do: "Object-Subject-Predicate"
   def key_order, do: [:object, :subject, :predicate]
-  def is_quad?, do: false
+  def quad?, do: false
 end
 
 defmodule TripleStore.IndexProtocol.GSPO do
@@ -133,7 +133,7 @@ defmodule TripleStore.IndexProtocol.GSPO do
   def column_family, do: :gspo
   def name, do: "Graph-Subject-Predicate-Object"
   def key_order, do: [:graph, :subject, :predicate, :object]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 defmodule TripleStore.IndexProtocol.GPOS do
@@ -148,7 +148,7 @@ defmodule TripleStore.IndexProtocol.GPOS do
   def column_family, do: :gpos
   def name, do: "Graph-Predicate-Object-Subject"
   def key_order, do: [:graph, :predicate, :object, :subject]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 defmodule TripleStore.IndexProtocol.GOSP do
@@ -163,7 +163,7 @@ defmodule TripleStore.IndexProtocol.GOSP do
   def column_family, do: :gosp
   def name, do: "Graph-Object-Subject-Predicate"
   def key_order, do: [:graph, :object, :subject, :predicate]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 defmodule TripleStore.IndexProtocol.SPOG do
@@ -178,7 +178,7 @@ defmodule TripleStore.IndexProtocol.SPOG do
   def column_family, do: :spog
   def name, do: "Subject-Predicate-Object-Graph"
   def key_order, do: [:subject, :predicate, :object, :graph]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 defmodule TripleStore.IndexProtocol.POSG do
@@ -193,7 +193,7 @@ defmodule TripleStore.IndexProtocol.POSG do
   def column_family, do: :posg
   def name, do: "Predicate-Object-Subject-Graph"
   def key_order, do: [:predicate, :object, :subject, :graph]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 defmodule TripleStore.IndexProtocol.OSPG do
@@ -208,7 +208,7 @@ defmodule TripleStore.IndexProtocol.OSPG do
   def column_family, do: :ospg
   def name, do: "Object-Subject-Predicate-Graph"
   def key_order, do: [:object, :subject, :predicate, :graph]
-  def is_quad?, do: true
+  def quad?, do: true
 end
 
 # ===========================================================================
@@ -276,39 +276,39 @@ defmodule TripleStore.IndexProtocol.Helpers do
 
   ## Examples
 
-      iex> IndexProtocol.Helpers.is_quad?(:spo)
+      iex> IndexProtocol.Helpers.quad?(:spo)
       false
 
-      iex> IndexProtocol.Helpers.is_quad?(:gspo)
+      iex> IndexProtocol.Helpers.quad?(:gspo)
       true
 
   """
-  @spec is_quad?(atom()) :: boolean()
-  def is_quad?(:spo), do: false
-  def is_quad?(:pos), do: false
-  def is_quad?(:osp), do: false
-  def is_quad?(:gspo), do: true
-  def is_quad?(:gpos), do: true
-  def is_quad?(:gosp), do: true
-  def is_quad?(:spog), do: true
-  def is_quad?(:posg), do: true
-  def is_quad?(:ospg), do: true
-  def is_quad?(_), do: false
+  @spec quad?(atom()) :: boolean()
+  def quad?(:spo), do: false
+  def quad?(:pos), do: false
+  def quad?(:osp), do: false
+  def quad?(:gspo), do: true
+  def quad?(:gpos), do: true
+  def quad?(:gosp), do: true
+  def quad?(:spog), do: true
+  def quad?(:posg), do: true
+  def quad?(:ospg), do: true
+  def quad?(_), do: false
 
   @doc """
   Checks if an index type is a triple index (3 components).
 
   ## Examples
 
-      iex> IndexProtocol.Helpers.is_triple?(:spo)
+      iex> IndexProtocol.Helpers.triple?(:spo)
       true
 
-      iex> IndexProtocol.Helpers.is_triple?(:gspo)
+      iex> IndexProtocol.Helpers.triple?(:gspo)
       false
 
   """
-  @spec is_triple?(atom()) :: boolean()
-  def is_triple?(index), do: not is_quad?(index) and key_size(index) == 3
+  @spec triple?(atom()) :: boolean()
+  def triple?(index), do: not quad?(index) and key_size(index) == 3
 
   @doc """
   Gets all valid triple index types.

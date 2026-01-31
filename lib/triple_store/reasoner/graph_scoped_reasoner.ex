@@ -559,34 +559,32 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   """
   @spec load_all_explicit_quads(db_ref()) :: {:ok, MapSet.t(id_triple())} | {:error, term()}
   def load_all_explicit_quads(db) do
-    try do
-      # First, collect all keys from the derived CF for filtering
-      derived_keys =
-        ErlangAdapter.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
-          MapSet.put(acc, key)
-        end)
+    # First, collect all keys from the derived CF for filtering
+    derived_keys =
+      ErlangAdapter.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
+        MapSet.put(acc, key)
+      end)
 
-      facts =
-        ErlangAdapter.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
-          # Check if this quad is in the derived CF
-          if MapSet.member?(derived_keys, key) do
-            # Skip derived quads
-            acc
-          else
-            case QuadIndex.key_to_quad(:gspo, key) do
-              {_g, _s, _p, _o} = quad ->
-                MapSet.put(acc, quad_to_triple(quad))
+    facts =
+      ErlangAdapter.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
+        # Check if this quad is in the derived CF
+        if MapSet.member?(derived_keys, key) do
+          # Skip derived quads
+          acc
+        else
+          case QuadIndex.key_to_quad(:gspo, key) do
+            {_g, _s, _p, _o} = quad ->
+              MapSet.put(acc, quad_to_triple(quad))
 
-              _error ->
-                acc
-            end
+            _error ->
+              acc
           end
-        end)
+        end
+      end)
 
-      {:ok, facts}
-    rescue
-      e -> {:error, {:explicit_quad_loading_failed, e}}
-    end
+    {:ok, facts}
+  rescue
+    e -> {:error, {:explicit_quad_loading_failed, e}}
   end
 
   defp load_graph_facts(db, graph_id) do

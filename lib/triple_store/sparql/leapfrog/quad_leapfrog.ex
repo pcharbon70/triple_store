@@ -358,7 +358,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     components = [s, p, o, g]
 
     # Check if all components are bound (fully-specified quad)
-    if Enum.all?(components, &is_bound?/1) do
+    if Enum.all?(components, &bound?/1) do
       # Fully-bound pattern: do direct lookup instead of iteration
       # This is more efficient and avoids creating unnecessary iterators
       fully_bound_lookup(db, s, p, o, g)
@@ -414,7 +414,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp build_prefix_from_components([component | rest], acc) do
     value = extract_bound_value(component)
 
-    if is_bound?(component) do
+    if bound?(component) do
       build_prefix_from_components(rest, [<<value::64-big>> | acc])
     else
       # Stop at first unbound component
@@ -426,16 +426,16 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp extract_variables(components) do
     components
     |> Enum.with_index()
-    |> Enum.filter(fn {comp, _idx} -> is_variable?(comp) end)
+    |> Enum.filter(fn {comp, _idx} -> variable?(comp) end)
     |> Enum.map(fn {{:variable, name}, _idx} -> name end)
   end
 
   # Check if a component is a variable
-  defp is_variable?({:variable, _name}), do: true
-  defp is_variable?(_), do: false
+  defp variable?({:variable, _name}), do: true
+  defp variable?(_), do: false
 
   # Check if a component is bound (not a variable)
-  defp is_bound?(component), do: not is_variable?(component)
+  defp bound?(component), do: not variable?(component)
 
   # Extract bound value from component
   defp extract_bound_value({:variable, _}), do: 0
@@ -448,7 +448,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp position_selectivity_score(component, _position, stats) do
     cond do
       # Bound constants are most selective (score 0)
-      is_bound?(component) ->
+      bound?(component) ->
         0
 
       # Variables have selectivity based on position

@@ -225,24 +225,24 @@ defmodule TripleStore.Reasoner.GraphHelpers do
 
   ## Examples
 
-      iex> GraphHelpers.is_graph_ref?(0)
+      iex> GraphHelpers.graph_ref?(0)
       true
 
-      iex> GraphHelpers.is_graph_ref?(:global)
+      iex> GraphHelpers.graph_ref?(:global)
       true
 
-      iex> GraphHelpers.is_graph_ref?(-1)
+      iex> GraphHelpers.graph_ref?(-1)
       false
 
-      iex> GraphHelpers.is_graph_ref?(:invalid)
+      iex> GraphHelpers.graph_ref?(:invalid)
       false
 
   """
-  @spec is_graph_ref?(any()) :: boolean()
-  def is_graph_ref?(graph_id) when is_integer(graph_id), do: graph_id >= 0
-  def is_graph_ref?(:global), do: true
-  def is_graph_ref?(:shared), do: true
-  def is_graph_ref?(_), do: false
+  @spec graph_ref?(any()) :: boolean()
+  def graph_ref?(graph_id) when is_integer(graph_id), do: graph_id >= 0
+  def graph_ref?(:global), do: true
+  def graph_ref?(:shared), do: true
+  def graph_ref?(_), do: false
 
   # ============================================================================
   # Scope Helpers

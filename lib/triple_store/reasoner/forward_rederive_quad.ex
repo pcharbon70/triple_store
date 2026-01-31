@@ -222,19 +222,17 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
   defp load_tbox_triples(_db, nil, _graph_id), do: MapSet.new()
 
   defp load_tbox_triples(db, tbox_graph_id, _graph_id) do
-    try do
-      case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
-        {:ok, tbox_quads} ->
-          tbox_quads
-          |> Enum.map(fn {_g, s, p, o} -> {s, p, o} end)
-          |> MapSet.new()
+    case TBoxExtractor.extract_tbox(db, tbox_graph_id) do
+      {:ok, tbox_quads} ->
+        tbox_quads
+        |> Enum.map(fn {_g, s, p, o} -> {s, p, o} end)
+        |> MapSet.new()
 
-        {:error, _reason} ->
-          MapSet.new()
-      end
-    rescue
-      _error -> MapSet.new()
+      {:error, _reason} ->
+        MapSet.new()
     end
+  rescue
+    _error -> MapSet.new()
   end
 
   defp load_explicit_facts_in_graph(db, graph_id, deleted_quads) do

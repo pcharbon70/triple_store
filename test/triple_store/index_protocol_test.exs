@@ -39,7 +39,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns false" do
-      refute SPO.is_quad?()
+      refute SPO.quad?()
     end
   end
 
@@ -61,7 +61,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns false" do
-      refute POS.is_quad?()
+      refute POS.quad?()
     end
   end
 
@@ -83,7 +83,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns false" do
-      refute OSP.is_quad?()
+      refute OSP.quad?()
     end
   end
 
@@ -105,7 +105,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert GSPO.is_quad?()
+      assert GSPO.quad?()
     end
   end
 
@@ -127,7 +127,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert GPOS.is_quad?()
+      assert GPOS.quad?()
     end
   end
 
@@ -149,7 +149,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert GOSP.is_quad?()
+      assert GOSP.quad?()
     end
   end
 
@@ -171,7 +171,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert SPOG.is_quad?()
+      assert SPOG.quad?()
     end
   end
 
@@ -193,7 +193,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert POSG.is_quad?()
+      assert POSG.quad?()
     end
   end
 
@@ -215,7 +215,7 @@ defmodule TripleStore.IndexProtocolTest do
     end
 
     test "is_quad?/0 returns true" do
-      assert OSPG.is_quad?()
+      assert OSPG.quad?()
     end
   end
 
@@ -264,39 +264,39 @@ defmodule TripleStore.IndexProtocolTest do
 
   describe "Helpers.is_quad?/1" do
     test "returns true for quad indices" do
-      assert Helpers.is_quad?(:gspo)
-      assert Helpers.is_quad?(:gpos)
-      assert Helpers.is_quad?(:gosp)
-      assert Helpers.is_quad?(:spog)
-      assert Helpers.is_quad?(:posg)
-      assert Helpers.is_quad?(:ospg)
+      assert Helpers.quad?(:gspo)
+      assert Helpers.quad?(:gpos)
+      assert Helpers.quad?(:gosp)
+      assert Helpers.quad?(:spog)
+      assert Helpers.quad?(:posg)
+      assert Helpers.quad?(:ospg)
     end
 
     test "returns false for triple indices" do
-      refute Helpers.is_quad?(:spo)
-      refute Helpers.is_quad?(:pos)
-      refute Helpers.is_quad?(:osp)
+      refute Helpers.quad?(:spo)
+      refute Helpers.quad?(:pos)
+      refute Helpers.quad?(:osp)
     end
 
     test "returns false for unknown indices" do
-      refute Helpers.is_quad?(:unknown)
+      refute Helpers.quad?(:unknown)
     end
   end
 
   describe "Helpers.is_triple?/1" do
     test "returns true for triple indices" do
-      assert Helpers.is_triple?(:spo)
-      assert Helpers.is_triple?(:pos)
-      assert Helpers.is_triple?(:osp)
+      assert Helpers.triple?(:spo)
+      assert Helpers.triple?(:pos)
+      assert Helpers.triple?(:osp)
     end
 
     test "returns false for quad indices" do
-      refute Helpers.is_triple?(:gspo)
-      refute Helpers.is_triple?(:spog)
+      refute Helpers.triple?(:gspo)
+      refute Helpers.triple?(:spog)
     end
 
     test "returns false for unknown indices" do
-      refute Helpers.is_triple?(:unknown)
+      refute Helpers.triple?(:unknown)
     end
   end
 

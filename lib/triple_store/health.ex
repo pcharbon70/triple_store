@@ -768,20 +768,21 @@ defmodule TripleStore.Health do
 
     _alerts = []
 
-    with {:ok, histograms} <- Statistics.build_per_graph_histograms(db, []) do
-      alerts =
-        Enum.flat_map(histograms, fn {graph_id, _histogram} ->
-          case graph_health(%{db: db}, graph_id) do
-            {:ok, health} ->
-              check_graph_for_alerts(health, large_threshold, empty_threshold)
+    case Statistics.build_per_graph_histograms(db, []) do
+      {:ok, histograms} ->
+        alerts =
+          Enum.flat_map(histograms, fn {graph_id, _histogram} ->
+            case graph_health(%{db: db}, graph_id) do
+              {:ok, health} ->
+                check_graph_for_alerts(health, large_threshold, empty_threshold)
 
-            _ ->
-              []
-          end
-        end)
+              _ ->
+                []
+            end
+          end)
 
-      {:ok, alerts}
-    else
+        {:ok, alerts}
+
       _ ->
         {:ok, []}
     end

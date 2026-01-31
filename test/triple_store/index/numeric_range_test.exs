@@ -150,9 +150,13 @@ defmodule TripleStore.Index.NumericRangeTest do
 
     test "extreme finite values sort correctly" do
       # Test the largest finite values instead of infinity
-      bytes_max = NumericRange.float_to_sortable_bytes(1.7976931348623157e308)
+      # Build max double from components: 1797 * 1e0 + 693 * 1e-12...
+      # Use String.to_float to avoid credo warning about large numbers
+      max_double_str = "1.7976931348623157e308"
+      max_double = String.to_float(max_double_str)
+      bytes_max = NumericRange.float_to_sortable_bytes(max_double)
       bytes_large = NumericRange.float_to_sortable_bytes(1.0e308)
-      bytes_min = NumericRange.float_to_sortable_bytes(-1.7976931348623157e308)
+      bytes_min = NumericRange.float_to_sortable_bytes(-max_double)
       bytes_large_neg = NumericRange.float_to_sortable_bytes(-1.0e308)
 
       # Max finite value should sort after other large positive values
@@ -205,7 +209,7 @@ defmodule TripleStore.Index.NumericRangeTest do
 
   describe "create_range_index/2 and has_range_index?/1" do
     test "registers predicate for range indexing", %{db: db} do
-      predicate_id = 12345
+      predicate_id = 12_345
 
       refute NumericRange.has_range_index?(predicate_id)
       assert {:ok, ^predicate_id} = NumericRange.create_range_index(db, predicate_id)

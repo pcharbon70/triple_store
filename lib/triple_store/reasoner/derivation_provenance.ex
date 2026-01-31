@@ -332,32 +332,30 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   """
   @spec load(term(), non_neg_integer() | nil) :: {:ok, t()} | {:error, term()}
   def load(db, graph_id \\ nil) do
-    try do
-      prefix = if graph_id, do: <<graph_id::64-big>>, else: <<>>
+    prefix = if graph_id, do: <<graph_id::64-big>>, else: <<>>
 
-      derivations =
-        ErlangAdapter.fold(db, @provenance_cf, prefix, [], fn {key, value}, acc ->
-          case decode_provenance_key(key) do
-            {:ok, {_g, _s, _p, _o} = quad} ->
-              case decode_derivation(value) do
-                {:ok, derivation} -> [{quad, derivation} | acc]
-                _error -> acc
-              end
+    derivations =
+      ErlangAdapter.fold(db, @provenance_cf, prefix, [], fn {key, value}, acc ->
+        case decode_provenance_key(key) do
+          {:ok, {_g, _s, _p, _o} = quad} ->
+            case decode_derivation(value) do
+              {:ok, derivation} -> [{quad, derivation} | acc]
+              _error -> acc
+            end
 
-            _error ->
-              acc
-          end
-        end)
+          _error ->
+            acc
+        end
+      end)
 
-      tracker = %__MODULE__{
-        derivations: Map.new(derivations),
-        count: length(derivations)
-      }
+    tracker = %__MODULE__{
+      derivations: Map.new(derivations),
+      count: length(derivations)
+    }
 
-      {:ok, tracker}
-    rescue
-      error -> {:error, error}
-    end
+    {:ok, tracker}
+  rescue
+    error -> {:error, error}
   end
 
   @doc """
@@ -463,10 +461,8 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   # Decode a derivation record from storage
   defp decode_derivation(binary) when is_binary(binary) do
-    try do
-      {:ok, :erlang.binary_to_term(binary)}
-    rescue
-      _ -> :error
-    end
+    {:ok, :erlang.binary_to_term(binary)}
+  rescue
+    _ -> :error
   end
 end

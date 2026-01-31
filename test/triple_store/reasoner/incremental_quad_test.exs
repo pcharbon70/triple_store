@@ -14,7 +14,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
 
   defp iri(suffix), do: {:iri, @ex <> suffix}
   defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
+  defp rdfs_subclass_of, do: {:iri, @rdfs <> "subClassOf"}
 
   defp quad(g, s, p, o), do: {g, s, p, o}
 

@@ -462,8 +462,8 @@ defmodule TripleStore.SPARQL.Update.Modify do
   # Performs atomic delete + insert operation for quad stores
   defp execute_atomic_modify_quads(ctx, delete_quads, insert_quads) do
     # Filter to ensure we only have valid quads
-    valid_deletes = Enum.filter(delete_quads, &is_valid_quad/1)
-    valid_inserts = Enum.filter(insert_quads, &is_valid_quad/1)
+    valid_deletes = Enum.filter(delete_quads, &valid_quad?/1)
+    valid_inserts = Enum.filter(insert_quads, &valid_quad?/1)
 
     # First delete, then insert
     delete_count =
@@ -493,11 +493,11 @@ defmodule TripleStore.SPARQL.Update.Modify do
   end
 
   # Check if a quad is valid (4-element tuple with integers)
-  defp is_valid_quad({s, p, o, g})
+  defp valid_quad?({s, p, o, g})
        when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g),
        do: true
 
-  defp is_valid_quad(_), do: false
+  defp valid_quad?(_), do: false
 
   # Executes a batch of operations
   defp execute_batch(_db, []), do: :ok

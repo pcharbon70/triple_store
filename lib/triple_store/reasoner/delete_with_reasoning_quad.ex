@@ -248,32 +248,28 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   defp delete_explicit_quads(_db, [], _graph_id), do: :ok
 
   defp delete_explicit_quads(db, quads, graph_id) do
-    try do
-      # Convert from {g, s, p, o} to {s, p, o, g} format for QuadOperations
-      normalized_quads =
-        quads
-        |> Enum.filter(fn {g, _s, _p, _o} -> g == graph_id end)
-        |> Enum.map(fn {g, s, p, o} -> {s, p, o, g} end)
+    # Convert from {g, s, p, o} to {s, p, o, g} format for QuadOperations
+    normalized_quads =
+      quads
+      |> Enum.filter(fn {g, _s, _p, _o} -> g == graph_id end)
+      |> Enum.map(fn {g, s, p, o} -> {s, p, o, g} end)
 
-      QuadOperations.delete_quads(db, normalized_quads, sync: true)
-    rescue
-      _error -> :ok
-    end
+    QuadOperations.delete_quads(db, normalized_quads, sync: true)
+  rescue
+    _error -> :ok
   end
 
   defp delete_derived_quads(db, quads) when is_list(quads) do
-    try do
-      # Delete from derived column family
-      operations =
-        Enum.map(quads, fn {g, s, p, o} ->
-          key = QuadIndex.gspo_key(g, s, p, o)
-          {:derived, key}
-        end)
+    # Delete from derived column family
+    operations =
+      Enum.map(quads, fn {g, s, p, o} ->
+        key = QuadIndex.gspo_key(g, s, p, o)
+        {:derived, key}
+      end)
 
-      ErlangAdapter.delete_batch(db, operations, true)
-    rescue
-      _error -> :ok
-    end
+    ErlangAdapter.delete_batch(db, operations, true)
+  rescue
+    _error -> :ok
   end
 
   # ============================================================================

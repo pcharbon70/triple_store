@@ -1,4 +1,4 @@
-defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
+defmodule TripleStore.Reasoner.Section784IncrementalMaintenanceTest do
   @moduledoc """
   Tests for Section 7.8.4: Incremental Maintenance with Named Graphs.
 
@@ -35,8 +35,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
   defp iri(suffix), do: {:iri, @ex <> suffix}
   defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
-  defp rdfs_subPropertyOf, do: {:iri, @rdfs <> "subPropertyOf"}
+  defp rdfs_subclass_of, do: {:iri, @rdfs <> "subClassOf"}
+  defp rdfs_subproperty_of, do: {:iri, @rdfs <> "subPropertyOf"}
   defp rdfs_domain, do: {:iri, @rdfs <> "domain"}
   defp rdfs_range, do: {:iri, @rdfs <> "range"}
 
@@ -52,7 +52,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Set up TBox in graph 0
       existing =
         MapSet.new([
-          quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(0, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       # Add data to graph 1
@@ -78,8 +78,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Set up class hierarchy in graph 1
       existing =
         MapSet.new([
-          quad(1, iri("GradStudent"), rdfs_subClassOf(), iri("Student")),
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(1, iri("GradStudent"), rdfs_subclass_of(), iri("Student")),
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       new_quads = [quad(1, iri("bob"), rdf_type(), iri("GradStudent"))]
@@ -100,7 +100,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # TBox in graph 0
       existing =
         MapSet.new([
-          quad(0, iri("Employee"), rdfs_subClassOf(), iri("Person"))
+          quad(0, iri("Employee"), rdfs_subclass_of(), iri("Person"))
         ])
 
       # Data in graph 1 using shared TBox
@@ -121,7 +121,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "returns per-graph derivation counts" do
       existing =
         MapSet.new([
-          quad(1, iri("Teacher"), rdfs_subClassOf(), iri("Person"))
+          quad(1, iri("Teacher"), rdfs_subclass_of(), iri("Person"))
         ])
 
       new_quads = [quad(1, iri("diana"), rdf_type(), iri("Teacher"))]
@@ -139,8 +139,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Same schema in different graphs
       existing =
         MapSet.new([
-          quad(1, iri("Dog"), rdfs_subClassOf(), iri("Animal")),
-          quad(2, iri("Dog"), rdfs_subClassOf(), iri("Animal"))
+          quad(1, iri("Dog"), rdfs_subclass_of(), iri("Animal")),
+          quad(2, iri("Dog"), rdfs_subclass_of(), iri("Animal"))
         ])
 
       # Add to graph 1
@@ -165,8 +165,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Setup: Same hierarchy in two graphs
       existing =
         MapSet.new([
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
-          quad(2, iri("Student"), rdfs_subClassOf(), iri("Person")),
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person")),
+          quad(2, iri("Student"), rdfs_subclass_of(), iri("Person")),
           # Data in both graphs
           quad(1, iri("eve"), rdf_type(), iri("Student")),
           quad(2, iri("eve"), rdf_type(), iri("Student"))
@@ -193,8 +193,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Setup: 3-level hierarchy in graph 1
       existing =
         MapSet.new([
-          quad(1, iri("PostDoc"), rdfs_subClassOf(), iri("Researcher")),
-          quad(1, iri("Researcher"), rdfs_subClassOf(), iri("Academic")),
+          quad(1, iri("PostDoc"), rdfs_subclass_of(), iri("Researcher")),
+          quad(1, iri("Researcher"), rdfs_subclass_of(), iri("Academic")),
           quad(1, iri("frank"), rdf_type(), iri("PostDoc"))
         ])
 
@@ -221,8 +221,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Setup with alternative derivation paths
       existing =
         MapSet.new([
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
-          quad(1, iri("Employee"), rdfs_subClassOf(), iri("Person")),
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person")),
+          quad(1, iri("Employee"), rdfs_subclass_of(), iri("Person")),
           # grace is both Student and Employee
           quad(1, iri("grace"), rdf_type(), iri("Student")),
           quad(1, iri("grace"), rdf_type(), iri("Employee"))
@@ -258,7 +258,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(1, iri("Professor"), rdfs_subClassOf(), iri("Faculty"))
+          quad(1, iri("Professor"), rdfs_subclass_of(), iri("Faculty"))
         ])
 
       new_quads = [quad(1, iri("henry"), rdf_type(), iri("Professor"))]
@@ -278,8 +278,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Same hierarchy in both graphs
       existing =
         MapSet.new([
-          quad(1, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
-          quad(2, iri("Cat"), rdfs_subClassOf(), iri("Pet")),
+          quad(1, iri("Cat"), rdfs_subclass_of(), iri("Pet")),
+          quad(2, iri("Cat"), rdfs_subclass_of(), iri("Pet")),
           # Instances in both graphs
           quad(1, iri("whiskers"), rdf_type(), iri("Cat")),
           quad(2, iri("mittens"), rdf_type(), iri("Cat"))
@@ -314,7 +314,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(0, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       # Add iris to graph 1, which should derive using TBox from graph 0
@@ -336,7 +336,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Multiple graphs using the same TBox
       existing =
         MapSet.new([
-          quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
+          quad(0, iri("Vehicle"), rdfs_subclass_of(), iri("Artifact"))
         ])
 
       # Add data in multiple graphs, both using the TBox from graph 0
@@ -371,7 +371,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(tbox_graph_id, iri("Mammal"), rdfs_subClassOf(), iri("Animal"))
+          quad(tbox_graph_id, iri("Mammal"), rdfs_subclass_of(), iri("Animal"))
         ])
 
       # Data in graph 1 using shared TBox
@@ -392,7 +392,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # TBox in graph 0
       existing =
         MapSet.new([
-          quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
+          quad(0, iri("Fruit"), rdfs_subclass_of(), iri("Food"))
         ])
 
       # Multiple data graphs using the same TBox
@@ -424,7 +424,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Original TBox
       existing =
         MapSet.new([
-          quad(0, iri("Undergrad"), rdfs_subClassOf(), iri("Student"))
+          quad(0, iri("Undergrad"), rdfs_subclass_of(), iri("Student"))
         ])
 
       new_quads = [quad(1, iri("leo"), rdf_type(), iri("Undergrad"))]
@@ -456,8 +456,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Graph 0: Shared TBox
       existing =
         MapSet.new([
-          quad(0, iri("Person"), rdfs_subClassOf(), iri("Agent")),
-          quad(0, iri("Organization"), rdfs_subClassOf(), iri("Agent"))
+          quad(0, iri("Person"), rdfs_subclass_of(), iri("Agent")),
+          quad(0, iri("Organization"), rdfs_subclass_of(), iri("Agent"))
         ])
 
       # Add mary as Person - should derive Agent from TBox
@@ -479,7 +479,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Test transitive property across graphs
       existing =
         MapSet.new([
-          quad(0, iri("Writer"), rdfs_subClassOf(), iri("Artist"))
+          quad(0, iri("Writer"), rdfs_subclass_of(), iri("Artist"))
         ])
 
       # Add novelist to graph 1
@@ -502,7 +502,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(0, iri("Fish"), rdfs_subClassOf(), iri("Animal"))
+          quad(0, iri("Fish"), rdfs_subclass_of(), iri("Animal"))
         ])
 
       new_quads = [quad(1, iri("nemo"), rdf_type(), iri("Fish"))]
@@ -524,12 +524,12 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Original TBox
       existing =
         MapSet.new([
-          quad(0, iri("Vehicle"), rdfs_subClassOf(), iri("Artifact"))
+          quad(0, iri("Vehicle"), rdfs_subclass_of(), iri("Artifact"))
         ])
 
       # Add new TBox axiom plus data
       new_tbox_and_data = [
-        quad(0, iri("Artifact"), rdfs_subClassOf(), iri("Object")),
+        quad(0, iri("Artifact"), rdfs_subclass_of(), iri("Object")),
         quad(1, iri("car"), rdf_type(), iri("Vehicle"))
       ]
 
@@ -540,7 +540,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       # Should derive new facts
       assert stats.derived_count >= 1
-      assert MapSet.member?(all_facts, quad(0, iri("Artifact"), rdfs_subClassOf(), iri("Object")))
+      assert MapSet.member?(all_facts, quad(0, iri("Artifact"), rdfs_subclass_of(), iri("Object")))
     end
   end
 
@@ -553,7 +553,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Shared TBox
       existing =
         MapSet.new([
-          quad(0, iri("Fruit"), rdfs_subClassOf(), iri("Food"))
+          quad(0, iri("Fruit"), rdfs_subclass_of(), iri("Food"))
         ])
 
       # Add same data in multiple graphs
@@ -587,7 +587,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(0, iri("Gem"), rdfs_subClassOf(), iri("Mineral"))
+          quad(0, iri("Gem"), rdfs_subclass_of(), iri("Mineral"))
         ])
 
       rules = [Rules.cax_sco()]
@@ -611,8 +611,8 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       existing =
         MapSet.new([
           # TBox with two paths
-          quad(0, iri("Reptile"), rdfs_subClassOf(), iri("Animal")),
-          quad(0, iri("Lizard"), rdfs_subClassOf(), iri("Reptile"))
+          quad(0, iri("Reptile"), rdfs_subclass_of(), iri("Animal")),
+          quad(0, iri("Lizard"), rdfs_subclass_of(), iri("Reptile"))
         ])
 
       rules = [Rules.cax_sco()]
@@ -637,7 +637,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(0, iri("Color"), rdfs_subClassOf(), iri("Property"))
+          quad(0, iri("Color"), rdfs_subclass_of(), iri("Property"))
         ])
 
       rules = [Rules.cax_sco()]
@@ -672,7 +672,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
 
       existing =
         MapSet.new([
-          quad(0, iri("Sport"), rdfs_subClassOf(), iri("Activity"))
+          quad(0, iri("Sport"), rdfs_subclass_of(), iri("Activity"))
         ])
 
       rules = [Rules.cax_sco()]
@@ -710,7 +710,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "handles empty graph gracefully" do
       existing =
         MapSet.new([
-          quad(1, iri("Person"), rdfs_subClassOf(), iri("Agent"))
+          quad(1, iri("Person"), rdfs_subclass_of(), iri("Agent"))
         ])
 
       # Add to empty graph 2
@@ -732,10 +732,10 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # While RDFS doesn't have true cycles, test handling of complex hierarchies
       existing =
         MapSet.new([
-          quad(1, iri("A"), rdfs_subClassOf(), iri("B")),
-          quad(1, iri("B"), rdfs_subClassOf(), iri("C")),
+          quad(1, iri("A"), rdfs_subclass_of(), iri("B")),
+          quad(1, iri("B"), rdfs_subclass_of(), iri("C")),
           # Creates cycle
-          quad(1, iri("C"), rdfs_subClassOf(), iri("A"))
+          quad(1, iri("C"), rdfs_subclass_of(), iri("A"))
         ])
 
       new_quads = [quad(1, iri("x"), rdf_type(), iri("A"))]
@@ -752,7 +752,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
     test "handles large batches efficiently" do
       existing =
         MapSet.new([
-          quad(1, iri("Thing"), rdfs_subClassOf(), iri("Entity"))
+          quad(1, iri("Thing"), rdfs_subclass_of(), iri("Entity"))
         ])
 
       # Large batch of quads
@@ -777,7 +777,7 @@ defmodule TripleStore.Reasoner.Section7_8_4IncrementalMaintenanceTest do
       # Test that both triples (no graph) and quads (with graph) work
       existing =
         MapSet.new([
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       # Mix of triples and quads

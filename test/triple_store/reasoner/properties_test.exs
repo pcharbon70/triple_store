@@ -128,10 +128,10 @@ defmodule TripleStore.Reasoner.PropertiesTest do
     test "is_graph_ref? matches valid_graph_id?" do
       Enum.each(1..@property_iterations, fn _ ->
         id = Enum.random(0..1_000_000)
-        assert GraphHelpers.is_graph_ref?(id) == true
+        assert GraphHelpers.graph_ref?(id) == true
 
         negative_int = Enum.random(-1_000_000..-1)
-        assert GraphHelpers.is_graph_ref?(negative_int) == false
+        assert GraphHelpers.graph_ref?(negative_int) == false
       end)
     end
 

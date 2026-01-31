@@ -186,7 +186,7 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
         # Add some quads to the graph
         {:ok, ast} =
           Parser.parse_update(
-            "INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s1> <http://example.org/p> \"v1\" . <http://example.org/s2> <http://example.org/p> \"v2\" } }"
+            ~s|INSERT DATA { GRAPH <#{graph_iri}> { <http://example.org/s1> <http://example.org/p> "v1" . <http://example.org/s2> <http://example.org/p> "v2" } }|
           )
 
         assert {:ok, 2} = UpdateExecutor.execute(ctx, ast)

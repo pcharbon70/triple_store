@@ -152,35 +152,35 @@ defmodule TripleStore.Backend.RocksDB.EncodingCompatibilityTest do
 
     test "1.3.2.2 Verify URI type tag encoding" do
       # URI has type tag 1
-      uri_id = Dictionary.encode_id(Dictionary.type_uri(), 12345)
+      uri_id = Dictionary.encode_id(Dictionary.type_uri(), 12_345)
 
       # Type tag is in high bits
       assert Dictionary.term_type(uri_id) == :uri
 
       # Value is preserved
-      assert {:uri, 12345} == Dictionary.decode_id(uri_id)
+      assert {:uri, 12_345} == Dictionary.decode_id(uri_id)
     end
 
     test "1.3.2.3 Verify Blank Node type tag encoding" do
       # BNode has type tag 2
-      bnode_id = Dictionary.encode_id(Dictionary.type_bnode(), 67890)
+      bnode_id = Dictionary.encode_id(Dictionary.type_bnode(), 67_890)
 
       # Type tag is in high bits
       assert Dictionary.term_type(bnode_id) == :bnode
 
       # Value is preserved
-      assert {:bnode, 67890} == Dictionary.decode_id(bnode_id)
+      assert {:bnode, 67_890} == Dictionary.decode_id(bnode_id)
     end
 
     test "1.3.2.4 Verify Literal type tag encoding" do
       # Literal has type tag 3
-      literal_id = Dictionary.encode_id(Dictionary.type_literal(), 99999)
+      literal_id = Dictionary.encode_id(Dictionary.type_literal(), 99_999)
 
       # Type tag is in high bits
       assert Dictionary.term_type(literal_id) == :literal
 
       # Value is preserved
-      assert {:literal, 99999} == Dictionary.decode_id(literal_id)
+      assert {:literal, 99_999} == Dictionary.decode_id(literal_id)
     end
 
     test "1.3.2.5 Verify inline integer type tag encoding" do

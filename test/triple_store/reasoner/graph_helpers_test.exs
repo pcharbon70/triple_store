@@ -117,21 +117,21 @@ defmodule TripleStore.Reasoner.GraphHelpersTest do
 
   describe "is_graph_ref?/1" do
     test "returns true for non-negative integers" do
-      assert GraphHelpers.is_graph_ref?(0)
-      assert GraphHelpers.is_graph_ref?(1)
-      assert GraphHelpers.is_graph_ref?(9999)
+      assert GraphHelpers.graph_ref?(0)
+      assert GraphHelpers.graph_ref?(1)
+      assert GraphHelpers.graph_ref?(9999)
     end
 
     test "returns true for special atoms" do
-      assert GraphHelpers.is_graph_ref?(:global)
-      assert GraphHelpers.is_graph_ref?(:shared)
+      assert GraphHelpers.graph_ref?(:global)
+      assert GraphHelpers.graph_ref?(:shared)
     end
 
     test "returns false for invalid values" do
-      refute GraphHelpers.is_graph_ref?(-1)
-      refute GraphHelpers.is_graph_ref?(:invalid)
-      refute GraphHelpers.is_graph_ref?("0")
-      refute GraphHelpers.is_graph_ref?(nil)
+      refute GraphHelpers.graph_ref?(-1)
+      refute GraphHelpers.graph_ref?(:invalid)
+      refute GraphHelpers.graph_ref?("0")
+      refute GraphHelpers.graph_ref?(nil)
     end
   end
 

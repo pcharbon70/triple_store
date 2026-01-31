@@ -77,14 +77,12 @@ defmodule TripleStore.SPARQL.QueryLogger do
   """
   @spec get_entry(String.t()) :: log_entry() | nil
   def get_entry(query_id) do
-    try do
-      case :ets.lookup(@table_name, query_id) do
-        [{^query_id, entry}] -> entry
-        [] -> nil
-      end
-    rescue
-      ArgumentError -> nil
+    case :ets.lookup(@table_name, query_id) do
+      [{^query_id, entry}] -> entry
+      [] -> nil
     end
+  rescue
+    ArgumentError -> nil
   end
 
   @doc """

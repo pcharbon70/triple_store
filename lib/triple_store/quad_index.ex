@@ -819,14 +819,14 @@ defmodule TripleStore.QuadIndex do
 
   ## Examples
 
-      iex> QuadIndex.is_default_graph?(0)
+      iex> QuadIndex.default_graph?(0)
       true
 
-      iex> QuadIndex.is_default_graph?(1)
+      iex> QuadIndex.default_graph?(1)
       false
   """
-  @spec is_default_graph?(term_id()) :: boolean()
-  def is_default_graph?(graph_id) when is_integer(graph_id), do: graph_id == @default_graph_id
+  @spec default_graph?(term_id()) :: boolean()
+  def default_graph?(graph_id) when is_integer(graph_id), do: graph_id == @default_graph_id
 
   # ===========================================================================
   # Graph ID Resolution Functions (Section 1.3.3)
@@ -941,13 +941,13 @@ defmodule TripleStore.QuadIndex do
   ## Note
 
   For the default graph (ID 0), this function returns `:not_found`.
-  Callers should use `is_default_graph?(graph_id)` to check for the
+  Callers should use `default_graph?(graph_id)` to check for the
   default graph before calling this function.
 
   ## Examples
 
       iex> # Check for default graph first
-      iex> if QuadIndex.is_default_graph?(graph_id) do
+      iex> if QuadIndex.default_graph?(graph_id) do
       ...>   :default_graph
       ...> else
       ...>   case QuadIndex.id_to_graph_term(graph_id, db) do
@@ -960,7 +960,7 @@ defmodule TripleStore.QuadIndex do
           {:ok, RDF.IRI.t() | RDF.BlankNode.t()} | :not_found | {:error, term()}
   def id_to_graph_term(0, _db) do
     # Default graph is a special case - it has no RDF term representation
-    # Callers should use is_default_graph?(0) to check for default graph
+    # Callers should use default_graph?(0) to check for default graph
     :not_found
   end
 
