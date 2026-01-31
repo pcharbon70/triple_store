@@ -795,7 +795,7 @@ defmodule TripleStore.QuadOperations do
           RDF.IRI.t() | RDF.BlankNode.t() | :default
         ) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def clear_graph(db, manager, :default) do
+  def clear_graph(db, _manager, :default) do
     Telemetry.span(:quad, :clear_graph, %{graph: :default}, fn ->
       case delete_all_quads_in_graph(db, 0) do
         {:ok, count} -> {{:ok, count}, %{count: count}}
@@ -1242,7 +1242,8 @@ defmodule TripleStore.QuadOperations do
         # Track count directly to avoid calculation errors
         {puts, deletes, quad_count} =
           ErlangAdapter.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key,
-                                                           {puts_acc, deletes_acc, count_acc} ->
+                                                                     {puts_acc, deletes_acc,
+                                                                      count_acc} ->
             case key do
               <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
                 {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
@@ -1270,9 +1271,15 @@ defmodule TripleStore.QuadOperations do
 
           # Execute deletes first, then puts in sync mode for atomicity
           with :ok <-
-                 if(delete_batch == [], do: :ok, else: ErlangAdapter.delete_batch(db, delete_batch, true)),
+                 if(delete_batch == [],
+                   do: :ok,
+                   else: ErlangAdapter.delete_batch(db, delete_batch, true)
+                 ),
                :ok <-
-                 if(put_batch == [], do: :ok, else: ErlangAdapter.write_batch(db, put_batch, true)) do
+                 if(put_batch == [],
+                   do: :ok,
+                   else: ErlangAdapter.write_batch(db, put_batch, true)
+                 ) do
             {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}
@@ -1285,8 +1292,15 @@ defmodule TripleStore.QuadOperations do
           put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
 
           with :ok <-
-                 if(delete_batch == [], do: :ok, else: ErlangAdapter.delete_batch(db, delete_batch, true)),
-               :ok <- if(put_batch == [], do: :ok, else: ErlangAdapter.write_batch(db, put_batch, true)) do
+                 if(delete_batch == [],
+                   do: :ok,
+                   else: ErlangAdapter.delete_batch(db, delete_batch, true)
+                 ),
+               :ok <-
+                 if(put_batch == [],
+                   do: :ok,
+                   else: ErlangAdapter.write_batch(db, put_batch, true)
+                 ) do
             {:ok, quad_count}
           else
             {:error, reason} -> {:error, reason}

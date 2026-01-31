@@ -72,7 +72,27 @@ defmodule TripleStore.Benchmark.WatDivQueries do
   @gn "http://www.geonames.org/ontology#"
   @rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
-  @type query_id :: :l1 | :l2 | :l3 | :l4 | :l5 | :s1 | :s2 | :s3 | :s4 | :s5 | :s6 | :s7 | :f1 | :f2 | :f3 | :f4 | :f5 | :c1 | :c2 | :c3
+  @type query_id ::
+          :l1
+          | :l2
+          | :l3
+          | :l4
+          | :l5
+          | :s1
+          | :s2
+          | :s3
+          | :s4
+          | :s5
+          | :s6
+          | :s7
+          | :f1
+          | :f2
+          | :f3
+          | :f4
+          | :f5
+          | :c1
+          | :c2
+          | :c3
   @type query_params :: keyword()
   @type query_category :: :linear | :star | :snowflake | :complex
   @type query_template :: %{

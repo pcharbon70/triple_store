@@ -1341,7 +1341,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
         {invalid_op, _cf, _key} ->
           {:error, {:invalid_operation, invalid_op}}
 
-        other ->
+        _other ->
           {:error, {:invalid_operation, :unknown}}
       end)
 
@@ -1751,11 +1751,23 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
          {:ok, spog_cf} <- :rocksdb.create_column_family(db, ~c"spog", []),
          {:ok, posg_cf} <- :rocksdb.create_column_family(db, ~c"posg", []),
          {:ok, derived_cf} <- :rocksdb.create_column_family(db, ~c"derived", []),
-         {:ok, derivation_prov_cf} <- :rocksdb.create_column_family(db, ~c"derivation_provenance", []),
+         {:ok, derivation_prov_cf} <-
+           :rocksdb.create_column_family(db, ~c"derivation_provenance", []),
          {:ok, numeric_cf} <- :rocksdb.create_column_family(db, ~c"numeric_range", []),
          {:ok, acl_cf} <- :rocksdb.create_column_family(db, ~c"acl", []) do
       {:ok,
-       [id2str_cf, str2id_cf, gspo_cf, gpos_cf, spog_cf, posg_cf, derived_cf, derivation_prov_cf, numeric_cf, acl_cf]}
+       [
+         id2str_cf,
+         str2id_cf,
+         gspo_cf,
+         gpos_cf,
+         spog_cf,
+         posg_cf,
+         derived_cf,
+         derivation_prov_cf,
+         numeric_cf,
+         acl_cf
+       ]}
     end
   end
 
@@ -1770,7 +1782,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
           [:default, :id2str, :str2id, :spo, :pos, :osp, :derived, :numeric_range]
 
         :quad ->
-          [:default, :id2str, :str2id, :gspo, :gpos, :spog, :posg, :derived, :derivation_provenance, :numeric_range, :acl]
+          [
+            :default,
+            :id2str,
+            :str2id,
+            :gspo,
+            :gpos,
+            :spog,
+            :posg,
+            :derived,
+            :derivation_provenance,
+            :numeric_range,
+            :acl
+          ]
       end
 
     Enum.zip(cf_names_in_order, cf_handles)

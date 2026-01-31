@@ -777,7 +777,14 @@ defmodule TripleStore.StatisticsTest do
     test "load returns error for invalid stats structure", %{db: db} do
       # Save invalid structure directly
       invalid_data = :erlang.term_to_binary(%{foo: :bar}, [:compressed])
-      :ok = ErlangAdapter.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, invalid_data)
+
+      :ok =
+        ErlangAdapter.put(
+          db,
+          :id2str,
+          <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>,
+          invalid_data
+        )
 
       # Load should detect invalid structure - returns the actual validation error
       assert {:error, _} = Statistics.load(db)
@@ -787,7 +794,14 @@ defmodule TripleStore.StatisticsTest do
       # Save partial structure
       partial = %{triple_count: 100}
       partial_data = :erlang.term_to_binary(partial, [:compressed])
-      :ok = ErlangAdapter.put(db, :id2str, <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>, partial_data)
+
+      :ok =
+        ErlangAdapter.put(
+          db,
+          :id2str,
+          <<0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01>>,
+          partial_data
+        )
 
       # Returns the specific missing keys error
       assert {:error, {:missing_keys, _keys}} = Statistics.load(db)

@@ -42,6 +42,7 @@ defmodule TripleStore.Benchmark.WatDivQueriesTest do
       linear_queries = WatDivQueries.by_category(:linear)
 
       assert length(linear_queries) == 5
+
       for q <- linear_queries do
         assert q.category == :linear
       end
@@ -51,6 +52,7 @@ defmodule TripleStore.Benchmark.WatDivQueriesTest do
       star_queries = WatDivQueries.by_category(:star)
 
       assert length(star_queries) == 7
+
       for q <- star_queries do
         assert q.category == :star
       end
@@ -60,6 +62,7 @@ defmodule TripleStore.Benchmark.WatDivQueriesTest do
       snowflake_queries = WatDivQueries.by_category(:snowflake)
 
       assert length(snowflake_queries) == 5
+
       for q <- snowflake_queries do
         assert q.category == :snowflake
       end
@@ -69,6 +72,7 @@ defmodule TripleStore.Benchmark.WatDivQueriesTest do
       complex_queries = WatDivQueries.by_category(:complex)
 
       assert length(complex_queries) == 3
+
       for q <- complex_queries do
         assert q.category == :complex
       end

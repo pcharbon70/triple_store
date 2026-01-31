@@ -106,7 +106,7 @@ defmodule TripleStore.Test.DbPool do
             Logger.warning("Failed to recreate database at #{db_info.path}: #{inspect(reason)}")
 
             # Don't return this database to the pool - shrink the pool
-          {nil, %{state | available: []}}
+            {nil, %{state | available: []}}
         end
       end
 
@@ -181,7 +181,7 @@ defmodule TripleStore.Test.DbPool do
       {:error, reason} = error ->
         # If there's a lock error, wait and retry
         if String.contains?(inspect(reason), "lock") or
-           String.contains?(inspect(reason), "LOCK") do
+             String.contains?(inspect(reason), "LOCK") do
           Process.sleep(delay)
           create_database_with_retry(path, retries - 1, delay, error)
         else

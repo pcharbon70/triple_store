@@ -42,6 +42,7 @@ defmodule TripleStore.Benchmark.GMarkQueriesTest do
       constant_queries = GMarkQueries.by_selectivity(:constant)
 
       assert length(constant_queries) == 3
+
       for q <- constant_queries do
         assert q.selectivity == :constant
       end
@@ -51,6 +52,7 @@ defmodule TripleStore.Benchmark.GMarkQueriesTest do
       linear_queries = GMarkQueries.by_selectivity(:linear)
 
       assert length(linear_queries) == 5
+
       for q <- linear_queries do
         assert q.selectivity == :linear
       end
@@ -60,6 +62,7 @@ defmodule TripleStore.Benchmark.GMarkQueriesTest do
       quadratic_queries = GMarkQueries.by_selectivity(:quadratic)
 
       assert length(quadratic_queries) == 3
+
       for q <- quadratic_queries do
         assert q.selectivity == :quadratic
       end
@@ -274,7 +277,8 @@ defmodule TripleStore.Benchmark.GMarkQueriesTest do
 
       assert query.id == :q3
       assert query.selectivity == :quadratic
-      assert String.contains?(query.sparql, "+")  # Kleene plus
+      # Kleene plus
+      assert String.contains?(query.sparql, "+")
       assert query.complexity == :complex
     end
   end

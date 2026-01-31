@@ -298,7 +298,9 @@ defmodule TripleStore.Backend.RocksDB.WriteBatchTest do
         {:invalid_op, :id2str, "key2"}
       ]
 
-      assert {:error, {:invalid_operation, :invalid_op}} = ErlangAdapter.mixed_batch(db, operations, true)
+      assert {:error, {:invalid_operation, :invalid_op}} =
+               ErlangAdapter.mixed_batch(db, operations, true)
+
       assert :not_found = ErlangAdapter.get(db, :id2str, "key1")
       assert {:ok, "value"} = ErlangAdapter.get(db, :id2str, "to_delete")
     end

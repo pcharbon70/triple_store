@@ -102,7 +102,9 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
     # Collect affected quads from all deleted quads
     affected_quads =
       Enum.reduce(deleted_quads, MapSet.new(), fn deleted_quad, acc ->
-        {:ok, quads} = trace_single_deletion(db, deleted_quad, rules, graph_id, tbox_graph_id, scope)
+        {:ok, quads} =
+          trace_single_deletion(db, deleted_quad, rules, graph_id, tbox_graph_id, scope)
+
         MapSet.union(acc, quads)
       end)
 

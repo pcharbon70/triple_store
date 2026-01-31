@@ -33,6 +33,7 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.Dictionary
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Executor
@@ -396,27 +397,27 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
   # Look up term ID without creating it
   defp lookup_term_id_no_create(db, %RDF.Literal{} = literal) do
-    if TripleStore.Dictionary.inline_encodable?(literal) do
+    if Dictionary.inline_encodable?(literal) do
       encode_inline_literal(literal)
     else
-      TripleStore.Dictionary.StringToId.lookup_id(db, literal)
+      Dictionary.StringToId.lookup_id(db, literal)
     end
   end
 
   defp lookup_term_id_no_create(db, term) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, term)
+    Dictionary.StringToId.lookup_id(db, term)
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}}) do
-    {:ok, TripleStore.Dictionary.encode_integer(value)}
+    {:ok, Dictionary.encode_integer(value)}
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Decimal{value: %Decimal{} = value}}) do
-    {:ok, TripleStore.Dictionary.encode_decimal(value)}
+    {:ok, Dictionary.encode_decimal(value)}
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.DateTime{value: %DateTime{} = value}}) do
-    {:ok, TripleStore.Dictionary.encode_datetime(value)}
+    {:ok, Dictionary.encode_datetime(value)}
   end
 
   defp encode_inline_literal(_literal) do

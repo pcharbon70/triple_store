@@ -261,7 +261,10 @@ defmodule TripleStore.Reasoner.Section782GraphLocalMaterializationTest do
 
         # Check for alice rdf:type Person in graph 2's derived quads
         g2_prefix = QuadIndex.gspo_prefix(2)
-        alice_in_g2 = ErlangAdapter.fold(db, :derived, g2_prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
+
+        alice_in_g2 =
+          ErlangAdapter.fold(db, :derived, g2_prefix, 0, fn {_key, _val}, acc -> acc + 1 end)
+
         assert alice_in_g2 == 0
       after
         cleanup_db(db, path)

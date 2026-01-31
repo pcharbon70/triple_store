@@ -36,7 +36,8 @@ defmodule TripleStore.Backend.RocksDB.ReadWriteTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, :invalid_column_family} = ErlangAdapter.put(db, :nonexistent, "key", "value")
+      assert {:error, :invalid_column_family} =
+               ErlangAdapter.put(db, :nonexistent, "key", "value")
     end
 
     test "returns error for closed database", %{db_path: path} do

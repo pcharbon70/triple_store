@@ -100,6 +100,18 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   @typedoc "ID quad {graph, subject, predicate, object}"
   @type id_quad :: {integer(), integer(), integer(), integer()}
 
+  @typedoc "Pattern element for matching"
+  @type pattern_element :: :var | {:var, atom()} | :bound | {:bound, non_neg_integer()} | non_neg_integer()
+
+  @typedoc "Triple pattern for SPO matching"
+  @type pattern :: {:pattern, [pattern_element()]}
+
+  @typedoc "Quad pattern including graph position"
+  @type quad_pattern :: {:quad_pattern, [pattern_element()]}
+
+  @typedoc "Union type for all pattern types"
+  @type pattern_union :: pattern() | quad_pattern()
+
   @typedoc "Materialization statistics"
   @type materialization_stats :: %{
           iterations: non_neg_integer(),
@@ -610,24 +622,18 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   defp make_tbox_aware_lookup_fn(db, graph_id, tbox_facts) do
     fn pattern ->
       # First check TBox facts (these don't require database lookup)
-      tbox_matches = lookup_in_tbox_facts(pattern, tbox_facts)
+      {:ok, tbox_results} = lookup_in_tbox_facts(pattern, tbox_facts)
 
       # Then check graph facts
-      graph_matches = lookup_in_graph_facts(db, graph_id, pattern)
+      {:ok, graph_results} = lookup_in_graph_facts(db, graph_id, pattern)
 
       # Union both result sets
-      case {tbox_matches, graph_matches} do
-        {{:ok, tbox_results}, {:ok, graph_results}} ->
-          {:ok, MapSet.union(tbox_results, graph_results)}
-
-        {{:ok, _tbox_results}, {:error, _reason}} ->
-          # If graph lookup fails, the error is fatal since it's the primary source
-          :error
-      end
+      {:ok, MapSet.union(tbox_results, graph_results)}
     end
   end
 
   # Lookup facts in TBox (in-memory MapSet)
+  @spec lookup_in_tbox_facts(pattern_union(), MapSet.t(id_triple())) :: {:ok, MapSet.t(id_triple())}
   defp lookup_in_tbox_facts(_pattern, tbox_facts) when map_size(tbox_facts) == 0 do
     {:ok, MapSet.new()}
   end
@@ -668,12 +674,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # Private Functions - Graph-Scoped Lookup/Store
   # ============================================================================
 
+  @spec lookup_in_graph_facts(db_ref(), graph_id(), pattern_union()) :: {:ok, MapSet.t(id_triple())}
   defp lookup_in_graph_facts(db, graph_id, pattern) do
     # Build a quad pattern bound to the specific graph
     quad_pattern = bind_graph_to_pattern(pattern, graph_id)
     lookup_quads_as_triples_in_graph(db, quad_pattern, graph_id)
   end
 
+  @spec lookup_quads_as_triples_in_graph(db_ref(), quad_pattern(), graph_id()) :: {:ok, MapSet.t(id_triple())}
   defp lookup_quads_as_triples_in_graph(
          db,
          {:quad_pattern, [{:bound, graph_id}, s, p, o]},
@@ -682,14 +690,10 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     # Build quad index lookup pattern
     pattern = build_quad_lookup_pattern(graph_id, s, p, o)
 
-    case lookup_quads_with_pattern(db, pattern, graph_id) do
-      {:ok, quads} ->
-        triples = Enum.map(quads, fn {_g, s, p, o} -> {s, p, o} end)
-        {:ok, MapSet.new(triples)}
+    {:ok, quads} = lookup_quads_with_pattern(db, pattern, graph_id)
 
-      {:error, _} = error ->
-        error
-    end
+    triples = Enum.map(quads, fn {_g, s, p, o} -> {s, p, o} end)
+    {:ok, MapSet.new(triples)}
   end
 
   defp lookup_quads_as_triples_in_graph(_db, _pattern, _graph_id) do
@@ -997,25 +1001,22 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   defp matches_bound?(:o, value, :bound, values), do: Map.get(values, :o) == value
   defp matches_bound?(_pos, _value, _pat, _values), do: true
 
+  @spec lookup_quads_with_pattern(db_ref(), term(), graph_id()) :: {:ok, list(id_quad())}
   defp lookup_quads_with_pattern(db, _pattern, graph_id) do
     # Use GSPO index to look up quads for this graph
     prefix = QuadIndex.gspo_prefix(graph_id)
 
-    case ErlangAdapter.prefix_stream(db, :gspo, prefix) do
-      stream when is_function(stream) ->
-        quads =
-          stream
-          |> Stream.map(fn {key, _value} ->
-            {g, s, p, o} = QuadIndex.decode_gspo_key(key)
-            {g, s, p, o}
-          end)
-          |> Enum.to_list()
+    stream = ErlangAdapter.prefix_stream(db, :gspo, prefix)
 
-        {:ok, quads}
+    quads =
+      stream
+      |> Stream.map(fn {key, _value} ->
+        {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+        {g, s, p, o}
+      end)
+      |> Enum.to_list()
 
-      {:error, _} = error ->
-        error
-    end
+    {:ok, quads}
   end
 
   # ============================================================================

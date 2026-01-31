@@ -416,7 +416,7 @@ defmodule TripleStore.Loader do
     graph_opt = Keyword.get(opts, :graph)
 
     # Check if this is a quad store
-    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+    {:ok, is_quad} = ErlangAdapter.is_quad_store?(db)
 
     batch_size = resolve_batch_size(opts)
 
@@ -527,7 +527,7 @@ defmodule TripleStore.Loader do
     graph_opt = Keyword.get(opts, :graph)
 
     # Check if this is a quad store
-    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+    {:ok, is_quad} = ErlangAdapter.is_quad_store?(db)
 
     cond do
       # Named graph specified - delegate to load_to_graph
@@ -612,7 +612,7 @@ defmodule TripleStore.Loader do
     graph_opt = Keyword.get(opts, :graph)
 
     # Check if this is a quad store
-    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+    {:ok, is_quad} = ErlangAdapter.is_quad_store?(db)
 
     cond do
       # Named graph specified - load as quads
@@ -705,7 +705,7 @@ defmodule TripleStore.Loader do
     graph_opt = Keyword.get(opts, :graph)
 
     # Check if this is a quad store
-    {:ok, is_quad} = TripleStore.Backend.RocksDB.ErlangAdapter.is_quad_store?(db)
+    {:ok, is_quad} = ErlangAdapter.is_quad_store?(db)
 
     batch_size = resolve_batch_size(opts)
 

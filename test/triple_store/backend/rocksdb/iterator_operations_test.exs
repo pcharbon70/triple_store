@@ -83,16 +83,20 @@ defmodule TripleStore.Backend.RocksDB.IteratorOperationsTest do
       {:ok, iter} = ErlangAdapter.prefix_iterator(db, :spo, <<>>)
 
       # Test first
-      assert {:ok, <<1::64-big, 1::64-big, 1::64-big>>, <<>>} = ErlangAdapter.iterator_move(iter, :first)
+      assert {:ok, <<1::64-big, 1::64-big, 1::64-big>>, <<>>} =
+               ErlangAdapter.iterator_move(iter, :first)
 
       # Test next
-      assert {:ok, <<1::64-big, 1::64-big, 2::64-big>>, <<>>} = ErlangAdapter.iterator_move(iter, :next)
+      assert {:ok, <<1::64-big, 1::64-big, 2::64-big>>, <<>>} =
+               ErlangAdapter.iterator_move(iter, :next)
 
       # Test prev
-      assert {:ok, <<1::64-big, 1::64-big, 1::64-big>>, <<>>} = ErlangAdapter.iterator_move(iter, :prev)
+      assert {:ok, <<1::64-big, 1::64-big, 1::64-big>>, <<>>} =
+               ErlangAdapter.iterator_move(iter, :prev)
 
       # Test last
-      assert {:ok, <<3::64-big, 1::64-big, 1::64-big>>, <<>>} = ErlangAdapter.iterator_move(iter, :last)
+      assert {:ok, <<3::64-big, 1::64-big, 1::64-big>>, <<>>} =
+               ErlangAdapter.iterator_move(iter, :last)
 
       ErlangAdapter.iterator_close(iter)
     end

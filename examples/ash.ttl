@@ -600,7 +600,7 @@ action.
     struct:functionName "set_opts" .
 
 <https://example.org/code#Ash.Actions.Aggregate/validate_aggregates/3>
-    a struct:Function, struct:PrivateFunction ;
+    a struct:Function, struct:PrivateFunction  ;
     struct:arity "3"^^xsd:nonNegativeInteger ;
     struct:belongsTo <https://example.org/code#Ash.Actions.Aggregate> ;
     struct:functionName "validate_aggregates" .

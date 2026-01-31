@@ -350,10 +350,15 @@ defmodule TripleStore.Benchmark.GMarkTest do
       conference_type = RDF.iri(gmark_ns <> "Conference")
       city_type = RDF.iri(gmark_ns <> "City")
 
-      researchers = Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == researcher_type end)
+      researchers =
+        Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == researcher_type end)
+
       papers = Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == paper_type end)
       journals = Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == journal_type end)
-      conferences = Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == conference_type end)
+
+      conferences =
+        Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == conference_type end)
+
       cities = Enum.count(triples, fn {_, p, o} -> p == rdf_type and o == city_type end)
 
       # Check proportions (approximately)

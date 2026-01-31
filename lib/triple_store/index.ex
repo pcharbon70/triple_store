@@ -1151,7 +1151,8 @@ defmodule TripleStore.Index do
       [{1, 5, 6}, {1, 2, 4}, {1, 2, 3}]
 
   """
-  @spec lookup_fold(ErlangAdapter.db_ref(), pattern(), term(), (triple(), term() -> term())) :: term()
+  @spec lookup_fold(ErlangAdapter.db_ref(), pattern(), term(), (triple(), term() -> term())) ::
+          term()
   def lookup_fold(db, pattern, acc, fun) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 

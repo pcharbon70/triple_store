@@ -224,7 +224,27 @@ defmodule TripleStore.Adapter do
   def terms_to_ids(_manager, []), do: {:ok, []}
 
   def terms_to_ids(manager, terms) when is_list(terms) do
-    Manager.get_or_create_ids(manager, terms)
+    # Chunk large term lists to avoid GenServer timeout
+    # Each chunk should process within 5 seconds (GenServer.call timeout)
+    chunk_size = 500
+
+    if length(terms) <= chunk_size do
+      Manager.get_or_create_ids(manager, terms)
+    else
+      # Process in chunks and combine results
+      terms
+      |> Enum.chunk_every(chunk_size)
+      |> Enum.reduce_while({:ok, []}, fn
+        chunk, {:ok, acc_ids} ->
+          case Manager.get_or_create_ids(manager, chunk) do
+            {:ok, chunk_ids} -> {:cont, {:ok, acc_ids ++ chunk_ids}}
+            error -> {:halt, error}
+          end
+
+        error, _acc ->
+          {:halt, error}
+      end)
+    end
   end
 
   # ===========================================================================
@@ -699,20 +719,37 @@ defmodule TripleStore.Adapter do
   def from_rdf_quads(_manager, []), do: {:ok, []}
 
   def from_rdf_quads(manager, quads) when is_list(quads) do
-    # Process each quad individually since nil graphs need special handling
-    # This could be optimized by collecting non-nil terms and tracking nil positions
-    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
-      case from_rdf_quad(manager, quad) do
-        {:ok, internal_quad} ->
-          {:cont, {:ok, [internal_quad | acc]}}
+    # Optimize by batching terms while handling nil graphs
+    # Collect all terms with their positions for reconstruction
+    {term_list, graph_refs, positions} =
+      Enum.reduce(quads, {[], [], []}, fn {s, p, o, g}, {terms_acc, graphs_acc, pos_acc} ->
+        pos = length(terms_acc)
 
-        {:error, _} = error ->
-          {:halt, error}
-      end
-    end)
-    |> case do
-      {:ok, quads_reversed} -> {:ok, Enum.reverse(quads_reversed)}
-      error -> error
+        {
+          terms_acc ++ [s, p, o],
+          graphs_acc ++ [g],
+          pos_acc ++ [pos, pos + 1, pos + 2]
+        }
+      end)
+
+    # Batch encode all terms (with chunking to avoid timeout)
+    with {:ok, ids} <- terms_to_ids(manager, term_list),
+         # Encode graphs (nil becomes 0)
+         {:ok, graph_ids} <- encode_graphs(manager, graph_refs) do
+      # Reconstruct quads from IDs
+      internal_quads =
+        positions
+        |> Enum.chunk_every(3)
+        |> Enum.with_index()
+        |> Enum.map(fn {[s_pos, p_pos, o_pos], idx} ->
+          s_id = Enum.at(ids, s_pos)
+          p_id = Enum.at(ids, p_pos)
+          o_id = Enum.at(ids, o_pos)
+          g_id = Enum.at(graph_ids, idx)
+          {s_id, p_id, o_id, g_id}
+        end)
+
+      {:ok, internal_quads}
     end
   end
 
@@ -945,6 +982,35 @@ defmodule TripleStore.Adapter do
   defp graph_to_id(_manager, nil), do: {:ok, 0}
   defp graph_to_id(manager, %RDF.IRI{} = iri), do: from_rdf_iri(manager, iri)
   defp graph_to_id(manager, %RDF.BlankNode{} = bnode), do: from_rdf_bnode(manager, bnode)
+
+  # Batch encode multiple graphs, with chunking to avoid GenServer timeout
+  defp encode_graphs(manager, graphs) do
+    # Separate nil graphs (become 0) from non-nil graphs
+    {nil_graphs, non_nil_graphs} =
+      Enum.map_reduce(graphs, {[], []}, fn
+        nil, {nil_acc, non_nil_acc} -> {[0 | nil_acc], non_nil_acc}
+        graph, {nil_acc, non_nil_acc} -> {nil_acc, [graph | non_nil_acc]}
+      end)
+
+    # Encode non-nil graphs using terms_to_ids (which chunks)
+    non_nil_graphs = Enum.reverse(non_nil_graphs)
+
+    case non_nil_graphs do
+      [] ->
+        all_graphs = Enum.reverse(nil_graphs)
+        {:ok, all_graphs}
+
+      non_nil ->
+        case terms_to_ids(manager, non_nil) do
+          {:ok, encoded} ->
+            all_graphs = Enum.reverse(nil_graphs) ++ encoded
+            {:ok, all_graphs}
+
+          error ->
+            error
+        end
+    end
+  end
 
   # Converts a graph ID to an RDF graph term.
   # ID 0 converts to nil (default graph).

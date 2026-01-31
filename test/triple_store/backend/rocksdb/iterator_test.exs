@@ -30,7 +30,8 @@ defmodule TripleStore.Backend.RocksDB.IteratorTest do
     end
 
     test "returns error for invalid column family", %{db: db} do
-      assert {:error, :invalid_column_family} = ErlangAdapter.prefix_iterator(db, :nonexistent, "")
+      assert {:error, :invalid_column_family} =
+               ErlangAdapter.prefix_iterator(db, :nonexistent, "")
     end
 
     test "returns error for closed database", %{db_path: path} do

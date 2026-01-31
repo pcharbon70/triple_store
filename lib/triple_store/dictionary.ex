@@ -112,6 +112,8 @@ defmodule TripleStore.Dictionary do
 
   import Bitwise
 
+  alias TripleStore.Dictionary.Manager
+
   # ===========================================================================
   # Type Definitions
   # ===========================================================================
@@ -648,7 +650,7 @@ defmodule TripleStore.Dictionary do
   def get_or_create_graph_id(manager, graph_term) do
     # Graph terms use the same encoding as regular terms
     # Delegates to the Manager's get_or_create_id function
-    TripleStore.Dictionary.Manager.get_or_create_id(manager, graph_term)
+    Manager.get_or_create_id(manager, graph_term)
   end
 
   # ===========================================================================

@@ -327,7 +327,10 @@ defmodule TripleStore.Benchmark.WatDiv do
     # Static metadata (doesn't scale much)
     genre_triples = Enum.flat_map(1..state.num_genres, &generate_genre(&1, state))
     subgenre_triples = Enum.flat_map(1..state.num_subgenres, &generate_subgenre(&1, state))
-    category_triples = Enum.flat_map(1..state.num_product_categories, &generate_product_category(&1, state))
+
+    category_triples =
+      Enum.flat_map(1..state.num_product_categories, &generate_product_category(&1, state))
+
     city_triples = Enum.flat_map(1..state.num_cities, &generate_city(&1, state))
     country_triples = Enum.flat_map(1..state.num_countries, &generate_country/1)
     language_triples = Enum.flat_map(1..state.num_languages, &generate_language/1)
@@ -346,9 +349,18 @@ defmodule TripleStore.Benchmark.WatDiv do
     offer_triples = Enum.flat_map(1..state.num_offers, &generate_offer(&1, state))
     purchase_triples = Enum.flat_map(1..state.num_purchases, &generate_purchase(&1, state))
 
-    genre_triples ++ subgenre_triples ++ category_triples ++ city_triples ++
-      country_triples ++ language_triples ++ topic_triples ++ gender_triples ++
-      age_group_triples ++ role_triples ++ retailer_triples ++ website_triples ++
+    genre_triples ++
+      subgenre_triples ++
+      category_triples ++
+      city_triples ++
+      country_triples ++
+      language_triples ++
+      topic_triples ++
+      gender_triples ++
+      age_group_triples ++
+      role_triples ++
+      retailer_triples ++
+      website_triples ++
       product_triples ++ user_triples ++ offer_triples ++ purchase_triples
   end
 
@@ -391,7 +403,6 @@ defmodule TripleStore.Benchmark.WatDiv do
         1 ->
           [
             {cat_uri, sorg("isbn"), RDF.literal("978-#{cat_id}-#{random_int(1000, 9999)}")}
-
           ]
 
         # Movie category
@@ -557,14 +568,19 @@ defmodule TripleStore.Benchmark.WatDiv do
       1 ->
         [
           {product_uri, sorg("isbn"), RDF.literal("978-#{cat_id}-#{random_int(1000, 9999)}")},
-          maybe_add(product_uri, sorg("bookEdition"), RDF.literal("Edition#{random_int(1, 5)}"), 0.5),
+          maybe_add(
+            product_uri,
+            sorg("bookEdition"),
+            RDF.literal("Edition#{random_int(1, 5)}"),
+            0.5
+          ),
           maybe_add(product_uri, sorg("numberOfPages"), RDF.literal(random_int(100, 1000)), 0.25)
         ]
 
       # Movie - ProductCategory2
       2 ->
         [
-          {product_uri, mo("imdb"), RDF.literal("tt#{random_int(100000, 999999)}")},
+          {product_uri, mo("imdb"), RDF.literal("tt#{random_int(100_000, 999_999)}")},
           maybe_add(product_uri, sorg("duration"), RDF.literal("PT#{random_int(80, 180)}M"), 0.9)
         ]
 
@@ -609,6 +625,7 @@ defmodule TripleStore.Benchmark.WatDiv do
 
     # Add interests (topics)
     num_interests = random_int(1, 5)
+
     interest_triples =
       Enum.map(1..num_interests, fn _ ->
         topic_id = :rand.uniform(state.num_topics)
@@ -617,6 +634,7 @@ defmodule TripleStore.Benchmark.WatDiv do
 
     # Add friends (friendship relationships)
     num_friends = random_int(1, 10)
+
     friend_triples =
       Enum.map(1..num_friends, fn _ ->
         friend_id = random_int(1, state.num_users)
@@ -697,6 +715,7 @@ defmodule TripleStore.Benchmark.WatDiv do
 
     # Add product likes
     num_likes = random_int(1, 5)
+
     like_triples =
       Enum.map(1..num_likes, fn _ ->
         like_user_id = random_int(1, state.num_users)

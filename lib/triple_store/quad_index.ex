@@ -63,6 +63,11 @@ defmodule TripleStore.QuadIndex do
 
   import Bitwise, only: [<<<: 2]
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.Dictionary.IdToString
+  alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.StringToId
+
   # ===========================================================================
   # Constants
   # ===========================================================================
@@ -864,11 +869,11 @@ defmodule TripleStore.QuadIndex do
   def resolve_graph_id(:default, _db), do: {:ok, @default_graph_id}
 
   def resolve_graph_id(%RDF.IRI{} = iri, db) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, iri)
+    StringToId.lookup_id(db, iri)
   end
 
   def resolve_graph_id(%RDF.BlankNode{} = bnode, db) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, bnode)
+    StringToId.lookup_id(db, bnode)
   end
 
   def resolve_graph_id(graph_term, _db) do
@@ -905,11 +910,11 @@ defmodule TripleStore.QuadIndex do
   @spec get_or_create_graph_id(RDF.IRI.t() | RDF.BlankNode.t(), GenServer.server()) ::
           {:ok, term_id()} | {:error, term()}
   def get_or_create_graph_id(%RDF.IRI{} = iri, manager) do
-    TripleStore.Dictionary.Manager.get_or_create_id(manager, iri)
+    Manager.get_or_create_id(manager, iri)
   end
 
   def get_or_create_graph_id(%RDF.BlankNode{} = bnode, manager) do
-    TripleStore.Dictionary.Manager.get_or_create_id(manager, bnode)
+    Manager.get_or_create_id(manager, bnode)
   end
 
   def get_or_create_graph_id(graph_term, _manager) do
@@ -960,7 +965,7 @@ defmodule TripleStore.QuadIndex do
   end
 
   def id_to_graph_term(graph_id, db) when is_integer(graph_id) and graph_id > 0 do
-    TripleStore.Dictionary.IdToString.lookup_term(db, graph_id)
+    IdToString.lookup_term(db, graph_id)
   end
 
   # ===========================================================================
@@ -1314,7 +1319,7 @@ defmodule TripleStore.QuadIndex do
     prefix = graph_pattern_to_lookup_prefix(graph_id, pattern)
 
     results =
-      TripleStore.Backend.RocksDB.ErlangAdapter.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
+      ErlangAdapter.fold(db, :gspo, prefix, [], fn {key, _value}, acc ->
         {g, s, p, o} = decode_gspo_key(key)
 
         if g == graph_id and triple_matches_index_pattern?({s, p, o}, pattern) do
