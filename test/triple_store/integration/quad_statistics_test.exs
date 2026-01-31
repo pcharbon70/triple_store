@@ -17,8 +17,8 @@ defmodule TripleStore.Integration.QuadStatisticsTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
-  alias TripleStore.Statistics
   alias TripleStore.SPARQL.QuadCardinality
+  alias TripleStore.Statistics
 
   # ===========================================================================
   # Setup

@@ -10,8 +10,8 @@ defmodule TripleStore.SPARQL.DeleteDataQuadTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
-  alias TripleStore.SPARQL.UpdateExecutor
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.UpdateExecutor
 
   @test_db_base "/tmp/triple_store_delete_data_quad_test"
 

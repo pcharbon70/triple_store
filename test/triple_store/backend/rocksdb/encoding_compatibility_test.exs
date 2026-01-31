@@ -16,8 +16,8 @@ defmodule TripleStore.Backend.RocksDB.EncodingCompatibilityTest do
   """
   use ExUnit.Case, async: true
 
-  alias TripleStore.Index
   alias TripleStore.Dictionary
+  alias TripleStore.Index
 
   import Bitwise, only: [<<<: 2, >>>: 2, &&&: 2]
 

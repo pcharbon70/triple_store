@@ -26,9 +26,9 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.QuadOperations
   alias TripleStore.Quad.BatchOptimizer
   alias TripleStore.Quad.CacheWarmer
+  alias TripleStore.QuadOperations
 
   # ===========================================================================
   # Setup

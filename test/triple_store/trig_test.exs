@@ -21,8 +21,8 @@ defmodule TripleStore.TrigTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.Loader
   alias TripleStore.Exporter
+  alias TripleStore.Loader
   alias TripleStore.QuadOperations
 
   @test_db_base "/tmp/triple_store_trig_test"

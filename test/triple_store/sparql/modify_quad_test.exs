@@ -13,8 +13,8 @@ defmodule TripleStore.SPARQL.ModifyQuadTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
-  alias TripleStore.SPARQL.UpdateExecutor
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.UpdateExecutor
 
   @test_db_base "/tmp/triple_store_modify_quad_test"
 

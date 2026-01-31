@@ -15,9 +15,9 @@ defmodule TripleStore.Integration.MigrationTest do
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Exporter
   alias TripleStore.Index
   alias TripleStore.Loader
-  alias TripleStore.Exporter
   alias TripleStore.QuadOperations
 
   @test_db_base "/tmp/migration_test"

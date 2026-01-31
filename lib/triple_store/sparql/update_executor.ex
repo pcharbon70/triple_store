@@ -97,10 +97,10 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Parser
-  alias TripleStore.SPARQL.Update.InsertData
   alias TripleStore.SPARQL.Update.DeleteData
-  alias TripleStore.SPARQL.Update.Modify
   alias TripleStore.SPARQL.Update.GraphOperations
+  alias TripleStore.SPARQL.Update.InsertData
+  alias TripleStore.SPARQL.Update.Modify
 
   # Suppress MapSet opaque type warnings in predicate extraction functions
   @dialyzer {:nowarn_function, extract_predicates_from_operations: 1}

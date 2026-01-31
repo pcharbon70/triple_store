@@ -1,8 +1,8 @@
 defmodule TripleStore.Reasoner.PropertiesTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.Reasoner.GraphProvenance
   alias TripleStore.Reasoner.GraphHelpers
+  alias TripleStore.Reasoner.GraphProvenance
 
   # Number of test iterations for property tests
   @property_iterations 100

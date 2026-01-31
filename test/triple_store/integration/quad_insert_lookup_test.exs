@@ -15,8 +15,8 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.QuadOperations
   alias TripleStore.QuadIndex
+  alias TripleStore.QuadOperations
 
   @test_db_base "/tmp/quad_insert_lookup_test"
 

@@ -16,8 +16,8 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.QuadOperations
   alias TripleStore.QuadIndex
+  alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.{GraphProvenance, PatternMatcher, Rule, SemiNaive}
 
   # ===========================================================================

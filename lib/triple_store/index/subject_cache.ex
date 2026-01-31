@@ -31,8 +31,8 @@ defmodule TripleStore.Index.SubjectCache do
   - LRU eviction: O(log n) where n = cache size
   """
 
-  alias TripleStore.Index
   alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.Index
 
   require Logger
 

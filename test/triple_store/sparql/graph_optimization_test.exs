@@ -13,8 +13,8 @@ defmodule TripleStore.SPARQL.GraphOptimizationTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.CostModel
+  alias TripleStore.SPARQL.Optimizer
 
   # ===========================================================================
   # Quad Pattern Selectivity Tests (3.4.1)

@@ -16,8 +16,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ColumnFamilyConfig
-  alias TripleStore.Index
   alias TripleStore.Dictionary
+  alias TripleStore.Index
 
   @moduletag :integration
 

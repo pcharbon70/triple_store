@@ -1,8 +1,8 @@
 defmodule TripleStore.SnapshotTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Snapshot
   alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.Snapshot
 
   @moduletag :capture_log
 
