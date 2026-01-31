@@ -227,7 +227,7 @@ defmodule TripleStore.DatasetOperationsTest do
 
       # Verify no quads can be found in any index
       quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: g1_id})
-      assert length(quads) == 0
+      assert Enum.empty?(quads)
     end
   end
 
@@ -479,7 +479,7 @@ defmodule TripleStore.DatasetOperationsTest do
 
       # Initially no graphs
       {:ok, graphs} = QuadOperations.list_graphs(db)
-      assert length(graphs) == 0
+      assert Enum.empty?(graphs)
 
       # Insert quads into g1
       s = RDF.iri("http://example.org/s")

@@ -359,15 +359,15 @@ defmodule TripleStore.Backend.RocksDB.Phase3ConfigurationTest do
       # Test a few CFs
       id2str_opts = ColumnFamilyConfig.get_cf_options(:id2str)
       assert is_list(id2str_opts)
-      assert length(id2str_opts) > 0
+      refute Enum.empty?(id2str_opts)
 
       spo_opts = ColumnFamilyConfig.get_cf_options(:spo)
       assert is_list(spo_opts)
-      assert length(spo_opts) > 0
+      refute Enum.empty?(spo_opts)
 
       derived_opts = ColumnFamilyConfig.get_cf_options(:derived)
       assert is_list(derived_opts)
-      assert length(derived_opts) > 0
+      refute Enum.empty?(derived_opts)
     end
 
     test "get_cf_options/1 returns nil for invalid CF" do
@@ -475,7 +475,7 @@ defmodule TripleStore.Backend.RocksDB.Phase3ConfigurationTest do
 
         # Should have valid option keys
         opts_keys = Keyword.keys(cf_opts)
-        assert length(opts_keys) > 0
+        refute Enum.empty?(opts_keys)
       end
     end
   end

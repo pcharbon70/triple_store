@@ -243,7 +243,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
 
       # Scaled target for test environment
       assert time_ms < @simple_query_target_ms * 10
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
 
     @tag :benchmark

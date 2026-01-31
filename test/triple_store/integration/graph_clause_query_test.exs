@@ -212,7 +212,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       assert {:ok, results} = Query.query(ctx, query)
 
-      assert length(results) > 0
+      refute Enum.empty?(results)
 
       # All results should have graph variable bound
       Enum.each(results, fn result ->
@@ -323,7 +323,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       # subject1 exists in both graph1 and graph2
       graphs = Enum.map(results, fn r -> r["g"] end)
-      assert length(graphs) >= 1
+      refute Enum.empty?(graphs)
     end
 
     test "nested pattern with shared subject across graphs", %{ctx: ctx} do
@@ -339,7 +339,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # shared subject exists in both graph1 and graph2
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
   end
 
@@ -385,7 +385,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # subject1 exists in both graphs
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -429,7 +429,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # subject1 exists in both graphs
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -469,7 +469,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Only graph2 should match
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "FILTER with regex in GRAPH clause", %{ctx: ctx} do
@@ -546,7 +546,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Should find results since 'shared' exists in both graphs
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "6.3.2.3 query comparing graphs via FILTER", %{ctx: ctx} do
@@ -565,7 +565,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Should find that the values are different
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
 
     test "6.3.2.4 query aggregating across graphs", %{ctx: ctx} do
@@ -582,7 +582,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
       assert {:ok, results} = Query.query(ctx, query)
 
       # Should have at least one result with count
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       [result | _] = results
       # The count should be a number (we have at least 6 quads in test data)
@@ -633,7 +633,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       assert {:ok, results} = Query.query(ctx, query)
 
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       [result | _] = results
       # Should have graph variable in result
@@ -654,7 +654,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
       assert {:ok, results} = Query.query(ctx, query)
 
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       [result | _] = results
       # Should have all variables including s

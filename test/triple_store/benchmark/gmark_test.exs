@@ -80,7 +80,7 @@ defmodule TripleStore.Benchmark.GMarkTest do
         end)
 
       # Should have some authorship edges
-      assert length(authors_edges) > 0
+      refute Enum.empty?(authors_edges)
     end
 
     test "generates papers with conference relationships" do
@@ -96,7 +96,7 @@ defmodule TripleStore.Benchmark.GMarkTest do
         end)
 
       # Should have publishedIn edges
-      assert length(published_in_edges) > 0
+      refute Enum.empty?(published_in_edges)
     end
 
     test "generates some papers with journal extensions" do
@@ -112,7 +112,7 @@ defmodule TripleStore.Benchmark.GMarkTest do
         end)
 
       # Should have some extendedTo edges (about 50% of papers)
-      assert length(extended_to_edges) > 0
+      refute Enum.empty?(extended_to_edges)
     end
 
     test "generates conferences with city relationships" do
@@ -128,7 +128,7 @@ defmodule TripleStore.Benchmark.GMarkTest do
         end)
 
       # Should have heldIn edges
-      assert length(held_in_edges) > 0
+      refute Enum.empty?(held_in_edges)
     end
 
     test "cities have fixed count regardless of scale" do
@@ -323,7 +323,7 @@ defmodule TripleStore.Benchmark.GMarkTest do
         end)
 
       # Should have some ID properties
-      assert length(id_triples) > 0
+      refute Enum.empty?(id_triples)
 
       # Check that IDs are integers
       for {_s, _p, o} <- id_triples do

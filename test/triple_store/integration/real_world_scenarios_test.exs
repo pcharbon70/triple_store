@@ -197,7 +197,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
       """
 
       assert {:ok, results} = Query.query(ctx, query)
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -302,7 +302,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
 
       # Should only return resources from graphs we have access to
       assert {:ok, results} = Query.query(ctx, query)
-      assert length(results) > 0
+      refute Enum.empty?(results)
     end
   end
 
@@ -378,7 +378,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
       """
 
       assert {:ok, results} = Query.query(ctx, query)
-      assert length(results) >= 1
+      refute Enum.empty?(results)
     end
   end
 
@@ -454,7 +454,7 @@ defmodule TripleStore.Integration.RealWorldScenariosTest do
       """
 
       assert {:ok, results} = Query.query(ctx, query)
-      assert length(results) >= 1
+      refute Enum.empty?(results)
 
       # All graphs should have data
       Enum.each(results, fn result ->

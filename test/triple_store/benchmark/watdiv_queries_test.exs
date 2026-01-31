@@ -439,9 +439,9 @@ defmodule TripleStore.Benchmark.WatDivQueriesTest do
       complex_queries = Enum.filter(queries, &(&1.complexity == :complex))
 
       # Should have some of each complexity level
-      assert length(simple_queries) > 0
-      assert length(medium_queries) > 0
-      assert length(complex_queries) > 0
+      refute Enum.empty?(simple_queries)
+      refute Enum.empty?(medium_queries)
+      refute Enum.empty?(complex_queries)
     end
   end
 end
