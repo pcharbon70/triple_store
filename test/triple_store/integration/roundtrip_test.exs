@@ -15,8 +15,8 @@ defmodule TripleStore.Integration.RoundtripTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.Loader
   alias TripleStore.Exporter
+  alias TripleStore.Loader
   alias TripleStore.QuadOperations
 
   @test_db_base "/tmp/roundtrip_test"

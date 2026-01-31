@@ -1257,9 +1257,9 @@ defmodule TripleStore do
   @spec add_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
           {:ok, map()} | {:error, term()}
   def add_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Adapter
     alias TripleStore.Reasoner.IncrementalQuad
     alias TripleStore.Reasoner.ReasoningProfile
-    alias TripleStore.Adapter
 
     db = store.db
     manager = store.dict_manager
@@ -1346,9 +1346,9 @@ defmodule TripleStore do
   @spec delete_quads_with_reasoning(store(), non_neg_integer(), [RDF.Statement.t()], keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_quads_with_reasoning(store, graph_id, quads, opts \\ []) do
+    alias TripleStore.Adapter
     alias TripleStore.Reasoner.DeleteWithReasoningQuad
     alias TripleStore.Reasoner.ReasoningProfile
-    alias TripleStore.Adapter
 
     db = store.db
     manager = store.dict_manager

@@ -9,8 +9,8 @@ defmodule TripleStore.Loader.ErrorHandlingTest do
 
   use ExUnit.Case, async: true
 
-  alias TripleStore.Test.LoaderHelper
   alias TripleStore.Loader
+  alias TripleStore.Test.LoaderHelper
 
   @test_db_base "/tmp/error_handling_test"
 

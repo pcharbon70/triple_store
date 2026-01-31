@@ -11,9 +11,9 @@ defmodule TripleStore.SPARQL.UpdateCacheInvalidationTest do
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
-  alias TripleStore.Statistics
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.UpdateExecutor
+  alias TripleStore.Statistics
 
   import RDF
 

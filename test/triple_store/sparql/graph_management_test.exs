@@ -10,8 +10,8 @@ defmodule TripleStore.SPARQL.GraphManagementTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.QuadOperations
-  alias TripleStore.SPARQL.UpdateExecutor
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.UpdateExecutor
 
   # Setup for tmp_dir (ExUnit.Callbacks)
   setup context do

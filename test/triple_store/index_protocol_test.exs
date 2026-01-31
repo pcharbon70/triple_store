@@ -5,15 +5,15 @@ defmodule TripleStore.IndexProtocolTest do
 
   use ExUnit.Case
 
-  alias TripleStore.IndexProtocol.SPO
-  alias TripleStore.IndexProtocol.POS
-  alias TripleStore.IndexProtocol.OSP
-  alias TripleStore.IndexProtocol.GSPO
+  alias TripleStore.IndexProtocol.GOPS
   alias TripleStore.IndexProtocol.GPOS
-  alias TripleStore.IndexProtocol.GOSP
-  alias TripleStore.IndexProtocol.SPOG
-  alias TripleStore.IndexProtocol.POSG
+  alias TripleStore.IndexProtocol.GSPO
+  alias TripleStore.IndexProtocol.OSP
   alias TripleStore.IndexProtocol.OSPG
+  alias TripleStore.IndexProtocol.POS
+  alias TripleStore.IndexProtocol.POSG
+  alias TripleStore.IndexProtocol.SPO
+  alias TripleStore.IndexProtocol.SPOG
 
   alias TripleStore.IndexProtocol.Helpers
 
