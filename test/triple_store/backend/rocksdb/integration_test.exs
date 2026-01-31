@@ -364,7 +364,9 @@ defmodule TripleStore.Backend.RocksDB.IntegrationTest do
       assert {:error, :invalid_column_family} = ErlangAdapter.prefix_iterator(db, invalid_cf, "")
 
       {:ok, snap} = ErlangAdapter.snapshot(db)
-      assert {:error, :invalid_column_family} = ErlangAdapter.snapshot_get(db, snap, invalid_cf, "key")
+
+      assert {:error, :invalid_column_family} =
+               ErlangAdapter.snapshot_get(db, snap, invalid_cf, "key")
 
       assert {:error, :invalid_column_family} =
                ErlangAdapter.snapshot_prefix_iterator(db, snap, invalid_cf, "")

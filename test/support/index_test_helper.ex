@@ -25,7 +25,11 @@ defmodule TripleStore.Index.TestHelper do
 
       db_info = IndexTestHelper.setup_test_db("my_test")
   """
-  @spec setup_test_db(String.t()) :: %{db: ErlangAdapter.db_ref(), path: String.t(), id: integer()}
+  @spec setup_test_db(String.t()) :: %{
+          db: ErlangAdapter.db_ref(),
+          path: String.t(),
+          id: integer()
+        }
   def setup_test_db(_base_name) do
     DbPool.checkout()
   end

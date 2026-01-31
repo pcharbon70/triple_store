@@ -55,6 +55,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.SPARQL.Leapfrog.{Leapfrog, QuadTrieIterator}
   alias TripleStore.SPARQL.QuadCardinality
 
@@ -386,7 +387,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     key = <<graph_id::64-big, s::64-big, p::64-big, o::64-big>>
 
     # Use the NIF to check if the quad exists
-    case TripleStore.Backend.RocksDB.ErlangAdapter.get(db, :gspo, key) do
+    case ErlangAdapter.get(db, :gspo, key) do
       {:ok, _value} ->
         # Quad exists, return empty iterator list (nothing to iterate)
         {:ok, []}

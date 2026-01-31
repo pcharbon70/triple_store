@@ -441,25 +441,26 @@ defmodule TripleStore.Benchmark.GMarkQueries do
     Enum.reduce(params, sparql, fn {key, value}, acc ->
       placeholder = "<%#{key}%>"
 
-      substituted_value = cond do
-        # Literal parameters (year) - wrap in quotes
-        key in literal_params ->
-          "\"#{value}\""
+      substituted_value =
+        cond do
+          # Literal parameters (year) - wrap in quotes
+          key in literal_params ->
+            "\"#{value}\""
 
-        # Full URIs provided - just wrap in angle brackets
-        String.starts_with?(value, ["http://", "https://"]) ->
-          "<#{value}>"
+          # Full URIs provided - just wrap in angle brackets
+          String.starts_with?(value, ["http://", "https://"]) ->
+            "<#{value}>"
 
-        # Value already contains the capitalized type name (e.g., "Researcher42")
-        # Check if value starts with the capitalized key name
-        value =~ ~r/^#{String.capitalize(to_string(key))}\d+/ ->
-          "<http://gmark.example.org/#{value}>"
+          # Value already contains the capitalized type name (e.g., "Researcher42")
+          # Check if value starts with the capitalized key name
+          value =~ ~r/^#{String.capitalize(to_string(key))}\d+/ ->
+            "<http://gmark.example.org/#{value}>"
 
-        # Entity IRIs (researcher, conference, journal, city) - construct IRI
-        true ->
-          "http://gmark.example.org/#{String.capitalize(to_string(key))}#{value}"
-          |> (fn iri -> "<#{iri}>" end).()
-      end
+          # Entity IRIs (researcher, conference, journal, city) - construct IRI
+          true ->
+            "http://gmark.example.org/#{String.capitalize(to_string(key))}#{value}"
+            |> (fn iri -> "<#{iri}>" end).()
+        end
 
       String.replace(acc, placeholder, substituted_value)
     end)

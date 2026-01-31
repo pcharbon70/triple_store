@@ -395,16 +395,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
   # Private Helpers
   # ===========================================================================
 
-  @doc """
-  Advances the iterator to the first entry and extracts the value.
-
-  ## Returns
-
-  - `{:ok, iterator}` if positioned at a valid entry
-  - `{:exhausted, iterator}` if no entries exist
-  - `{:error, reason}` on failure
-
-  """
   @spec advance_to_first(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   defp advance_to_first(iter) do
     case ErlangAdapter.iterator_next(iter.iter_ref) do
@@ -424,13 +414,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadTrieIterator do
     end
   end
 
-  @doc """
-  Builds a seek key by extending the prefix with the target at the given level.
-
-  The seek key is used to position the iterator at the first entry where
-  the value at the specified level is >= target.
-
-  """
   @spec build_seek_key(binary(), 0 | 1 | 2 | 3, non_neg_integer()) :: binary()
   defp build_seek_key(prefix, level, target) do
     # The prefix length tells us how many complete IDs are already bound

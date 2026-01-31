@@ -62,7 +62,11 @@ defmodule TripleStore.Benchmark.WatDivTest do
       # WatDiv entity types
       assert Enum.any?(types, &String.contains?(&1, "User"))
       assert Enum.any?(types, &String.contains?(&1, "Product"))
-      assert Enum.any?(types, fn t -> String.contains?(t, "Offer") or String.contains?(t, "Offer") end)
+
+      assert Enum.any?(types, fn t ->
+               String.contains?(t, "Offer") or String.contains?(t, "Offer")
+             end)
+
       assert Enum.any?(types, &String.contains?(&1, "Retailer"))
       assert Enum.any?(types, &String.contains?(&1, "Genre"))
     end
@@ -126,6 +130,7 @@ defmodule TripleStore.Benchmark.WatDivTest do
 
       # Get all users
       user_type = RDF.iri(sorg_ns <> "User")
+
       users =
         triples
         |> Enum.filter(fn {s, p, o} ->

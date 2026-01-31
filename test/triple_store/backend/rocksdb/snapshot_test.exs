@@ -339,6 +339,7 @@ defmodule TripleStore.Backend.RocksDB.SnapshotTest do
 
       # snapshot_stream returns a stream that raises an error when consumed
       stream = ErlangAdapter.snapshot_stream(db, snap, :nonexistent, "")
+
       assert_raise RuntimeError, ~r/Failed to create iterator/, fn ->
         Enum.to_list(stream)
       end

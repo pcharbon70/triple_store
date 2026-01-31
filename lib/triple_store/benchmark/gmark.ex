@@ -74,21 +74,31 @@ defmodule TripleStore.Benchmark.GMark do
 
   # Node type proportions at scale factor 1
   # Total nodes at scale 1 = 1000 + 600 + 200 + 200 + 100 = 2100
-  @researchers_scale1 1000  # 50% of nodes
-  @papers_scale1 600        # 30% of nodes
-  @journals_scale1 200      # 10% of nodes
-  @conferences_scale1 200   # 10% of nodes
-  @cities 100               # Fixed count (doesn't scale)
+  # 50% of nodes
+  @researchers_scale1 1000
+  # 30% of nodes
+  @papers_scale1 600
+  # 10% of nodes
+  @journals_scale1 200
+  # 10% of nodes
+  @conferences_scale1 200
+  # Fixed count (doesn't scale)
+  @cities 100
 
   # Average attributes per entity type
-  @researcher_attrs 3       # name, homepage, email
-  @paper_attrs 5            # title, abstract, year, pages, keywords
-  @journal_attrs 3          # name, publisher, issn
-  @conference_attrs 3       # name, year, location
+  # name, homepage, email
+  @researcher_attrs 3
+  # title, abstract, year, pages, keywords
+  @paper_attrs 5
+  # name, publisher, issn
+  @journal_attrs 3
+  # name, year, location
+  @conference_attrs 3
 
   # Average edges per entity
   @avg_authors_per_paper 2.5
-  @journal_extension_rate 0.5  # 50% of papers extended to journal
+  # 50% of papers extended to journal
+  @journal_extension_rate 0.5
 
   @typedoc "Generator options"
   @type opts :: [
@@ -280,7 +290,9 @@ defmodule TripleStore.Benchmark.GMark do
     # Generate edge triples (authorship relationships)
     authors_edges = generate_authors_edges(state)
 
-    city_triples ++ journal_triples ++ conference_triples ++
+    city_triples ++
+      journal_triples ++
+      conference_triples ++
       researcher_triples ++ paper_triples ++ authors_edges
   end
 
@@ -323,9 +335,19 @@ defmodule TripleStore.Benchmark.GMark do
     attrs =
       [
         maybe_add(journal_uri, gmark("name"), RDF.literal("Journal#{journal_id}"), 0.95),
-        maybe_add(journal_uri, gmark("publisher"), RDF.literal("Publisher#{rem(journal_id, 20) + 1}"), 0.9),
+        maybe_add(
+          journal_uri,
+          gmark("publisher"),
+          RDF.literal("Publisher#{rem(journal_id, 20) + 1}"),
+          0.9
+        ),
         maybe_add(journal_uri, prism("issn"), generate_issn(journal_id), 0.8),
-        maybe_add(journal_uri, dcterms("issued"), RDF.literal(random_year(1980, 2024), datatype: xsd("gYear")), 0.7)
+        maybe_add(
+          journal_uri,
+          dcterms("issued"),
+          RDF.literal(random_year(1980, 2024), datatype: xsd("gYear")),
+          0.7
+        )
       ]
       |> Enum.filter(&(&1 != nil))
 
@@ -350,7 +372,12 @@ defmodule TripleStore.Benchmark.GMark do
     attrs =
       [
         maybe_add(conf_uri, gmark("name"), RDF.literal("Conference#{conf_id}"), 0.95),
-        maybe_add(conf_uri, dcterms("issued"), RDF.literal(random_year(2010, 2024), datatype: xsd("gYear")), 0.9),
+        maybe_add(
+          conf_uri,
+          dcterms("issued"),
+          RDF.literal(random_year(2010, 2024), datatype: xsd("gYear")),
+          0.9
+        ),
         maybe_add(conf_uri, gmark("edition"), RDF.literal(rem(conf_id, 15) + 1), 0.7)
       ]
       |> Enum.filter(&(&1 != nil))
@@ -374,9 +401,24 @@ defmodule TripleStore.Benchmark.GMark do
     attrs =
       [
         maybe_add(researcher_uri, foaf("name"), RDF.literal("Researcher#{researcher_id}"), 0.95),
-        maybe_add(researcher_uri, foaf("homepage"), RDF.literal("http://example.org/~r#{researcher_id}"), 0.6),
-        maybe_add(researcher_uri, foaf("mbox"), RDF.literal("r#{researcher_id}@example.org"), 0.7),
-        maybe_add(researcher_uri, gmark("affiliation"), RDF.literal("University#{rem(researcher_id, 50) + 1}"), 0.5)
+        maybe_add(
+          researcher_uri,
+          foaf("homepage"),
+          RDF.literal("http://example.org/~r#{researcher_id}"),
+          0.6
+        ),
+        maybe_add(
+          researcher_uri,
+          foaf("mbox"),
+          RDF.literal("r#{researcher_id}@example.org"),
+          0.7
+        ),
+        maybe_add(
+          researcher_uri,
+          gmark("affiliation"),
+          RDF.literal("University#{rem(researcher_id, 50) + 1}"),
+          0.5
+        )
       ]
       |> Enum.filter(&(&1 != nil))
 
@@ -399,7 +441,8 @@ defmodule TripleStore.Benchmark.GMark do
 
     # Generate authorship edges (Zipfian-like distribution)
     # Some papers have many authors, most have few
-    num_authors = zipfian_sample(6, 2.5) # 1-6 authors, s=2.5 for zipfian
+    # 1-6 authors, s=2.5 for zipfian
+    num_authors = zipfian_sample(6, 2.5)
     author_ids = sample_researchers(state.num_researchers, num_authors)
 
     authors_edges =
@@ -420,9 +463,24 @@ defmodule TripleStore.Benchmark.GMark do
     attrs =
       [
         maybe_add(paper_uri, dc("title"), RDF.literal("Paper#{paper_id} Title"), 0.95),
-        maybe_add(paper_uri, dcterms("abstract"), RDF.literal("Abstract for paper #{paper_id}"), 0.7),
-        maybe_add(paper_uri, dcterms("issued"), RDF.literal(random_year(2015, 2024), datatype: xsd("gYear")), 0.9),
-        maybe_add(paper_uri, gmark("pages"), RDF.literal("#{random_int(1, 50)}-#{random_int(51, 500)}"), 0.6),
+        maybe_add(
+          paper_uri,
+          dcterms("abstract"),
+          RDF.literal("Abstract for paper #{paper_id}"),
+          0.7
+        ),
+        maybe_add(
+          paper_uri,
+          dcterms("issued"),
+          RDF.literal(random_year(2015, 2024), datatype: xsd("gYear")),
+          0.9
+        ),
+        maybe_add(
+          paper_uri,
+          gmark("pages"),
+          RDF.literal("#{random_int(1, 50)}-#{random_int(51, 500)}"),
+          0.6
+        ),
         maybe_add(paper_uri, dc("subject"), RDF.literal("Keyword#{rem(paper_id, 30) + 1}"), 0.5)
       ]
       |> Enum.filter(&(&1 != nil))

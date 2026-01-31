@@ -11,6 +11,7 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   """
 
   alias TripleStore.Dictionary
+  alias TripleStore.Dictionary.StringToId
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Authorization
 
@@ -305,14 +306,14 @@ defmodule TripleStore.SPARQL.Update.Helpers do
     if Dictionary.inline_encodable?(literal) do
       encode_inline_literal(literal)
     else
-      TripleStore.Dictionary.StringToId.lookup_id(db, literal)
+      StringToId.lookup_id(db, literal)
     end
   end
 
   @spec lookup_term_id(reference(), term()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   def lookup_term_id(db, term) do
-    TripleStore.Dictionary.StringToId.lookup_id(db, term)
+    StringToId.lookup_id(db, term)
   end
 
   @doc """

@@ -215,7 +215,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       {:ok, snapshot} = ErlangAdapter.snapshot(db)
 
       # Verify snapshot sees initial data
-      {:ok, v1} = ErlangAdapter.snapshot_get(db, snapshot, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+      {:ok, v1} =
+        ErlangAdapter.snapshot_get(db, snapshot, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+
       assert v1 == "v1"
 
       # Write more data
@@ -223,7 +225,9 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       :ok = ErlangAdapter.put(db, :spo, <<1::64-big, 1::64-big, 1::64-big>>, "v1_modified")
 
       # Snapshot still sees old data
-      {:ok, v1_old} = ErlangAdapter.snapshot_get(db, snapshot, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+      {:ok, v1_old} =
+        ErlangAdapter.snapshot_get(db, snapshot, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+
       assert v1_old == "v1"
 
       # Non-snapshot read sees new data
@@ -259,7 +263,8 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       :ok = ErlangAdapter.delete(db, :spo, <<1::64-big, 1::64-big, 2::64-big>>)
 
       # Snapshot iterator sees historical data
-      {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snapshot, :spo, <<1::64-big, 1::64-big>>)
+      {:ok, iter} =
+        ErlangAdapter.snapshot_prefix_iterator(db, snapshot, :spo, <<1::64-big, 1::64-big>>)
 
       results =
         Stream.unfold(iter, fn
@@ -304,16 +309,26 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       :ok = ErlangAdapter.put(db, :spo, <<1::64-big, 1::64-big, 3::64-big>>, "v3")
 
       # snap1 sees only v1
-      {:ok, snap1_v1} = ErlangAdapter.snapshot_get(db, snap1, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+      {:ok, snap1_v1} =
+        ErlangAdapter.snapshot_get(db, snap1, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+
       assert snap1_v1 == "v1"
-      assert :not_found = ErlangAdapter.snapshot_get(db, snap1, :spo, <<1::64-big, 1::64-big, 2::64-big>>)
+
+      assert :not_found =
+               ErlangAdapter.snapshot_get(db, snap1, :spo, <<1::64-big, 1::64-big, 2::64-big>>)
 
       # snap2 sees v1 and v2
-      {:ok, snap2_v1} = ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
-      {:ok, snap2_v2} = ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 2::64-big>>)
+      {:ok, snap2_v1} =
+        ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
+
+      {:ok, snap2_v2} =
+        ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 2::64-big>>)
+
       assert snap2_v1 == "v1"
       assert snap2_v2 == "v2"
-      assert :not_found = ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 3::64-big>>)
+
+      assert :not_found =
+               ErlangAdapter.snapshot_get(db, snap2, :spo, <<1::64-big, 1::64-big, 3::64-big>>)
 
       # Current state sees all modifications
       {:ok, current_v1} = ErlangAdapter.get(db, :spo, <<1::64-big, 1::64-big, 1::64-big>>)
@@ -364,7 +379,8 @@ defmodule TripleStore.Backend.RocksDB.Phase2IntegrationTest do
       end)
 
       # Snapshot iterator should only see initial 10 entries
-      {:ok, iter} = ErlangAdapter.snapshot_prefix_iterator(db, snapshot, :spo, <<1::64-big, 1::64-big>>)
+      {:ok, iter} =
+        ErlangAdapter.snapshot_prefix_iterator(db, snapshot, :spo, <<1::64-big, 1::64-big>>)
 
       count =
         Stream.unfold(iter, fn

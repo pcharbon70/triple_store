@@ -65,6 +65,7 @@ defmodule TripleStore.SPARQL.CostModel do
   """
 
   alias TripleStore.SPARQL.Cardinality
+  alias TripleStore.SPARQL.QuadCardinality
 
   # ===========================================================================
   # Types
@@ -1070,9 +1071,9 @@ defmodule TripleStore.SPARQL.CostModel do
     # QuadCardinality.estimate_pattern/2 returns a raw float (cardinality),
     # consistent with Cardinality.estimate_pattern/2 for triple patterns
     estimated_results =
-      if Code.ensure_loaded?(TripleStore.SPARQL.QuadCardinality) do
+      if Code.ensure_loaded?(QuadCardinality) do
         try do
-          TripleStore.SPARQL.QuadCardinality.estimate_pattern(pattern, stats)
+          QuadCardinality.estimate_pattern(pattern, stats)
         rescue
           _ -> fallback_quad_estimate(pattern, stats)
         end
