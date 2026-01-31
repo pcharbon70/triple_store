@@ -24,36 +24,36 @@ defmodule TripleStore.DictionaryQuadCompatibilityTest do
     end
 
     test "is_default_graph?/1 returns true only for ID 0" do
-      assert Dictionary.is_default_graph?(0) == true
-      refute Dictionary.is_default_graph?(1)
-      refute Dictionary.is_default_graph?(100)
-      refute Dictionary.is_default_graph?(Dictionary.encode_id(1, 42))
+      assert Dictionary.default_graph?(0) == true
+      refute Dictionary.default_graph?(1)
+      refute Dictionary.default_graph?(100)
+      refute Dictionary.default_graph?(Dictionary.encode_id(1, 42))
     end
 
     test "is_named_graph?/1 returns false for ID 0" do
-      refute Dictionary.is_named_graph?(0)
+      refute Dictionary.named_graph?(0)
     end
 
     test "is_named_graph?/1 returns true for dictionary-allocated terms" do
       uri_id = Dictionary.encode_id(Dictionary.type_uri(), 42)
-      assert Dictionary.is_named_graph?(uri_id)
+      assert Dictionary.named_graph?(uri_id)
 
       bnode_id = Dictionary.encode_id(Dictionary.type_bnode(), 123)
-      assert Dictionary.is_named_graph?(bnode_id)
+      assert Dictionary.named_graph?(bnode_id)
 
       literal_id = Dictionary.encode_id(Dictionary.type_literal(), 456)
-      assert Dictionary.is_named_graph?(literal_id)
+      assert Dictionary.named_graph?(literal_id)
     end
 
     test "is_named_graph?/1 returns false for inline-encoded terms" do
       int_id = Dictionary.encode_id(Dictionary.type_integer(), 42)
-      refute Dictionary.is_named_graph?(int_id)
+      refute Dictionary.named_graph?(int_id)
 
       decimal_id = Dictionary.encode_id(Dictionary.type_decimal(), 123)
-      refute Dictionary.is_named_graph?(decimal_id)
+      refute Dictionary.named_graph?(decimal_id)
 
       datetime_id = Dictionary.encode_id(Dictionary.type_datetime(), 789)
-      refute Dictionary.is_named_graph?(datetime_id)
+      refute Dictionary.named_graph?(datetime_id)
     end
   end
 
@@ -110,12 +110,12 @@ defmodule TripleStore.DictionaryQuadCompatibilityTest do
 
   describe "Graph ID Constants" do
     test "default graph ID is 0" do
-      assert Dictionary.is_default_graph?(0)
+      assert Dictionary.default_graph?(0)
     end
 
     test "ID 0 is excluded from named graph validation" do
       refute Dictionary.valid_graph_id?(0)
-      refute Dictionary.is_named_graph?(0)
+      refute Dictionary.named_graph?(0)
     end
 
     test "type tags ensure no term gets ID 0" do

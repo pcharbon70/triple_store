@@ -578,18 +578,19 @@ defmodule TripleStore.Backup do
 
       # Fallback: try to open and check
       true ->
-        with {:ok, db} <- ErlangAdapter.open(backup_path) do
-          # If we can open it, check the column families through the db
-          ErlangAdapter.close(db)
-          # Re-check with list_column_families
-          indices = ErlangAdapter.list_column_families(backup_path)
+        case ErlangAdapter.open(backup_path) do
+          {:ok, db} ->
+            # If we can open it, check the column families through the db
+            ErlangAdapter.close(db)
+            # Re-check with list_column_families
+            indices = ErlangAdapter.list_column_families(backup_path)
 
-          if "gspo" in indices do
-            {:ok, :quad}
-          else
-            {:ok, :triple}
-          end
-        else
+            if "gspo" in indices do
+              {:ok, :quad}
+            else
+              {:ok, :triple}
+            end
+
           {:error, _} ->
             {:error, :cannot_determine_schema}
         end

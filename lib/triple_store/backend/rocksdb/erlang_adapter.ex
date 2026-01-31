@@ -1253,15 +1253,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @impl true
   def handle_call({:exists, cf, key}, _from, %{db: db, cf_handles: cf_handles} = state) do
-    with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf) do
-      case :rocksdb.get(db, cf_handle, key, []) do
-        {:ok, _value} -> {:reply, {:ok, true}, state}
-        :not_found -> {:reply, {:ok, false}, state}
-        {:error, _reason} = error -> {:reply, error, state}
-      end
-    else
-      {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
+    case get_cf_handle(cf_handles, cf) do
+      {:ok, cf_handle} ->
+        case :rocksdb.get(db, cf_handle, key, []) do
+          {:ok, _value} -> {:reply, {:ok, true}, state}
+          :not_found -> {:reply, {:ok, false}, state}
+          {:error, _reason} = error -> {:reply, error, state}
+        end
+
+      {:error, _reason} = error ->
+        {:reply, error, state}
+
+      error ->
+        {:reply, error, state}
     end
   end
 

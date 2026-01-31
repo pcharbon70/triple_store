@@ -986,10 +986,11 @@ defmodule TripleStore.Adapter do
   # Batch encode multiple graphs, with chunking to avoid GenServer timeout
   defp encode_graphs(manager, graphs) do
     # Separate nil graphs (become 0) from non-nil graphs
-    {nil_graphs, non_nil_graphs} =
+    # map_reduce returns {mapped_list, {nil_acc, non_nil_acc}}
+    {_mapped, {nil_graphs, non_nil_graphs}} =
       Enum.map_reduce(graphs, {[], []}, fn
-        nil, {nil_acc, non_nil_acc} -> {[0 | nil_acc], non_nil_acc}
-        graph, {nil_acc, non_nil_acc} -> {nil_acc, [graph | non_nil_acc]}
+        nil, {nil_acc, non_nil_acc} -> {0, {[0 | nil_acc], non_nil_acc}}
+        graph, {nil_acc, non_nil_acc} -> {graph, {nil_acc, [graph | non_nil_acc]}}
       end)
 
     # Encode non-nil graphs using terms_to_ids (which chunks)

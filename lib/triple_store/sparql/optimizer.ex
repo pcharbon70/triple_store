@@ -995,18 +995,18 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp has_constants?(expr) do
     case expr do
       {:binary_op, _op, left, right} ->
-        is_constant?(left) and is_constant?(right)
+        constant?(left) and constant?(right)
 
       {:unary_op, _op, arg} ->
-        is_constant?(arg)
+        constant?(arg)
 
       _ ->
         false
     end
   end
 
-  defp is_constant?({:literal, _val}), do: true
-  defp is_constant?(_), do: false
+  defp constant?({:literal, _val}), do: true
+  defp constant?(_), do: false
 
   # Generate recommended execution plan
   defp generate_recommended_plan(algebra, stats, cost_breakdown) do
@@ -2460,7 +2460,7 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   defp reorder_patterns(patterns, stats) do
     # Check if we have any quad patterns - if so, use graph-aware reordering
-    has_quads? = Enum.any?(patterns, &is_quad_pattern?/1)
+    has_quads? = Enum.any?(patterns, &quad_pattern?/1)
 
     if has_quads? do
       reorder_patterns_with_graph_grouping(patterns, stats)
@@ -2482,9 +2482,9 @@ defmodule TripleStore.SPARQL.Optimizer do
   `true` for quad patterns, `false` for triple patterns or other.
 
   """
-  @spec is_quad_pattern?(term()) :: boolean()
-  def is_quad_pattern?({:quad, _, _, _, _}), do: true
-  def is_quad_pattern?(_), do: false
+  @spec quad_pattern?(term()) :: boolean()
+  def quad_pattern?({:quad, _, _, _, _}), do: true
+  def quad_pattern?(_), do: false
 
   @doc """
   Groups patterns by their graph binding for optimized execution.

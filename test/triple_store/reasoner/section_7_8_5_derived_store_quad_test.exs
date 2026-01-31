@@ -1,4 +1,4 @@
-defmodule TripleStore.Reasoner.Section7_8_5DerivedStoreQuadTest do
+defmodule TripleStore.Reasoner.Section785DerivedStoreQuadTest do
   @moduledoc """
   Tests for Section 7.8.5: Derived Store Quad Operations.
 

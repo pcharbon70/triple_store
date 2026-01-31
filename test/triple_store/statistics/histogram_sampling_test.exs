@@ -124,14 +124,14 @@ defmodule TripleStore.Statistics.HistogramSamplingTest do
       Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
 
       # Get two histograms with same seed
-      {:ok, hist1} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 12345)
-      {:ok, hist2} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 12345)
+      {:ok, hist1} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 12_345)
+      {:ok, hist2} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 12_345)
 
       # They should be identical
       assert hist1 == hist2
 
       # Different seed should produce different results (most of the time)
-      {:ok, hist3} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 54321)
+      {:ok, hist3} = Statistics.build_per_graph_histograms(db, sample_rate: 0.2, seed: 54_321)
 
       # With reasonable probability, histograms should differ
       # (There's a small chance they could be the same, but very unlikely)

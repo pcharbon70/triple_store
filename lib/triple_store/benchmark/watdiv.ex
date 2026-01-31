@@ -667,7 +667,7 @@ defmodule TripleStore.Benchmark.WatDiv do
     retailer_id = rem(offer_id - 1, state.num_retailers) + 1
     website_id = rem(offer_id - 1, state.num_websites) + 1
 
-    price = random_int(100, 10000) / 100.0
+    price = random_int(100, 10_000) / 100.0
     valid_from = random_date()
     valid_to = Date.add(valid_from, random_int(30, 365))
 

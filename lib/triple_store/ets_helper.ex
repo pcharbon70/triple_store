@@ -54,12 +54,10 @@ defmodule TripleStore.ETSHelper do
   """
   @spec ensure_table(atom(), list()) :: :created | :exists
   def ensure_table(name, opts) when is_atom(name) and is_list(opts) do
-    try do
-      :ets.new(name, opts)
-      :created
-    rescue
-      ArgumentError -> :exists
-    end
+    :ets.new(name, opts)
+    :created
+  rescue
+    ArgumentError -> :exists
   end
 
   @doc """

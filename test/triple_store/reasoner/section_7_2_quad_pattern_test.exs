@@ -1,4 +1,4 @@
-defmodule TripleStore.Reasoner.Section7_2QuadPatternTest do
+defmodule TripleStore.Reasoner.Section72QuadPatternTest do
   @moduledoc """
   Tests for Section 7.2: Quad Pattern Matching for Rules.
 

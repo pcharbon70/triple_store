@@ -149,11 +149,9 @@ defmodule TripleStore.SPARQL.ParallelExecutor do
   # Private Functions
 
   defp execute_single([fun]) when is_function(fun, 0) do
-    try do
-      {:ok, [fun.()]}
-    rescue
-      e -> {:error, e}
-    end
+    {:ok, [fun.()]}
+  rescue
+    e -> {:error, e}
   end
 
   defp execute_single([_]), do: {:error, :invalid_pattern_function}

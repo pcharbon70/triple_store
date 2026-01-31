@@ -235,12 +235,10 @@ defmodule TripleStore.Dictionary.Manager do
   """
   @spec stop(manager()) :: :ok
   def stop(manager) do
-    try do
-      GenServer.stop(manager, :normal)
-    catch
-      :exit, {:shutdown, _} -> :ok
-      :exit, :shutdown -> :ok
-    end
+    GenServer.stop(manager, :normal)
+  catch
+    :exit, {:shutdown, _} -> :ok
+    :exit, :shutdown -> :ok
   end
 
   @doc """

@@ -209,11 +209,11 @@ defmodule TripleStore.Statistics.QuadTest do
       graph_id = 100
 
       # Insert more than default sampling threshold (10000)
-      quads = for i <- 1..11001, do: {i, 1, i * 10, graph_id}
+      quads = for i <- 1..11_001, do: {i, 1, i * 10, graph_id}
       :ok = QuadOperations.insert_quads(db, quads, [])
 
-      assert {:ok, summary} = Statistics.graph_summary(db, graph_id, sampling_threshold: 10000)
-      assert summary.quad_count == 11001
+      assert {:ok, summary} = Statistics.graph_summary(db, graph_id, sampling_threshold: 10_000)
+      assert summary.quad_count == 11_001
       assert summary.accuracy == :approximate
     end
 
@@ -221,7 +221,7 @@ defmodule TripleStore.Statistics.QuadTest do
       graph_id = 100
       insert_test_quads(db, manager, graph_id, 5000)
 
-      assert {:ok, summary} = Statistics.graph_summary(db, graph_id, sampling_threshold: 10000)
+      assert {:ok, summary} = Statistics.graph_summary(db, graph_id, sampling_threshold: 10_000)
       assert summary.accuracy == :exact
     end
 

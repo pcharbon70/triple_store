@@ -150,7 +150,7 @@ defmodule TripleStore.Statistics do
   require Logger
 
   # Inline hot path functions for performance
-  @compile {:inline, extract_first_id: 1, extract_second_id: 1, is_numeric_id?: 1}
+  @compile {:inline, extract_first_id: 1, extract_second_id: 1, numeric_id?: 1}
 
   # Note on GenServer Usage:
   # This module uses GenServer for ETS table lifecycle management and asynchronous
@@ -1012,17 +1012,15 @@ defmodule TripleStore.Statistics do
   # Validate stats size before encoding to prevent memory exhaustion
   defp validate_stats_size(stats) do
     # Use :erlang.external_size to estimate binary size without creating it
-    try do
-      size = :erlang.external_size(stats, [:compressed])
+    size = :erlang.external_size(stats, [:compressed])
 
-      if size > @max_term_size do
-        {:error, {:stats_too_large, size, @max_term_size}}
-      else
-        :ok
-      end
-    rescue
-      _ -> {:error, :cannot_estimate_size}
+    if size > @max_term_size do
+      {:error, {:stats_too_large, size, @max_term_size}}
+    else
+      :ok
     end
+  rescue
+    _ -> {:error, :cannot_estimate_size}
   end
 
   # ===========================================================================
@@ -1558,7 +1556,7 @@ defmodule TripleStore.Statistics do
     {min_val, max_val, count} =
       stream1
       |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
-      |> Stream.filter(&is_numeric_id?/1)
+      |> Stream.filter(&numeric_id?/1)
       |> Stream.map(&decode_numeric_value/1)
       |> Enum.reduce({nil, nil, 0}, fn value, {min_acc, max_acc, count_acc} ->
         min_val = if min_acc == nil, do: value, else: min(min_acc, value)
@@ -1578,7 +1576,7 @@ defmodule TripleStore.Statistics do
       value_stream =
         stream2
         |> Stream.map(fn {key, _value} -> extract_second_id(key) end)
-        |> Stream.filter(&is_numeric_id?/1)
+        |> Stream.filter(&numeric_id?/1)
         |> Stream.map(&decode_numeric_value/1)
 
       final_histogram = populate_histogram_buckets(histogram, value_stream)
@@ -2180,8 +2178,8 @@ defmodule TripleStore.Statistics do
     end)
   end
 
-  @spec is_numeric_id?(non_neg_integer()) :: boolean()
-  defp is_numeric_id?(id) do
+  @spec numeric_id?(non_neg_integer()) :: boolean()
+  defp numeric_id?(id) do
     Dictionary.inline_encoded?(id)
   end
 

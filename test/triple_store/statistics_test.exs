@@ -726,7 +726,7 @@ defmodule TripleStore.StatisticsTest do
     test "builds histogram for datetime values", %{db: db} do
       # Create inline datetime IDs (type 6)
       make_datetime_id = fn days_offset ->
-        dt = DateTime.add(~U[2024-01-01 00:00:00Z], days_offset * 86400, :second)
+        dt = DateTime.add(~U[2024-01-01 00:00:00Z], days_offset * 86_400, :second)
         {:ok, id} = TripleStore.Dictionary.encode_datetime(dt)
         id
       end

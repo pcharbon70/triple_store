@@ -532,19 +532,19 @@ defmodule TripleStore.Dictionary do
 
   ## Examples
 
-      iex> Dictionary.is_default_graph?(0)
+      iex> Dictionary.default_graph?(0)
       true
 
-      iex> Dictionary.is_default_graph?(100)
+      iex> Dictionary.default_graph?(100)
       false
 
       iex> # Named graph IDs are regular term IDs, not 0
-      iex> Dictionary.is_default_graph?(Dictionary.encode_id(1, 42))
+      iex> Dictionary.default_graph?(Dictionary.encode_id(1, 42))
       false
   """
-  @spec is_default_graph?(term_id()) :: boolean()
-  def is_default_graph?(0), do: true
-  def is_default_graph?(id) when is_integer(id) and id > 0, do: false
+  @spec default_graph?(term_id()) :: boolean()
+  def default_graph?(0), do: true
+  def default_graph?(id) when is_integer(id) and id > 0, do: false
 
   @doc """
   Checks if a term ID is a valid named graph ID.
@@ -564,19 +564,19 @@ defmodule TripleStore.Dictionary do
 
   ## Examples
 
-      iex> Dictionary.is_named_graph?(0)
+      iex> Dictionary.named_graph?(0)
       false
 
       iex> uri_id = Dictionary.encode_id(1, 42)
-      iex> Dictionary.is_named_graph?(uri_id)
+      iex> Dictionary.named_graph?(uri_id)
       true
   """
-  @spec is_named_graph?(term_id()) :: boolean()
-  def is_named_graph?(id) when is_integer(id) and id > 0 do
+  @spec named_graph?(term_id()) :: boolean()
+  def named_graph?(id) when is_integer(id) and id > 0 do
     dictionary_allocated?(id)
   end
 
-  def is_named_graph?(0), do: false
+  def named_graph?(0), do: false
 
   @doc """
   Validates if a term ID is a valid graph ID.

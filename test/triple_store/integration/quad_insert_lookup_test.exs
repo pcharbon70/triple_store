@@ -246,8 +246,8 @@ defmodule TripleStore.Integration.QuadInsertLookupTest do
 
     test "default graph ID is 0", %{db: db} do
       assert QuadIndex.default_graph_id() == 0
-      assert QuadIndex.is_default_graph?(0)
-      refute QuadIndex.is_default_graph?(1)
+      assert QuadIndex.default_graph?(0)
+      refute QuadIndex.default_graph?(1)
     end
   end
 

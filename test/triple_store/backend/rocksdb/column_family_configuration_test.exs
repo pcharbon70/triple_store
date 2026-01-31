@@ -281,7 +281,7 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
       # Verify the exact constant values
       assert ColumnFamilyConfig.block_size(:id2str) == 2048
       assert ColumnFamilyConfig.block_size(:spo) == 8192
-      assert ColumnFamilyConfig.block_size(:derived) == 32768
+      assert ColumnFamilyConfig.block_size(:derived) == 32_768
     end
 
     test "1.4.6.3 Prefix extractor length" do
@@ -383,7 +383,8 @@ defmodule TripleStore.Backend.RocksDB.ColumnFamilyConfigurationTest do
     test "1.1.2.5 Quad schema returns 10 column families (9 CFs + default)" do
       descriptors = ColumnFamilyConfig.cf_descriptors(:quad)
 
-      # Quad schema has 11 CFs (10 CFs + default): 4 quad indices + dict (2) + derived + derivation_provenance + numeric + acl + default
+      # Quad schema has 11 CFs (10 CFs + default): 4 quad indices + dict (2)
+      # + derived + derivation_provenance + numeric + acl + default
       assert length(descriptors) == 11
     end
 

@@ -2278,7 +2278,7 @@ defmodule TripleStore.Loader do
 
       # If allowed_dirs is specified, verify the path is within them
       if allowed_dirs != nil and Path.type(expanded) == :absolute do
-        if is_within_allowed_dirs?(expanded, allowed_dirs) do
+        if within_allowed_dirs?(expanded, allowed_dirs) do
           {:ok, expanded}
         else
           {:error, :invalid_path}
@@ -2324,7 +2324,7 @@ defmodule TripleStore.Loader do
   end
 
   # Check if a path is within the list of allowed directories
-  defp is_within_allowed_dirs?(path, allowed_dirs) do
+  defp within_allowed_dirs?(path, allowed_dirs) do
     normalized_path = normalize_path(path)
 
     Enum.any?(allowed_dirs, fn dir ->

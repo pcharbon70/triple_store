@@ -256,7 +256,7 @@ defmodule TripleStore.Exporter do
       if allowed_dirs != nil do
         parent = Path.dirname(expanded)
 
-        if Path.type(parent) == :absolute and is_within_allowed_dirs?(parent, allowed_dirs) do
+        if Path.type(parent) == :absolute and within_allowed_dirs?(parent, allowed_dirs) do
           :ok
         else
           {:error, :invalid_path}
@@ -302,7 +302,7 @@ defmodule TripleStore.Exporter do
   end
 
   # Check if a path is within the list of allowed directories
-  defp is_within_allowed_dirs?(path, allowed_dirs) do
+  defp within_allowed_dirs?(path, allowed_dirs) do
     normalized_path = normalize_path(path)
 
     Enum.any?(allowed_dirs, fn dir ->

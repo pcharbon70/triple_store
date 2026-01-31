@@ -460,7 +460,30 @@ defmodule TripleStore.QuadOperations do
 
   # Performs prefix scan and returns results as a list
   defp perform_prefix_scan(db, cf, prefix, prefix_len, index, pattern, values) do
-    try do
+    ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
+      # Check if key is within prefix bounds
+      if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
+        quad = decode_key_to_quad(key, index)
+
+        if apply_post_filter(quad, pattern, values) do
+          [quad | acc]
+        else
+          acc
+        end
+      else
+        # Beyond prefix, stop iteration
+        throw({:halt, acc})
+      end
+    end)
+    |> Enum.reverse()
+  catch
+    {:halt, acc} -> Enum.reverse(acc)
+  end
+
+  # Performs a single iteration of prefix scan for streaming
+  # Returns {:cont, results} or {:halt, []}
+  defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
+    results =
       ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
         # Check if key is within prefix bounds
         if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
@@ -473,40 +496,13 @@ defmodule TripleStore.QuadOperations do
           end
         else
           # Beyond prefix, stop iteration
-          throw({:halt, acc})
+          throw({:halt, :done})
         end
       end)
-      |> Enum.reverse()
-    catch
-      {:halt, acc} -> Enum.reverse(acc)
-    end
-  end
 
-  # Performs a single iteration of prefix scan for streaming
-  # Returns {:cont, results} or {:halt, []}
-  defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
-    try do
-      results =
-        ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
-          # Check if key is within prefix bounds
-          if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
-            quad = decode_key_to_quad(key, index)
-
-            if apply_post_filter(quad, pattern, values) do
-              [quad | acc]
-            else
-              acc
-            end
-          else
-            # Beyond prefix, stop iteration
-            throw({:halt, :done})
-          end
-        end)
-
-      {:cont, Enum.reverse(results)}
-    catch
-      {:halt, :done} -> {:halt, []}
-    end
+    {:cont, Enum.reverse(results)}
+  catch
+    {:halt, :done} -> {:halt, []}
   end
 
   # ===========================================================================
@@ -1133,19 +1129,17 @@ defmodule TripleStore.QuadOperations do
 
   # Scans the GSPO index to find all distinct graph IDs
   defp scan_distinct_graph_ids(db) do
-    try do
-      graph_ids =
-        ErlangAdapter.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
-          # Extract first 8 bytes (graph ID) from GSPO key
-          <<graph_id::unsigned-big-integer-size(64), _rest::binary>> = key
-          MapSet.put(acc, graph_id)
-        end)
+    graph_ids =
+      ErlangAdapter.fold_keys(db, :gspo, <<>>, MapSet.new(), fn key, acc ->
+        # Extract first 8 bytes (graph ID) from GSPO key
+        <<graph_id::unsigned-big-integer-size(64), _rest::binary>> = key
+        MapSet.put(acc, graph_id)
+      end)
 
-      {:ok, MapSet.to_list(graph_ids)}
-    catch
-      {:exit, reason} -> {:error, reason}
-      :throw -> {:ok, []}
-    end
+    {:ok, MapSet.to_list(graph_ids)}
+  catch
+    {:exit, reason} -> {:error, reason}
+    :throw -> {:ok, []}
   end
 
   # Converts a list of graph IDs to RDF terms

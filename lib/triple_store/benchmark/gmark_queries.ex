@@ -458,8 +458,8 @@ defmodule TripleStore.Benchmark.GMarkQueries do
 
           # Entity IRIs (researcher, conference, journal, city) - construct IRI
           true ->
-            "http://gmark.example.org/#{String.capitalize(to_string(key))}#{value}"
-            |> (fn iri -> "<#{iri}>" end).()
+            iri = "http://gmark.example.org/#{String.capitalize(to_string(key))}#{value}"
+            "<#{iri}>"
         end
 
       String.replace(acc, placeholder, substituted_value)

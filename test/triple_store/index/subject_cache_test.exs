@@ -498,7 +498,7 @@ defmodule TripleStore.Index.SubjectCacheTest do
           end)
         end
 
-      results = Task.await_many(tasks, 10000)
+      results = Task.await_many(tasks, 10_000)
       assert Enum.all?(results, &(&1 == :ok))
     end
   end

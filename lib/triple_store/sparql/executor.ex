@@ -186,12 +186,13 @@ defmodule TripleStore.SPARQL.Executor do
   @typedoc "Triple pattern from SPARQL algebra: {:triple, subject, predicate, object}"
   @type triple_pattern :: {:triple, sparql_term(), sparql_term(), sparql_term()}
 
-  @typedoc "Quad pattern from SPARQL algebra: {:quad, subject, predicate, object, graph}
+  @typedoc """
+  Quad pattern from SPARQL algebra: {:quad, subject, predicate, object, graph}
   The graph position can be:
-  - A variable: {:variable, \"g\"}
-  - A named node IRI: {:named_node, \"http...\"}
+  - A variable: {:variable, "g"}
+  - A named node IRI: {:named_node, "http..."}
   - The atom :default_graph for SPARQL default graph
-  "
+  """
   @type quad_pattern :: {:quad, sparql_term(), sparql_term(), sparql_term(), sparql_term()}
 
   @typedoc "Pattern - either a triple or quad pattern"
@@ -269,32 +270,32 @@ defmodule TripleStore.SPARQL.Executor do
 
   ## Examples
 
-      iex> Executor.is_quad_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      iex> Executor.quad_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
       true
 
-      iex> Executor.is_quad_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      iex> Executor.quad_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
       false
 
   """
-  @spec is_quad_pattern?(term()) :: boolean()
-  def is_quad_pattern?({:quad, _s, _p, _o, _g}), do: true
-  def is_quad_pattern?(_), do: false
+  @spec quad_pattern?(term()) :: boolean()
+  def quad_pattern?({:quad, _s, _p, _o, _g}), do: true
+  def quad_pattern?(_), do: false
 
   @doc """
   Checks if a pattern is a triple pattern (3-element tuple).
 
   ## Examples
 
-      iex> Executor.is_triple_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
+      iex> Executor.triple_pattern?({:triple, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}})
       true
 
-      iex> Executor.is_triple_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
+      iex> Executor.triple_pattern?({:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}})
       false
 
   """
-  @spec is_triple_pattern?(term()) :: boolean()
-  def is_triple_pattern?({:triple, _s, _p, _o}), do: true
-  def is_triple_pattern?(_), do: false
+  @spec triple_pattern?(term()) :: boolean()
+  def triple_pattern?({:triple, _s, _p, _o}), do: true
+  def triple_pattern?(_), do: false
 
   @doc """
   Converts a triple pattern to a quad pattern by adding a graph context.
@@ -3471,27 +3472,27 @@ defmodule TripleStore.SPARQL.Executor do
   # and special graph term types
   defp detect_graph_variables_in_binding(binding) do
     Enum.filter(binding, fn {k, v} ->
-      is_graph_variable_name?(k) or is_special_graph_term?(v)
+      graph_variable_name?(k) or special_graph_term?(v)
     end)
     |> Enum.map(fn {k, _v} -> k end)
   end
 
   # Check if a variable name is commonly used for graphs
-  defp is_graph_variable_name?("g"), do: true
-  defp is_graph_variable_name?("graph"), do: true
-  defp is_graph_variable_name?("graphName"), do: true
+  defp graph_variable_name?("g"), do: true
+  defp graph_variable_name?("graph"), do: true
+  defp graph_variable_name?("graphName"), do: true
 
-  defp is_graph_variable_name?(name) when is_binary(name) do
+  defp graph_variable_name?(name) when is_binary(name) do
     # Check for common graph variable patterns
     String.starts_with?(name, "graph") or String.ends_with?(name, "Graph")
   end
 
-  defp is_graph_variable_name?(_), do: false
+  defp graph_variable_name?(_), do: false
 
   # Check if a value is a special graph term (not regular RDF terms)
-  defp is_special_graph_term?(:default_graph), do: true
-  defp is_special_graph_term?(:default), do: true
-  defp is_special_graph_term?(_), do: false
+  defp special_graph_term?(:default_graph), do: true
+  defp special_graph_term?(:default), do: true
+  defp special_graph_term?(_), do: false
 
   # Instantiate template with explicit graph variables
   # Returns list of {s, p, o} or {s, p, o, g} tuples

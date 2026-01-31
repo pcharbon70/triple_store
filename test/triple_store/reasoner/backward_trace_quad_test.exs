@@ -14,7 +14,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
 
   defp iri(suffix), do: {:iri, @ex <> suffix}
   defp rdf_type, do: {:iri, @rdf <> "type"}
-  defp rdfs_subClassOf, do: {:iri, @rdfs <> "subClassOf"}
+  defp rdfs_subclass_of, do: {:iri, @rdfs <> "subClassOf"}
 
   defp quad(g, s, p, o), do: {g, s, p, o}
   defp triple(s, p, o), do: {s, p, o}
@@ -40,7 +40,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
     end
 
     test "returns true when quad matches second pattern in body" do
-      quad = quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+      quad = quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
       rule = Rules.cax_sco()
 
       assert BackwardTraceQuad.could_satisfy_rule?(quad, rule)
@@ -62,7 +62,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
 
     test "handles rules with single body pattern" do
       # scm_sco has only one pattern in body
-      quad = quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+      quad = quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
       rule = Rules.scm_sco()
 
       assert BackwardTraceQuad.could_satisfy_rule?(quad, rule)
@@ -97,7 +97,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
     end
 
     test "matches multiple rules when applicable" do
-      derived_quad = quad(1, iri("Student"), rdfs_subClassOf(), iri("Agent"))
+      derived_quad = quad(1, iri("Student"), rdfs_subclass_of(), iri("Agent"))
       rules = [Rules.cax_sco(), Rules.scm_sco()]
 
       deriving_rules = BackwardTraceQuad.find_deriving_rules(derived_quad, rules)
@@ -180,7 +180,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
     end
 
     test "identifies matching patterns for subClassOf" do
-      quad = quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+      quad = quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
       rule = Rules.cax_sco()
 
       assert BackwardTraceQuad.could_satisfy_rule?(quad, rule)
@@ -248,7 +248,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuadTest do
 
   describe "multiple rules handling" do
     test "finds all relevant rules for a deleted quad" do
-      quad = quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+      quad = quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
       rules = [Rules.cax_sco(), Rules.scm_sco(), Rules.scm_spo()]
 
       # Both cax_sco and scm_sco have subClassOf patterns
