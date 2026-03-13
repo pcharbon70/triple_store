@@ -2,12 +2,15 @@
 
 ## Architecture Summary
 
-- `TripleStore` is specified as a library-first RDF triple store with a public Elixir API over persistent RocksDB storage.
-- Query execution, optimization, transaction coordination, and OWL 2 RL reasoning remain BEAM-owned semantics even when parser/storage operations cross a Rustler NIF boundary.
-- Dictionary encoding and triple indices (`spo`, `pos`, `osp`) are canonical storage primitives; `derived` remains a separate persistence surface for inferred facts.
-- Runtime coordination is intentionally small: the OTP application owns global cache/snapshot services, while store-local managers are started from `TripleStore.open/2`.
-- Operational surfaces such as telemetry, health, backup, restore, and scheduled backup are part of the architecture rather than afterthoughts.
-- Specs in this directory define architectural baselines, control-plane ownership, contracts, area-level acceptance criteria, and traceability links into planning and implementation.
+- `TripleStore` is a library-first RDF store with two persisted schemas: triple store v1 and quad store v2.
+- The primary external surface is `TripleStore`, but expert modules such as `TripleStore.Update`, `TripleStore.GraphBackup`, `TripleStore.QuadOperations`, `TripleStore.Health`, and `TripleStore.SPARQL.Authorization` expose narrower capabilities without changing overall control-plane ownership.
+- Semantic ownership stays in Elixir: dictionary encoding, index and quad-index selection, SPARQL algebra, query optimization, update semantics, reasoning, and operational policy remain BEAM-owned.
+- Native code is bounded to adapter work: `sparql_parser_nif` parses query text, while `erlang-rocksdb` executes storage primitives behind `TripleStore.Backend.RocksDB.ErlangAdapter`.
+- The default OTP runtime is intentionally small. `TripleStore.Application` supervises only `TripleStore.SPARQL.PlanCache` and `TripleStore.Snapshot`; store-local managers and most helper services are caller-managed or started dynamically.
+- Storage is schema-explicit. Triple stores persist `id2str`, `str2id`, `spo`, `pos`, `osp`, `derived`, and `numeric_range`. Quad stores persist `id2str`, `str2id`, `gspo`, `gpos`, `spog`, `posg`, `derived`, `derivation_provenance`, `numeric_range`, and `acl`.
+- Query processing is graph-aware in quad schema and default-graph-only in triple schema. Graph ACL checks exist in lower-level query and update contexts when a `:user` is supplied.
+- Reasoning is dual-mode. A legacy triple-materialization path coexists with graph-scoped quad reasoning, per-graph configuration and status, incremental quad maintenance, and derivation provenance.
+- Operational surfaces include telemetry, health, statistics, full-store backup and restore, per-graph backup and restore, scheduled backup, metrics, and Prometheus export, with several helpers remaining opt-in.
 
 This directory is the canonical architecture and governance specification set for `TripleStore`.
 
@@ -57,6 +60,6 @@ Normative language in this directory uses RFC-2119 terms: **MUST**, **MUST NOT**
 
 ## Current Governance Status
 
-- This initial baseline is documentation-first; there is no automated validator wired to these specs yet.
-- Until validators exist, architecture, contract, and conformance changes SHOULD be reviewed in the same change set as the corresponding implementation changes.
-- Existing project plans under `notes/planning/` remain the executable delivery roadmap and are referenced from this specs system instead of duplicated.
+- The repository has the same canonical baseline, contract, ADR, and conformance structure used in the `jido_os` specs system, but it does not yet have equivalent automated validation gates.
+- Until validators exist, baseline, contract, area-spec, and conformance changes SHOULD be reviewed in the same change set as the corresponding implementation changes.
+- Existing delivery planning remains in `notes/planning/`; these specs describe the architecture and authority model that the plans are expected to preserve.
