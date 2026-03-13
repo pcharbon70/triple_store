@@ -28,6 +28,17 @@ A high-performance RDF store implementation in Elixir with RocksDB storage, full
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## Specifications
+
+Canonical architecture and governance specs now live under [`specs/`](specs/README.md).
+
+Key entry points:
+
+- [`specs/architecture-overview.md`](specs/architecture-overview.md)
+- [`specs/topology.md`](specs/topology.md)
+- [`specs/boundaries.md`](specs/boundaries.md)
+- [`specs/control-planes.md`](specs/control-planes.md)
+
 ## Installation
 
 Add `triple_store` to your dependencies in `mix.exs`:
