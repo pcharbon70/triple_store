@@ -17,6 +17,7 @@ Technical documentation for TripleStore internals and implementation details.
 
 For new developers:
 
+0. Start with the canonical specs system in [`specs/README.md`](../../specs/README.md)
 1. Start with **Architecture Overview** to understand the overall system design
 2. Read **Storage Layer** to understand how data is persisted
 3. Continue with **SPARQL Engine** for query processing
