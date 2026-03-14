@@ -15,6 +15,7 @@ defmodule TripleStore.Adapter.TermConversionTest do
   alias TripleStore.Adapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.ShardedManager
 
   setup %{db: db} do
     assert ErlangAdapter.is_open(db)
@@ -425,6 +426,36 @@ defmodule TripleStore.Adapter.TermConversionTest do
       # Extract successful results
       decoded_terms = Enum.map(results, fn {:ok, term} -> term end)
       assert decoded_terms == terms
+    end
+
+    test "preserves inline encoding for batch literals", %{manager: manager} do
+      terms = [
+        RDF.iri("http://example.org/s"),
+        RDF.iri("http://example.org/p"),
+        RDF.literal(42)
+      ]
+
+      {:ok, [_s_id, _p_id, object_id]} = Adapter.terms_to_ids(manager, terms)
+
+      assert Dictionary.inline_encoded?(object_id)
+    end
+
+    test "works with a sharded dictionary manager", %{db: db} do
+      {:ok, sharded} = ShardedManager.start_link(db: db, shards: 4)
+
+      on_exit(fn ->
+        ShardedManager.stop(sharded)
+      end)
+
+      terms = [
+        RDF.iri("http://example.org/s"),
+        RDF.iri("http://example.org/p"),
+        RDF.literal("o")
+      ]
+
+      assert {:ok, ids} = Adapter.terms_to_ids(sharded, terms)
+      assert length(ids) == 3
+      assert Enum.all?(ids, &is_integer/1)
     end
   end
 

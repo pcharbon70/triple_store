@@ -44,6 +44,7 @@ defmodule TripleStore.Adapter do
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.IdToString
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Dictionary.StringToId
 
   # ===========================================================================
@@ -71,10 +72,14 @@ defmodule TripleStore.Adapter do
   @type term_id :: Dictionary.term_id()
 
   @typedoc "Dictionary manager process"
-  @type manager :: Manager.manager()
+  @type manager :: Manager.manager() | ShardedManager.t()
 
   @typedoc "Database reference"
   @type db_ref :: reference()
+
+  @batch_timeout :timer.minutes(5)
+  @manager_batch_size 30_000
+  @sharded_batch_size 100_000
 
   # ===========================================================================
   # Term to ID Conversion
@@ -104,7 +109,7 @@ defmodule TripleStore.Adapter do
   """
   @spec from_rdf_iri(manager(), RDF.IRI.t()) :: {:ok, term_id()} | {:error, term()}
   def from_rdf_iri(manager, %RDF.IRI{} = iri) do
-    Manager.get_or_create_id(manager, iri)
+    get_or_create_id(manager, iri)
   end
 
   @doc """
@@ -131,7 +136,7 @@ defmodule TripleStore.Adapter do
   """
   @spec from_rdf_bnode(manager(), RDF.BlankNode.t()) :: {:ok, term_id()} | {:error, term()}
   def from_rdf_bnode(manager, %RDF.BlankNode{} = bnode) do
-    Manager.get_or_create_id(manager, bnode)
+    get_or_create_id(manager, bnode)
   end
 
   @doc """
@@ -168,7 +173,7 @@ defmodule TripleStore.Adapter do
     if Dictionary.inline_encodable?(literal) do
       encode_inline_literal(literal)
     else
-      Manager.get_or_create_id(manager, literal)
+      get_or_create_id(manager, literal)
     end
   end
 
@@ -224,26 +229,11 @@ defmodule TripleStore.Adapter do
   def terms_to_ids(_manager, []), do: {:ok, []}
 
   def terms_to_ids(manager, terms) when is_list(terms) do
-    # Chunk large term lists to avoid GenServer timeout
-    # Each chunk should process within 5 seconds (GenServer.call timeout)
-    chunk_size = 500
-
-    if length(terms) <= chunk_size do
-      Manager.get_or_create_ids(manager, terms)
-    else
-      # Process in chunks and combine results
-      terms
-      |> Enum.chunk_every(chunk_size)
-      |> Enum.reduce_while({:ok, []}, fn
-        chunk, {:ok, acc_ids} ->
-          case Manager.get_or_create_ids(manager, chunk) do
-            {:ok, chunk_ids} -> {:cont, {:ok, acc_ids ++ chunk_ids}}
-            error -> {:halt, error}
-          end
-
-        error, _acc ->
-          {:halt, error}
-      end)
+    with {:ok, resolved_ids, dictionary_terms} <- split_inline_terms(terms),
+         {:ok, dictionary_ids} <- resolve_dictionary_terms(manager, dictionary_terms) do
+      resolved_ids
+      |> merge_dictionary_ids(dictionary_terms, dictionary_ids)
+      |> build_ordered_ids(length(terms))
     end
   end
 
@@ -1030,4 +1020,110 @@ defmodule TripleStore.Adapter do
   defp encode_inline_literal(_literal) do
     {:error, :not_inline_encodable}
   end
+
+  defp split_inline_terms(terms) do
+    terms
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, {%{}, []}}, fn {term, idx}, {:ok, {resolved_ids, dictionary_terms}} ->
+      if Dictionary.inline_encodable?(term) do
+        case encode_inline_literal(term) do
+          {:ok, id} ->
+            {:cont, {:ok, {Map.put(resolved_ids, idx, id), dictionary_terms}}}
+
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+      else
+        {:cont, {:ok, {resolved_ids, [{idx, term} | dictionary_terms]}}}
+      end
+    end)
+    |> case do
+      {:ok, {resolved_ids, dictionary_terms}} ->
+        {:ok, resolved_ids, Enum.reverse(dictionary_terms)}
+
+      error ->
+        error
+    end
+  end
+
+  defp resolve_dictionary_terms(_manager, []), do: {:ok, []}
+
+  defp resolve_dictionary_terms(manager, dictionary_terms) do
+    batch_size = manager_batch_size(manager)
+
+    dictionary_terms
+    |> Enum.map(fn {_idx, term} -> term end)
+    |> Enum.chunk_every(batch_size)
+    |> Enum.reduce_while({:ok, []}, fn chunk, {:ok, acc_ids} ->
+      case get_or_create_ids(manager, chunk, @batch_timeout) do
+        {:ok, chunk_ids} -> {:cont, {:ok, acc_ids ++ chunk_ids}}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp merge_dictionary_ids(resolved_ids, dictionary_terms, dictionary_ids) do
+    Enum.zip(dictionary_terms, dictionary_ids)
+    |> Enum.reduce(resolved_ids, fn {{idx, _term}, id}, acc ->
+      Map.put(acc, idx, id)
+    end)
+  end
+
+  defp build_ordered_ids(resolved_ids, term_count) do
+    ids =
+      for idx <- 0..(term_count - 1) do
+        Map.fetch!(resolved_ids, idx)
+      end
+
+    {:ok, ids}
+  rescue
+    KeyError ->
+      {:error, :batch_resolution_failed}
+  end
+
+  defp get_or_create_id(manager, term) do
+    case manager_kind(manager) do
+      :sharded -> ShardedManager.get_or_create_id(manager, term)
+      :manager -> Manager.get_or_create_id(manager, term)
+    end
+  end
+
+  defp get_or_create_ids(manager, terms, timeout) do
+    case manager_kind(manager) do
+      :sharded ->
+        ShardedManager.get_or_create_ids(manager, terms, timeout: timeout)
+
+      :manager ->
+        GenServer.call(manager, {:get_or_create_ids, terms}, timeout)
+    end
+  end
+
+  defp manager_batch_size(manager) do
+    case manager_kind(manager) do
+      :sharded -> @sharded_batch_size
+      :manager -> @manager_batch_size
+    end
+  end
+
+  defp manager_kind(manager) do
+    case resolve_manager_pid(manager) do
+      pid when is_pid(pid) ->
+        case Process.info(pid, :dictionary) do
+          {:dictionary, dict} ->
+            case Keyword.get(dict, :"$initial_call") do
+              {:supervisor, ShardedManager, 1} -> :sharded
+              _ -> :manager
+            end
+
+          _ ->
+            :manager
+        end
+
+      _ ->
+        :manager
+    end
+  end
+
+  defp resolve_manager_pid(manager) when is_pid(manager), do: manager
+  defp resolve_manager_pid(manager), do: GenServer.whereis(manager)
 end

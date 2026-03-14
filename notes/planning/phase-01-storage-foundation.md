@@ -410,7 +410,10 @@ Implement efficient bulk loading using batched writes and Telemetry progress rep
 - [x] 1.5.3.3 Support Turtle, N-Triples, N-Quads, TriG, RDF/XML, JSON-LD formats
 - [x] 1.5.3.4 Implement batching (1000 triples per batch) for efficient writes
 - [x] 1.5.3.5 Implement progress reporting via Telemetry events
-- [ ] 1.5.3.6 Target: 1M triples in <30 seconds (deferred to Phase 5 optimization)
+- [x] 1.5.3.6 Target: 1M triples in <30 seconds
+  Validated on 2026-03-14 with `Loader.load_graph/4` in `bulk_mode` using
+  `dictionary_shards: System.schedulers_online()`: 1,000,000 triples loaded in
+  24.5 seconds (~40.8K triples/second).
 
 Additional functions implemented:
 - `load_string/5` - Parse and load RDF content from string

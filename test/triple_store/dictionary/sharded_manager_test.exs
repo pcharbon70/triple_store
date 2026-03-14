@@ -14,6 +14,7 @@ defmodule TripleStore.Dictionary.ShardedManagerTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.ShardedManager
+  alias TripleStore.Index
 
   @test_db_base "/tmp/triple_store_sharded_manager_test"
 
@@ -567,6 +568,24 @@ defmodule TripleStore.Dictionary.ShardedManagerTest do
       # Basic operation should work
       uri = RDF.iri("http://example.org/integration/test")
       {:ok, _id} = ShardedManager.get_or_create_id(store.dict_manager, uri)
+
+      TripleStore.close(store)
+      File.rm_rf(test_path)
+    end
+
+    test "TripleStore.load_graph works with dictionary_shards option" do
+      test_path = "#{@test_db_base}_load_graph_#{:erlang.unique_integer([:positive])}"
+
+      {:ok, store} = TripleStore.open(test_path, dictionary_shards: 4)
+
+      graph =
+        RDF.Graph.new([
+          {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/p"), RDF.literal("o1")},
+          {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/p"), RDF.literal("o2")}
+        ])
+
+      assert {:ok, 2} = TripleStore.load_graph(store, graph)
+      assert {:ok, 2} = Index.count(store.db, {:var, :var, :var})
 
       TripleStore.close(store)
       File.rm_rf(test_path)

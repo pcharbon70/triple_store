@@ -16,6 +16,7 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Loader
 
   @moduletag :benchmark
@@ -24,9 +25,9 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
   @test_db_base "/tmp/triple_store_performance_validation"
 
   # Performance targets
-  # Note: The 80K target is aspirational. Current measured throughput is ~35K tps.
-  # We set a realistic baseline to ensure no regressions while documenting
-  # the gap to the target for future optimization.
+  # Note: The 80K target is still aspirational for the single-manager benchmark
+  # path. Current measured throughput on this workload is ~58K tps, while the
+  # Phase 1 roadmap target of 1M triples in <30s is met with dictionary sharding.
   @target_throughput_tps 80_000
   @baseline_throughput_tps 25_000
 
@@ -503,24 +504,24 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
     end
 
     test "sharded manager improves throughput over single manager", %{path: path} do
-      # Note: This test measures the impact of sharding on dictionary encoding
-      # Sharding happens automatically when using the standard Manager with bulk_mode
       triple_count = 100_000
       triples = generate_synthetic_triples(triple_count)
       graph = RDF.Graph.new(triples)
+      cores = System.schedulers_online()
 
-      # Single stage (minimal parallelism)
+      # Single manager baseline
       single_path = "#{path}_single"
       {:ok, single_db} = ErlangAdapter.open(single_path)
       {:ok, single_manager} = Manager.start_link(db: single_db)
+      warmup_db(single_db, single_manager)
 
       single_start = System.monotonic_time(:microsecond)
 
       {:ok, _} =
         Loader.load_graph(single_db, single_manager, graph,
           bulk_mode: true,
-          batch_size: 5000,
-          stages: 1
+          batch_size: 10_000,
+          stages: cores
         )
 
       single_elapsed = System.monotonic_time(:microsecond) - single_start
@@ -530,42 +531,41 @@ defmodule TripleStore.Loader.PerformanceValidationTest do
       ErlangAdapter.close(single_db)
       File.rm_rf(single_path)
 
-      # Multi-stage (parallel dictionary encoding)
-      multi_path = "#{path}_multi"
-      {:ok, multi_db} = ErlangAdapter.open(multi_path)
-      {:ok, multi_manager} = Manager.start_link(db: multi_db)
+      # Sharded manager with the same loader settings
+      sharded_path = "#{path}_sharded"
+      {:ok, sharded_db} = ErlangAdapter.open(sharded_path)
+      {:ok, sharded_manager} = ShardedManager.start_link(db: sharded_db, shards: cores)
+      warmup_db(sharded_db, sharded_manager)
 
-      multi_start = System.monotonic_time(:microsecond)
+      sharded_start = System.monotonic_time(:microsecond)
 
       {:ok, _} =
-        Loader.load_graph(multi_db, multi_manager, graph,
+        Loader.load_graph(sharded_db, sharded_manager, graph,
           bulk_mode: true,
-          batch_size: 5000,
-          stages: System.schedulers_online()
+          batch_size: 10_000,
+          stages: cores
         )
 
-      multi_elapsed = System.monotonic_time(:microsecond) - multi_start
-      multi_throughput = triple_count / (multi_elapsed / 1_000_000)
+      sharded_elapsed = System.monotonic_time(:microsecond) - sharded_start
+      sharded_throughput = triple_count / (sharded_elapsed / 1_000_000)
 
-      Manager.stop(multi_manager)
-      ErlangAdapter.close(multi_db)
-      File.rm_rf(multi_path)
+      ShardedManager.stop(sharded_manager)
+      ErlangAdapter.close(sharded_db)
+      File.rm_rf(sharded_path)
 
-      speedup = multi_throughput / single_throughput
+      speedup = sharded_throughput / single_throughput
 
       IO.puts("\n")
       IO.puts("  ═══════════════════════════════════════════════════════════")
-      IO.puts("  PARALLEL DICTIONARY ENCODING IMPACT")
+      IO.puts("  SHARDED DICTIONARY ENCODING IMPACT")
       IO.puts("  ═══════════════════════════════════════════════════════════")
-      IO.puts("  Single stage:      #{format_number(round(single_throughput))} tps")
-      IO.puts("  Multi stage:       #{format_number(round(multi_throughput))} tps")
+      IO.puts("  Single manager:    #{format_number(round(single_throughput))} tps")
+      IO.puts("  Sharded manager:   #{format_number(round(sharded_throughput))} tps")
       IO.puts("  Speedup:           #{Float.round(speedup, 2)}x")
       IO.puts("  ═══════════════════════════════════════════════════════════")
 
-      # Note: On some systems, multi-stage may not be faster due to I/O bottlenecks.
-      # We allow for small variance while detecting severe regressions.
-      assert speedup >= 0.8,
-             "Multi-stage severely slower than single-stage: #{Float.round(speedup, 2)}x"
+      assert speedup >= 1.1,
+             "Sharded manager should materially improve throughput over the single manager baseline, got #{Float.round(speedup, 2)}x"
     end
 
     test "performance summary report", %{path: path} do
