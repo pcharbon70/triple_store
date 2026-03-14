@@ -250,11 +250,7 @@ defmodule TripleStore.Dictionary.Manager do
         :ok
     end
   catch
-    :exit, :normal -> :ok
-    :exit, {:shutdown, _} -> :ok
-    :exit, :shutdown -> :ok
-    :exit, {:noproc, _} -> :ok
-    :exit, :noproc -> :ok
+    :exit, _reason -> :ok
   end
 
   defp resolve_manager_pid(manager) when is_pid(manager), do: manager
@@ -543,9 +539,9 @@ defmodule TripleStore.Dictionary.Manager do
     case SequenceCounter.next_id(counter, term_type) do
       {:ok, id} ->
         id_binary = <<id::64-big>>
+        operations = [{:str2id, key, id_binary}, {:id2str, id_binary, key}]
 
-        with :ok <- ErlangAdapter.put(db, :str2id, key, id_binary),
-             :ok <- ErlangAdapter.put(db, :id2str, id_binary, key) do
+        with :ok <- ErlangAdapter.write_batch(db, operations, false) do
           # Populate cache after successful storage
           :ets.insert(cache, {key, id})
           {:ok, id}
@@ -602,7 +598,7 @@ defmodule TripleStore.Dictionary.Manager do
     # Deduplicate by key - group indices that share the same key
     # This fixes the bug where the same term appearing multiple times in a batch
     # would get different IDs instead of sharing the same ID
-    {unique_terms, key_to_indices} = deduplicate_needs_ids(needs_ids)
+    {unique_terms, key_to_indices} = deduplicate_encoded_terms(needs_ids)
 
     with {:ok, type_ranges} <- allocate_ranges_for_unique_terms(counter, unique_terms),
          {:ok, key_to_id} <- assign_and_store_unique_ids(db, cache, unique_terms, type_ranges) do
@@ -625,12 +621,12 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  # Deduplicate needs_ids by key, returning unique terms and a mapping of key to indices
-  @spec deduplicate_needs_ids([{non_neg_integer(), binary(), rdf_term()}]) ::
+  # Deduplicate encoded terms by key, returning unique terms and a mapping of key to indices.
+  @spec deduplicate_encoded_terms([{non_neg_integer(), binary(), rdf_term()}]) ::
           {[{binary(), rdf_term()}], %{binary() => [non_neg_integer()]}}
-  defp deduplicate_needs_ids(needs_ids) do
+  defp deduplicate_encoded_terms(encoded_terms) do
     {unique_map, key_to_indices} =
-      Enum.reduce(needs_ids, {%{}, %{}}, fn {idx, key, term}, {unique, indices} ->
+      Enum.reduce(encoded_terms, {%{}, %{}}, fn {idx, key, term}, {unique, indices} ->
         new_indices = Map.update(indices, key, [idx], fn existing -> [idx | existing] end)
 
         case Map.has_key?(unique, key) do
@@ -647,29 +643,42 @@ defmodule TripleStore.Dictionary.Manager do
           {[{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}],
            [{non_neg_integer(), term()}]}
   defp encode_and_lookup_terms(db, cache, terms) do
-    terms
-    |> Enum.with_index()
-    |> Enum.reduce({[], []}, fn {term, idx}, {acc, errors} ->
-      case encode_and_lookup_term(db, cache, term, idx) do
-        {:ok, entry} -> {[entry | acc], errors}
-        {:error, reason} -> {acc, [{idx, reason} | errors]}
-      end
-    end)
-    |> then(fn {encoded, errors} -> {Enum.reverse(encoded), Enum.reverse(errors)} end)
+    {encoded_terms, errors} =
+      terms
+      |> Enum.with_index()
+      |> Enum.reduce({[], []}, fn {term, idx}, {acc, errors} ->
+        case StringToId.encode_term(term) do
+          {:ok, key} -> {[{idx, key, term} | acc], errors}
+          {:error, reason} -> {acc, [{idx, reason} | errors]}
+        end
+      end)
+      |> then(fn {encoded, errors} -> {Enum.reverse(encoded), Enum.reverse(errors)} end)
+
+    case errors do
+      [] ->
+        {resolve_encoded_terms(db, cache, encoded_terms), []}
+
+      _ ->
+        {[], errors}
+    end
   end
 
-  @spec encode_and_lookup_term(reference(), :ets.tid(), rdf_term(), non_neg_integer()) ::
-          {:ok, {non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}}
-          | {:error, term()}
-  defp encode_and_lookup_term(db, cache, term, idx) do
-    case StringToId.encode_term(term) do
-      {:ok, key} ->
-        existing_id = lookup_existing_id(db, cache, key)
-        {:ok, {idx, key, term, existing_id}}
+  @spec resolve_encoded_terms(reference(), :ets.tid(), [{non_neg_integer(), binary(), rdf_term()}]) ::
+          [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
+  defp resolve_encoded_terms(db, cache, encoded_terms) do
+    {unique_terms, _key_to_indices} = deduplicate_encoded_terms(encoded_terms)
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+    existing_ids =
+      Enum.reduce(unique_terms, %{}, fn {key, _term}, acc ->
+        case lookup_existing_id(db, cache, key) do
+          nil -> acc
+          id -> Map.put(acc, key, id)
+        end
+      end)
+
+    Enum.map(encoded_terms, fn {idx, key, term} ->
+      {idx, key, term, Map.get(existing_ids, key)}
+    end)
   end
 
   @spec lookup_existing_id(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
@@ -727,9 +736,11 @@ defmodule TripleStore.Dictionary.Manager do
           %{atom() => {non_neg_integer(), non_neg_integer()}}
         ) :: {:ok, %{binary() => Dictionary.term_id()}} | {:error, term()}
   defp assign_and_store_unique_ids(db, cache, unique_terms, type_ranges) do
-    # Track current offset for each type
-    {results, _final_ranges} =
-      Enum.reduce(unique_terms, {%{}, type_ranges}, fn {key, term}, {key_to_id, ranges} ->
+    # Track current offset for each type and build a single batch write for all
+    # newly assigned dictionary entries to minimize BEAM/NIF round-trips.
+    {operations, key_to_id, _final_ranges} =
+      Enum.reduce(unique_terms, {[], %{}, type_ranges}, fn {key, term},
+                                                           {ops, ids, ranges} ->
         type = get_term_type(term)
         type_tag = type_to_tag(type)
         {start_seq, offset} = Map.fetch!(ranges, type)
@@ -738,18 +749,19 @@ defmodule TripleStore.Dictionary.Manager do
         id = Dictionary.encode_id(type_tag, seq)
         id_binary = <<id::64-big>>
 
-        # Store in RocksDB
-        :ok = ErlangAdapter.put(db, :str2id, key, id_binary)
-        :ok = ErlangAdapter.put(db, :id2str, id_binary, key)
-
-        # Populate cache
-        :ets.insert(cache, {key, id})
-
         new_ranges = Map.put(ranges, type, {start_seq, offset + 1})
-        {Map.put(key_to_id, key, id), new_ranges}
+        new_ops = [{:id2str, id_binary, key}, {:str2id, key, id_binary} | ops]
+        {new_ops, Map.put(ids, key, id), new_ranges}
       end)
 
-    {:ok, results}
+    case ErlangAdapter.write_batch(db, Enum.reverse(operations), false) do
+      :ok ->
+        :ets.insert(cache, Map.to_list(key_to_id))
+        {:ok, key_to_id}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   defp type_to_tag(:uri), do: Dictionary.type_uri()

@@ -12,6 +12,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
   use ExUnit.Case, async: false
 
+  alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.Manager
@@ -183,8 +184,9 @@ defmodule TripleStore.Loader.ConsistencyTest do
         # String literals
         {RDF.iri("http://example.org/s1"), RDF.iri("http://example.org/name"),
          RDF.literal("Plain string")},
-        # Typed literals
-        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/count"), RDF.literal(42)},
+        # Typed literals (dictionary-backed, not inline-encoded)
+        {RDF.iri("http://example.org/s2"), RDF.iri("http://example.org/count"),
+         RDF.XSD.Date.new!("2024-01-15")},
         # Language-tagged literals
         {RDF.iri("http://example.org/s3"), RDF.iri("http://example.org/label"),
          RDF.literal("English label", language: "en")}
@@ -227,7 +229,7 @@ defmodule TripleStore.Loader.ConsistencyTest do
       for {s, p, o} <- triples do
         {:ok, s_id} = Manager.lookup_id(manager, s)
         {:ok, p_id} = Manager.lookup_id(manager, p)
-        {:ok, o_id} = Manager.get_or_create_id(manager, o)
+        {:ok, o_id} = Adapter.term_to_id(manager, o)
 
         # Verify the triple exists
         {:ok, true} = Index.triple_exists?(db, {s_id, p_id, o_id})

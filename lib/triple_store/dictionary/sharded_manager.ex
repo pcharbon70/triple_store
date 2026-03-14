@@ -377,11 +377,11 @@ defmodule TripleStore.Dictionary.ShardedManager do
   @spec safe_supervisor_stop(pid() | term()) :: :ok | nil
   defp safe_supervisor_stop(pid) when is_pid(pid) do
     if Process.alive?(pid) do
+      Process.unlink(pid)
       Supervisor.stop(pid, :normal)
     end
   catch
-    :exit, {:noproc, _} -> :ok
-    :exit, :noproc -> :ok
+    :exit, _reason -> :ok
   end
 
   defp safe_supervisor_stop(_), do: :ok
