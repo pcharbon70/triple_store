@@ -40,14 +40,20 @@ Configure Rustler to compile Rust NIFs with RocksDB integration. The Rust crate 
 
 ### 1.1.3 Development Environment
 
-- [ ] **Task 1.1.3 Complete**
+- [x] **Task 1.1.3 Complete**
 
 Set up development tooling including code formatting, testing infrastructure, and documentation generation.
 
-- [ ] 1.1.3.1 Configure `.formatter.exs` for consistent code style
-- [ ] 1.1.3.2 Set up ExUnit with async test support
-- [ ] 1.1.3.3 Configure `mix.exs` for documentation with ExDoc
-- [ ] 1.1.3.4 Create `test/support/` helpers for test fixtures
+Current state in the repository:
+- `.formatter.exs` formats `mix`, `config`, `lib`, and `test` sources
+- `mix.exs` includes `elixirc_paths(:test)` with `test/support` and `{:ex_doc, "~> 0.31", only: :dev, runtime: false}`
+- `test/support/` now contains shared helpers for pooled DB cases, RDF integration, fixtures, and reasoner tests
+- the ExUnit suite includes broad `async: true` coverage across API, query, statistics, and reasoner tests
+
+- [x] 1.1.3.1 Configure `.formatter.exs` for consistent code style
+- [x] 1.1.3.2 Set up ExUnit with async test support
+- [x] 1.1.3.3 Configure `mix.exs` for documentation with ExDoc
+- [x] 1.1.3.4 Create `test/support/` helpers for test fixtures
 
 ### 1.1.4 Unit Tests
 
@@ -471,11 +477,11 @@ Following the comprehensive review of Section 1.5, the following improvements we
 - [x] 1.5.6.12 S5: Add export_by_subject/3, export_by_predicate/3, export_by_object/3
 - [x] 1.5.6.13 S6: Add telemetry events to Exporter
 
-**Suggestions Deferred to Phase 5:**
-- [ ] S7: Property-based testing for roundtrip (requires stream_data dependency)
-- [ ] S8: Concurrent access tests (requires additional test infrastructure)
+**Additional coverage implemented after initial Phase 1 delivery:**
+- [x] S7: Property-based testing coverage is present via `stream_data` and SPARQL property suites
+- [x] S8: Concurrent access coverage is present for caches, API flows, dictionary managers, and related subsystems
 
-Test coverage: 741 tests (up from 739)
+Coverage note: the automated test count has continued to evolve; use `mix test` as the live source of truth rather than the original Phase 1 snapshot.
 
 ---
 
