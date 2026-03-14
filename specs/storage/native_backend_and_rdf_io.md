@@ -45,10 +45,9 @@ graph TD
 
 - The storage backend is not just a thin wrapper; the Elixir side still owns path validation, schema selection, option handling, batch shaping, telemetry, and security constraints.
 - The loader currently supports Flow-based parallel ingestion, dynamic batch sizing, progress callbacks, and a bulk-mode durability tradeoff.
-- Generic `load_file/4` and `load_string/5` remain graph-oriented and therefore parse N-Quads/TriG through default-graph extraction, even when the target store is quad schema.
-- Dedicated quad-aware loader surfaces such as `load_graph/4` with `RDF.Dataset`, `load_nquads_*`, `load_trig_*`, `load_to_graph/5`, and `load_files_to_graphs/4` preserve named graphs.
-- The generic `TripleStore.export/3` facade remains graph-oriented, but `Exporter` supports `RDF.Dataset`, N-Quads, TriG, default-graph export, and named-graph export for quad stores.
-- `GraphBackup` is the graph-scoped recovery surface; it exports and imports per-graph N-Quads plus metadata.
+- The SPARQL parser NIF is built locally from `native/sparql_parser_nif` into `priv/native/`; generated binaries are operational artifacts rather than canonical source files.
+- N-Quads and TriG inputs are parsed, but only the default graph is loaded; named graphs are explicitly discarded in the current implementation.
+- The exporter supports graph, string, file, and streaming paths over the canonical triple store rather than a quad store.
 - The config surface is split across general config plus RocksDB-specific modules (`column_family`, `compression`, `compaction`, `runtime`).
 
 ## Acceptance Criteria

@@ -9,4 +9,14 @@ This directory defines review and validation scenarios for the `TripleStore` spe
 
 ## Scope
 
-These docs do not yet drive automated conformance tooling. They provide the canonical traceability surface for manual review and future validation work.
+These docs now drive repository-local traceability validation through `mix conformance`.
+
+Current automation validates the documentation graph:
+
+- matrix rows reference real contracts, scenarios, and spec paths
+- contract requirements are covered by the conformance matrix
+- area acceptance mappings reference valid `REQ-*` families and `SCN-*` scenarios
+- acceptance evidence paths resolve on disk
+- governance rejects tracked generated native binaries under `priv/native`
+
+It does not yet execute scenario-specific implementation tests automatically.

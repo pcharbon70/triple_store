@@ -60,6 +60,10 @@ Normative language in this directory uses RFC-2119 terms: **MUST**, **MUST NOT**
 
 ## Current Governance Status
 
-- The repository has the same canonical baseline, contract, ADR, and conformance structure used in the `jido_os` specs system, but it does not yet have equivalent automated validation gates.
-- Until validators exist, baseline, contract, area-spec, and conformance changes SHOULD be reviewed in the same change set as the corresponding implementation changes.
-- Existing delivery planning remains in `notes/planning/`; these specs describe the architecture and authority model that the plans are expected to preserve.
+- `mix conformance` validates the current governance and conformance graph for `specs/`.
+- `mix conformance --governance-only` checks ownership, required files, acceptance-table shape, and identifier uniqueness.
+- `mix conformance --conformance-only` checks `REQ-*`/`SCN-*` coverage, matrix integrity, and acceptance evidence paths.
+- Governance validation also rejects tracked generated native binaries under `priv/native`; parser NIF artifacts are local build outputs, not canonical source.
+- Shell wrappers are available at `scripts/validate_specs_governance.sh` and `scripts/run_conformance.sh`.
+- Architecture, contract, and conformance changes SHOULD still be reviewed in the same change set as the corresponding implementation changes.
+- Existing project plans under `notes/planning/` remain the executable delivery roadmap and are referenced from this specs system instead of duplicated.

@@ -100,8 +100,12 @@ defmodule TripleStore.Reasoner.GraphHelpers do
       iex> GraphHelpers.graph_id!(graph_id: 1)
       1
 
-      iex> GraphHelpers.graph_id!([])
-      ** (KeyError) key :graph_id not found in: []
+      iex> try do
+      ...>   GraphHelpers.graph_id!([])
+      ...> rescue
+      ...>   error in KeyError -> error.key
+      ...> end
+      :graph_id
 
   """
   @spec graph_id!(opts()) :: graph_id()

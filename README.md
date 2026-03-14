@@ -115,6 +115,7 @@ See [Named Graphs](guides/user/07-named-graphs.md) for more details on quad stor
 
 - Elixir 1.18+
 - Erlang/OTP 27+
+- Rust toolchain (for the SPARQL parser NIF)
 - RocksDB C++ library:
   - Ubuntu/Debian: `sudo apt-get install librocksdb-dev`
   - macOS: `brew install rocksdb`
@@ -135,6 +136,11 @@ mix test
 # Run benchmarks
 mix run bench/bsbm.exs
 ```
+
+`mix compile` builds the SPARQL parser NIF from `native/sparql_parser_nif` into `priv/native/`.
+Those native artifacts are generated locally and SHOULD NOT be committed.
+If `sparql_parser_nif` fails to load after switching branches or toolchains, remove
+`priv/native/sparql_parser_nif.so` and rerun `mix compile --force`.
 
 ## License
 

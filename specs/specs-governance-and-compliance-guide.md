@@ -53,14 +53,23 @@ In practice:
 
 ## Governance Status
 
-The repository does not yet ship automated docs governance tooling comparable to the `jido_os` validators.
+The repository now ships a baseline validator for the specs graph:
 
-Current expectations are therefore manual:
+- `mix conformance`
+- `mix conformance --governance-only`
+- `mix conformance --conformance-only`
+- `scripts/validate_specs_governance.sh`
+- `scripts/run_conformance.sh`
+
+Current automation validates documentation structure and traceability, but it does not yet execute scenario-specific implementation tests automatically.
+
+Current expectations remain:
 
 1. Baseline changes SHOULD be paired with contract and area-spec updates.
 2. Contract changes SHOULD update the conformance matrix in the same change set.
 3. Control-plane ownership changes MUST update the ownership matrix and ADR-0001.
 4. New runtime areas SHOULD add or extend `SCN-*` coverage in the scenario catalog and matrix.
+5. Generated native binaries under `priv/native` MUST remain untracked; governance validation treats tracked parser artifacts as drift.
 
 ## Relationship To Existing Notes And Guides
 
@@ -76,3 +85,4 @@ Current expectations are therefore manual:
 4. Update the conformance matrix and scenario catalog if validation expectations changed.
 5. Update planning references or implementation notes when delivery sequencing changes.
 6. Update guides when public behavior or operator workflows change.
+7. Run `mix conformance` before merging the change.
