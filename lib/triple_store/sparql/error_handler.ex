@@ -15,6 +15,10 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   # Exception Definitions
 
   defmodule SyntaxError do
+    @moduledoc """
+    Exception raised for SPARQL parsing and syntax failures.
+    """
+
     defexception [:message, :position, :query]
 
     def exception(message) when is_binary(message) do
@@ -48,6 +52,10 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   end
 
   defmodule ExecutionError do
+    @moduledoc """
+    Exception raised when query execution fails after parsing succeeds.
+    """
+
     defexception [:message, :step, :algebra]
 
     def exception(message) when is_binary(message) do
@@ -81,6 +89,10 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   end
 
   defmodule TimeoutError do
+    @moduledoc """
+    Exception raised when SPARQL work exceeds an execution timeout.
+    """
+
     defexception [:message, :timeout_ms, :query]
 
     def exception(message) when is_binary(message) do
@@ -114,6 +126,10 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   end
 
   defmodule ValidationError do
+    @moduledoc """
+    Exception raised for invalid SPARQL inputs or option values.
+    """
+
     defexception [:message, :field, :value]
 
     def exception(message) when is_binary(message) do
@@ -147,6 +163,10 @@ defmodule TripleStore.SPARQL.ErrorHandler do
   end
 
   defmodule ResourceError do
+    @moduledoc """
+    Exception raised when a required resource or subsystem is unavailable.
+    """
+
     defexception [:message, :resource, :operation]
 
     def exception(message) when is_binary(message) do

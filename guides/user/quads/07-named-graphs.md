@@ -751,4 +751,4 @@ end
 This concludes the quad store guide series. For implementation details, see:
 
 - [Developer Guides](../../developer/README.md) - Implementation details
-- [API Reference](../../api/README.md) - Complete API documentation
+- [Project README](../../../README.md) - Top-level API and usage entry point

@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (run checks only; do not create GitHub release)"
+        required: false
+        type: boolean
+        default: true
+      tag_name:
+        description: "Tag to release (required when dry_run=false)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release_readiness:
+    name: Release Readiness
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Validate specs governance
+        run: ./scripts/validate_specs_governance.sh
+
+      - name: Validate guides governance
+        run: ./scripts/validate_guides_governance.sh
+
+      - name: Validate RFC governance
+        run: ./scripts/validate_rfc_governance.sh
+
+      - name: Validate code docs
+        run: ./scripts/validate_code_docs.sh
+
+  release:
+    name: Create Release
+    needs: release_readiness
+    if: ${{ inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure tag is provided
+        run: |
+          if [ -z "${{ inputs.tag_name }}" ]; then
+            echo "tag_name is required when dry_run is false"
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          generate_release_notes: true
+          target_commitish: ${{ github.sha }}
+
+  release_summary:
+    name: Release Summary
+    needs: release_readiness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print summary
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Dry run complete: release readiness checks passed."
+          else
+            echo "Release workflow executed for tag: ${{ inputs.tag_name }}"
+          fi

@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
+
+if [ -d "${HOME}/.asdf/shims" ]; then
+  PATH="/opt/homebrew/bin:${HOME}/.asdf/shims:${PATH}"
+else
+  PATH="/opt/homebrew/bin:${PATH}"
+fi
+export PATH
+
+if [ -z "${ASDF_RUST_VERSION:-}" ] && [ -x "${HOME}/.asdf/shims/cargo" ]; then
+  export ASDF_RUST_VERSION="1.93.1"
+fi
+
+export ERLANG_ROCKSDB_OPTS="${ERLANG_ROCKSDB_OPTS:--DCMAKE_POLICY_VERSION_MINIMUM=3.5}"
+
+if [ -x /opt/homebrew/bin/mix ]; then
+  MIX_BIN=/opt/homebrew/bin/mix
+else
+  MIX_BIN="$(command -v mix)"
+fi
+
+required_scripts=(
+  "./scripts/validate_specs_governance.sh"
+  "./scripts/validate_guides_governance.sh"
+  "./scripts/validate_rfc_governance.sh"
+  "./scripts/validate_code_docs.sh"
+)
+
+for script in "${required_scripts[@]}"; do
+  if [ ! -x "$script" ]; then
+    echo "[pre-commit] Missing executable validator: $script"
+    exit 1
+  fi
+done
+
+echo "[pre-commit] Running specs governance validation..."
+./scripts/validate_specs_governance.sh
+
+echo "[pre-commit] Running guides governance validation..."
+./scripts/validate_guides_governance.sh
+
+echo "[pre-commit] Running RFC governance validation..."
+./scripts/validate_rfc_governance.sh
+
+echo "[pre-commit] Running code-doc validation..."
+./scripts/validate_code_docs.sh
+
+if command -v rg >/dev/null 2>&1; then
+  echo "[pre-commit] Checking for stale planning path references..."
+  if rg -n "planning/modes" specs guides notes >/dev/null; then
+    echo "[pre-commit] Found stale 'planning/modes' references. Update to 'planning/'."
+    exit 1
+  fi
+else
+  echo "[pre-commit] ripgrep not found; skipping stale-path check."
+fi
+
+echo "[pre-commit] Verifying required specs and guide index files exist..."
+required_files=(
+  "specs/README.md"
+  "specs/conformance/spec_conformance_matrix.md"
+  "specs/conformance/scenario_catalog.md"
+  "guides/README.md"
+  "guides/user/README.md"
+  "guides/developer/README.md"
+)
+
+for f in "${required_files[@]}"; do
+  if [ ! -f "$f" ]; then
+    echo "[pre-commit] Missing required file: $f"
+    exit 1
+  fi
+done
+
+if [ -z "${MIX_BIN:-}" ]; then
+  echo "[pre-commit] Missing required executable: mix"
+  exit 1
+fi
+
+echo "[pre-commit] Enforcing compile warning hygiene..."
+"${MIX_BIN}" compile --warnings-as-errors
+
+echo "[pre-commit] Running Elixir test suite..."
+"${MIX_BIN}" test
+
+echo "[pre-commit] Running Credo strict checks..."
+"${MIX_BIN}" credo --strict
+
+echo "[pre-commit] Running Dialyzer..."
+"${MIX_BIN}" dialyzer
+
+staged_files="$(git diff --cached --name-only || true)"
+if [ -z "$staged_files" ]; then
+  echo "[pre-commit] No staged files found; skipping staged-file category checks."
+  echo "[pre-commit] All checks passed."
+  exit 0
+fi
+
+if printf '%s\n' "$staged_files" | grep -E '^specs/' >/dev/null 2>&1; then
+  echo "[pre-commit] Specs changes detected and validated."
+else
+  echo "[pre-commit] No staged specs files detected; governance checks still passed."
+fi
+
+if printf '%s\n' "$staged_files" | grep -E '^guides/' >/dev/null 2>&1; then
+  echo "[pre-commit] Guide changes detected and validated."
+fi
+
+if printf '%s\n' "$staged_files" | grep -E '^\.github/workflows/' >/dev/null 2>&1; then
+  echo "[pre-commit] Workflow changes detected."
+fi
+
+if printf '%s\n' "$staged_files" | grep -E '^scripts/' >/dev/null 2>&1; then
+  echo "[pre-commit] Script changes detected."
+fi
+
+if printf '%s\n' "$staged_files" | grep -E '^\.githooks/' >/dev/null 2>&1; then
+  echo "[pre-commit] Hook changes detected."
+fi
+
+echo "[pre-commit] All checks passed."
