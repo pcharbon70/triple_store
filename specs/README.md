@@ -57,6 +57,9 @@ Normative language in this directory uses RFC-2119 terms: **MUST**, **MUST NOT**
 
 ## Current Governance Status
 
-- This initial baseline is documentation-first; there is no automated validator wired to these specs yet.
-- Until validators exist, architecture, contract, and conformance changes SHOULD be reviewed in the same change set as the corresponding implementation changes.
+- `mix conformance` validates the current governance and conformance graph for `specs/`.
+- `mix conformance --governance-only` checks ownership, required files, acceptance-table shape, and identifier uniqueness.
+- `mix conformance --conformance-only` checks `REQ-*`/`SCN-*` coverage, matrix integrity, and acceptance evidence paths.
+- Shell wrappers are available at `scripts/validate_specs_governance.sh` and `scripts/run_conformance.sh`.
+- Architecture, contract, and conformance changes SHOULD still be reviewed in the same change set as the corresponding implementation changes.
 - Existing project plans under `notes/planning/` remain the executable delivery roadmap and are referenced from this specs system instead of duplicated.
