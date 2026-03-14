@@ -109,7 +109,7 @@ results = TripleStore.query(store, """
 """)
 ```
 
-See [Named Graphs](guides/user/07-named-graphs.md) for more details on quad store usage.
+See [Named Graphs](guides/user/quads/07-named-graphs.md) for more details on quad store usage.
 
 ## Requirements
 
@@ -124,6 +124,9 @@ See [Named Graphs](guides/user/07-named-graphs.md) for more details on quad stor
 ## Development
 
 ```bash
+# Enable tracked git hooks
+git config core.hooksPath .githooks
+
 # Fetch dependencies
 mix deps.get
 
@@ -141,6 +144,13 @@ mix run bench/bsbm.exs
 Those native artifacts are generated locally and SHOULD NOT be committed.
 If `sparql_parser_nif` fails to load after switching branches or toolchains, remove
 `priv/native/sparql_parser_nif.so` and rerun `mix compile --force`.
+
+Governance and conformance entry points:
+
+- `./scripts/validate_specs_governance.sh`
+- `./scripts/validate_guides_governance.sh`
+- `./scripts/validate_code_docs.sh`
+- `./scripts/run_conformance.sh`
 
 ## License
 

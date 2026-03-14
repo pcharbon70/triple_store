@@ -30,6 +30,21 @@ For new developers:
 7. Study **OTP & Concurrency** for process architecture
 8. Finish with **Telemetry & Monitoring** for observability
 
+## Local Governance Workflow
+
+Enable the tracked Git hook for this repository:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The local governance and conformance entry points are:
+
+- `./scripts/validate_specs_governance.sh`
+- `./scripts/validate_guides_governance.sh`
+- `./scripts/validate_code_docs.sh`
+- `./scripts/run_conformance.sh`
+
 ## Key Concepts
 
 ### Dictionary Encoding

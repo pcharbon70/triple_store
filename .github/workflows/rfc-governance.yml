@@ -1,0 +1,27 @@
+name: RFC Governance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      DIFF_HEAD: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Validate RFC governance
+        run: ./scripts/validate_rfc_governance.sh

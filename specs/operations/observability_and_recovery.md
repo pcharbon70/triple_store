@@ -54,8 +54,8 @@ graph TD
 
 | Acceptance ID | Criterion | Related Tests |
 |---|---|---|
-| `AC-OPS-01` | Telemetry remains the shared source for metrics and Prometheus-style export rather than parallel ad hoc instrumentation stacks. | `test/triple_store/telemetry_test.exs`, `test/triple_store/metrics_test.exs`, `test/triple_store/prometheus_test.exs` |
-| `AC-OPS-02` | Health distinguishes store liveness, readiness, and full-health status while reflecting optional support services accurately. | `test/triple_store/health_test.exs` |
-| `AC-OPS-03` | Backup, restore, graph backup, incremental backup, and scheduled backup remain documented as current runtime features. | `test/triple_store/backup_test.exs`, `test/triple_store/graph_backup_test.exs`, `test/triple_store/scheduled_backup_test.exs` |
-| `AC-OPS-04` | Snapshot lifecycle management remains an explicit operational support surface for read consistency and cleanup. | `test/triple_store/snapshot_test.exs`, `test/triple_store/integration/storage_layer_test.exs` |
-| `AC-OPS-05` | The specs capture the current split between deprecated `Statistics.Cache` integration and the newer `Statistics.Server` implementation. | `test/triple_store/statistics/cache_test.exs`, `test/triple_store/statistics/server_test.exs`, `test/triple_store/statistics_quad_test.exs` |
+| `AC-OPS-11` | Telemetry remains the shared source for metrics and Prometheus-style export rather than parallel ad hoc instrumentation stacks. | `test/triple_store/telemetry_test.exs`, `test/triple_store/metrics_test.exs`, `test/triple_store/prometheus_test.exs` |
+| `AC-OPS-12` | Health distinguishes store liveness, readiness, and full-health status while reflecting optional support services accurately. | `test/triple_store/health_test.exs` |
+| `AC-OPS-13` | Backup, restore, graph backup, incremental backup, and scheduled backup remain documented as current runtime features. | `test/triple_store/backup_test.exs`, `test/triple_store/graph_backup_test.exs`, `test/triple_store/scheduled_backup_test.exs` |
+| `AC-OPS-14` | Snapshot lifecycle management remains an explicit operational support surface for read consistency and cleanup. | `test/triple_store/snapshot_test.exs`, `test/triple_store/integration/storage_layer_test.exs` |
+| `AC-OPS-15` | The specs capture the current split between deprecated `Statistics.Cache` integration and the newer `Statistics.Server` implementation. | `test/triple_store/statistics/cache_test.exs`, `test/triple_store/statistics/server_test.exs`, `test/triple_store/statistics_quad_test.exs` |

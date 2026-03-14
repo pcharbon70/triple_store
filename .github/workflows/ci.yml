@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "specs/**"
+      - "guides/**"
+      - "lib/**"
+      - "test/**"
+      - "notes/**"
+      - "scripts/**"
+      - ".githooks/**"
+      - ".github/workflows/**"
+      - "mix.exs"
+      - "mix.lock"
+      - "README.md"
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "specs/**"
+      - "guides/**"
+      - "lib/**"
+      - "test/**"
+      - "notes/**"
+      - "scripts/**"
+      - ".githooks/**"
+      - ".github/workflows/**"
+      - "mix.exs"
+      - "mix.lock"
+      - "README.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  specs_governance:
+    name: Specs Governance
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Validate specs governance
+        run: ./scripts/validate_specs_governance.sh
+
+      - name: Check stale planning path references
+        run: |
+          if rg -n "planning/modes" specs guides notes; then
+            echo "Found stale planning/modes references."
+            exit 1
+          fi
+
+  guides_governance:
+    name: Guides Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Validate guides governance
+        run: ./scripts/validate_guides_governance.sh
+
+  code_docs:
+    name: Code Docs Governance
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      DIFF_HEAD: ${{ github.sha }}
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ripgrep \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Validate code docs
+        run: ./scripts/validate_code_docs.sh

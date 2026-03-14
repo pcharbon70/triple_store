@@ -1,6 +1,11 @@
 defmodule Mix.Tasks.Conformance do
   use Mix.Task
 
+  @moduledoc """
+  Mix task entrypoint for repository-local specs governance and conformance
+  validation.
+  """
+
   alias TripleStore.Specs.Validator
 
   @shortdoc "Validate specs governance and conformance traceability"
