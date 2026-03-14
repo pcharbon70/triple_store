@@ -695,17 +695,11 @@ defmodule TripleStore.Loader.ConsistencyTest do
 
   # Scan an index and convert keys to canonical {s, p, o} triples
   defp scan_index(db, index) do
-    # Use prefix_stream with empty prefix to get all entries
-    case ErlangAdapter.prefix_stream(db, index, <<>>) do
-      {:ok, stream} ->
-        triples =
-          stream
-          |> Enum.map(fn {key, _value} -> Index.key_to_triple(index, key) end)
+    triples =
+      db
+      |> ErlangAdapter.prefix_stream(index, <<>>)
+      |> Enum.map(fn {key, _value} -> Index.key_to_triple(index, key) end)
 
-        {:ok, triples}
-
-      {:error, _} = error ->
-        error
-    end
+    {:ok, triples}
   end
 end

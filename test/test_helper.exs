@@ -1,34 +1,36 @@
 ExUnit.start(exclude: [:benchmark, :large_dataset, :slow, :lifetime_safety])
 
-# Start the pool (skip if ErlangAdapter is not yet implemented)
-# Spawn without link to avoid crashes propagating
-spawn(fn ->
-  case TripleStore.Test.DbPool.start_link() do
-    {:ok, _} ->
-      :ok
+case TripleStore.Test.DbPool.start_link() do
+  {:ok, _pid} ->
+    :ok
 
-    {:error, _} ->
-      IO.warn("DbPool not started: ErlangAdapter not yet implemented")
-      IO.warn("Some tests may be skipped. This is expected during migration phases.")
-  end
-end)
+  {:error, {:already_started, _pid}} ->
+    :ok
 
-# Give the pool a moment to start (or fail)
-Process.sleep(100)
+  {:error, _reason} ->
+    IO.warn("DbPool not started: ErlangAdapter not yet implemented")
+    IO.warn("Some tests may be skipped. This is expected during migration phases.")
+end
 
-# Start the integration test helpers for cleanup automation
-spawn(fn ->
-  TripleStore.Integration.Helpers.start_link()
+case TripleStore.Integration.Helpers.start_link() do
+  {:ok, _pid} ->
+    :ok
 
-  # Clean up orphaned test databases from previous runs (older than 24 hours)
-  case TripleStore.Integration.Helpers.cleanup_orphaned_databases(24) do
-    {:ok, 0} ->
-      :ok
+  {:error, {:already_started, _pid}} ->
+    :ok
 
-    {:ok, count} ->
-      IO.puts("Cleaned up #{count} orphaned test database(s) from previous runs")
+  {:error, reason} ->
+    IO.warn("Failed to start integration helpers: #{inspect(reason)}")
+end
 
-    {:error, reason} ->
-      IO.warn("Failed to cleanup orphaned databases: #{inspect(reason)}")
-  end
-end)
+# Clean up orphaned test databases from previous runs (older than 24 hours)
+case TripleStore.Integration.Helpers.cleanup_orphaned_databases(24) do
+  {:ok, 0} ->
+    :ok
+
+  {:ok, count} ->
+    IO.puts("Cleaned up #{count} orphaned test database(s) from previous runs")
+
+  {:error, reason} ->
+    IO.warn("Failed to cleanup orphaned databases: #{inspect(reason)}")
+end

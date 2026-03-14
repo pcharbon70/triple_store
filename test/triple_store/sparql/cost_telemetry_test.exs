@@ -45,7 +45,9 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
           :test_query_start,
           [:triple_store, :sparql, :query, :start],
           fn _event, measurements, metadata, _config ->
-            send(test_pid, {:query_start, measurements, metadata})
+            if Map.has_key?(metadata, :algebra_type) and metadata.query == query do
+              send(test_pid, {:query_start, measurements, metadata})
+            end
           end,
           nil
         )
@@ -104,7 +106,9 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
           :test_filter,
           [:triple_store, :sparql, :query, :start],
           fn _event, _measurements, metadata, _config ->
-            send(test_pid, {:filter_detected, metadata})
+            if Map.has_key?(metadata, :has_filter) and metadata.query == query do
+              send(test_pid, {:filter_detected, metadata})
+            end
           end,
           nil
         )
@@ -348,7 +352,10 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
           :test_algebra_types,
           [:triple_store, :sparql, :query, :start],
           fn _event, _measurements, metadata, _config ->
-            send(test_pid, {:algebra_type, metadata.algebra_type})
+            case metadata do
+              %{algebra_type: algebra_type} -> send(test_pid, {:algebra_type, algebra_type})
+              _ -> :ok
+            end
           end,
           nil
         )
@@ -376,7 +383,10 @@ defmodule TripleStore.SPARQL.CostTelemetryTest do
           :test_pattern_count,
           [:triple_store, :sparql, :query, :start],
           fn _event, _measurements, metadata, _config ->
-            send(test_pid, {:pattern_count, metadata.pattern_count})
+            case metadata do
+              %{pattern_count: pattern_count} -> send(test_pid, {:pattern_count, pattern_count})
+              _ -> :ok
+            end
           end,
           nil
         )

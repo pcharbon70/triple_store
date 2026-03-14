@@ -105,7 +105,8 @@ defmodule TripleStore do
   ## Store Handle
 
   The store handle returned by `open/2` is a map containing:
-  - `:db` - Database reference for RocksDB operations
+  - `:db` - Database handle for RocksDB operations (the current Erlang adapter
+    returns a PID-backed handle)
   - `:dict_manager` - Dictionary manager PID for term encoding/decoding
   - `:transaction` - Transaction manager (if active)
   - `:path` - Path to the database directory
@@ -177,7 +178,7 @@ defmodule TripleStore do
 
   @typedoc "Store handle containing database and manager references"
   @type store :: %{
-          db: reference(),
+          db: pid() | reference(),
           dict_manager: GenServer.server(),
           transaction: GenServer.server() | nil,
           path: String.t()

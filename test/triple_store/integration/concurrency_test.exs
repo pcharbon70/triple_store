@@ -420,7 +420,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
       # Verify all graphs exist
       {:ok, graphs} = QuadOperations.list_graphs(ctx.db, include_default: false)
-      refute Enum.empty?(graphs)0
+      refute Enum.empty?(graphs)
     end
 
     test "6.7.2.5 concurrent DELETE on same graph", %{ctx: ctx} do

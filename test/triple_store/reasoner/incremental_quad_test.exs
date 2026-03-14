@@ -97,7 +97,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
   describe "add_quads_in_memory/4 - graph-scoped reasoning" do
     test "derives facts within the target graph" do
       # Set up hierarchy in graph 1
-      existing = MapSet.new([quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))])
+      existing = MapSet.new([quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))])
 
       # Add alice as Student in graph 1
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -115,7 +115,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
 
     test "does not derive facts for other graphs" do
       # Set up hierarchy in graph 1
-      existing = MapSet.new([quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))])
+      existing = MapSet.new([quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))])
 
       # Add alice as Student in graph 1
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -133,7 +133,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       # TBox in graph 0, data in graph 1
       existing =
         MapSet.new([
-          quad(0, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(0, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -159,8 +159,8 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       # Set up 3-level hierarchy
       existing =
         MapSet.new([
-          quad(1, iri("Person"), rdfs_subClassOf(), iri("Animal")),
-          quad(1, iri("Animal"), rdfs_subClassOf(), iri("LivingThing"))
+          quad(1, iri("Person"), rdfs_subclass_of(), iri("Animal")),
+          quad(1, iri("Animal"), rdfs_subclass_of(), iri("LivingThing"))
         ])
 
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Person"))]
@@ -210,7 +210,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
         ])
 
       # Add hierarchy for graph 1 only
-      new_quads = [quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))]
+      new_quads = [quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))]
       rules = [Rules.cax_sco()]
 
       {:ok, all_facts, _stats} =
@@ -264,8 +264,8 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
     test "applies cax_sco rule for class hierarchy" do
       existing =
         MapSet.new([
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person")),
-          quad(1, iri("Person"), rdfs_subClassOf(), iri("Agent"))
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person")),
+          quad(1, iri("Person"), rdfs_subclass_of(), iri("Agent"))
         ])
 
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -285,12 +285,12 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       # Test cax_sco (class membership through subClassOf)
       existing =
         MapSet.new([
-          quad(1, iri("Person"), rdfs_subClassOf(), iri("Agent"))
+          quad(1, iri("Person"), rdfs_subclass_of(), iri("Agent"))
         ])
 
       new_quads = [
         quad(1, iri("alice"), rdf_type(), iri("Student")),
-        quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+        quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
       ]
 
       # cax_sco: class membership through subclass
@@ -303,7 +303,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       # Should derive class membership (cax_sco): alice rdf:type Person
       assert MapSet.member?(all_facts, quad(1, iri("alice"), rdf_type(), iri("Person")))
       # Should derive transitive subClassOf relationship (scm_sco): Student subClassOf Agent
-      assert MapSet.member?(all_facts, quad(1, iri("Student"), rdfs_subClassOf(), iri("Agent")))
+      assert MapSet.member?(all_facts, quad(1, iri("Student"), rdfs_subclass_of(), iri("Agent")))
       # And transitive class membership through both rules
       assert MapSet.member?(all_facts, quad(1, iri("alice"), rdf_type(), iri("Agent")))
     end
@@ -317,7 +317,7 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
     test "returns iterations count" do
       existing =
         MapSet.new([
-          quad(1, iri("Student"), rdfs_subClassOf(), iri("Person"))
+          quad(1, iri("Student"), rdfs_subclass_of(), iri("Person"))
         ])
 
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("Student"))]
@@ -334,10 +334,10 @@ defmodule TripleStore.Reasoner.IncrementalQuadTest do
       # Create 5-level hierarchy
       existing =
         MapSet.new([
-          quad(1, iri("L2"), rdfs_subClassOf(), iri("L1")),
-          quad(1, iri("L3"), rdfs_subClassOf(), iri("L2")),
-          quad(1, iri("L4"), rdfs_subClassOf(), iri("L3")),
-          quad(1, iri("L5"), rdfs_subClassOf(), iri("L4"))
+          quad(1, iri("L2"), rdfs_subclass_of(), iri("L1")),
+          quad(1, iri("L3"), rdfs_subclass_of(), iri("L2")),
+          quad(1, iri("L4"), rdfs_subclass_of(), iri("L3")),
+          quad(1, iri("L5"), rdfs_subclass_of(), iri("L4"))
         ])
 
       new_quads = [quad(1, iri("alice"), rdf_type(), iri("L5"))]

@@ -2487,6 +2487,12 @@ defmodule TripleStore.SPARQL.Optimizer do
   def quad_pattern?(_), do: false
 
   @doc """
+  Backward-compatible alias for `quad_pattern?/1`.
+  """
+  @spec is_quad_pattern?(term()) :: boolean()
+  def is_quad_pattern?(pattern), do: quad_pattern?(pattern)
+
+  @doc """
   Groups patterns by their graph binding for optimized execution.
 
   Patterns are grouped by:
@@ -2642,15 +2648,13 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Find all patterns connected to the given pattern via shared variables
   defp find_connected_component(start_pattern, var_to_patterns, seen) do
-    _vars = pattern_variables(start_pattern)
-
     # BFS to find all connected patterns
     {connected, _} =
       bfs_find_connected(
         [start_pattern],
         var_to_patterns,
         MapSet.put(seen, start_pattern),
-        MapSet.new()
+        MapSet.new([start_pattern])
       )
 
     # Return the group and the updated seen set

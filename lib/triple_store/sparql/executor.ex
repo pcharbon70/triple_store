@@ -282,6 +282,12 @@ defmodule TripleStore.SPARQL.Executor do
   def quad_pattern?(_), do: false
 
   @doc """
+  Backward-compatible alias for `quad_pattern?/1`.
+  """
+  @spec is_quad_pattern?(term()) :: boolean()
+  def is_quad_pattern?(pattern), do: quad_pattern?(pattern)
+
+  @doc """
   Checks if a pattern is a triple pattern (3-element tuple).
 
   ## Examples
@@ -296,6 +302,12 @@ defmodule TripleStore.SPARQL.Executor do
   @spec triple_pattern?(term()) :: boolean()
   def triple_pattern?({:triple, _s, _p, _o}), do: true
   def triple_pattern?(_), do: false
+
+  @doc """
+  Backward-compatible alias for `triple_pattern?/1`.
+  """
+  @spec is_triple_pattern?(term()) :: boolean()
+  def is_triple_pattern?(pattern), do: triple_pattern?(pattern)
 
   @doc """
   Converts a triple pattern to a quad pattern by adding a graph context.
@@ -1402,9 +1414,15 @@ defmodule TripleStore.SPARQL.Executor do
     end
   end
 
-  # Non-variable terms don't need binding
-  defp maybe_bind(binding, _term, _term_id, _dict_manager) do
-    {:ok, binding}
+  # Concrete terms must match the stored ID exactly. This keeps execution
+  # correct even when an index scan returns a broader prefix range.
+  defp maybe_bind(binding, term, term_id, dict_manager) do
+    case Term.encode(term, dict_manager) do
+      {:ok, ^term_id} -> {:ok, binding}
+      {:ok, _different_id} -> {:error, :binding_mismatch}
+      :not_found -> {:error, :binding_mismatch}
+      {:error, _} = error -> error
+    end
   end
 
   # ===========================================================================

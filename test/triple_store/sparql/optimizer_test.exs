@@ -1325,7 +1325,7 @@ defmodule TripleStore.SPARQL.OptimizerTest do
       # Triple goes to default_graph
       assert length(result[:default_graph]) == 2
       # Named graph quad goes separately
-      assert [{:named_graph, "http://ex.org/graph1"}] in Enum.map(result, fn {k, _} -> k end)
+      assert {:named_graph, "http://ex.org/graph1"} in Enum.map(result, fn {k, _} -> k end)
     end
 
     test "reorder_bgp_patterns/2 uses greedy algorithm for triple-only patterns" do

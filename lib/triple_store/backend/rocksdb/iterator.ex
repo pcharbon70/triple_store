@@ -312,9 +312,13 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
         start_key = prefix || :first
 
         case :rocksdb.iterator_move(iter_ref, start_key) do
-          result = {:ok, _key, _value} ->
-            # Check prefix boundary if set (already satisfied since we used prefix as start_key)
-            {:reply, result, %{state | positioned: true}}
+          {:ok, key, _value} = result ->
+            if prefix && !has_prefix?(key, prefix) do
+              # The first key >= prefix may still be outside the requested prefix.
+              {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
+            else
+              {:reply, result, %{state | positioned: true}}
+            end
 
           :iterator_end ->
             {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}

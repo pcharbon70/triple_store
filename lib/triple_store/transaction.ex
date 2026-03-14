@@ -79,8 +79,8 @@ defmodule TripleStore.Transaction do
   @typedoc "Transaction manager reference"
   @type manager :: GenServer.server()
 
-  @typedoc "Database reference"
-  @type db_ref :: reference()
+  @typedoc "Database handle"
+  @type db_ref :: pid() | reference()
 
   @typedoc "Dictionary manager reference"
   @type dict_manager :: GenServer.server()
@@ -405,6 +405,16 @@ defmodule TripleStore.Transaction do
     end
 
     :ok
+  end
+
+  @impl true
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(_msg, state) do
+    {:noreply, state}
   end
 
   # ===========================================================================

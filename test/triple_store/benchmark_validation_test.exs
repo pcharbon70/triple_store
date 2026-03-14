@@ -150,11 +150,17 @@ defmodule TripleStore.BenchmarkValidationTest do
         {:ok, _} = TripleStore.load_graph(store, graph)
 
         query = "SELECT * WHERE { ?s ?p ?o } LIMIT 50"
+        task_count = 10
+        queries_per_task = 10
+
+        # Warm the query path once so the comparison focuses on steady-state work
+        # rather than first-query setup cost.
+        {:ok, _} = TripleStore.query(store, query)
 
         # Measure single-threaded baseline
         single_start = System.monotonic_time(:microsecond)
 
-        for _i <- 1..10 do
+        for _i <- 1..(task_count * queries_per_task) do
           TripleStore.query(store, query)
         end
 
@@ -165,8 +171,12 @@ defmodule TripleStore.BenchmarkValidationTest do
         concurrent_start = System.monotonic_time(:microsecond)
 
         tasks =
-          for _i <- 1..10 do
-            Task.async(fn -> TripleStore.query(store, query) end)
+          for _i <- 1..task_count do
+            Task.async(fn ->
+              for _ <- 1..queries_per_task do
+                TripleStore.query(store, query)
+              end
+            end)
           end
 
         Task.await_many(tasks, 30_000)
@@ -174,8 +184,12 @@ defmodule TripleStore.BenchmarkValidationTest do
         concurrent_duration = concurrent_end - concurrent_start
 
         IO.puts("\n=== Concurrent Query Performance ===")
-        IO.puts("Sequential 10 queries: #{single_duration}µs")
-        IO.puts("Concurrent 10 queries: #{concurrent_duration}µs")
+        IO.puts("Sequential #{task_count * queries_per_task} queries: #{single_duration}µs")
+
+        IO.puts(
+          "Concurrent #{task_count} tasks x #{queries_per_task} queries: #{concurrent_duration}µs"
+        )
+
         IO.puts("Speedup: #{Float.round(single_duration / concurrent_duration, 2)}x")
 
         # Concurrent should not be significantly slower

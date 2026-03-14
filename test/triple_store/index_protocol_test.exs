@@ -7,6 +7,7 @@ defmodule TripleStore.IndexProtocolTest do
 
   alias TripleStore.IndexProtocol.GOPS
   alias TripleStore.IndexProtocol.GPOS
+  alias TripleStore.IndexProtocol.GOSP
   alias TripleStore.IndexProtocol.GSPO
   alias TripleStore.IndexProtocol.OSP
   alias TripleStore.IndexProtocol.OSPG

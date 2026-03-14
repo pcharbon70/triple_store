@@ -111,6 +111,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   """
   @spec allow?(user_id(), operation()) :: :ok | {:error, :rate_limited}
   def allow?(user_id, operation) do
+    ensure_rate_limit_table()
+
     case get_limit(operation) do
       {:ok, {max_ops, window_seconds}} ->
         now = System.system_time(:second)
@@ -152,6 +154,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   """
   @spec record(user_id(), operation()) :: :ok
   def record(user_id, operation) do
+    ensure_rate_limit_table()
+
     key = {user_id, operation}
     now = System.system_time(:second)
 
@@ -174,6 +178,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   """
   @spec stats(user_id(), operation()) :: {:ok, map()} | {:error, :unknown_operation}
   def stats(user_id, operation) do
+    ensure_rate_limit_table()
+
     case get_limit(operation) do
       {:ok, {max_ops, window_seconds}} ->
         now = System.system_time(:second)
@@ -205,8 +211,11 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   """
   @spec reset(user_id(), operation()) :: :ok
   def reset(user_id, operation) do
+    ensure_rate_limit_table()
+
     key = {user_id, operation}
     :ets.delete(@table_name, key)
+
     :ok
   end
 
@@ -215,9 +224,12 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   """
   @spec reset_user(user_id()) :: :ok
   def reset_user(user_id) do
+    ensure_rate_limit_table()
+
     # Delete all entries for this user
     pattern = {{user_id, :_}, :_}
     :ets.select_delete(@table_name, [{pattern, [], [true]}])
+
     :ok
   end
 
@@ -269,6 +281,8 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
 
   # Gets the current rate limit state from ETS
   defp get_rate_limit_state(key) do
+    ensure_rate_limit_table()
+
     case :ets.lookup(@table_name, key) do
       [{^key, state}] -> state
       [] -> :not_found
@@ -277,6 +291,7 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
 
   # Sets the rate limit state in ETS
   defp set_rate_limit_state(key, state) do
+    ensure_rate_limit_table()
     :ets.insert(@table_name, {key, state})
   end
 
@@ -325,5 +340,50 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
         limit: limit
       }
     )
+  end
+
+  defp ensure_rate_limit_table do
+    case :ets.whereis(@table_name) do
+      :undefined ->
+        ensure_rate_limiter_server()
+
+        case :ets.whereis(@table_name) do
+          :undefined -> create_rate_limit_table()
+          _table -> :ok
+        end
+
+      _table ->
+        :ok
+    end
+  end
+
+  defp ensure_rate_limiter_server do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        case start_link() do
+          {:ok, _pid} -> :ok
+          {:error, {:already_started, _pid}} -> :ok
+          {:error, _reason} -> :ok
+        end
+
+      _pid ->
+        :ok
+    end
+  end
+
+  defp create_rate_limit_table do
+    try do
+      :ets.new(@table_name, [
+        :named_table,
+        :set,
+        :public,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
+
+      :ok
+    rescue
+      ArgumentError -> :ok
+    end
   end
 end
