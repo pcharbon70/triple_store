@@ -6,25 +6,27 @@ This document backfills the storage-adjacent execution surfaces implemented by:
 
 - `TripleStore.Backend`
 - `TripleStore.Backend.RocksDB`
-- `TripleStore.Backend.RocksDB.NIF`
+- `TripleStore.Backend.RocksDB.ErlangAdapter`
 - `TripleStore.Config` and `TripleStore.Config.*`
 - `TripleStore.Adapter`
 - `TripleStore.Loader`
 - `TripleStore.Exporter`
+- `TripleStore.GraphBackup`
 
 ## Control Plane
 
 Mixed ownership:
 
-- **Native Adapter Plane** for RocksDB and parser-adjacent native execution
-- **Coordination Plane** for Elixir-owned validation, batching, and conversion policy
+- **Storage Plane** for Elixir-owned validation, batching, graph handling, and conversion policy
+- **Native Adapter Plane** for RocksDB execution
+- **Data Plane** for persisted bytes and export artifacts
 
 ## Dependency View
 
 ```mermaid
 graph TD
   A["Adapter"] --> B["Dictionary Managers"]
-  A --> C["RocksDB NIF"]
+  A --> C["RocksDB ErlangAdapter"]
 
   D["Loader"] --> A
   D --> E["Flow / batching / bulk mode"]
@@ -32,14 +34,16 @@ graph TD
 
   F["Exporter"] --> G["Index lookup_all / streams"]
   F --> A
+  H["GraphBackup"] --> F
+  H --> D
 
-  H["Config / ColumnFamily / Compression / Compaction / Runtime"] --> C
-  C --> I["RocksDB files and snapshots"]
+  I["Config / ColumnFamily / Compression / Compaction / Runtime"] --> C
+  C --> J["RocksDB files, schema metadata, and snapshots"]
 ```
 
 ## Current Codebase Notes
 
-- The storage backend is not just a thin wrapper; the Elixir side still owns path validation, option handling, batch shaping, telemetry, and security constraints.
+- The storage backend is not just a thin wrapper; the Elixir side still owns path validation, schema selection, option handling, batch shaping, telemetry, and security constraints.
 - The loader currently supports Flow-based parallel ingestion, dynamic batch sizing, progress callbacks, and a bulk-mode durability tradeoff.
 - The SPARQL parser NIF is built locally from `native/sparql_parser_nif` into `priv/native/`; generated binaries are operational artifacts rather than canonical source files.
 - N-Quads and TriG inputs are parsed, but only the default graph is loaded; named graphs are explicitly discarded in the current implementation.
@@ -50,8 +54,8 @@ graph TD
 
 | Acceptance ID | Criterion | Related Tests |
 |---|---|---|
-| `AC-STO-11` | The Elixir backend layer keeps validation, option shaping, and telemetry outside the NIF boundary. | `test/triple_store/backend/rocksdb_test.exs`, `test/triple_store/config/rocksdb_test.exs` |
-| `AC-STO-12` | Loader batching, parallelization, and bulk-mode behavior remain explicit and testable runtime choices. | `test/triple_store/loader/batch_size_test.exs`, `test/triple_store/loader/parallel_loading_test.exs`, `test/triple_store/loader/pipeline_integration_test.exs` |
-| `AC-STO-13` | RDF adaptation remains the canonical bridge between RDF.ex terms and internal IDs. | `test/triple_store/adapter/term_conversion_test.exs`, `test/triple_store/adapter/triple_graph_conversion_test.exs` |
-| `AC-STO-14` | Export paths preserve the canonical triple-only storage model rather than implying full named-graph support. | `test/triple_store/exporter_test.exs`, `test/triple_store/integration/rdf_roundtrip_test.exs` |
-| `AC-STO-15` | The specs explicitly document the current default-graph-only limitation for N-Quads, TriG, and SPARQL graph operations. | `lib/triple_store/loader.ex`, `lib/triple_store/sparql/update_executor.ex` |
+| `AC-STO-11` | The Elixir backend layer keeps validation, option shaping, and telemetry outside the native-adapter boundary. | `test/triple_store/backend/rocksdb_test.exs`, `test/triple_store/config/rocksdb_test.exs` |
+| `AC-STO-12` | Loader batching, parallelization, bulk-mode behavior, and graph-preservation behavior remain explicit and testable runtime choices. | `test/triple_store/loader/batch_size_test.exs`, `test/triple_store/loader/parallel_loading_test.exs`, `test/triple_store/loader/pipeline_integration_test.exs`, `test/triple_store/integration/nquads_loading_test.exs`, `test/triple_store/integration/trig_loading_test.exs`, `test/triple_store/graph_scoped_loading_test.exs` |
+| `AC-STO-13` | RDF adaptation remains the canonical bridge between RDF.ex terms and internal IDs for both triples and quads. | `test/triple_store/adapter/term_conversion_test.exs`, `test/triple_store/adapter/triple_graph_conversion_test.exs`, `test/triple_store/adapter/quad_conversion_test.exs` |
+| `AC-STO-14` | Export paths preserve the current split between graph-oriented facade exports and quad-aware dataset or named-graph export surfaces. | `test/triple_store/exporter_test.exs`, `test/triple_store/exporter_refactoring_test.exs`, `test/triple_store/integration/rdf_roundtrip_test.exs`, `test/triple_store/dataset_operations_test.exs` |
+| `AC-STO-15` | Graph backup, restore, and schema-aware RDF I/O remain documented as explicit expert workflows rather than being implied by the generic facade alone. | `test/triple_store/graph_backup_test.exs`, `test/triple_store/nquads_test.exs`, `test/triple_store/trig_test.exs` |
