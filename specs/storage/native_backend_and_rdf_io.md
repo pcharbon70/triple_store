@@ -41,6 +41,7 @@ graph TD
 
 - The storage backend is not just a thin wrapper; the Elixir side still owns path validation, option handling, batch shaping, telemetry, and security constraints.
 - The loader currently supports Flow-based parallel ingestion, dynamic batch sizing, progress callbacks, and a bulk-mode durability tradeoff.
+- The SPARQL parser NIF is built locally from `native/sparql_parser_nif` into `priv/native/`; generated binaries are operational artifacts rather than canonical source files.
 - N-Quads and TriG inputs are parsed, but only the default graph is loaded; named graphs are explicitly discarded in the current implementation.
 - The exporter supports graph, string, file, and streaming paths over the canonical triple store rather than a quad store.
 - The config surface is split across general config plus RocksDB-specific modules (`column_family`, `compression`, `compaction`, `runtime`).

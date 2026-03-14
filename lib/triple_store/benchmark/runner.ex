@@ -4,7 +4,7 @@ defmodule TripleStore.Benchmark.Runner do
   @moduledoc """
   Benchmark execution infrastructure for measuring triple store performance.
 
-  Provides a unified interface for running LUBM and BSBM benchmarks with
+  Provides a unified interface for running maintained benchmark query suites with
   configurable warmup iterations, metric collection, and output formats.
 
   ## Features
@@ -16,11 +16,11 @@ defmodule TripleStore.Benchmark.Runner do
 
   ## Usage
 
-      # Run LUBM benchmark
-      {:ok, results} = Runner.run(db, :lubm, scale: 1, iterations: 100)
+      # Run WatDiv benchmark
+      {:ok, results} = Runner.run(db, :watdiv, scale: 1, iterations: 100)
 
-      # Run BSBM benchmark with warmup
-      {:ok, results} = Runner.run(db, :bsbm, scale: 100, warmup: 10, iterations: 100)
+      # Run gMark benchmark with warmup
+      {:ok, results} = Runner.run(db, :gmark, warmup: 10, iterations: 100)
 
       # Export results
       Runner.to_json(results)
@@ -36,9 +36,9 @@ defmodule TripleStore.Benchmark.Runner do
 
   """
 
-  alias TripleStore.Benchmark.{BSBMQueries, LUBMQueries}
+  alias TripleStore.Benchmark.{GMarkQueries, WatDivQueries}
 
-  @type benchmark :: :lubm | :bsbm
+  @type benchmark :: :watdiv | :gmark
   @type query_result :: %{
           query_id: atom(),
           query_name: String.t(),
@@ -88,7 +88,7 @@ defmodule TripleStore.Benchmark.Runner do
   ## Arguments
 
   - `db` - The triple store database handle
-  - `benchmark` - The benchmark to run (`:lubm` or `:bsbm`)
+  - `benchmark` - The benchmark to run (`:watdiv` or `:gmark`)
 
   ## Options
 
@@ -104,12 +104,12 @@ defmodule TripleStore.Benchmark.Runner do
 
   ## Examples
 
-      {:ok, results} = Runner.run(db, :lubm, scale: 1, iterations: 100)
-      {:ok, results} = Runner.run(db, :bsbm, scale: 100, queries: [:q1, :q2, :q7])
+      {:ok, results} = Runner.run(db, :watdiv, scale: 1, iterations: 100)
+      {:ok, results} = Runner.run(db, :gmark, queries: [:c1, :l1, :q1])
 
   """
   @spec run(term(), benchmark(), run_opts()) :: {:ok, benchmark_result()} | {:error, term()}
-  def run(db, benchmark, opts \\ []) when benchmark in [:lubm, :bsbm] do
+  def run(db, benchmark, opts \\ []) when benchmark in [:watdiv, :gmark] do
     scale = Keyword.get(opts, :scale, 1)
     warmup = Keyword.get(opts, :warmup, 5)
     iterations = Keyword.get(opts, :iterations, 10)
@@ -299,34 +299,34 @@ defmodule TripleStore.Benchmark.Runner do
   # Private: Query Retrieval
   # ===========================================================================
 
-  defp get_queries(:lubm, nil, params) do
-    LUBMQueries.all()
+  defp get_queries(:watdiv, nil, params) do
+    WatDivQueries.all()
     |> Enum.map(fn q ->
-      {:ok, substituted} = LUBMQueries.get(q.id, params)
+      {:ok, substituted} = WatDivQueries.get(q.id, params)
       substituted
     end)
   end
 
-  defp get_queries(:lubm, query_ids, params) when is_list(query_ids) do
+  defp get_queries(:watdiv, query_ids, params) when is_list(query_ids) do
     query_ids
     |> Enum.map(fn id ->
-      {:ok, q} = LUBMQueries.get(id, params)
+      {:ok, q} = WatDivQueries.get(id, params)
       q
     end)
   end
 
-  defp get_queries(:bsbm, nil, params) do
-    BSBMQueries.all()
+  defp get_queries(:gmark, nil, params) do
+    GMarkQueries.all()
     |> Enum.map(fn q ->
-      {:ok, substituted} = BSBMQueries.get(q.id, params)
+      {:ok, substituted} = GMarkQueries.get(q.id, params)
       substituted
     end)
   end
 
-  defp get_queries(:bsbm, query_ids, params) when is_list(query_ids) do
+  defp get_queries(:gmark, query_ids, params) when is_list(query_ids) do
     query_ids
     |> Enum.map(fn id ->
-      {:ok, q} = BSBMQueries.get(id, params)
+      {:ok, q} = GMarkQueries.get(id, params)
       q
     end)
   end

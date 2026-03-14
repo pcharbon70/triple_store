@@ -58,6 +58,12 @@ mix compile
 > **Note**: You need librocksdb-dev installed:
 > - Ubuntu/Debian: `sudo apt-get install librocksdb-dev`
 > - macOS: `brew install rocksdb`
+>
+> You also need a Rust toolchain because `mix compile` builds the SPARQL parser
+> NIF from `native/sparql_parser_nif` into `priv/native/`. That binary is a
+> local build artifact and should remain untracked. If it becomes stale after a
+> branch or toolchain change, remove `priv/native/sparql_parser_nif.so` and rerun
+> `mix compile --force`.
 
 ## Quick Start
 

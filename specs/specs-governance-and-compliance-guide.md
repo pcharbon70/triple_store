@@ -69,6 +69,7 @@ Current expectations remain:
 2. Contract changes SHOULD update the conformance matrix in the same change set.
 3. Control-plane ownership changes MUST update the ownership matrix and ADR-0001.
 4. New runtime areas SHOULD add or extend `SCN-*` coverage in the scenario catalog and matrix.
+5. Generated native binaries under `priv/native` MUST remain untracked; governance validation treats tracked parser artifacts as drift.
 
 ## Relationship To Existing Notes And Guides
 

@@ -190,13 +190,13 @@ defmodule TripleStore.Benchmark.RunnerTest do
     end
 
     test "accepts queries option" do
-      opts = [queries: [:q1, :q2, :q7]]
-      assert Keyword.get(opts, :queries) == [:q1, :q2, :q7]
+      opts = [queries: [:l1, :s1, :c1]]
+      assert Keyword.get(opts, :queries) == [:l1, :s1, :c1]
     end
 
     test "accepts params option" do
-      opts = [params: [uni: 5, dept: 3]]
-      assert Keyword.get(opts, :params) == [uni: 5, dept: 3]
+      opts = [params: [v1: "Website1"]]
+      assert Keyword.get(opts, :params) == [v1: "Website1"]
     end
   end
 
@@ -328,7 +328,7 @@ defmodule TripleStore.Benchmark.RunnerTest do
 
   defp mock_benchmark_result do
     %{
-      benchmark: :lubm,
+      benchmark: :watdiv,
       started_at: DateTime.utc_now(),
       completed_at: DateTime.utc_now(),
       duration_ms: 1000,

@@ -135,6 +135,7 @@ defmodule TripleStore.Specs.Validator do
     |> Kernel.++(ownership_matrix_errors(context))
     |> Kernel.++(area_index_shape_errors(context))
     |> Kernel.++(component_doc_shape_errors(context))
+    |> Kernel.++(tracked_native_artifact_errors(context))
   end
 
   defp governance_warnings(context) do
@@ -272,6 +273,12 @@ defmodule TripleStore.Specs.Validator do
       else
         errors
       end
+    end)
+  end
+
+  defp tracked_native_artifact_errors(context) do
+    Enum.map(context.tracked_native_artifacts, fn relative_path ->
+      "generated native artifact is tracked in git: #{relative_path}"
     end)
   end
 
@@ -522,7 +529,8 @@ defmodule TripleStore.Specs.Validator do
       matrix_path: matrix_path,
       matrix_rows: parse_named_table(contents[matrix_path], "Requirement", matrix_path),
       ownership_rows: parse_named_table(contents[ownership_path], "Area", ownership_path),
-      component_doc_paths: component_doc_paths(files, repo_root)
+      component_doc_paths: component_doc_paths(files, repo_root),
+      tracked_native_artifacts: tracked_native_artifacts(repo_root)
     }
   end
 
@@ -722,6 +730,21 @@ defmodule TripleStore.Specs.Validator do
     repo_root
     |> Path.join(relative_path)
     |> File.exists?()
+  end
+
+  defp tracked_native_artifacts(repo_root) do
+    case System.cmd("git", ["-C", repo_root, "ls-files", "--", "priv/native"], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.filter(fn path ->
+          String.ends_with?(path, ".so") or String.ends_with?(path, ".dylib")
+        end)
+        |> Enum.sort()
+
+      {_output, _status} ->
+        []
+    end
   end
 
   defp scan_ids(text, regex) do

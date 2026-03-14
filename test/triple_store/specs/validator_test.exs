@@ -30,6 +30,24 @@ defmodule TripleStore.Specs.ValidatorTest do
     assert Enum.any?(report.errors, &String.contains?(&1, "SCN-999"))
   end
 
+  test "tracked native binaries are rejected by governance validation" do
+    temp_root = temp_repo_root()
+    File.cp_r!(Path.expand("specs", File.cwd!()), Path.join(temp_root, "specs"))
+    File.mkdir_p!(Path.join([temp_root, "priv", "native"]))
+    File.write!(Path.join([temp_root, "priv", "native", "sparql_parser_nif.so"]), "binary")
+
+    assert {"", 0} = System.cmd("git", ["init", "-q"], cd: temp_root)
+    assert {"", 0} = System.cmd("git", ["add", "priv/native/sparql_parser_nif.so"], cd: temp_root)
+
+    assert {:error, report} =
+             Validator.validate(spec_root: Path.join(temp_root, "specs"), mode: :governance)
+
+    assert Enum.any?(
+             report.errors,
+             &String.contains?(&1, "generated native artifact is tracked in git")
+           )
+  end
+
   defp temp_repo_root do
     root =
       Path.join(

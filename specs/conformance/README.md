@@ -17,5 +17,6 @@ Current automation validates the documentation graph:
 - contract requirements are covered by the conformance matrix
 - area acceptance mappings reference valid `REQ-*` families and `SCN-*` scenarios
 - acceptance evidence paths resolve on disk
+- governance rejects tracked generated native binaries under `priv/native`
 
 It does not yet execute scenario-specific implementation tests automatically.
