@@ -362,7 +362,16 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   """
   @spec flush_wal(adapter(), boolean()) :: :ok | {:error, term()}
   def flush_wal(adapter, sync \\ false) when is_pid(adapter) and is_boolean(sync) do
-    GenServer.call(adapter, {:flush_wal, sync})
+    if Process.alive?(adapter) do
+      try do
+        GenServer.call(adapter, {:flush_wal, sync})
+      catch
+        :exit, {:noproc, _} -> {:error, :already_closed}
+        :exit, :noproc -> {:error, :already_closed}
+      end
+    else
+      {:error, :already_closed}
+    end
   end
 
   @doc """
@@ -1821,6 +1830,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   defp validate_path(path) when is_binary(path) do
     expanded_path = Path.expand(path)
     tmp_dir = Path.expand(System.tmp_dir!())
+    legacy_tmp_dir = Path.expand("/tmp")
     current_dir = Path.expand(File.cwd!())
     is_absolute = String.starts_with?(path, "/")
 
@@ -1838,8 +1848,13 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       not is_absolute ->
         :ok
 
-      # Allow paths under /tmp
+      # Allow paths under the system temp directory.
+      # On macOS, System.tmp_dir!/0 may resolve somewhere under /var/folders,
+      # while tests and callers may still use the conventional /tmp prefix.
       path_within_directory?(expanded_path, tmp_dir) ->
+        :ok
+
+      path_within_directory?(expanded_path, legacy_tmp_dir) ->
         :ok
 
       # Allow paths under the current project directory

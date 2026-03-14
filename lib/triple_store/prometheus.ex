@@ -464,6 +464,11 @@ defmodule TripleStore.Prometheus do
     {:noreply, state}
   end
 
+  @impl true
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
+  end
+
   # ===========================================================================
   # Event Handling
   # ===========================================================================

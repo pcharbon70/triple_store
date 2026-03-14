@@ -32,6 +32,8 @@ defmodule TripleStore.APITestingTest do
   # 2 minute timeout for API tests (includes backup/restore and concurrent access)
   @moduletag timeout: 120_000
 
+  defp valid_db_handle?(db), do: is_pid(db) or is_reference(db)
+
   # ===========================================================================
   # 5.7.4.1: Test All Documented Examples Work Correctly
   # ===========================================================================
@@ -538,7 +540,7 @@ defmodule TripleStore.APITestingTest do
         {:ok, store} = TripleStore.open(path)
 
         # Verify store structure matches documentation
-        assert is_reference(store.db)
+        assert valid_db_handle?(store.db)
         assert is_pid(store.dict_manager)
         assert store.transaction == nil
         assert store.path == path
@@ -878,7 +880,7 @@ defmodule TripleStore.APITestingTest do
         # open returns {:ok, store()}
         {:ok, store} = TripleStore.open(path)
         assert is_map(store)
-        assert is_reference(store.db)
+        assert valid_db_handle?(store.db)
         assert is_pid(store.dict_manager)
 
         # query returns {:ok, term()}

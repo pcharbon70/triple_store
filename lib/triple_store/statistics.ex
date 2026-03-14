@@ -882,7 +882,11 @@ defmodule TripleStore.Statistics do
   - `:ok` on success
   - `{:error, reason}` on failure
   """
-  @spec save(db_ref(), stats()) :: :ok | {:error, term()}
+  @spec save(db_ref(), stats() | nil) :: :ok | {:error, term()}
+  def save(db, nil) do
+    ErlangAdapter.delete(db, :id2str, @stats_key_prefix)
+  end
+
   def save(db, stats) do
     # Validate stats structure before encoding to prevent encoding errors
     with :ok <- validate_stats_structure(stats),

@@ -955,21 +955,16 @@ defmodule TripleStore.Index do
   """
   @spec lookup(ErlangAdapter.db_ref(), pattern()) :: {:ok, Enumerable.t()}
   def lookup(db, pattern) do
-    %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
+    %{index: index, prefix: prefix} = select_index(pattern)
 
     # prefix_stream now returns the stream directly (may raise on error)
     stream = ErlangAdapter.prefix_stream(db, index, prefix)
 
     decoded_stream = Stream.map(stream, fn {key, _value} -> key_to_triple(index, key) end)
-
-    final_stream =
-      if needs_filter do
-        Stream.filter(decoded_stream, &triple_matches_pattern?(&1, pattern))
-      else
-        decoded_stream
-      end
-
-    {:ok, final_stream}
+    # Iterator prefix scans can return a superset when only part of the logical
+    # pattern is enforced by the scan key. Always filter against the full pattern
+    # to preserve exact SPARQL matching semantics.
+    {:ok, Stream.filter(decoded_stream, &triple_matches_pattern?(&1, pattern))}
   end
 
   @doc """

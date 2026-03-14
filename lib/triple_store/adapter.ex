@@ -985,31 +985,25 @@ defmodule TripleStore.Adapter do
 
   # Batch encode multiple graphs, with chunking to avoid GenServer timeout
   defp encode_graphs(manager, graphs) do
-    # Separate nil graphs (become 0) from non-nil graphs
-    # map_reduce returns {mapped_list, {nil_acc, non_nil_acc}}
-    {_mapped, {nil_graphs, non_nil_graphs}} =
-      Enum.map_reduce(graphs, {[], []}, fn
-        nil, {nil_acc, non_nil_acc} -> {0, {[0 | nil_acc], non_nil_acc}}
-        graph, {nil_acc, non_nil_acc} -> {graph, {nil_acc, [graph | non_nil_acc]}}
+    {graph_markers, non_nil_graphs} =
+      Enum.map_reduce(graphs, [], fn
+        nil, acc -> {0, acc}
+        graph, acc -> {:graph, [graph | acc]}
       end)
 
-    # Encode non-nil graphs using terms_to_ids (which chunks)
     non_nil_graphs = Enum.reverse(non_nil_graphs)
 
-    case non_nil_graphs do
-      [] ->
-        all_graphs = Enum.reverse(nil_graphs)
-        {:ok, all_graphs}
+    with {:ok, encoded_non_nil_graphs} <- terms_to_ids(manager, non_nil_graphs) do
+      {graph_ids, []} =
+        Enum.map_reduce(graph_markers, encoded_non_nil_graphs, fn
+          0, remaining_ids ->
+            {0, remaining_ids}
 
-      non_nil ->
-        case terms_to_ids(manager, non_nil) do
-          {:ok, encoded} ->
-            all_graphs = Enum.reverse(nil_graphs) ++ encoded
-            {:ok, all_graphs}
+          :graph, [graph_id | rest] ->
+            {graph_id, rest}
+        end)
 
-          error ->
-            error
-        end
+      {:ok, graph_ids}
     end
   end
 

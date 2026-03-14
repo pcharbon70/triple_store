@@ -731,9 +731,9 @@ defmodule TripleStore.Backend.RocksDB.ErlangRocksdbIntegrationTest do
       triple_cfs = ColumnFamilyConfig.cf_descriptors(:triple)
       assert length(triple_cfs) == 8
 
-      # Test quad schema (10 column families)
+      # Test quad schema (11 column families)
       quad_cfs = ColumnFamilyConfig.cf_descriptors(:quad)
-      assert length(quad_cfs) == 10
+      assert length(quad_cfs) == 11
 
       # Each should be a {name, options} tuple
       Enum.each(triple_cfs ++ quad_cfs, fn {name, opts} ->

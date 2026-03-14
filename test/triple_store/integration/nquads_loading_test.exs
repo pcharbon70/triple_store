@@ -292,8 +292,10 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
           end)
         end)
 
-      # File creation should be fast
-      assert time_us < 1_000_000
+      # File creation speed depends heavily on the local temp filesystem.
+      # Keep a coarse guard here so the test focuses on loader behavior rather
+      # than failing on normal filesystem variance.
+      assert time_us < 5_000_000
 
       # Load and measure
       {load_time_us, result} =

@@ -235,11 +235,30 @@ defmodule TripleStore.Dictionary.Manager do
   """
   @spec stop(manager()) :: :ok
   def stop(manager) do
-    GenServer.stop(manager, :normal)
+    case resolve_manager_pid(manager) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          # Managers are often started with `start_link/1`, so unlink first to
+          # prevent teardown-time shutdowns from taking down the caller.
+          Process.unlink(pid)
+          GenServer.stop(pid, :normal)
+        else
+          :ok
+        end
+
+      _ ->
+        :ok
+    end
   catch
+    :exit, :normal -> :ok
     :exit, {:shutdown, _} -> :ok
     :exit, :shutdown -> :ok
+    :exit, {:noproc, _} -> :ok
+    :exit, :noproc -> :ok
   end
+
+  defp resolve_manager_pid(manager) when is_pid(manager), do: manager
+  defp resolve_manager_pid(manager), do: GenServer.whereis(manager)
 
   @doc """
   Gets the sequence counter reference from the manager.
