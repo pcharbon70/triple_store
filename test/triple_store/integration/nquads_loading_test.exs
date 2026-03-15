@@ -15,6 +15,7 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
 
@@ -26,11 +27,11 @@ defmodule TripleStore.Integration.NQuadsLoadingTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("nquads_loading_test")
+    Helpers.unique_path("nquads_loading_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp create_test_nquads_file(path, content) do

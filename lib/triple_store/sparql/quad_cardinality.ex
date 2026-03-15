@@ -138,9 +138,8 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   def validate_stats(stats) when not is_map(stats), do: {:error, :invalid_stats}
 
   def validate_stats(stats) do
-    with :ok <- validate_required_stats_keys(stats),
-         :ok <- validate_stats_types(stats) do
-      :ok
+    with :ok <- validate_required_stats_keys(stats) do
+      validate_stats_types(stats)
     end
   end
 
@@ -415,20 +414,18 @@ defmodule TripleStore.SPARQL.QuadCardinality do
     # Get all graph stats
     per_graph = Map.get(stats, :per_graph_stats, %{})
 
-    cond do
-      per_graph == nil or map_size(per_graph) == 0 ->
-        # No per-graph stats, fall back to aggregate
-        estimate_with_aggregate_stats(subject, predicate, object, stats)
+    if per_graph == nil or map_size(per_graph) == 0 do
+      # No per-graph stats, fall back to aggregate
+      estimate_with_aggregate_stats(subject, predicate, object, stats)
+    else
+      # Sum estimates across all graphs
+      total =
+        Enum.reduce(per_graph, 0.0, fn {_graph_id, graph_stats}, acc ->
+          estimate = estimate_with_graph_stats(subject, predicate, object, graph_stats)
+          acc + estimate
+        end)
 
-      true ->
-        # Sum estimates across all graphs
-        total =
-          Enum.reduce(per_graph, 0.0, fn {_graph_id, graph_stats}, acc ->
-            estimate = estimate_with_graph_stats(subject, predicate, object, graph_stats)
-            acc + estimate
-          end)
-
-        max(total, @min_cardinality)
+      max(total, @min_cardinality)
     end
   end
 

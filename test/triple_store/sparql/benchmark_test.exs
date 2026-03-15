@@ -19,6 +19,7 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
+  alias TripleStore.QuadIndex
   alias TripleStore.SPARQL.Query
 
   @moduletag :tmp_dir
@@ -999,8 +1000,8 @@ defmodule TripleStore.SPARQL.BenchmarkTest do
       {:ok, p_id} = Manager.get_or_create_id(manager, RDF.iri(predicate))
       {:ok, o_id} = Manager.get_or_create_id(manager, RDF.iri(object))
 
-      quad_key = TripleStore.QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
-      TripleStore.Backend.RocksDB.ErlangAdapter.put(db, :gspo, quad_key, <<>>)
+      quad_key = QuadIndex.gspo_key(graph_id, s_id, p_id, o_id)
+      ErlangAdapter.put(db, :gspo, quad_key, <<>>)
     end)
   end
 end

@@ -51,9 +51,8 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   # ===========================================================================
 
   defp insert_quads(ctx, quads) do
-    with {:ok, rdf_quads} <- quads_to_rdf_quads(quads),
-         {:ok, count} <- do_insert_quads(ctx, rdf_quads) do
-      {:ok, count}
+    with {:ok, rdf_quads} <- quads_to_rdf_quads(quads) do
+      do_insert_quads(ctx, rdf_quads)
     end
   end
 

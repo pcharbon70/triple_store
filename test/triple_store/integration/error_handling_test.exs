@@ -12,6 +12,7 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Parser
@@ -25,15 +26,15 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("error_handling_test")
+    Helpers.unique_path("error_handling_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp grant_public_permissions(ctx, graph_iris) do
-    TripleStore.Integration.Helpers.grant_public_permissions(ctx, graph_iris)
+    Helpers.grant_public_permissions(ctx, graph_iris)
   end
 
   # ===========================================================================
@@ -292,10 +293,9 @@ defmodule TripleStore.Integration.ErrorHandlingTest do
     test "6.6.3.5 memory limit with large graph scan", %{db: db, manager: manager, ctx: ctx} do
       # Create a large graph
       large_graph_content =
-        Enum.map(1..1000, fn i ->
+        Enum.map_join(1..1000, "\n", fn i ->
           "<http://example.org/s#{i}> <http://example.org/p> \"o#{i}\" <#{@ex}large-graph> ."
         end)
-        |> Enum.join("\n")
 
       {:ok, _} = Loader.load_nquads_string(db, manager, large_graph_content)
       :ok = Authorization.set_public(ctx, "#{@ex}large-graph")

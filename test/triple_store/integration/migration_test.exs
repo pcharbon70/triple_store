@@ -17,6 +17,7 @@ defmodule TripleStore.Integration.MigrationTest do
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Exporter
   alias TripleStore.Index
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
 
@@ -28,11 +29,11 @@ defmodule TripleStore.Integration.MigrationTest do
   # ===========================================================================
 
   defp unique_path(suffix \\ "") do
-    TripleStore.Integration.Helpers.unique_path("migration_test" <> suffix)
+    Helpers.unique_path("migration_test" <> suffix)
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   # Create a triple store (schema v1)
@@ -96,26 +97,24 @@ defmodule TripleStore.Integration.MigrationTest do
 
     ntriples_string
     |> String.split("\n", trim: true)
-    |> Enum.map(fn line ->
+    |> Enum.map_join("\n", fn line ->
       # Remove trailing dot and add graph context
       triple_part = String.replace_trailing(line, ".", "")
       "#{triple_part} <#{default_graph}> ."
     end)
-    |> Enum.join("\n")
   end
 
   # Convert N-Quads to N-Triples by removing graph context
   defp nquads_to_ntriples(nquads_string) do
     nquads_string
     |> String.split("\n", trim: true)
-    |> Enum.map(fn line ->
+    |> Enum.map_join("\n", fn line ->
       # Remove graph IRI and trailing dot, convert back to triple
       # N-Quads format: <s> <p> "o" <g> .
       # N-Triples format: <s> <p> "o" .
       # Use regex to remove the last <...> pattern before the dot
       Regex.replace(~r/ <[^>]+> \.$/, line, " .")
     end)
-    |> Enum.join("\n")
   end
 
   # Count triples in a triple store

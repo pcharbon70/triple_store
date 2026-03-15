@@ -261,25 +261,23 @@ defmodule TripleStore.SPARQL.QueryCache do
   defp maybe_evict(state, new_entry_size) do
     current_size = :ets.info(@table_name, :size)
 
-    cond do
-      current_size >= state.max_size ->
+    if current_size >= state.max_size do
+      evict_lru(state, new_entry_size)
+    else
+      current_bytes =
+        :ets.foldl(
+          fn {_key, entry}, acc ->
+            acc + entry.size_bytes
+          end,
+          0,
+          @table_name
+        )
+
+      if current_bytes + new_entry_size > state.max_bytes do
         evict_lru(state, new_entry_size)
-
-      true ->
-        current_bytes =
-          :ets.foldl(
-            fn {_key, entry}, acc ->
-              acc + entry.size_bytes
-            end,
-            0,
-            @table_name
-          )
-
-        if current_bytes + new_entry_size > state.max_bytes do
-          evict_lru(state, new_entry_size)
-        else
-          state
-        end
+      else
+        state
+      end
     end
   end
 

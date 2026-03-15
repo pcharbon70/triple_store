@@ -13,6 +13,7 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Authorization
@@ -26,11 +27,11 @@ defmodule TripleStore.Integration.SPARQLGraphTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("sparql_graph_test")
+    Helpers.unique_path("sparql_graph_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp load_test_data(db, manager) do

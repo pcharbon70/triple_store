@@ -16,6 +16,7 @@ defmodule TripleStore.Integration.RoundtripTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Exporter
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
 
@@ -27,11 +28,11 @@ defmodule TripleStore.Integration.RoundtripTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("roundtrip_test")
+    Helpers.unique_path("roundtrip_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp count_all_quads(db) do

@@ -14,6 +14,7 @@ defmodule TripleStore.SPARQL.QueryTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
+  alias TripleStore.Query.Cache
   alias TripleStore.SPARQL.Query
 
   @moduletag :tmp_dir
@@ -3068,7 +3069,7 @@ defmodule TripleStore.SPARQL.QueryTest do
 
       # Start a test cache
       cache_name = :"test_query_cache_#{:erlang.unique_integer([:positive])}"
-      {:ok, cache_pid} = TripleStore.Query.Cache.start_link(name: cache_name, max_entries: 100)
+      {:ok, cache_pid} = Cache.start_link(name: cache_name, max_entries: 100)
 
       # Add some test data
       add_triple(db, manager, {
@@ -3110,7 +3111,7 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results1) == 2
 
       # Cache should have an entry now
-      stats = TripleStore.Query.Cache.stats(name: cache_name)
+      stats = Cache.stats(name: cache_name)
       assert stats.size == 1
 
       # Second query - should hit cache
@@ -3118,7 +3119,7 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert results2 == results1
 
       # Check cache stats
-      stats_after = TripleStore.Query.Cache.stats(name: cache_name)
+      stats_after = Cache.stats(name: cache_name)
       assert stats_after.hits >= 1
     end
 
@@ -3130,24 +3131,18 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert length(results) == 2
 
       # Cache should be empty
-      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+      assert Cache.size(name: cache_name) == 0
     end
 
     test "skips caching for queries with RAND", %{ctx: _ctx, cache_name: _cache_name} do
       # Non-deterministic function detection - RAND should not be cached
-      refute TripleStore.Query.Cache.has_non_deterministic_functions?(
-               "SELECT ?name WHERE { ?s ?p ?o }"
-             )
+      refute Cache.has_non_deterministic_functions?("SELECT ?name WHERE { ?s ?p ?o }")
 
-      assert TripleStore.Query.Cache.has_non_deterministic_functions?(
-               "SELECT (RAND() AS ?r) WHERE { ?s ?p ?o }"
-             )
+      assert Cache.has_non_deterministic_functions?("SELECT (RAND() AS ?r) WHERE { ?s ?p ?o }")
     end
 
     test "skips caching for queries with NOW", %{ctx: _ctx, cache_name: _cache_name} do
-      assert TripleStore.Query.Cache.has_non_deterministic_functions?(
-               "SELECT (NOW() AS ?t) WHERE { ?s ?p ?o }"
-             )
+      assert Cache.has_non_deterministic_functions?("SELECT (NOW() AS ?t) WHERE { ?s ?p ?o }")
     end
 
     test "cache tracks predicates for invalidation", %{ctx: ctx, cache_name: cache_name} do
@@ -3155,16 +3150,16 @@ defmodule TripleStore.SPARQL.QueryTest do
 
       # Execute with caching
       {:ok, _} = Query.query(ctx, query, use_cache: true, cache_name: cache_name)
-      assert TripleStore.Query.Cache.size(name: cache_name) == 1
+      assert Cache.size(name: cache_name) == 1
 
       # Invalidate based on predicate
-      TripleStore.Query.Cache.invalidate_predicates(
+      Cache.invalidate_predicates(
         ["http://ex.org/name"],
         name: cache_name
       )
 
       # Cache should be empty
-      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+      assert Cache.size(name: cache_name) == 0
     end
 
     test "cache hit returns same results as fresh execution", %{ctx: ctx, cache_name: cache_name} do
@@ -3194,7 +3189,7 @@ defmodule TripleStore.SPARQL.QueryTest do
       assert explanation.query_type == :select
 
       # Cache should still be empty
-      assert TripleStore.Query.Cache.size(name: cache_name) == 0
+      assert Cache.size(name: cache_name) == 0
     end
   end
 end

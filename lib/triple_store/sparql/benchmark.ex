@@ -117,7 +117,7 @@ defmodule TripleStore.SPARQL.Benchmark do
       median_us: median(times),
       p95_us: percentile(times, 95),
       p99_us: percentile(times, 99),
-      memory_mb: if(not Enum.empty?(memory_values), do: average(memory_values), else: 0.0)
+      memory_mb: if(Enum.empty?(memory_values), do: 0.0, else: average(memory_values))
     }
   end
 
@@ -224,15 +224,13 @@ defmodule TripleStore.SPARQL.Benchmark do
   """
   @spec format_suite([report()]) :: String.t()
   def format_suite(reports) do
-    reports
-    |> Enum.map(fn report ->
+    Enum.map_join(reports, "\n\n", fn report ->
       """
       ## #{report.name}
 
       #{format_measurement(report.measurement)}
       """
     end)
-    |> Enum.join("\n\n")
   end
 
   @doc """
@@ -271,8 +269,7 @@ defmodule TripleStore.SPARQL.Benchmark do
 
     csv_content =
       [headers | rows]
-      |> Enum.map(&encode_csv_row/1)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", &encode_csv_row/1)
 
     File.write!(path, csv_content)
     :ok
@@ -285,8 +282,7 @@ defmodule TripleStore.SPARQL.Benchmark do
   defp format_float(val), do: to_string(val)
 
   defp encode_csv_row(row) do
-    row
-    |> Enum.map(fn
+    Enum.map_join(row, ",", fn
       val when is_binary(val) ->
         if String.contains?(val, [",", "\"", "\n"]) do
           "\"#{String.replace(val, "\"", "\"\"")}\""
@@ -297,7 +293,6 @@ defmodule TripleStore.SPARQL.Benchmark do
       val ->
         to_string(val)
     end)
-    |> Enum.join(",")
   end
 
   @doc """

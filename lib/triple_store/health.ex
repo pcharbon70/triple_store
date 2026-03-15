@@ -902,12 +902,8 @@ defmodule TripleStore.Health do
 
   defp determine_graph_health_status(0, _summary, _threshold), do: :empty
 
-  defp determine_graph_health_status(quad_count, _summary, threshold) do
-    cond do
-      quad_count > threshold -> :degraded
-      true -> :healthy
-    end
-  end
+  defp determine_graph_health_status(quad_count, _summary, threshold),
+    do: if(quad_count > threshold, do: :degraded, else: :healthy)
 
   defp get_graph_query_stats(graph_id) do
     case TripleStore.Metrics.get_all() do

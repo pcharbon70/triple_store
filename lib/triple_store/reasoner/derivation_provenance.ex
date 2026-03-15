@@ -407,13 +407,11 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
     premise_str =
       derivation.premises
-      |> Enum.map(fn quad -> format_quad(quad, db) end)
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", fn quad -> format_quad(quad, db) end)
 
     binding_str =
       derivation.bindings
-      |> Enum.map(fn {var, {:bound, value}} -> "#{var}=#{value}" end)
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", fn {var, {:bound, value}} -> "#{var}=#{value}" end)
 
     """
     Derived: #{format_quad({g, s, p, o}, db)}

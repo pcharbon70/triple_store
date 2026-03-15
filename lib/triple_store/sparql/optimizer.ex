@@ -1123,21 +1123,18 @@ defmodule TripleStore.SPARQL.Optimizer do
     if Enum.empty?(transformations) do
       "  None"
     else
-      transformations
-      |> Enum.map(fn t ->
+      Enum.map_join(transformations, "\n", fn t ->
         "  - #{t.type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase()}: #{t.description} (Impact: #{t.impact})"
       end)
-      |> Enum.join("\n")
     end
   end
 
   defp format_execution_steps(steps) do
     steps
     |> Enum.sort_by(& &1.step)
-    |> Enum.map(fn step ->
+    |> Enum.map_join("\n", fn step ->
       "  #{step.step}. #{String.upcase(to_string(step.type))}: #{step.detail}"
     end)
-    |> Enum.join("\n")
   end
 
   defp format_op_type(:bgp), do: "Basic Graph Pattern"

@@ -22,8 +22,7 @@ defmodule Mix.Tasks.Conformance do
 
     if invalid != [] do
       invalid
-      |> Enum.map(fn {switch, _value} -> "--#{switch}" end)
-      |> Enum.join(", ")
+      |> Enum.map_join(", ", fn {switch, _value} -> "--#{switch}" end)
       |> then(&Mix.raise("unknown options for mix conformance: #{&1}"))
     end
 

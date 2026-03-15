@@ -237,10 +237,10 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
           end)
 
         avg_batch_size =
-          if not Enum.empty?(batches) do
-            total / length(batches)
-          else
+          if Enum.empty?(batches) do
             0
+          else
+            total / length(batches)
           end
 
         IO.puts(
