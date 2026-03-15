@@ -719,18 +719,10 @@ defmodule TripleStore.Health do
 
     case Statistics.build_per_graph_histograms(db, []) do
       {:ok, histograms} ->
-        graphs =
-          histograms
-          |> Enum.map(fn {graph_id, _histogram} ->
-            case graph_health(%{db: db}, graph_id, size_alert_threshold: size_threshold) do
-              {:ok, health} -> {graph_id, health}
-              _ -> {graph_id, %{status: :error, graph_id: graph_id}}
-            end
-          end)
-          |> Map.new()
-          |> filter_empty_graphs(include_empty)
-
-        {:ok, graphs}
+        histograms
+        |> build_graph_health_map(db, size_threshold)
+        |> filter_empty_graphs(include_empty)
+        |> then(&{:ok, &1})
     end
   end
 
@@ -766,22 +758,11 @@ defmodule TripleStore.Health do
     large_threshold = Keyword.get(opts, :large_graph_threshold, 1_000_000)
     empty_threshold = Keyword.get(opts, :empty_threshold, 0)
 
-    _alerts = []
-
     case Statistics.build_per_graph_histograms(db, []) do
       {:ok, histograms} ->
-        alerts =
-          Enum.flat_map(histograms, fn {graph_id, _histogram} ->
-            case graph_health(%{db: db}, graph_id) do
-              {:ok, health} ->
-                check_graph_for_alerts(health, large_threshold, empty_threshold)
-
-              _ ->
-                []
-            end
-          end)
-
-        {:ok, alerts}
+        histograms
+        |> collect_graph_health_alerts(db, large_threshold, empty_threshold)
+        |> then(&{:ok, &1})
 
       _ ->
         {:ok, []}
@@ -791,6 +772,35 @@ defmodule TripleStore.Health do
   # ===========================================================================
   # Metrics Integration
   # ===========================================================================
+
+  defp build_graph_health_map(histograms, db, size_threshold) do
+    histograms
+    |> Enum.map(&graph_health_entry(db, &1, size_threshold))
+    |> Map.new()
+  end
+
+  defp graph_health_entry(db, {graph_id, _histogram}, size_threshold) do
+    case graph_health(%{db: db}, graph_id, size_alert_threshold: size_threshold) do
+      {:ok, health} -> {graph_id, health}
+      _ -> {graph_id, %{status: :error, graph_id: graph_id}}
+    end
+  end
+
+  defp collect_graph_health_alerts(histograms, db, large_threshold, empty_threshold) do
+    Enum.flat_map(histograms, fn {graph_id, _histogram} ->
+      graph_alerts_for_id(db, graph_id, large_threshold, empty_threshold)
+    end)
+  end
+
+  defp graph_alerts_for_id(db, graph_id, large_threshold, empty_threshold) do
+    case graph_health(%{db: db}, graph_id) do
+      {:ok, health} ->
+        check_graph_for_alerts(health, large_threshold, empty_threshold)
+
+      _ ->
+        []
+    end
+  end
 
   @doc """
   Returns current metrics if the metrics collector is running.

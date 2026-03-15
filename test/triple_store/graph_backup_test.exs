@@ -40,7 +40,7 @@ defmodule TripleStore.GraphBackupTest do
     File.rm_rf!(path)
   end
 
-  defp cleanup_store({:ok, store, path}), do: cleanup_store(store)
+  defp cleanup_store({:ok, store, _path}), do: cleanup_store(store)
   defp cleanup_store(_), do: :ok
 
   # ===========================================================================
@@ -118,6 +118,19 @@ defmodule TripleStore.GraphBackupTest do
       assert {:ok, :quad} = Backup.get_backup_schema(backup_path)
       # Note: verify_quad_backup may fail if list_column_families is not implemented
       # For now, just verify the schema detection works
+
+      File.rm_rf!(backup_path)
+    end
+
+    test "create_with_graph_stats/3 persists readable graph stats", %{store: store, path: path} do
+      backup_path = path <> "_backup_stats"
+
+      assert {:ok, metadata} = Backup.create_with_graph_stats(store, backup_path, verify: false)
+      assert metadata.backup_type == :full_with_stats
+      assert metadata.schema == :quad
+      assert is_map(metadata.graph_stats)
+      assert metadata.graph_stats.graph_count >= 1
+      assert is_map(metadata.graph_stats.graphs)
 
       File.rm_rf!(backup_path)
     end

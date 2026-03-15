@@ -238,26 +238,14 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
     if exhausted do
       {:reply, :iterator_end, state}
     else
-      case :rocksdb.iterator_move(iter_ref, action) do
-        {:ok, key, _value} = result ->
-          # Check prefix boundary if set
-          if prefix && !has_prefix?(key, prefix) do
-            # Iterator moved past prefix boundary
-            {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
-          else
-            {:reply, result, %{state | positioned: true}}
-          end
-
-        :iterator_end = end_result ->
-          {:reply, end_result, %{state | exhausted: true, positioned: true}}
-
-        {:error, :invalid_iterator} ->
-          # Iterator has been invalidated - return iterator_end
-          {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
-
-        {:error, _reason} = error ->
-          {:reply, error, state}
-      end
+      iter_ref
+      |> :rocksdb.iterator_move(action)
+      |> reply_for_iterator_result(
+        prefix,
+        %{state | positioned: true},
+        %{state | exhausted: true, positioned: true},
+        state
+      )
     end
   end
 
@@ -280,78 +268,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           positioned: positioned
         } = state
       ) do
-    cond do
-      exhausted ->
-        {:reply, :iterator_end, state}
-
-      last_seek != nil ->
-        # We have a pending seek - execute it and return the result
-        case :rocksdb.iterator_move(iter_ref, last_seek) do
-          {:ok, key, _value} = result ->
-            # Check prefix boundary if set
-            if prefix && !has_prefix?(key, prefix) do
-              # Seek moved past prefix boundary
-              {:reply, :iterator_end,
-               %{state | last_seek: nil, exhausted: true, positioned: true}}
-            else
-              {:reply, result, %{state | last_seek: nil, positioned: true}}
-            end
-
-          :iterator_end ->
-            {:reply, :iterator_end, %{state | last_seek: nil, exhausted: true, positioned: true}}
-
-          {:error, :invalid_iterator} ->
-            {:reply, :iterator_end, %{state | last_seek: nil, exhausted: true, positioned: true}}
-
-          {:error, _reason} = error ->
-            {:reply, error, %{state | last_seek: nil}}
-        end
-
-      not positioned ->
-        # Iterator hasn't been positioned yet - move to first entry (or prefix)
-        start_key = prefix || :first
-
-        case :rocksdb.iterator_move(iter_ref, start_key) do
-          {:ok, key, _value} = result ->
-            if prefix && !has_prefix?(key, prefix) do
-              # The first key >= prefix may still be outside the requested prefix.
-              {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
-            else
-              {:reply, result, %{state | positioned: true}}
-            end
-
-          :iterator_end ->
-            {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
-
-          {:error, :invalid_iterator} ->
-            {:reply, :iterator_end, %{state | exhausted: true, positioned: true}}
-
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
-
-      true ->
-        # No pending seek - just move to next entry
-        case :rocksdb.iterator_move(iter_ref, :next) do
-          {:ok, key, _value} = result ->
-            # Check prefix boundary if set
-            if prefix && !has_prefix?(key, prefix) do
-              # Iterator moved past prefix boundary
-              {:reply, :iterator_end, %{state | exhausted: true}}
-            else
-              {:reply, result, state}
-            end
-
-          :iterator_end ->
-            {:reply, :iterator_end, %{state | exhausted: true}}
-
-          {:error, :invalid_iterator} ->
-            {:reply, :iterator_end, %{state | exhausted: true}}
-
-          {:error, _reason} = error ->
-            {:reply, error, state}
-        end
-    end
+    handle_next_call(state, iter_ref, prefix, last_seek, exhausted, positioned)
   end
 
   @impl true
@@ -391,6 +308,67 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   # ===========================================================================
   # Private Functions
   # ===========================================================================
+
+  defp handle_next_call(state, _iter_ref, _prefix, _last_seek, true, _positioned) do
+    {:reply, :iterator_end, state}
+  end
+
+  defp handle_next_call(state, iter_ref, prefix, last_seek, false, _positioned)
+       when not is_nil(last_seek) do
+    iter_ref
+    |> :rocksdb.iterator_move(last_seek)
+    |> reply_for_iterator_result(
+      prefix,
+      %{state | last_seek: nil, positioned: true},
+      %{state | last_seek: nil, exhausted: true, positioned: true},
+      %{state | last_seek: nil}
+    )
+  end
+
+  defp handle_next_call(state, iter_ref, prefix, nil, false, false) do
+    start_key = prefix || :first
+
+    iter_ref
+    |> :rocksdb.iterator_move(start_key)
+    |> reply_for_iterator_result(
+      prefix,
+      %{state | positioned: true},
+      %{state | exhausted: true, positioned: true},
+      state
+    )
+  end
+
+  defp handle_next_call(state, iter_ref, prefix, nil, false, true) do
+    iter_ref
+    |> :rocksdb.iterator_move(:next)
+    |> reply_for_iterator_result(prefix, state, %{state | exhausted: true}, state)
+  end
+
+  defp reply_for_iterator_result(result, prefix, success_state, exhausted_state, error_state) do
+    cond do
+      match?({:ok, _, _}, result) ->
+        reply_for_prefix_boundary(result, prefix, success_state, exhausted_state)
+
+      result in [:iterator_end, {:error, :invalid_iterator}] ->
+        {:reply, :iterator_end, exhausted_state}
+
+      true ->
+        {:reply, result, error_state}
+    end
+  end
+
+  defp reply_for_prefix_boundary(
+         {:ok, key, _value} = result,
+         prefix,
+         success_state,
+         exhausted_state
+       ) do
+    if prefix && !has_prefix?(key, prefix) do
+      {:reply, :iterator_end, exhausted_state}
+    else
+      {:reply, result, success_state}
+    end
+  end
 
   # Builds read options for erlang-rocksdb iterator
   defp build_read_opts(opts) do

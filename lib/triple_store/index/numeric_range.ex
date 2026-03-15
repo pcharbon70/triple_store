@@ -275,30 +275,35 @@ defmodule TripleStore.Index.NumericRange do
   defp collect_range_results(iter, max_key, max_value, acc) do
     case ErlangAdapter.iterator_next(iter) do
       {:ok, key, _value} ->
-        # Check if we've passed the max key
-        if key > max_key do
-          Enum.reverse(acc)
-        else
-          case parse_range_key(key) do
-            {:ok, _predicate_id, float_value, subject_id} ->
-              # Double-check value is within range (for :unbounded max)
-              if max_value == :unbounded or float_value <= max_value do
-                collect_range_results(iter, max_key, max_value, [{subject_id, float_value} | acc])
-              else
-                Enum.reverse(acc)
-              end
-
-            :error ->
-              # Skip malformed keys
-              collect_range_results(iter, max_key, max_value, acc)
-          end
-        end
+        collect_range_key(iter, key, max_key, max_value, acc)
 
       :iterator_end ->
         Enum.reverse(acc)
 
       {:error, _} ->
         Enum.reverse(acc)
+    end
+  end
+
+  defp collect_range_key(_iter, key, max_key, _max_value, acc) when key > max_key do
+    Enum.reverse(acc)
+  end
+
+  defp collect_range_key(iter, key, max_key, max_value, acc) do
+    case parse_range_key(key) do
+      {:ok, _predicate_id, float_value, subject_id} ->
+        maybe_collect_range_value(iter, max_key, max_value, acc, subject_id, float_value)
+
+      :error ->
+        collect_range_results(iter, max_key, max_value, acc)
+    end
+  end
+
+  defp maybe_collect_range_value(iter, max_key, max_value, acc, subject_id, float_value) do
+    if max_value == :unbounded or float_value <= max_value do
+      collect_range_results(iter, max_key, max_value, [{subject_id, float_value} | acc])
+    else
+      Enum.reverse(acc)
     end
   end
 

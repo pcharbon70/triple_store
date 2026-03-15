@@ -564,37 +564,10 @@ defmodule TripleStore.Backup do
   """
   @spec get_backup_schema(Path.t()) :: {:ok, :triple | :quad} | {:error, term()}
   def get_backup_schema(backup_path) do
-    # list_column_families returns a list directly (or empty list on error)
-    indices = ErlangAdapter.list_column_families(backup_path)
-
-    cond do
-      # Check for quad-specific indices (list_column_families returns strings)
-      "gspo" in indices and "gpos" in indices and "spog" in indices and "posg" in indices ->
-        {:ok, :quad}
-
-      # Check for triple store indices
-      "spo" in indices and "pos" in indices and "osp" in indices ->
-        {:ok, :triple}
-
-      # Fallback: try to open and check
-      true ->
-        case ErlangAdapter.open(backup_path) do
-          {:ok, db} ->
-            # If we can open it, check the column families through the db
-            ErlangAdapter.close(db)
-            # Re-check with list_column_families
-            indices = ErlangAdapter.list_column_families(backup_path)
-
-            if "gspo" in indices do
-              {:ok, :quad}
-            else
-              {:ok, :triple}
-            end
-
-          {:error, _} ->
-            {:error, :cannot_determine_schema}
-        end
-    end
+    backup_path
+    |> ErlangAdapter.list_column_families()
+    |> schema_from_backup_indices()
+    |> maybe_resolve_backup_schema(backup_path)
   end
 
   @doc """
@@ -678,7 +651,7 @@ defmodule TripleStore.Backup do
 
     # Write to a separate file for graph stats
     stats_path = Path.join(backup_path, ".graph_stats")
-    content = :erlang.binary_to_term(stats)
+    content = :erlang.term_to_binary(stats)
 
     case File.write(stats_path, content) do
       :ok -> :ok
@@ -805,33 +778,74 @@ defmodule TripleStore.Backup do
   end
 
   # Check source directory for symlinks (security measure)
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp check_for_symlinks(path) do
     case File.lstat(path) do
-      {:ok, %File.Stat{type: :symlink}} ->
-        {:error, {:symlink_detected, path}}
-
-      {:ok, %File.Stat{type: :directory}} ->
-        # Check all entries in directory
-        case File.ls(path) do
-          {:ok, entries} ->
-            Enum.reduce_while(entries, :ok, fn entry, :ok ->
-              case check_for_symlinks(Path.join(path, entry)) do
-                :ok -> {:cont, :ok}
-                error -> {:halt, error}
-              end
-            end)
-
-          {:error, reason} ->
-            {:error, {:ls_failed, path, reason}}
-        end
-
-      {:ok, _} ->
-        # Regular file
-        :ok
+      {:ok, %File.Stat{type: type}} ->
+        check_symlink_free_path(path, type)
 
       {:error, reason} ->
         {:error, {:lstat_failed, path, reason}}
+    end
+  end
+
+  defp schema_from_backup_indices(indices) do
+    cond do
+      quad_backup_indices?(indices) -> {:ok, :quad}
+      triple_backup_indices?(indices) -> {:ok, :triple}
+      true -> :unknown
+    end
+  end
+
+  defp maybe_resolve_backup_schema({:ok, _schema} = schema, _backup_path), do: schema
+
+  defp maybe_resolve_backup_schema(:unknown, backup_path) do
+    case ErlangAdapter.open(backup_path) do
+      {:ok, db} ->
+        ErlangAdapter.close(db)
+
+        backup_path
+        |> ErlangAdapter.list_column_families()
+        |> schema_from_reopened_backup_indices()
+
+      {:error, _} ->
+        {:error, :cannot_determine_schema}
+    end
+  end
+
+  defp quad_backup_indices?(indices) do
+    Enum.all?(~w(gspo gpos spog posg), &(&1 in indices))
+  end
+
+  defp triple_backup_indices?(indices) do
+    Enum.all?(~w(spo pos osp), &(&1 in indices))
+  end
+
+  defp schema_from_reopened_backup_indices(indices) do
+    if "gspo" in indices, do: {:ok, :quad}, else: {:ok, :triple}
+  end
+
+  defp check_symlink_free_path(path, :symlink), do: {:error, {:symlink_detected, path}}
+  defp check_symlink_free_path(path, :directory), do: check_directory_for_symlinks(path)
+  defp check_symlink_free_path(_path, _type), do: :ok
+
+  defp check_directory_for_symlinks(path) do
+    case File.ls(path) do
+      {:ok, entries} ->
+        Enum.reduce_while(entries, :ok, fn entry, :ok ->
+          path
+          |> Path.join(entry)
+          |> continue_symlink_check()
+        end)
+
+      {:error, reason} ->
+        {:error, {:ls_failed, path, reason}}
+    end
+  end
+
+  defp continue_symlink_check(path) do
+    case check_for_symlinks(path) do
+      :ok -> {:cont, :ok}
+      error -> {:halt, error}
     end
   end
 
