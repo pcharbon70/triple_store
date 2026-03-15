@@ -9,7 +9,7 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
   - Graph-scoped queries: <10ms for typical patterns
   - Prefix scan throughput: >100K quads/sec
 
-  Run with: mix test test/triple_store/benchmark/phase_8_1_quad_performance_test.exs
+  Run with: mix test --include benchmark test/triple_store/benchmark/phase_8_1_quad_performance_test.exs
 
   ## Benchmark Results
 
@@ -23,6 +23,9 @@ defmodule TripleStore.Benchmark.Phase81QuadPerformanceTest do
   """
 
   use ExUnit.Case, async: false
+
+  @moduletag :benchmark
+  @moduletag timeout: 300_000
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager

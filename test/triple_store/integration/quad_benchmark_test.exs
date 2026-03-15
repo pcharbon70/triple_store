@@ -9,9 +9,14 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   - Cross-graph query (<100ms for moderate complexity)
   - Graph enumeration (<100ms for 100 graphs)
   - INSERT/DELETE with graphs
+
+  Run with: mix test --include benchmark test/triple_store/integration/quad_benchmark_test.exs
   """
 
   use ExUnit.Case, async: false
+
+  @moduletag :benchmark
+  @moduletag timeout: 300_000
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager

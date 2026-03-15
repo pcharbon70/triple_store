@@ -9,10 +9,13 @@ defmodule TripleStore.Reasoner.ReasoningBenchmarkTest do
   4. GraphScopedReasoner reasoning performance
   5. Cross-graph reasoning overhead
 
-  Run with: mix test test/triple_store/reasoner/reasoning_benchmark_test.exs
+  Run with: mix test --include benchmark test/triple_store/reasoner/reasoning_benchmark_test.exs
   """
 
   use ExUnit.Case, async: false
+
+  @moduletag :benchmark
+  @moduletag timeout: 300_000
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
