@@ -17,6 +17,7 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Query
@@ -29,11 +30,11 @@ defmodule TripleStore.Integration.GraphClauseQueryTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("graph_clause_query_test")
+    Helpers.unique_path("graph_clause_query_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp load_test_data(db, manager) do

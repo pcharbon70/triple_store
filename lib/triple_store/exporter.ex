@@ -250,24 +250,28 @@ defmodule TripleStore.Exporter do
     if has_path_traversal?(path) do
       {:error, :invalid_path}
     else
-      expanded = Path.expand(path)
-
-      # If allowed_dirs is specified, verify the parent directory is within them
-      if allowed_dirs != nil do
-        parent = Path.dirname(expanded)
-
-        if Path.type(parent) == :absolute and within_allowed_dirs?(parent, allowed_dirs) do
-          :ok
-        else
-          {:error, :invalid_path}
-        end
-      else
-        # No directory restrictions - safe to use
-        :ok
-      end
+      path
+      |> Path.expand()
+      |> validate_expanded_file_path(allowed_dirs)
     end
   rescue
     _ -> {:error, :invalid_path}
+  end
+
+  defp validate_expanded_file_path(_path, nil), do: :ok
+
+  defp validate_expanded_file_path(expanded_path, allowed_dirs) do
+    expanded_path
+    |> Path.dirname()
+    |> validate_export_parent(allowed_dirs)
+  end
+
+  defp validate_export_parent(parent, allowed_dirs) do
+    if Path.type(parent) == :absolute and within_allowed_dirs?(parent, allowed_dirs) do
+      :ok
+    else
+      {:error, :invalid_path}
+    end
   end
 
   # Check if a path contains path traversal attempts
@@ -752,58 +756,15 @@ defmodule TripleStore.Exporter do
           keyword()
         ) :: {:ok, RDF.Dataset.t()} | {:error, term()}
   def export_graphs(db, manager, graphs, opts \\ []) do
-    alias TripleStore.Adapter
-    alias TripleStore.QuadOperations
-
     include_default = Keyword.get(opts, :include_default, false)
     batch_size = Keyword.get(opts, :batch_size, @default_batch_size)
 
     with_telemetry(%{operation: :graphs, path: nil}, fn ->
-      # Convert graph terms to IDs
-      graph_ids =
-        Enum.map(graphs, fn graph_term ->
-          case Adapter.term_to_id(manager, graph_term) do
-            {:ok, graph_id} -> graph_id
-            _ -> nil
-          end
-        end)
-        |> Enum.filter(& &1)
-
-      # Collect all quads from specified graphs
-      all_quads =
-        Enum.flat_map(graph_ids, fn graph_id ->
-          QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
-        end)
-
-      # Optionally include default graph
-      all_quads =
-        if include_default do
-          default_quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: 0})
-          default_quads ++ all_quads
-        else
-          all_quads
-        end
-
-      # Process in batches to avoid memory issues
-      all_quads
-      |> Enum.chunk_every(batch_size)
-      |> Enum.reduce_while({:ok, []}, fn batch, {:ok, acc} ->
-        case Adapter.to_rdf_quads(db, batch) do
-          {:ok, rdf_quads} ->
-            valid_quads = Enum.filter(rdf_quads, &is_tuple/1)
-            {:cont, {:ok, acc ++ valid_quads}}
-
-          {:error, _} = error ->
-            {:halt, error}
-        end
-      end)
-      |> case do
-        {:ok, rdf_quads} ->
-          {:ok, RDF.Dataset.new(rdf_quads)}
-
-        error ->
-          error
-      end
+      graphs
+      |> graph_ids_for_terms(manager)
+      |> lookup_graph_quads(db)
+      |> maybe_include_default_graph(db, include_default)
+      |> dataset_from_export_quads(db, batch_size)
     end)
   end
 
@@ -897,43 +858,13 @@ defmodule TripleStore.Exporter do
         ) :: {:ok, RDF.Graph.t()} | {:error, term()}
   def export_single_graph(db, manager, graph_term, opts \\ []) do
     alias TripleStore.Adapter
-    alias TripleStore.QuadOperations
 
     with_telemetry(%{operation: :single_graph, path: nil}, fn ->
-      # Convert graph term to ID
-      case Adapter.term_to_id(manager, graph_term) do
-        {:ok, graph_id} ->
-          # Check if graph exists
-          if QuadOperations.graph_exists?(db, manager, graph_term) do
-            # Get quads from the graph
-            internal_quads =
-              QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
-
-            # Convert to RDF.Graph
-            with {:ok, rdf_quads} <- Adapter.to_rdf_quads(db, internal_quads) do
-              triples =
-                rdf_quads
-                |> Enum.filter(&is_tuple/1)
-                |> Enum.map(fn {s, p, o, _g} -> {s, p, o} end)
-
-              # Use graph term as name if not provided
-              graph_opts =
-                if Keyword.has_key?(opts, :name) do
-                  Keyword.take(opts, [:name, :base_iri, :prefixes])
-                else
-                  opts
-                  |> Keyword.take([:base_iri, :prefixes])
-                  |> Keyword.put(:name, graph_term)
-                end
-
-              {:ok, RDF.Graph.new(triples, graph_opts)}
-            end
-          else
-            {:error, :graph_not_found}
-          end
-
-        {:error, _} = error ->
-          error
+      with {:ok, graph_id} <- Adapter.term_to_id(manager, graph_term),
+           :ok <- ensure_graph_exists(db, manager, graph_term),
+           {:ok, rdf_quads} <-
+             graph_id |> lookup_graph_quads(db) |> then(&Adapter.to_rdf_quads(db, &1)) do
+        {:ok, build_exported_graph(rdf_quads, graph_term, opts)}
       end
     end)
   end
@@ -1350,50 +1281,105 @@ defmodule TripleStore.Exporter do
   # positions are bound (e.g., {:var, :var, :var, :bound} for graph-scoped export).
   @spec extract_bound_values(quad_pattern(), keyword()) :: map()
   defp extract_bound_values({s_pat, p_pat, o_pat, g_pat}, opts) do
-    values = %{}
-
-    values =
-      if s_pat == :bound do
-        case Keyword.get(opts, :subject_id) do
-          nil -> values
-          val -> Map.put(values, :s, val)
-        end
-      else
-        values
-      end
-
-    values =
-      if p_pat == :bound do
-        case Keyword.get(opts, :predicate_id) do
-          nil -> values
-          val -> Map.put(values, :p, val)
-        end
-      else
-        values
-      end
-
-    values =
-      if o_pat == :bound do
-        case Keyword.get(opts, :object_id) do
-          nil -> values
-          val -> Map.put(values, :o, val)
-        end
-      else
-        values
-      end
-
-    values =
-      if g_pat == :bound do
-        case Keyword.get(opts, :graph_id) do
-          nil -> values
-          val -> Map.put(values, :g, val)
-        end
-      else
-        values
-      end
-
-    values
+    [
+      {s_pat, :s, :subject_id},
+      {p_pat, :p, :predicate_id},
+      {o_pat, :o, :object_id},
+      {g_pat, :g, :graph_id}
+    ]
+    |> Enum.reduce(%{}, fn {pattern, key, opt_key}, values ->
+      maybe_put_bound_value(values, pattern, key, Keyword.get(opts, opt_key))
+    end)
   end
+
+  defp graph_ids_for_terms(graphs, manager) do
+    Enum.flat_map(graphs, fn graph_term ->
+      case Adapter.term_to_id(manager, graph_term) do
+        {:ok, graph_id} -> [graph_id]
+        _ -> []
+      end
+    end)
+  end
+
+  defp lookup_graph_quads(graph_ids, db) when is_list(graph_ids) do
+    alias TripleStore.QuadOperations
+
+    Enum.flat_map(graph_ids, fn graph_id ->
+      lookup_graph_quads(graph_id, db)
+    end)
+  end
+
+  defp lookup_graph_quads(graph_id, db) do
+    alias TripleStore.QuadOperations
+
+    QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
+  end
+
+  defp maybe_include_default_graph(quads, _db, false), do: quads
+
+  defp maybe_include_default_graph(quads, db, true) do
+    lookup_graph_quads(0, db) ++ quads
+  end
+
+  defp dataset_from_export_quads(quads, db, batch_size) do
+    quads
+    |> Enum.chunk_every(batch_size)
+    |> Enum.reduce_while({:ok, []}, fn batch, {:ok, acc} ->
+      append_export_quad_batch(db, batch, acc)
+    end)
+    |> finalize_dataset_export()
+  end
+
+  defp append_export_quad_batch(db, batch, acc) do
+    case Adapter.to_rdf_quads(db, batch) do
+      {:ok, rdf_quads} ->
+        {:cont, {:ok, acc ++ valid_rdf_quads(rdf_quads)}}
+
+      {:error, _} = error ->
+        {:halt, error}
+    end
+  end
+
+  defp finalize_dataset_export({:ok, rdf_quads}), do: {:ok, RDF.Dataset.new(rdf_quads)}
+  defp finalize_dataset_export(error), do: error
+
+  defp ensure_graph_exists(db, manager, graph_term) do
+    alias TripleStore.QuadOperations
+
+    if QuadOperations.graph_exists?(db, manager, graph_term) do
+      :ok
+    else
+      {:error, :graph_not_found}
+    end
+  end
+
+  defp build_exported_graph(rdf_quads, graph_term, opts) do
+    rdf_quads
+    |> graph_triples_from_quads()
+    |> then(&RDF.Graph.new(&1, export_single_graph_opts(graph_term, opts)))
+  end
+
+  defp graph_triples_from_quads(rdf_quads) do
+    Enum.map(valid_rdf_quads(rdf_quads), fn {s, p, o, _g} -> {s, p, o} end)
+  end
+
+  defp valid_rdf_quads(rdf_quads) do
+    Enum.filter(rdf_quads, &is_tuple/1)
+  end
+
+  defp export_single_graph_opts(graph_term, opts) do
+    if Keyword.has_key?(opts, :name) do
+      Keyword.take(opts, [:name, :base_iri, :prefixes])
+    else
+      opts
+      |> Keyword.take([:base_iri, :prefixes])
+      |> Keyword.put(:name, graph_term)
+    end
+  end
+
+  defp maybe_put_bound_value(values, :bound, _key, nil), do: values
+  defp maybe_put_bound_value(values, :bound, key, value), do: Map.put(values, key, value)
+  defp maybe_put_bound_value(values, :var, _key, _value), do: values
 
   # ===========================================================================
   # Helper Functions - TriG Options

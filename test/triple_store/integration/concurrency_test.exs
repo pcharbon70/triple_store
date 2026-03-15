@@ -15,6 +15,7 @@ defmodule TripleStore.Integration.ConcurrencyTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.{Authorization, Parser, Query, UpdateExecutor}
@@ -27,11 +28,11 @@ defmodule TripleStore.Integration.ConcurrencyTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("concurrency_test")
+    Helpers.unique_path("concurrency_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp setup_db do
@@ -168,10 +169,9 @@ defmodule TripleStore.Integration.ConcurrencyTest do
       load_task =
         Task.async(fn ->
           large_data =
-            Enum.map(1..100, fn i ->
+            Enum.map_join(1..100, "\n", fn i ->
               "<#{@ex}item#{i}> <#{@ex}value> \"#{i}\" <#{graph}> ."
             end)
-            |> Enum.join("\n")
 
           Loader.load_nquads_string(ctx.db, ctx.dict_manager, large_data)
         end)

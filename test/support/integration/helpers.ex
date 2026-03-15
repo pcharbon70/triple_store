@@ -23,6 +23,28 @@ defmodule TripleStore.Integration.Helpers do
 
   use Agent
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
+
+  @test_database_prefixes [
+    "test_db_",
+    "trig_loading_test_",
+    "nquads_loading_test_",
+    "sparql_graph_test_",
+    "quad_delete_test_",
+    "quad_insert_lookup_test_",
+    "database_lifecycle_test_",
+    "quad_storage_lifecycle_test_",
+    "graph_clause_query_test_",
+    "format_conversion_test_",
+    "roundtrip_test_",
+    "real_world_scenarios_test_",
+    "update_operations_test_",
+    "quad_benchmark_test_",
+    "migration_test_",
+    "concurrency_test_",
+    "error_handling_test_"
+  ]
+
   @doc """
   Starts the path tracker for cleanup automation.
 
@@ -78,14 +100,8 @@ defmodule TripleStore.Integration.Helpers do
       {:ok, files} -> files
       _ -> []
     end
-    |> Enum.filter(&test_database_path?/1)
     |> Enum.filter(fn path ->
-      full_path = Path.join(["/tmp", path])
-
-      case File.stat(full_path) do
-        {:ok, %{mtime: mtime}} -> mtime < cutoff_time
-        _ -> false
-      end
+      test_database_path?(path) and stale_test_database?(path, cutoff_time)
     end)
     |> Enum.reduce({:ok, 0}, fn path, {:ok, count} ->
       full_path = Path.join(["/tmp", path])
@@ -184,7 +200,7 @@ defmodule TripleStore.Integration.Helpers do
   """
   def safe_close_db(db) do
     try do
-      TripleStore.Backend.RocksDB.ErlangAdapter.close(db)
+      ErlangAdapter.close(db)
     catch
       :exit, _ -> :ok
     end
@@ -194,23 +210,16 @@ defmodule TripleStore.Integration.Helpers do
 
   # Private helpers
 
+  defp stale_test_database?(path, cutoff_time) do
+    full_path = Path.join(["/tmp", path])
+
+    case File.stat(full_path) do
+      {:ok, %{mtime: mtime}} -> mtime < cutoff_time
+      _ -> false
+    end
+  end
+
   defp test_database_path?(filename) do
-    String.starts_with?(filename, "test_db_") or
-      String.starts_with?(filename, "trig_loading_test_") or
-      String.starts_with?(filename, "nquads_loading_test_") or
-      String.starts_with?(filename, "sparql_graph_test_") or
-      String.starts_with?(filename, "quad_delete_test_") or
-      String.starts_with?(filename, "quad_insert_lookup_test_") or
-      String.starts_with?(filename, "database_lifecycle_test_") or
-      String.starts_with?(filename, "quad_storage_lifecycle_test_") or
-      String.starts_with?(filename, "graph_clause_query_test_") or
-      String.starts_with?(filename, "format_conversion_test_") or
-      String.starts_with?(filename, "roundtrip_test_") or
-      String.starts_with?(filename, "real_world_scenarios_test_") or
-      String.starts_with?(filename, "update_operations_test_") or
-      String.starts_with?(filename, "quad_benchmark_test_") or
-      String.starts_with?(filename, "migration_test_") or
-      String.starts_with?(filename, "concurrency_test_") or
-      String.starts_with?(filename, "error_handling_test_")
+    Enum.any?(@test_database_prefixes, &String.starts_with?(filename, &1))
   end
 end

@@ -9,16 +9,23 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   - Cross-graph query (<100ms for moderate complexity)
   - Graph enumeration (<100ms for 100 graphs)
   - INSERT/DELETE with graphs
+
+  Run with: mix test --include benchmark test/triple_store/integration/quad_benchmark_test.exs
   """
 
   use ExUnit.Case, async: false
 
+  @moduletag :benchmark
+  @moduletag timeout: 300_000
+
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Loader
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Query
+  alias TripleStore.SPARQL.UpdateExecutor
 
   @test_db_base "/tmp/quad_benchmark_test"
 
@@ -46,31 +53,29 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("quad_benchmark_test")
+    Helpers.unique_path("quad_benchmark_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp generate_nquads_string(count) do
-    Enum.map(1..count, fn i ->
+    Enum.map_join(1..count, "\n", fn i ->
       graph = rem(i, 10)
 
       "http://example.org/s#{i} <http://example.org/p> \"o#{i}\" <http://example.org/graph#{graph}> ."
     end)
-    |> Enum.join("\n")
   end
 
   defp generate_trig_string(count, graph_count \\ 5) do
     graph_blocks =
       Enum.map(0..(graph_count - 1), fn graph_num ->
         quads =
-          Enum.map(1..div(count, graph_count), fn i ->
+          Enum.map_join(1..div(count, graph_count), "\n", fn i ->
             idx = i + graph_num * div(count, graph_count)
             "  ex:s#{idx} ex:p \"o#{idx}\" ."
           end)
-          |> Enum.join("\n")
 
         """
         GRAPH ex:graph#{graph_num} {
@@ -254,7 +259,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       @prefix ex: <http://example.org/> .
 
       GRAPH ex:benchmark {
-        #{Enum.map(1..100, fn i -> "ex:s#{i} ex:p1 \"v1\" ; ex:p2 \"v2\" ; ex:p3 \"v3\" ." end) |> Enum.join("\n")}
+        #{Enum.map_join(1..100, "\n", fn i -> "ex:s#{i} ex:p1 \"v1\" ; ex:p2 \"v2\" ; ex:p3 \"v3\" ." end)}
       }
       """
 
@@ -503,7 +508,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
     test "graph CREATE/DROP is efficient", %{ctx: ctx} do
       {time, {:ok, _}} =
         :timer.tc(fn ->
-          TripleStore.SPARQL.UpdateExecutor.execute(
+          UpdateExecutor.execute(
             ctx,
             {:create_graph, {:named_node, "http://example.org/bench_graph"}, false}
           )
@@ -518,7 +523,7 @@ defmodule TripleStore.Integration.QuadBenchmarkTest do
       # Drop and benchmark
       {time, {:ok, _}} =
         :timer.tc(fn ->
-          TripleStore.SPARQL.UpdateExecutor.execute(
+          UpdateExecutor.execute(
             ctx,
             {:drop_graph, {:named_node, "http://example.org/bench_graph"}, false}
           )

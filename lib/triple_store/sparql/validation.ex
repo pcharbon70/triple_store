@@ -73,9 +73,8 @@ defmodule TripleStore.SPARQL.Validation do
   def validate_graph_iri(graph_iri) when is_binary(graph_iri) do
     with :ok <- check_iri_length(graph_iri),
          :ok <- check_iri_wellformed(graph_iri),
-         :ok <- check_allowed_scheme(graph_iri),
-         :ok <- check_path_traversal(graph_iri) do
-      :ok
+         :ok <- check_allowed_scheme(graph_iri) do
+      check_path_traversal(graph_iri)
     end
   end
 

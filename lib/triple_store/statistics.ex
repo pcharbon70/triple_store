@@ -914,9 +914,8 @@ defmodule TripleStore.Statistics do
   """
   @spec validate_stats_structure(term()) :: :ok | {:error, term()}
   def validate_stats_structure(stats) when is_map(stats) do
-    with :ok <- validate_required_keys(stats),
-         :ok <- validate_stat_types(stats) do
-      :ok
+    with :ok <- validate_required_keys(stats) do
+      validate_stat_types(stats)
     end
   end
 

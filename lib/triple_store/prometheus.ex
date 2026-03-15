@@ -673,19 +673,10 @@ defmodule TripleStore.Prometheus do
     %{state | counters: counters}
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp observe_histogram(state, key, value) do
     histograms =
       Map.update!(state.histograms, key, fn histogram ->
-        buckets =
-          Enum.map(histogram.buckets, fn {bound, count} ->
-            if value <= bound do
-              {bound, count + 1}
-            else
-              {bound, count}
-            end
-          end)
-          |> Map.new()
+        buckets = update_histogram_buckets(histogram.buckets, value)
 
         %{
           histogram
@@ -696,6 +687,20 @@ defmodule TripleStore.Prometheus do
       end)
 
     %{state | histograms: histograms}
+  end
+
+  defp update_histogram_buckets(buckets, value) do
+    buckets
+    |> Enum.map(&increment_bucket_for_value(&1, value))
+    |> Map.new()
+  end
+
+  defp increment_bucket_for_value({bound, count}, value) do
+    if value <= bound do
+      {bound, count + 1}
+    else
+      {bound, count}
+    end
   end
 
   defp set_gauge(state, key, value) do

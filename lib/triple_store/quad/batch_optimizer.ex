@@ -261,14 +261,15 @@ defmodule TripleStore.Quad.BatchOptimizer do
     |> Enum.flat_map(fn {_graph_id, graph_quads} ->
       # Chunk within each graph for locality
       Enum.chunk_every(graph_quads, target_per_batch)
-      |> Enum.flat_map(fn chunk ->
-        # If chunk is too large, split it further
-        if length(chunk) > max_per_batch do
-          Enum.chunk_every(chunk, max_per_batch)
-        else
-          [chunk]
-        end
-      end)
+      |> Enum.flat_map(&enforce_max_graph_chunk_size(&1, max_per_batch))
     end)
+  end
+
+  defp enforce_max_graph_chunk_size(chunk, max_per_batch) do
+    if length(chunk) > max_per_batch do
+      Enum.chunk_every(chunk, max_per_batch)
+    else
+      [chunk]
+    end
   end
 end

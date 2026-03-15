@@ -13,9 +13,11 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Parser
+  alias TripleStore.SPARQL.Query
   alias TripleStore.SPARQL.UpdateExecutor
 
   @test_db_base "/tmp/update_operations_test"
@@ -26,11 +28,11 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("update_operations_test")
+    Helpers.unique_path("update_operations_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp setup_graph_authorization(ctx) do
@@ -85,7 +87,7 @@ defmodule TripleStore.Integration.UpdateOperationsTest do
       }
       """
 
-      {:ok, results} = TripleStore.SPARQL.Query.query(ctx, query)
+      {:ok, results} = Query.query(ctx, query)
       assert results == []
     end
 

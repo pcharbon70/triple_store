@@ -501,12 +501,10 @@ defmodule TripleStore.Adapter.QuadConversionTest do
     assert s1.value == s2.value
     assert p1.value == p2.value
 
-    cond do
-      o1.__struct__ == RDF.Literal and o2.__struct__ == RDF.Literal ->
-        assert RDF.Literal.value(o1) == RDF.Literal.value(o2)
-
-      true ->
-        assert o1 == o2
+    if o1.__struct__ == RDF.Literal and o2.__struct__ == RDF.Literal do
+      assert RDF.Literal.value(o1) == RDF.Literal.value(o2)
+    else
+      assert o1 == o2
     end
 
     cond do

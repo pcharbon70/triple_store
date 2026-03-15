@@ -253,16 +253,7 @@ defmodule TripleStore.GraphBackup do
           {{:error, :graph_not_found}, %{}}
 
         {:ok, _count} ->
-          # Export using Exporter with graph-specific pattern
-          pattern = {:var, :var, :var, {:bound, graph_id}}
-
-          case Exporter.export_nquads_string(db, pattern: pattern) do
-            {:ok, content} ->
-              {{:ok, content}, %{}}
-
-            error ->
-              {error, %{}}
-          end
+          {export_graph_content(db, graph_id), %{}}
       end
     end)
   end
@@ -339,24 +330,15 @@ defmodule TripleStore.GraphBackup do
         {:error, :not_a_file}
 
       true ->
-        # Try to read and parse the file
-        case File.read(backup_path) do
-          {:ok, content} ->
-            if valid_nquads_content?(content) do
-              # Check for metadata file
-              metadata_path = backup_path <> ".meta"
-
-              if File.exists?(metadata_path) do
-                {:ok, :valid_with_metadata}
-              else
-                {:ok, :valid}
-              end
-            else
-              {:error, :invalid_format}
-            end
-
+        with {:ok, content} <- File.read(backup_path),
+             :ok <- validate_nquads_backup_content(content) do
+          {:ok, backup_validation_status(backup_path)}
+        else
           {:error, _reason} ->
             {:error, :read_failed}
+
+          {:invalid_content, :invalid_format} ->
+            {:error, :invalid_format}
         end
     end
   end
@@ -417,31 +399,7 @@ defmodule TripleStore.GraphBackup do
   @spec list_backups(Path.t()) :: {:ok, [graph_backup_metadata()]} | {:error, term()}
   def list_backups(backup_dir) do
     if File.dir?(backup_dir) do
-      backups =
-        backup_dir
-        |> File.ls!()
-        |> Enum.filter(&String.ends_with?(&1, ".nq"))
-        |> Enum.map(fn file ->
-          path = Path.join(backup_dir, file)
-
-          case get_backup_metadata(path) do
-            {:ok, metadata} -> metadata
-            {:error, _} -> nil
-          end
-        end)
-        |> Enum.filter(& &1)
-        |> Enum.sort_by(
-          fn metadata ->
-            # Parse ISO string to DateTime for sorting
-            case DateTime.from_iso8601(metadata.created_at) do
-              {:ok, dt, _} -> dt
-              _ -> DateTime.utc_now()
-            end
-          end,
-          {:desc, DateTime}
-        )
-
-      {:ok, backups}
+      {:ok, list_graph_backup_metadata(backup_dir)}
     else
       {:error, :not_a_directory}
     end
@@ -478,6 +436,11 @@ defmodule TripleStore.GraphBackup do
   defp get_graph_quad_count(store, graph_id) do
     # Use Statistics module to get graph quad count
     TripleStore.Statistics.graph_quad_count(store.db, graph_id)
+  end
+
+  defp export_graph_content(db, graph_id) do
+    pattern = {:var, :var, :var, {:bound, graph_id}}
+    Exporter.export_nquads_string(db, pattern: pattern)
   end
 
   defp export_graph_to_file(store, graph_id, path, batch_size) do
@@ -606,6 +569,39 @@ defmodule TripleStore.GraphBackup do
 
       true ->
         true
+    end
+  end
+
+  defp validate_nquads_backup_content(content) do
+    if valid_nquads_content?(content), do: :ok, else: {:invalid_content, :invalid_format}
+  end
+
+  defp backup_validation_status(backup_path) do
+    metadata_path = backup_path <> ".meta"
+    if File.exists?(metadata_path), do: :valid_with_metadata, else: :valid
+  end
+
+  defp list_graph_backup_metadata(backup_dir) do
+    backup_dir
+    |> File.ls!()
+    |> Enum.filter(&String.ends_with?(&1, ".nq"))
+    |> Enum.map(&Path.join(backup_dir, &1))
+    |> Enum.map(&metadata_or_nil/1)
+    |> Enum.filter(& &1)
+    |> Enum.sort_by(&backup_created_at/1, {:desc, DateTime})
+  end
+
+  defp metadata_or_nil(path) do
+    case get_backup_metadata(path) do
+      {:ok, metadata} -> metadata
+      {:error, _} -> nil
+    end
+  end
+
+  defp backup_created_at(metadata) do
+    case DateTime.from_iso8601(metadata.created_at) do
+      {:ok, dt, _} -> dt
+      _ -> DateTime.utc_now()
     end
   end
 end

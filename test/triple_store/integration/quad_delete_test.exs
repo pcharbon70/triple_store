@@ -15,6 +15,7 @@ defmodule TripleStore.Integration.QuadDeleteTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Integration.Helpers
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
 
@@ -25,11 +26,11 @@ defmodule TripleStore.Integration.QuadDeleteTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("quad_delete_test")
+    Helpers.unique_path("quad_delete_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   # ===========================================================================

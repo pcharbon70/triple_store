@@ -446,35 +446,32 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Calculate selectivity score for a position
   defp position_selectivity_score(component, _position, stats) do
-    cond do
+    if bound?(component) do
       # Bound constants are most selective (score 0)
-      bound?(component) ->
-        0
-
+      0
+    else
       # Variables have selectivity based on position
-      true ->
-        # Use cardinality estimate if available
-        case QuadCardinality.estimate_pattern(
-               {:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}},
-               stats
-             ) do
-          card when is_number(card) and card > 0 ->
-            # Higher cardinality = lower selectivity = higher score
-            # Use log to scale the score
-            trunc(:math.log(card))
+      case QuadCardinality.estimate_pattern(
+             {:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}},
+             stats
+           ) do
+        card when is_number(card) and card > 0 ->
+          # Higher cardinality = lower selectivity = higher score
+          # Use log to scale the score
+          trunc(:math.log(card))
 
-          _error ->
-            # Fallback: use default quad count with logging
-            # This provides a consistent baseline instead of arbitrary 1000
-            default_card = Map.get(stats, :quad_count, 10_000)
+        _error ->
+          # Fallback: use default quad count with logging
+          # This provides a consistent baseline instead of arbitrary 1000
+          default_card = Map.get(stats, :quad_count, 10_000)
 
-            Logger.debug(
-              "QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering"
-            )
+          Logger.debug(
+            "QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering"
+          )
 
-            # Log scale of default cardinality
-            trunc(:math.log(max(1, default_card)))
-        end
+          # Log scale of default cardinality
+          trunc(:math.log(max(1, default_card)))
+      end
     end
   end
 

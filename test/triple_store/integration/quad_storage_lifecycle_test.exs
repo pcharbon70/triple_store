@@ -18,6 +18,8 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
   alias TripleStore.Backend.RocksDB.ColumnFamilyConfig
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
+  alias TripleStore.Dictionary.StringToId
+  alias TripleStore.Integration.Helpers
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
 
@@ -28,11 +30,11 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("quad_storage_lifecycle_test")
+    Helpers.unique_path("quad_storage_lifecycle_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   defp quad_cf_names do
@@ -518,12 +520,12 @@ defmodule TripleStore.Integration.QuadStorageLifecycleTest do
       {:ok, _id_in_db2} = Manager.get_or_create_id(manager2, unique2)
 
       # Verify isolation - unique1 exists in db1 but not db2
-      assert {:ok, _} = TripleStore.Dictionary.StringToId.lookup_id(db1, unique1)
-      assert :not_found = TripleStore.Dictionary.StringToId.lookup_id(db2, unique1)
+      assert {:ok, _} = StringToId.lookup_id(db1, unique1)
+      assert :not_found = StringToId.lookup_id(db2, unique1)
 
       # unique2 exists in db2 but not db1
-      assert {:ok, _} = TripleStore.Dictionary.StringToId.lookup_id(db2, unique2)
-      assert :not_found = TripleStore.Dictionary.StringToId.lookup_id(db1, unique2)
+      assert {:ok, _} = StringToId.lookup_id(db2, unique2)
+      assert :not_found = StringToId.lookup_id(db1, unique2)
 
       Manager.stop(manager1)
       Manager.stop(manager2)

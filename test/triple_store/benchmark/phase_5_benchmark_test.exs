@@ -8,10 +8,13 @@ defmodule TripleStore.Benchmark.Phase5BenchmarkTest do
   3. Cardinality estimation accuracy and speed
   4. Histogram building efficiency
 
-  Run with: mix test test/triple_store/benchmark/phase_5_benchmark_test.exs
+  Run with: mix test --include benchmark test/triple_store/benchmark/phase_5_benchmark_test.exs
   """
 
   use ExUnit.Case, async: false
+
+  @moduletag :benchmark
+  @moduletag timeout: 300_000
 
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter

@@ -15,6 +15,7 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
+  alias TripleStore.Integration.Helpers
   alias TripleStore.Statistics.Cache
 
   @test_db_base "/tmp/triple_store_lifecycle_test"
@@ -24,11 +25,11 @@ defmodule TripleStore.Integration.DatabaseLifecycleTest do
   # ===========================================================================
 
   defp unique_path do
-    TripleStore.Integration.Helpers.unique_path("database_lifecycle_test")
+    Helpers.unique_path("database_lifecycle_test")
   end
 
   defp cleanup_path(path) do
-    TripleStore.Integration.Helpers.cleanup_path(path)
+    Helpers.cleanup_path(path)
   end
 
   # ===========================================================================

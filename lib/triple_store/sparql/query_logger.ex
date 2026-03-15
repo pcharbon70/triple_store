@@ -320,11 +320,11 @@ defmodule TripleStore.SPARQL.QueryLogger do
         e.status == :success and e.duration_ms
       end)
 
-    if not Enum.empty?(completed) do
+    if Enum.empty?(completed) do
+      nil
+    else
       total = Enum.reduce(completed, 0, fn {_id, e}, acc -> acc + e.duration_ms end)
       div(total, length(completed))
-    else
-      nil
     end
   end
 

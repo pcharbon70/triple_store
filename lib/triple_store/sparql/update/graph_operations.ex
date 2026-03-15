@@ -148,10 +148,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
           graph -> QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph)
         end
 
-      if !source_exists? do
-        # Copy from non-existent source returns 0 quads (no-op)
-        {:ok, 0}
-      else
+      if source_exists? do
         case QuadOperations.copy_graph(
                ctx.db,
                ctx.dict_manager,
@@ -166,6 +163,9 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
           {:error, reason} ->
             if silent, do: {:ok, 0}, else: {:error, reason}
         end
+      else
+        # Copy from non-existent source returns 0 quads (no-op)
+        {:ok, 0}
       end
     else
       {:error, :unauthorized} -> {:error, :unauthorized}
@@ -197,9 +197,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
           end
 
         # Moving from non-existent source is OK - returns 0 quads moved
-        if !source_exists? do
-          {:ok, 0}
-        else
+        if source_exists? do
           case QuadOperations.move_quads(
                  ctx.db,
                  ctx.dict_manager,
@@ -214,6 +212,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
             {:error, reason} ->
               if silent, do: {:ok, 0}, else: {:error, reason}
           end
+        else
+          {:ok, 0}
         end
       else
         {:error, :unauthorized} -> {:error, :unauthorized}
@@ -246,9 +246,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
           end
 
         # Adding from non-existent source is OK - returns 0 quads added
-        if !source_exists? do
-          {:ok, 0}
-        else
+        if source_exists? do
           case QuadOperations.copy_graph(
                  ctx.db,
                  ctx.dict_manager,
@@ -263,6 +261,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
             {:error, reason} ->
               if silent, do: {:ok, 0}, else: {:error, reason}
           end
+        else
+          {:ok, 0}
         end
       else
         {:error, :unauthorized} -> {:error, :unauthorized}

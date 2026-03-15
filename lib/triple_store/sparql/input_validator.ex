@@ -69,17 +69,15 @@ defmodule TripleStore.SPARQL.InputValidator do
   def validate_quad_pattern({:quad, subject, predicate, object, graph}) do
     with :ok <- validate_term(subject, :subject),
          :ok <- validate_term_id(predicate, :predicate),
-         :ok <- validate_term(object, :object),
-         :ok <- validate_term_id(graph, :graph) do
-      :ok
+         :ok <- validate_term(object, :object) do
+      validate_term_id(graph, :graph)
     end
   end
 
   def validate_quad_pattern({:triple, subject, predicate, object}) do
     with :ok <- validate_term(subject, :subject),
-         :ok <- validate_term_id(predicate, :predicate),
-         :ok <- validate_term(object, :object) do
-      :ok
+         :ok <- validate_term_id(predicate, :predicate) do
+      validate_term(object, :object)
     end
   end
 
@@ -191,9 +189,8 @@ defmodule TripleStore.SPARQL.InputValidator do
     if depth > @max_pattern_depth do
       {:error, :pattern_too_deep}
     else
-      with :ok <- validate_algebra(left, depth + 1),
-           :ok <- validate_algebra(right, depth + 1) do
-        :ok
+      with :ok <- validate_algebra(left, depth + 1) do
+        validate_algebra(right, depth + 1)
       end
     end
   end
@@ -203,9 +200,8 @@ defmodule TripleStore.SPARQL.InputValidator do
       {:error, :pattern_too_deep}
     else
       with :ok <- validate_algebra(left, depth + 1),
-           :ok <- validate_algebra(right, depth + 1),
-           :ok <- validate_expression(expr) do
-        :ok
+           :ok <- validate_algebra(right, depth + 1) do
+        validate_expression(expr)
       end
     end
   end
@@ -214,9 +210,8 @@ defmodule TripleStore.SPARQL.InputValidator do
     if depth > @max_pattern_depth do
       {:error, :pattern_too_deep}
     else
-      with :ok <- validate_expression(expr),
-           :ok <- validate_algebra(child, depth + 1) do
-        :ok
+      with :ok <- validate_expression(expr) do
+        validate_algebra(child, depth + 1)
       end
     end
   end
@@ -225,9 +220,8 @@ defmodule TripleStore.SPARQL.InputValidator do
     if depth > @max_pattern_depth do
       {:error, :pattern_too_deep}
     else
-      with :ok <- validate_algebra(left, depth + 1),
-           :ok <- validate_algebra(right, depth + 1) do
-        :ok
+      with :ok <- validate_algebra(left, depth + 1) do
+        validate_algebra(right, depth + 1)
       end
     end
   end
@@ -276,9 +270,8 @@ defmodule TripleStore.SPARQL.InputValidator do
     if depth > @max_pattern_depth do
       {:error, :pattern_too_deep}
     else
-      with :ok <- validate_expression(expr),
-           :ok <- validate_algebra(child, depth + 1) do
-        :ok
+      with :ok <- validate_expression(expr) do
+        validate_algebra(child, depth + 1)
       end
     end
   end
@@ -303,9 +296,8 @@ defmodule TripleStore.SPARQL.InputValidator do
   """
   @spec validate_expression(term()) :: validation_result()
   def validate_expression({:binary_op, _op, left, right}) do
-    with :ok <- validate_expression(left),
-         :ok <- validate_expression(right) do
-      :ok
+    with :ok <- validate_expression(left) do
+      validate_expression(right)
     end
   end
 
@@ -393,9 +385,8 @@ defmodule TripleStore.SPARQL.InputValidator do
   """
   @spec validate_and_sanitize(String.t()) :: {:ok, String.t()} | {:error, atom()}
   def validate_and_sanitize(query) when is_binary(query) do
-    with :ok <- validate_query(query),
-         {:ok, sanitized} <- sanitize_query(query) do
-      {:ok, sanitized}
+    with :ok <- validate_query(query) do
+      sanitize_query(query)
     end
   end
 

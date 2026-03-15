@@ -1622,120 +1622,19 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   # Opens an existing database with all configured column families
   defp open_existing_database(db_path, db_opts, expected_schema_type) do
-    # Get column family descriptors - we need to determine which schema the DB has first
-    # For now, try to detect schema by listing existing CFs
-    case :rocksdb.list_column_families(db_path, []) do
-      {:ok, existing_cf_names} ->
-        # Detect schema from existing CFs
-        detected_schema = detect_schema_from_cfs(existing_cf_names)
-
-        # Validate schema version matches what we expect
-        schema_version =
-          case detected_schema do
-            :triple -> @schema_v1_triple
-            :quad -> @schema_v2_quad
-          end
-
-        expected_version =
-          case expected_schema_type do
-            :triple -> @schema_v1_triple
-            :quad -> @schema_v2_quad
-          end
-
-        if schema_version != expected_version do
-          # Schema mismatch - this is a hard error
-          Logger.error(
-            "Schema mismatch: expected #{expected_schema_type} (v#{expected_version}), but database has #{detected_schema} (v#{schema_version})"
-          )
-
-          {:error, :schema_mismatch}
-        else
-          # Schema matches, proceed with opening
-          cf_descriptors = ColumnFamilyConfig.cf_descriptors(detected_schema)
-
-          # Convert to charlist format for erlang-rocksdb
-          cf_descriptors_charlist =
-            Enum.map(cf_descriptors, fn {name, opts} ->
-              {String.to_charlist(name), opts}
-            end)
-
-          case :rocksdb.open_with_cf(db_path, db_opts, cf_descriptors_charlist) do
-            {:ok, db, cf_handles} ->
-              # Validate schema version from stored metadata
-              case read_schema_version(db) do
-                {:ok, ^schema_version} ->
-                  {:ok, db, cf_handles}
-
-                {:ok, actual_version} ->
-                  Logger.error(
-                    "Schema version mismatch in metadata: expected v#{schema_version}, got v#{actual_version}"
-                  )
-
-                  {:error, :schema_mismatch}
-
-                {:error, :not_found} ->
-                  # Old database without schema version metadata
-                  # If we have triple indices, assume it's a v1 triple store
-                  if detected_schema == :triple do
-                    Logger.info(
-                      "No schema version metadata found, assuming v1 (triple) based on column families"
-                    )
-
-                    {:ok, db, cf_handles}
-                  else
-                    {:error, :missing_schema_metadata}
-                  end
-
-                {:error, _reason} = error ->
-                  error
-              end
-
-            {:error, _reason} = error ->
-              error
-          end
-        end
-
-      {:error, _reason} = error ->
-        error
+    with {:ok, existing_cf_names} <- :rocksdb.list_column_families(db_path, []),
+         detected_schema = detect_schema_from_cfs(existing_cf_names),
+         {:ok, schema_version} <- validate_expected_schema(detected_schema, expected_schema_type),
+         {:ok, db, cf_handles} <- open_database_for_schema(db_path, db_opts, detected_schema) do
+      validate_opened_database(db, cf_handles, detected_schema, schema_version)
     end
   end
 
   # Creates a new database with all column families
   defp create_new_database(db_path, db_opts, schema_type) do
-    # First, open with just the default column family
     case :rocksdb.open_with_cf(db_path, db_opts, [{~c"default", []}]) do
       {:ok, db, [default_cf]} ->
-        # Create schema-appropriate column families
-        create_result =
-          case schema_type do
-            :triple -> create_triple_column_families(db)
-            :quad -> create_quad_column_families(db)
-          end
-
-        case create_result do
-          {:ok, cf_handles} ->
-            # Write schema version to metadata
-            schema_version =
-              case schema_type do
-                :triple -> @schema_v1_triple
-                :quad -> @schema_v2_quad
-              end
-
-            case write_schema_version(db, schema_version) do
-              :ok ->
-                {:ok, db, [default_cf | cf_handles]}
-
-              {:error, _reason} = error ->
-                # Clean up on error
-                :rocksdb.close(db)
-                error
-            end
-
-          {:error, _reason} = error ->
-            # Clean up on error
-            :rocksdb.close(db)
-            error
-        end
+        initialize_new_database(db, default_cf, schema_type)
 
       {:error, _reason} = error ->
         error
@@ -1829,8 +1728,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   # since Path.expand normalizes "../" sequences and we verify the result is within bounds.
   defp validate_path(path) when is_binary(path) do
     expanded_path = Path.expand(path)
-    tmp_dir = Path.expand(System.tmp_dir!())
-    legacy_tmp_dir = Path.expand("/tmp")
     current_dir = Path.expand(File.cwd!())
     is_absolute = String.starts_with?(path, "/")
 
@@ -1839,39 +1736,117 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       String.contains?(path, "\0") ->
         {:error, :null_byte_in_path}
 
-      # Check if expanded path attempts to escape allowed directories
-      # For relative paths: check they don't escape current directory after expansion
-      not is_absolute and not path_within_directory?(expanded_path, current_dir) ->
+      relative_path_escape?(is_absolute, expanded_path, current_dir) ->
         {:error, :path_traversal_attempt}
 
-      # Allow relative paths that stay within current directory
       not is_absolute ->
         :ok
 
-      # Allow paths under the system temp directory.
-      # On macOS, System.tmp_dir!/0 may resolve somewhere under /var/folders,
-      # while tests and callers may still use the conventional /tmp prefix.
-      path_within_directory?(expanded_path, tmp_dir) ->
+      allowed_absolute_path?(expanded_path, current_dir) ->
         :ok
-
-      path_within_directory?(expanded_path, legacy_tmp_dir) ->
-        :ok
-
-      # Allow paths under the current project directory
-      path_within_directory?(expanded_path, current_dir) ->
-        :ok
-
-      # Allow paths under /dev/shm (Linux shared memory for test databases)
-      path_within_directory?(expanded_path, "/dev/shm") ->
-        :ok
-
-      # Reject other absolute paths for security
-      is_absolute ->
-        {:error, :absolute_path_not_allowed}
 
       true ->
-        :ok
+        {:error, :absolute_path_not_allowed}
     end
+  end
+
+  defp validate_expected_schema(detected_schema, expected_schema_type) do
+    schema_version = schema_version_for(detected_schema)
+    expected_version = schema_version_for(expected_schema_type)
+
+    if schema_version == expected_version do
+      {:ok, schema_version}
+    else
+      Logger.error(
+        "Schema mismatch: expected #{expected_schema_type} (v#{expected_version}), but database has #{detected_schema} (v#{schema_version})"
+      )
+
+      {:error, :schema_mismatch}
+    end
+  end
+
+  defp open_database_for_schema(db_path, db_opts, schema_type) do
+    cf_descriptors_charlist =
+      schema_type
+      |> ColumnFamilyConfig.cf_descriptors()
+      |> Enum.map(fn {name, opts} -> {String.to_charlist(name), opts} end)
+
+    :rocksdb.open_with_cf(db_path, db_opts, cf_descriptors_charlist)
+  end
+
+  defp validate_opened_database(db, cf_handles, detected_schema, schema_version) do
+    case validate_stored_schema_version(db, detected_schema, schema_version) do
+      :ok ->
+        {:ok, db, cf_handles}
+
+      {:error, _reason} = error ->
+        :rocksdb.close(db)
+        error
+    end
+  end
+
+  defp validate_stored_schema_version(db, detected_schema, schema_version) do
+    case read_schema_version(db) do
+      {:ok, ^schema_version} ->
+        :ok
+
+      {:ok, actual_version} ->
+        Logger.error(
+          "Schema version mismatch in metadata: expected v#{schema_version}, got v#{actual_version}"
+        )
+
+        {:error, :schema_mismatch}
+
+      {:error, :not_found} ->
+        handle_missing_schema_metadata(detected_schema)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp handle_missing_schema_metadata(:triple) do
+    Logger.info("No schema version metadata found, assuming v1 (triple) based on column families")
+    :ok
+  end
+
+  defp handle_missing_schema_metadata(_schema), do: {:error, :missing_schema_metadata}
+
+  defp initialize_new_database(db, default_cf, schema_type) do
+    with {:ok, cf_handles} <- create_column_families(db, schema_type),
+         :ok <- write_schema_version(db, schema_version_for(schema_type)) do
+      {:ok, db, [default_cf | cf_handles]}
+    else
+      {:error, _reason} = error ->
+        :rocksdb.close(db)
+        error
+    end
+  end
+
+  defp create_column_families(db, :triple), do: create_triple_column_families(db)
+  defp create_column_families(db, :quad), do: create_quad_column_families(db)
+
+  defp schema_version_for(:triple), do: @schema_v1_triple
+  defp schema_version_for(:quad), do: @schema_v2_quad
+
+  defp relative_path_escape?(true, _expanded_path, _current_dir), do: false
+
+  defp relative_path_escape?(false, expanded_path, current_dir) do
+    not path_within_directory?(expanded_path, current_dir)
+  end
+
+  defp allowed_absolute_path?(expanded_path, current_dir) do
+    allowed_dirs = [
+      System.tmp_dir!(),
+      "/tmp",
+      current_dir,
+      "/dev/shm"
+    ]
+
+    Enum.any?(allowed_dirs, fn dir ->
+      expanded_dir = Path.expand(dir)
+      path_within_directory?(expanded_path, expanded_dir)
+    end)
   end
 
   # Checks if a path is within a directory (after expansion)

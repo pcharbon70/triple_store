@@ -1151,24 +1151,7 @@ defmodule TripleStore.Index do
   def lookup_fold(db, pattern, acc, fun) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun =
-      if needs_filter do
-        fn {key, _value}, inner_acc ->
-          triple = key_to_triple(index, key)
-
-          if triple_matches_pattern?(triple, pattern) do
-            fun.(triple, inner_acc)
-          else
-            inner_acc
-          end
-        end
-      else
-        fn {key, _value}, inner_acc ->
-          triple = key_to_triple(index, key)
-          fun.(triple, inner_acc)
-        end
-      end
-
+    fold_fun = lookup_fold_fun(index, pattern, needs_filter, fun)
     ErlangAdapter.fold(db, index, prefix, acc, fold_fun)
   end
 
@@ -1297,25 +1280,54 @@ defmodule TripleStore.Index do
   def lookup_keys_fold(db, pattern) do
     %{index: index, prefix: prefix, needs_filter: needs_filter} = select_index(pattern)
 
-    fold_fun =
-      if needs_filter do
-        fn key, inner_acc ->
-          triple = key_to_triple(index, key)
-
-          if triple_matches_pattern?(triple, pattern) do
-            [triple | inner_acc]
-          else
-            inner_acc
-          end
-        end
-      else
-        fn key, inner_acc ->
-          triple = key_to_triple(index, key)
-          [triple | inner_acc]
-        end
-      end
-
+    fold_fun = lookup_keys_fold_fun(index, pattern, needs_filter)
     results = ErlangAdapter.fold_keys(db, index, prefix, [], fold_fun)
     {:ok, Enum.reverse(results)}
+  end
+
+  defp lookup_fold_fun(index, pattern, true, fun) do
+    fn {key, _value}, inner_acc ->
+      index
+      |> key_to_triple(key)
+      |> maybe_apply_pattern_fun(pattern, inner_acc, fun)
+    end
+  end
+
+  defp lookup_fold_fun(index, _pattern, false, fun) do
+    fn {key, _value}, inner_acc ->
+      triple = key_to_triple(index, key)
+      fun.(triple, inner_acc)
+    end
+  end
+
+  defp lookup_keys_fold_fun(index, pattern, true) do
+    fn key, inner_acc ->
+      index
+      |> key_to_triple(key)
+      |> maybe_prepend_matching_triple(pattern, inner_acc)
+    end
+  end
+
+  defp lookup_keys_fold_fun(index, _pattern, false) do
+    fn key, inner_acc ->
+      triple = key_to_triple(index, key)
+      [triple | inner_acc]
+    end
+  end
+
+  defp maybe_apply_pattern_fun(triple, pattern, inner_acc, fun) do
+    if triple_matches_pattern?(triple, pattern) do
+      fun.(triple, inner_acc)
+    else
+      inner_acc
+    end
+  end
+
+  defp maybe_prepend_matching_triple(triple, pattern, inner_acc) do
+    if triple_matches_pattern?(triple, pattern) do
+      [triple | inner_acc]
+    else
+      inner_acc
+    end
   end
 end

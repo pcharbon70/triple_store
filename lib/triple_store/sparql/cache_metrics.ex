@@ -443,9 +443,8 @@ defmodule TripleStore.SPARQL.CacheMetrics do
   end
 
   def format_metrics(all_metrics) when is_map(all_metrics) do
-    Enum.map(all_metrics, fn {cache_type, metrics} ->
+    Enum.map_join(all_metrics, "\n\n", fn {cache_type, metrics} ->
       "#{cache_type}:\n  #{format_metrics(metrics) |> String.replace("\n", "\n  ")}"
     end)
-    |> Enum.join("\n\n")
   end
 end

@@ -372,18 +372,16 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
   end
 
   defp create_rate_limit_table do
-    try do
-      :ets.new(@table_name, [
-        :named_table,
-        :set,
-        :public,
-        read_concurrency: true,
-        write_concurrency: true
-      ])
+    :ets.new(@table_name, [
+      :named_table,
+      :set,
+      :public,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
 
-      :ok
-    rescue
-      ArgumentError -> :ok
-    end
+    :ok
+  rescue
+    ArgumentError -> :ok
   end
 end
