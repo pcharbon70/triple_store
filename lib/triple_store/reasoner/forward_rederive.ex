@@ -219,65 +219,27 @@ defmodule TripleStore.Reasoner.ForwardRederive do
   # ============================================================================
 
   # Check if a fact can be derived using a specific rule
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp can_derive_with_rule?(fact, valid_facts, rule) do
-    # First, check if the fact matches the rule's head pattern
-    case PatternMatcher.match_rule_head(fact, rule.head) do
-      {:ok, head_bindings} ->
-        # Get body patterns
-        patterns = Rule.body_patterns(rule)
-        conditions = Rule.body_conditions(rule)
-
-        # Try to find bindings that satisfy all body patterns
-        case find_satisfying_bindings(patterns, head_bindings, valid_facts) do
-          {:ok, []} ->
-            false
-
-          {:ok, bindings_list} ->
-            # Check if any binding set satisfies the conditions
-            Enum.any?(bindings_list, fn bindings ->
-              satisfies_conditions?(conditions, bindings)
-            end)
-
-          {:error, :binding_limit_exceeded} ->
-            # Conservatively assume fact cannot be re-derived if we hit the limit
-            # This is safe because it may lead to over-deletion but not incorrect retention
-            Logger.warning(
-              "Binding set limit exceeded during re-derivation check, " <>
-                "conservatively marking fact as non-re-derivable"
-            )
-
-            false
-        end
-
-      :no_match ->
-        false
+    with {:ok, head_bindings} <- PatternMatcher.match_rule_head(fact, rule.head),
+         {:ok, bindings_list} <-
+           find_satisfying_bindings(Rule.body_patterns(rule), head_bindings, valid_facts) do
+      bindings_satisfy_conditions?(bindings_list, Rule.body_conditions(rule))
+    else
+      :no_match -> false
+      {:ok, []} -> false
+      {:error, :binding_limit_exceeded} -> log_binding_limit_exceeded()
     end
   end
 
   # Find all binding sets that satisfy all body patterns
   # Returns {:ok, bindings_list} or {:error, :binding_limit_exceeded}
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp find_satisfying_bindings(patterns, initial_bindings, valid_facts) do
     result =
       patterns
       |> Enum.reduce_while({:ok, [initial_bindings]}, fn pattern, {:ok, bindings_list} ->
-        # For each current binding set, try to extend it
-        extended =
-          bindings_list
-          |> Enum.flat_map(fn bindings ->
-            extend_bindings(pattern, bindings, valid_facts)
-          end)
-
-        # Check binding set size limit to prevent exponential memory growth
-        if length(extended) > @max_binding_sets do
-          {:halt, {:error, :binding_limit_exceeded}}
-        else
-          case extended do
-            [] -> {:cont, {:ok, []}}
-            _ -> {:cont, {:ok, extended}}
-          end
-        end
+        bindings_list
+        |> extend_binding_sets(pattern, valid_facts)
+        |> continue_binding_search()
       end)
 
     case result do
@@ -285,6 +247,33 @@ defmodule TripleStore.Reasoner.ForwardRederive do
       {:error, _} = error -> error
     end
   end
+
+  defp bindings_satisfy_conditions?(bindings_list, conditions) do
+    Enum.any?(bindings_list, fn bindings ->
+      satisfies_conditions?(conditions, bindings)
+    end)
+  end
+
+  defp log_binding_limit_exceeded do
+    Logger.warning(
+      "Binding set limit exceeded during re-derivation check, " <>
+        "conservatively marking fact as non-re-derivable"
+    )
+
+    false
+  end
+
+  defp extend_binding_sets(bindings_list, pattern, valid_facts) do
+    Enum.flat_map(bindings_list, fn bindings ->
+      extend_bindings(pattern, bindings, valid_facts)
+    end)
+  end
+
+  defp continue_binding_search(extended) when length(extended) > @max_binding_sets do
+    {:halt, {:error, :binding_limit_exceeded}}
+  end
+
+  defp continue_binding_search(extended), do: {:cont, {:ok, extended}}
 
   # Try to extend bindings by matching a pattern against valid facts
   defp extend_bindings({:pattern, [ps, pp, po]}, bindings, valid_facts) do

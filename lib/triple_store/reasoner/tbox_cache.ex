@@ -1243,43 +1243,50 @@ defmodule TripleStore.Reasoner.TBoxCache do
   """
   @spec handle_tbox_update(Enumerable.t(), Enumerable.t(), atom(), keyword()) ::
           {:ok, map()} | {:error, term()}
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def handle_tbox_update(modified_triples, current_facts, key \\ :default, opts \\ []) do
     recompute = Keyword.get(opts, :recompute, true)
     tbox_triples = filter_tbox_triples(modified_triples)
 
-    if Enum.empty?(tbox_triples) do
-      {:ok,
-       %{
-         tbox_modified: false,
-         invalidated: %{class_hierarchy: false, property_hierarchy: false},
-         recomputed: nil
-       }}
-    else
-      invalidated = invalidate_affected(tbox_triples, key)
-
-      if recompute and (invalidated.class_hierarchy or invalidated.property_hierarchy) do
-        case recompute_hierarchies(current_facts, key) do
-          {:ok, stats} ->
-            {:ok,
-             %{
-               tbox_modified: true,
-               invalidated: invalidated,
-               recomputed: stats
-             }}
-
-          {:error, _} = error ->
-            error
-        end
-      else
-        {:ok,
-         %{
-           tbox_modified: true,
-           invalidated: invalidated,
-           recomputed: nil
-         }}
-      end
+    case tbox_triples do
+      [] -> {:ok, no_tbox_update_result()}
+      _ -> handle_tbox_changes(tbox_triples, current_facts, key, recompute)
     end
+  end
+
+  defp handle_tbox_changes(tbox_triples, current_facts, key, recompute) do
+    invalidated = invalidate_affected(tbox_triples, key)
+
+    case should_recompute_tbox?(recompute, invalidated) do
+      true -> recompute_tbox_update(current_facts, key, invalidated)
+      false -> {:ok, tbox_update_result(true, invalidated, nil)}
+    end
+  end
+
+  defp should_recompute_tbox?(recompute, invalidated) do
+    recompute and (invalidated.class_hierarchy or invalidated.property_hierarchy)
+  end
+
+  defp recompute_tbox_update(current_facts, key, invalidated) do
+    case recompute_hierarchies(current_facts, key) do
+      {:ok, stats} -> {:ok, tbox_update_result(true, invalidated, stats)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp no_tbox_update_result do
+    tbox_update_result(
+      false,
+      %{class_hierarchy: false, property_hierarchy: false},
+      nil
+    )
+  end
+
+  defp tbox_update_result(tbox_modified, invalidated, recomputed) do
+    %{
+      tbox_modified: tbox_modified,
+      invalidated: invalidated,
+      recomputed: recomputed
+    }
   end
 
   @doc """

@@ -601,30 +601,38 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
     end)
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp check_inverse_rule_dead(name_str, schema_info) do
     inverse_props = schema_info[:inverse_properties] || []
 
-    if Enum.empty?(inverse_props) do
-      true
+    with false <- Enum.empty?(inverse_props),
+         [p1, p2 | _] <- name_str |> String.split("_") |> Enum.drop(3) do
+      not inverse_property_pair_exists?(inverse_props, p1, p2)
     else
-      # Extract property names from rule name like "prp_inv1_inv1_prop1_prop2"
-      # Check if the pair exists
-      parts = String.split(name_str, "_")
-
-      case Enum.drop(parts, 3) do
-        [p1, p2 | _] ->
-          not Enum.any?(inverse_props, fn {full_p1, full_p2} ->
-            local_p1 = extract_local_name(full_p1) |> String.downcase()
-            local_p2 = extract_local_name(full_p2) |> String.downcase()
-
-            (local_p1 == String.downcase(p1) and local_p2 == String.downcase(p2)) or
-              (local_p1 == String.downcase(p2) and local_p2 == String.downcase(p1))
-          end)
-
-        _ ->
-          false
-      end
+      true -> true
+      _ -> false
     end
+  end
+
+  defp inverse_property_pair_exists?(inverse_props, p1, p2) do
+    normalized_p1 = String.downcase(p1)
+    normalized_p2 = String.downcase(p2)
+
+    Enum.any?(inverse_props, fn {full_p1, full_p2} ->
+      inverse_property_pair_matches?(full_p1, full_p2, normalized_p1, normalized_p2)
+    end)
+  end
+
+  defp inverse_property_pair_matches?(full_p1, full_p2, normalized_p1, normalized_p2) do
+    local_p1 = normalized_local_name(full_p1)
+    local_p2 = normalized_local_name(full_p2)
+
+    (local_p1 == normalized_p1 and local_p2 == normalized_p2) or
+      (local_p1 == normalized_p2 and local_p2 == normalized_p1)
+  end
+
+  defp normalized_local_name(full_iri) do
+    full_iri
+    |> extract_local_name()
+    |> String.downcase()
   end
 end
