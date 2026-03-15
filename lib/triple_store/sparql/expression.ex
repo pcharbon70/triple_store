@@ -818,19 +818,10 @@ defmodule TripleStore.SPARQL.Expression do
     end)
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def evaluate({:in_expr, needle_expr, haystack}, bindings) when is_list(haystack) do
     case evaluate(needle_expr, bindings) do
       {:ok, needle} ->
-        result =
-          Enum.any?(haystack, fn hay_expr ->
-            case evaluate(hay_expr, bindings) do
-              {:ok, hay} -> rdf_equal?(needle, hay)
-              :error -> false
-            end
-          end)
-
-        {:ok, make_boolean(result)}
+        {:ok, make_boolean(haystack_contains_value?(haystack, needle, bindings))}
 
       _ ->
         :error
@@ -857,6 +848,15 @@ defmodule TripleStore.SPARQL.Expression do
   # Fallback for unknown expressions
   def evaluate(expr, _bindings) when is_tuple(expr) do
     :error
+  end
+
+  defp haystack_contains_value?(haystack, needle, bindings) do
+    Enum.any?(haystack, fn hay_expr ->
+      case evaluate(hay_expr, bindings) do
+        {:ok, hay} -> rdf_equal?(needle, hay)
+        :error -> false
+      end
+    end)
   end
 
   # ===========================================================================

@@ -142,21 +142,7 @@ defmodule TripleStore.Statistics.AccuracyTracker do
       Enum.reduce(pattern_keys, %{}, fn pattern_key, acc ->
         case :ets.lookup(@table_name, {pattern_key, :samples}) do
           [{{^pattern_key, :samples}, samples}] when is_list(samples) ->
-            if Enum.empty?(samples) do
-              acc
-            else
-              total_error =
-                Enum.reduce(samples, 0.0, fn sample, sum ->
-                  sum + sample.relative_error
-                end)
-
-              avg_error = total_error / length(samples)
-
-              Map.put(acc, pattern_key, %{
-                avg_relative_error: avg_error,
-                samples: length(samples)
-              })
-            end
+            maybe_put_pattern_stats(acc, pattern_key, samples)
 
           _ ->
             acc
@@ -220,6 +206,20 @@ defmodule TripleStore.Statistics.AccuracyTracker do
   end
 
   defp pattern_to_key(_pattern), do: :unknown
+
+  defp maybe_put_pattern_stats(acc, _pattern_key, []), do: acc
+
+  defp maybe_put_pattern_stats(acc, pattern_key, samples) do
+    total_error =
+      Enum.reduce(samples, 0.0, fn sample, sum ->
+        sum + sample.relative_error
+      end)
+
+    Map.put(acc, pattern_key, %{
+      avg_relative_error: total_error / length(samples),
+      samples: length(samples)
+    })
+  end
 
   defp component_to_key({:variable, _name}), do: :var
   defp component_to_key(value) when is_integer(value), do: {:bound, value}

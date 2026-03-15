@@ -211,13 +211,13 @@ defmodule TripleStore.Specs.Validator do
       |> Enum.flat_map(fn row ->
         row["Area"]
         |> extract_repo_paths()
-        |> Enum.flat_map(fn relative_path ->
-          if file_exists?(context.repo_root, relative_path) do
-            []
-          else
-            ["control-plane ownership matrix references missing path #{relative_path}"]
-          end
-        end)
+        |> Enum.flat_map(
+          &missing_file_errors(
+            context.repo_root,
+            &1,
+            "control-plane ownership matrix references missing path"
+          )
+        )
       end)
 
     missing_entries ++ broken_paths
@@ -404,66 +404,14 @@ defmodule TripleStore.Specs.Validator do
       tables = Map.get(context.acceptance_tables, path, [])
 
       Enum.flat_map(tables, fn table ->
-        Enum.flat_map(table.rows, fn row ->
-          req_families = scan_ids(row["Related Requirements"] || "", @req_family_regex)
-          scenarios = scan_ids(row["Related Scenarios"] || "", @scn_id_regex)
-          acceptance_id = row["Acceptance ID"] || "<unknown>"
-
-          []
-          |> maybe_append(
-            req_families == [],
-            "#{path}:#{row.line} #{acceptance_id} does not reference any REQ family"
-          )
-          |> maybe_append(
-            scenarios == [],
-            "#{path}:#{row.line} #{acceptance_id} does not reference any SCN scenario"
-          )
-          |> Kernel.++(
-            Enum.flat_map(req_families, fn family ->
-              if MapSet.member?(context.requirement_families, family) do
-                []
-              else
-                ["#{path}:#{row.line} #{acceptance_id} references unknown REQ family #{family}"]
-              end
-            end)
-          )
-          |> Kernel.++(
-            Enum.flat_map(scenarios, fn scenario_id ->
-              if MapSet.member?(context.scenario_ids, scenario_id) do
-                []
-              else
-                [
-                  "#{path}:#{row.line} #{acceptance_id} references unknown scenario #{scenario_id}"
-                ]
-              end
-            end)
-          )
-        end)
+        Enum.flat_map(table.rows, &area_acceptance_row_errors(context, path, &1))
       end)
     end)
   end
 
   defp acceptance_evidence_errors(context) do
     Enum.flat_map(context.acceptance_tables, fn {path, tables} ->
-      Enum.flat_map(tables, fn table ->
-        Enum.flat_map(table.rows, fn row ->
-          row
-          |> Map.drop(["Acceptance ID"])
-          |> Map.values()
-          |> Enum.filter(&is_binary/1)
-          |> Enum.flat_map(&extract_repo_paths/1)
-          |> Enum.uniq()
-          |> Enum.flat_map(fn relative_path ->
-            if file_exists?(context.repo_root, relative_path) do
-              []
-            else
-              [
-                "#{path}:#{row.line} acceptance evidence references missing path #{relative_path}"
-              ]
-            end
-          end)
-        end)
-      end)
+      Enum.flat_map(tables, &acceptance_table_evidence_errors(context, path, &1))
     end)
   end
 
@@ -686,27 +634,104 @@ defmodule TripleStore.Specs.Validator do
   defp expand_requirement_expr(expr) do
     req_ids = scan_ids(expr, @req_id_regex)
 
-    if String.contains?(expr, "..") do
-      case req_ids do
-        [first, last] ->
-          {first_prefix, first_num} = split_requirement_id(first)
-          {last_prefix, last_num} = split_requirement_id(last)
+    maybe_expand_requirement_range(expr, req_ids)
+  end
 
-          if first_prefix == last_prefix and first_num <= last_num do
-            Enum.map(first_num..last_num, fn value ->
-              first_prefix <> String.pad_leading(Integer.to_string(value), 3, "0")
-            end)
-          else
-            req_ids
-          end
-
-        _ ->
-          req_ids
-      end
+  defp unknown_requirement_family_errors(context, path, line, acceptance_id, family) do
+    if MapSet.member?(context.requirement_families, family) do
+      []
     else
-      req_ids
+      ["#{path}:#{line} #{acceptance_id} references unknown REQ family #{family}"]
     end
   end
+
+  defp unknown_scenario_errors(context, path, line, acceptance_id, scenario_id) do
+    if MapSet.member?(context.scenario_ids, scenario_id) do
+      []
+    else
+      ["#{path}:#{line} #{acceptance_id} references unknown scenario #{scenario_id}"]
+    end
+  end
+
+  defp missing_file_errors(repo_root, relative_path, prefix) do
+    if file_exists?(repo_root, relative_path) do
+      []
+    else
+      ["#{prefix} #{relative_path}"]
+    end
+  end
+
+  defp maybe_expand_requirement_range(expr, req_ids) do
+    if String.contains?(expr, ".."), do: expand_requirement_range(req_ids), else: req_ids
+  end
+
+  defp area_acceptance_row_errors(context, path, row) do
+    req_families = scan_ids(row["Related Requirements"] || "", @req_family_regex)
+    scenarios = scan_ids(row["Related Scenarios"] || "", @scn_id_regex)
+    acceptance_id = row["Acceptance ID"] || "<unknown>"
+
+    []
+    |> maybe_append(
+      req_families == [],
+      "#{path}:#{row.line} #{acceptance_id} does not reference any REQ family"
+    )
+    |> maybe_append(
+      scenarios == [],
+      "#{path}:#{row.line} #{acceptance_id} does not reference any SCN scenario"
+    )
+    |> Kernel.++(
+      Enum.flat_map(req_families, fn family ->
+        unknown_requirement_family_errors(context, path, row.line, acceptance_id, family)
+      end)
+    )
+    |> Kernel.++(acceptance_scenario_errors(context, path, row.line, acceptance_id, scenarios))
+  end
+
+  defp acceptance_scenario_errors(context, path, line, acceptance_id, scenarios) do
+    Enum.flat_map(scenarios, fn scenario_id ->
+      unknown_scenario_errors(context, path, line, acceptance_id, scenario_id)
+    end)
+  end
+
+  defp acceptance_table_evidence_errors(context, path, table) do
+    Enum.flat_map(table.rows, &acceptance_row_evidence_errors(context, path, &1))
+  end
+
+  defp acceptance_row_evidence_errors(context, path, row) do
+    row
+    |> acceptance_evidence_paths()
+    |> Enum.flat_map(fn relative_path ->
+      missing_file_errors(
+        context.repo_root,
+        relative_path,
+        "#{path}:#{row.line} acceptance evidence references missing path"
+      )
+    end)
+  end
+
+  defp acceptance_evidence_paths(row) do
+    row
+    |> Map.drop(["Acceptance ID"])
+    |> Map.values()
+    |> Enum.filter(&is_binary/1)
+    |> Enum.flat_map(&extract_repo_paths/1)
+    |> Enum.uniq()
+  end
+
+  defp expand_requirement_range([first, last]) do
+    {first_prefix, first_num} = split_requirement_id(first)
+    {last_prefix, last_num} = split_requirement_id(last)
+
+    if first_prefix == last_prefix and first_num <= last_num do
+      Enum.map(first_num..last_num, fn value ->
+        first_prefix <> String.pad_leading(Integer.to_string(value), 3, "0")
+      end)
+    else
+      [first, last]
+    end
+  end
+
+  defp expand_requirement_range(req_ids), do: req_ids
 
   defp split_requirement_id(req_id) do
     [prefix, numeric] = Regex.run(~r/^(REQ-[A-Z]+-)(\d{3})$/, req_id, capture: :all_but_first)
@@ -733,7 +758,9 @@ defmodule TripleStore.Specs.Validator do
   end
 
   defp tracked_native_artifacts(repo_root) do
-    case System.cmd("git", ["-C", repo_root, "ls-files", "--", "priv/native"], stderr_to_stdout: true) do
+    case System.cmd("git", ["-C", repo_root, "ls-files", "--", "priv/native"],
+           stderr_to_stdout: true
+         ) do
       {output, 0} ->
         output
         |> String.split("\n", trim: true)

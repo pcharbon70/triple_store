@@ -185,22 +185,26 @@ defmodule TripleStore.SPARQL.Term do
 
   """
   @spec decode(integer(), GenServer.server()) :: {:ok, ast_term()} | {:error, term()}
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def decode(term_id, dict_manager) do
     if Dictionary.inline_encoded?(term_id) do
       decode_inline(term_id)
     else
-      case GenServer.call(dict_manager, :get_db) do
-        {:ok, db} ->
-          case IdToString.lookup_term(db, term_id) do
-            {:ok, rdf_term} -> {:ok, to_ast(rdf_term)}
-            :not_found -> {:error, :term_not_found}
-            {:error, _} = error -> error
-          end
+      decode_dictionary_term(term_id, dict_manager)
+    end
+  end
 
-        {:error, _} = error ->
-          error
-      end
+  defp decode_dictionary_term(term_id, dict_manager) do
+    case GenServer.call(dict_manager, :get_db) do
+      {:ok, db} -> decode_term_from_db(db, term_id)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp decode_term_from_db(db, term_id) do
+    case IdToString.lookup_term(db, term_id) do
+      {:ok, rdf_term} -> {:ok, to_ast(rdf_term)}
+      :not_found -> {:error, :term_not_found}
+      {:error, _} = error -> error
     end
   end
 
