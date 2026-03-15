@@ -171,11 +171,22 @@ delegated return values.
 Description: Fix opaque container use, telemetry contract drift, and update-path
 contract mismatches.
 
-- [ ] **Task 4.2.1** Description: Resolve `MapSet` opaque-type issues, quad
+- [x] **Task 4.2.1** Description: Resolve `MapSet` opaque-type issues, quad
   pattern typing, and derived-store write contracts in graph-scoped reasoning.
-- [ ] **Task 4.2.2** Description: Align transaction and SPARQL update executor
+  Completed on 2026-03-15 by relaxing the over-constrained private lookup
+  contracts in `GraphScopedReasoner`, switching the TBox/global merge paths away
+  from direct opaque `MapSet.union/2` calls, providing full bound-value maps for
+  `QuadIndex.build_quad_prefix/2`, and aligning per-graph materialization status
+  updates with the stats shape that `GraphReasoningStatus.record_materialization/2`
+  actually expects.
+- [x] **Task 4.2.2** Description: Align transaction and SPARQL update executor
   contracts so insert/delete/update paths stop producing `call` and `no_return`
-  warnings.
+  warnings. Completed on 2026-03-15 by changing `UpdateExecutor.context()` to
+  the canonical `%{db, dict_manager}` store context with optional `:user`
+  metadata, widening the TBox extraction telemetry error contract to real error
+  terms, and routing multi-graph materialization through the already validated
+  per-graph config path. These changes reduced the Dialyzer backlog from `126`
+  to `102` and cleared the transaction/update warnings from Phase 4.
 
 ---
 

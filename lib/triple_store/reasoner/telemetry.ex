@@ -327,7 +327,7 @@ defmodule TripleStore.Reasoner.Telemetry do
   @doc """
   Emits a TBox extraction error event.
   """
-  @spec emit_tbox_extract_error(non_neg_integer() | :global, non_neg_integer(), atom(), integer()) ::
+  @spec emit_tbox_extract_error(non_neg_integer() | :global, non_neg_integer(), term(), integer()) ::
           :ok
   def emit_tbox_extract_error(graph_id, tbox_graph_id, reason, duration) do
     :telemetry.execute(
