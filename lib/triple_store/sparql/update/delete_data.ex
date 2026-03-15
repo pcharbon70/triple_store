@@ -73,37 +73,9 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
 
   defp delete_quads(ctx, quads) do
     with {:ok, rdf_quads} <- quads_to_rdf_quads(quads),
-         {:ok, internal_quads} <- quads_to_internal(ctx, rdf_quads, :lookup) do
-      if internal_quads == [] do
-        {:ok, 0}
-      else
-        # Filter out quads that don't actually exist in the store (for idempotence)
-        existing_quads =
-          Enum.filter(internal_quads, fn quad ->
-            case quad do
-              {s, p, o, g}
-              when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g) ->
-                QuadOperations.quad_exists?(ctx.db, {s, p, o, g})
-
-              _ ->
-                false
-            end
-          end)
-
-        if existing_quads == [] do
-          {:ok, 0}
-        else
-          case QuadOperations.delete_quads(ctx.db, existing_quads, []) do
-            :ok ->
-              # Invalidate statistics cache for affected graphs
-              invalidate_graphs_cache(ctx.db, existing_quads)
-              {:ok, length(existing_quads)}
-
-            {:error, _} = error ->
-              error
-          end
-        end
-      end
+         {:ok, internal_quads} <- quads_to_internal(ctx, rdf_quads, :lookup),
+         {:ok, existing_quads} <- filter_existing_quads(ctx.db, internal_quads) do
+      delete_existing_quads(ctx.db, existing_quads)
     end
   end
 
@@ -124,16 +96,8 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
 
   defp delete_triples_from_store(ctx, quads) do
     with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
-         {:ok, internal_triples} <- triples_to_internal(ctx, rdf_triples, :lookup) do
-      if internal_triples == [] do
-        {:ok, 0}
-      else
-        case Index.delete_triples(ctx.db, internal_triples) do
-          :ok -> {:ok, length(internal_triples)}
-          {:error, _} = error -> error
-        end
-      end
-    end
+         {:ok, internal_triples} <- triples_to_internal(ctx, rdf_triples, :lookup),
+         do: delete_internal_triples(ctx.db, internal_triples)
   end
 
   # ===========================================================================
@@ -332,4 +296,40 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   defp ast_graph_to_rdf({:named_graph, iri}), do: RDF.iri(iri)
   defp ast_graph_to_rdf({:iri, iri}), do: RDF.iri(iri)
   defp ast_graph_to_rdf(graph_iri) when is_binary(graph_iri), do: RDF.iri(graph_iri)
+
+  defp filter_existing_quads(_db, []), do: {:ok, []}
+
+  defp filter_existing_quads(db, internal_quads) do
+    existing_quads = Enum.filter(internal_quads, &existing_quad?(db, &1))
+    {:ok, existing_quads}
+  end
+
+  defp existing_quad?(db, {s, p, o, g})
+       when is_integer(s) and is_integer(p) and is_integer(o) and is_integer(g) do
+    QuadOperations.quad_exists?(db, {s, p, o, g})
+  end
+
+  defp existing_quad?(_db, _quad), do: false
+
+  defp delete_existing_quads(_db, []), do: {:ok, 0}
+
+  defp delete_existing_quads(db, existing_quads) do
+    case QuadOperations.delete_quads(db, existing_quads, []) do
+      :ok ->
+        invalidate_graphs_cache(db, existing_quads)
+        {:ok, length(existing_quads)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp delete_internal_triples(_db, []), do: {:ok, 0}
+
+  defp delete_internal_triples(db, internal_triples) do
+    case Index.delete_triples(db, internal_triples) do
+      :ok -> {:ok, length(internal_triples)}
+      {:error, _} = error -> error
+    end
+  end
 end

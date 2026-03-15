@@ -461,19 +461,7 @@ defmodule TripleStore.QuadOperations do
   # Performs prefix scan and returns results as a list
   defp perform_prefix_scan(db, cf, prefix, prefix_len, index, pattern, values) do
     ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
-      # Check if key is within prefix bounds
-      if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
-        quad = decode_key_to_quad(key, index)
-
-        if apply_post_filter(quad, pattern, values) do
-          [quad | acc]
-        else
-          acc
-        end
-      else
-        # Beyond prefix, stop iteration
-        throw({:halt, acc})
-      end
+      handle_prefix_scan_key(key, prefix, prefix_len, index, pattern, values, acc, acc)
     end)
     |> Enum.reverse()
   catch
@@ -485,19 +473,7 @@ defmodule TripleStore.QuadOperations do
   defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
     results =
       ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
-        # Check if key is within prefix bounds
-        if binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix do
-          quad = decode_key_to_quad(key, index)
-
-          if apply_post_filter(quad, pattern, values) do
-            [quad | acc]
-          else
-            acc
-          end
-        else
-          # Beyond prefix, stop iteration
-          throw({:halt, :done})
-        end
+        handle_prefix_scan_key(key, prefix, prefix_len, index, pattern, values, acc, :done)
       end)
 
     {:cont, Enum.reverse(results)}
@@ -570,6 +546,24 @@ defmodule TripleStore.QuadOperations do
     QuadIndex.quad_matches_pattern?(quad, pattern, values)
   end
 
+  defp handle_prefix_scan_key(key, prefix, prefix_len, index, pattern, values, acc, halt_value) do
+    if key_matches_prefix?(key, prefix, prefix_len) do
+      accumulate_filtered_quad(key, index, pattern, values, acc)
+    else
+      throw({:halt, halt_value})
+    end
+  end
+
+  defp key_matches_prefix?(key, prefix, prefix_len) do
+    binary_part(key, 0, min(prefix_len, byte_size(key))) == prefix
+  end
+
+  defp accumulate_filtered_quad(key, index, pattern, values, acc) do
+    quad = decode_key_to_quad(key, index)
+
+    if apply_post_filter(quad, pattern, values), do: [quad | acc], else: acc
+  end
+
   # ===========================================================================
   # Dataset Operations - Graph Management
   # ===========================================================================
@@ -609,20 +603,13 @@ defmodule TripleStore.QuadOperations do
     Telemetry.span(:quad, :list_graphs, %{}, fn ->
       include_default = Keyword.get(opts, :include_default, false)
 
-      # Use GSPO index to find all distinct graph IDs
-      # Scan GSPO and extract first 8 bytes (graph ID) from each key
       case scan_distinct_graph_ids(db) do
         {:ok, graph_ids} ->
-          # Filter out default graph (ID 0) if not requested
-          filtered_ids =
-            if include_default do
-              graph_ids
-            else
-              Enum.reject(graph_ids, &(&1 == 0))
-            end
+          graph_terms =
+            graph_ids
+            |> maybe_include_default_graph(include_default)
+            |> convert_graph_ids_to_terms(db)
 
-          # Convert graph IDs to RDF terms
-          graph_terms = convert_graph_ids_to_terms(db, filtered_ids)
           {{:ok, graph_terms}, %{count: length(graph_terms)}}
 
         {:error, reason} ->
@@ -740,23 +727,7 @@ defmodule TripleStore.QuadOperations do
           {:ok, :created | :already_exists} | {:error, term()}
   def create_graph(_db, manager, graph_term) do
     Telemetry.span(:quad, :create_graph, %{graph: graph_term}, fn ->
-      # First check if the graph already exists
-      case Manager.lookup_id(manager, graph_term) do
-        {:ok, _graph_id} ->
-          # Graph already exists
-          {{:ok, :already_exists}, %{status: :already_exists}}
-
-        :not_found ->
-          # Graph doesn't exist, create it
-          case Manager.get_or_create_id(manager, graph_term) do
-            {:ok, _graph_id} -> {{:ok, :created}, %{status: :created}}
-            {:error, reason} -> {{:error, reason}, %{status: :error}}
-          end
-
-        {:error, reason} ->
-          # Other error from lookup
-          {{:error, reason}, %{status: :error}}
-      end
+      create_graph_result(manager, graph_term)
     end)
   end
 
@@ -793,25 +764,15 @@ defmodule TripleStore.QuadOperations do
           {:ok, non_neg_integer()} | {:error, term()}
   def clear_graph(db, _manager, :default) do
     Telemetry.span(:quad, :clear_graph, %{graph: :default}, fn ->
-      case delete_all_quads_in_graph(db, 0) do
-        {:ok, count} -> {{:ok, count}, %{count: count}}
-        {:error, reason} -> {{:error, reason}, %{count: 0}}
-      end
+      delete_graph_result(delete_all_quads_in_graph(db, 0))
     end)
   end
 
   def clear_graph(db, manager, graph_term) do
     Telemetry.span(:quad, :clear_graph, %{graph: graph_term}, fn ->
-      case TripleStore.Adapter.term_to_id(manager, graph_term) do
-        {:ok, graph_id} ->
-          case delete_all_quads_in_graph(db, graph_id) do
-            {:ok, count} -> {{:ok, count}, %{count: count}}
-            {:error, reason} -> {{:error, reason}, %{count: 0}}
-          end
-
-        {:error, reason} ->
-          {{:error, reason}, %{count: 0}}
-      end
+      graph_term
+      |> resolve_graph_term_id(manager)
+      |> delete_resolved_graph(db)
     end)
   end
 
@@ -848,27 +809,15 @@ defmodule TripleStore.QuadOperations do
           {:ok, non_neg_integer()} | {:error, term()}
   def delete_graph(db, _manager, :default) do
     Telemetry.span(:quad, :delete_graph, %{graph: :default}, fn ->
-      # Delete all quads with graph ID 0
-      case delete_all_quads_in_graph(db, 0) do
-        {:ok, count} -> {{:ok, count}, %{count: count}}
-        {:error, reason} -> {{:error, reason}, %{count: 0}}
-      end
+      delete_graph_result(delete_all_quads_in_graph(db, 0))
     end)
   end
 
   def delete_graph(db, manager, graph_term) do
     Telemetry.span(:quad, :delete_graph, %{graph: graph_term}, fn ->
-      # Convert graph term to ID
-      case TripleStore.Adapter.term_to_id(manager, graph_term) do
-        {:ok, graph_id} ->
-          case delete_all_quads_in_graph(db, graph_id) do
-            {:ok, count} -> {{:ok, count}, %{count: count}}
-            {:error, reason} -> {{:error, reason}, %{count: 0}}
-          end
-
-        {:error, reason} ->
-          {{:error, reason}, %{count: 0}}
-      end
+      graph_term
+      |> resolve_graph_term_id(manager)
+      |> delete_resolved_graph(db)
     end)
   end
 
@@ -1105,12 +1054,9 @@ defmodule TripleStore.QuadOperations do
 
       with {:ok, graph_ids} <- scan_distinct_graph_ids(db),
            {:ok, counts} <- count_quads_by_graph_id(db, graph_ids) do
-        # Build map with graph terms as keys
         result =
           counts
-          |> Enum.filter(fn {graph_id, _count} ->
-            include_default or graph_id != 0
-          end)
+          |> maybe_include_default_counts(include_default)
           |> Map.new(fn {graph_id, count} ->
             graph_term = graph_id_to_term(db, graph_id)
             {graph_term, count}
@@ -1143,9 +1089,12 @@ defmodule TripleStore.QuadOperations do
   end
 
   # Converts a list of graph IDs to RDF terms
-  defp convert_graph_ids_to_terms(db, graph_ids) do
+  defp convert_graph_ids_to_terms(graph_ids, db) do
     Enum.map(graph_ids, fn graph_id -> graph_id_to_term(db, graph_id) end)
   end
+
+  defp maybe_include_default_graph(graph_ids, true), do: graph_ids
+  defp maybe_include_default_graph(graph_ids, false), do: Enum.reject(graph_ids, &(&1 == 0))
 
   # Converts a graph ID to a term (:default for 0, or looked up term)
   defp graph_id_to_term(_db, 0), do: :default
@@ -1170,139 +1119,73 @@ defmodule TripleStore.QuadOperations do
     end
   end
 
+  defp create_graph_result(manager, graph_term) do
+    case Manager.lookup_id(manager, graph_term) do
+      {:ok, _graph_id} ->
+        {{:ok, :already_exists}, %{status: :already_exists}}
+
+      :not_found ->
+        maybe_create_graph(manager, graph_term)
+
+      {:error, reason} ->
+        error_status_result(reason)
+    end
+  end
+
+  defp maybe_create_graph(manager, graph_term) do
+    case Manager.get_or_create_id(manager, graph_term) do
+      {:ok, _graph_id} -> {{:ok, :created}, %{status: :created}}
+      {:error, reason} -> error_status_result(reason)
+    end
+  end
+
+  defp delete_resolved_graph({:ok, graph_id}, db),
+    do: delete_graph_result(delete_all_quads_in_graph(db, graph_id))
+
+  defp delete_resolved_graph({:error, reason}, _db), do: {{:error, reason}, %{count: 0}}
+
+  defp resolve_graph_term_id(graph_term, manager),
+    do: TripleStore.Adapter.term_to_id(manager, graph_term)
+
+  defp delete_graph_result({:ok, count}), do: {{:ok, count}, %{count: count}}
+  defp delete_graph_result({:error, reason}), do: {{:error, reason}, %{count: 0}}
+
+  defp error_status_result(reason), do: {{:error, reason}, %{status: :error}}
+
+  defp maybe_include_default_counts(counts, true), do: counts
+
+  defp maybe_include_default_counts(counts, false),
+    do: Enum.reject(counts, fn {graph_id, _count} -> graph_id == 0 end)
+
   # Deletes all quads in a graph by scanning GSPO and deleting from all indices
   defp delete_all_quads_in_graph(db, graph_id) do
-    # First, collect all quads in the graph
+    with {:ok, quads} <- collect_graph_quads(db, graph_id) do
+      delete_collected_quads(db, quads)
+    end
+  end
+
+  defp collect_graph_quads(db, graph_id) do
     prefix = QuadIndex.gspo_prefix(graph_id)
 
     try do
-      quads =
-        case ErlangAdapter.fold_keys(db, :gspo, prefix, [], fn key, acc ->
-               case key do
-                 <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
-                   {g, s, p, o} = QuadIndex.decode_gspo_key(key)
-                   [{s, p, o, g} | acc]
-
-                 _ ->
-                   throw({:halt, acc})
-               end
-             end) do
-          {:error, reason} ->
-            throw({:exit, reason})
-
-          result ->
-            result
-        end
-
-      quads = Enum.reverse(quads)
-
-      # Delete all quads atomically
-      if quads == [] do
-        {:ok, 0}
-      else
-        case delete_quads(db, quads, sync: true) do
-          :ok -> {:ok, length(quads)}
-          {:error, reason} -> {:error, reason}
-        end
+      case ErlangAdapter.fold_keys(db, :gspo, prefix, [], fn key, acc ->
+             collect_graph_quad(key, graph_id, acc)
+           end) do
+        {:error, reason} -> {:error, reason}
+        quads -> {:ok, Enum.reverse(quads)}
       end
     catch
-      {:halt, acc} ->
-        # End of prefix reached
-        if acc == [] do
-          {:ok, 0}
-        else
-          case delete_quads(db, Enum.reverse(acc), sync: true) do
-            :ok -> {:ok, length(acc)}
-            {:error, reason} -> {:error, reason}
-          end
-        end
-
-      {:exit, reason} ->
-        {:error, reason}
+      {:halt, acc} -> {:ok, Enum.reverse(acc)}
+      {:exit, reason} -> {:error, reason}
     end
   end
 
   # Atomic move operation: deletes from source and inserts to target in single batch
+  defp do_move_quads(_db, src_id, tgt_id) when src_id == tgt_id, do: {:ok, 0}
+
   defp do_move_quads(db, src_id, tgt_id) do
-    # Don't move if source and target are the same
-    if src_id == tgt_id do
-      {:ok, 0}
-    else
-      # Collect all quads from source graph
-      prefix = QuadIndex.gspo_prefix(src_id)
-
-      try do
-        # Build batch operations: delete old, insert new
-        # Track count directly to avoid calculation errors
-        {puts, deletes, quad_count} =
-          ErlangAdapter.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key,
-                                                                     {puts_acc, deletes_acc,
-                                                                      count_acc} ->
-            case key do
-              <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
-                {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
-
-                # Generate delete operations for all 4 indices with source graph ID
-                new_deletes = delete_ops_for_quad(s, p, o, src_id) ++ deletes_acc
-
-                # Generate insert operations for all 4 indices with target graph ID
-                new_puts = put_ops_for_quad(s, p, o, tgt_id) ++ puts_acc
-
-                {new_puts, new_deletes, count_acc + 1}
-
-              _ ->
-                throw({:halt, {puts_acc, deletes_acc, count_acc}})
-            end
-          end)
-
-        # Execute batch: deletes first, then puts (both in single transaction)
-        if puts == [] and deletes == [] do
-          {:ok, 0}
-        else
-          # Convert to NIF format
-          delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
-          put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
-
-          # Execute deletes first, then puts in sync mode for atomicity
-          with :ok <-
-                 if(delete_batch == [],
-                   do: :ok,
-                   else: ErlangAdapter.delete_batch(db, delete_batch, true)
-                 ),
-               :ok <-
-                 if(put_batch == [],
-                   do: :ok,
-                   else: ErlangAdapter.write_batch(db, put_batch, true)
-                 ) do
-            {:ok, quad_count}
-          else
-            {:error, reason} -> {:error, reason}
-          end
-        end
-      catch
-        {:halt, {puts, deletes, quad_count}} ->
-          # End of prefix reached, execute batch with what we collected
-          delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
-          put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
-
-          with :ok <-
-                 if(delete_batch == [],
-                   do: :ok,
-                   else: ErlangAdapter.delete_batch(db, delete_batch, true)
-                 ),
-               :ok <-
-                 if(put_batch == [],
-                   do: :ok,
-                   else: ErlangAdapter.write_batch(db, put_batch, true)
-                 ) do
-            {:ok, quad_count}
-          else
-            {:error, reason} -> {:error, reason}
-          end
-
-        {:exit, reason} ->
-          {:error, reason}
-      end
+    with {:ok, {puts, deletes, quad_count}} <- collect_move_batches(db, src_id, tgt_id) do
+      apply_move_batches(db, puts, deletes, quad_count)
     end
   end
 
@@ -1426,4 +1309,87 @@ defmodule TripleStore.QuadOperations do
 
     {:ok, Map.new(counts)}
   end
+
+  defp collect_graph_quad(
+         key,
+         graph_id,
+         acc
+       ) do
+    case key do
+      <<^graph_id::unsigned-big-integer-size(64), _::binary>> ->
+        {g, s, p, o} = QuadIndex.decode_gspo_key(key)
+        [{s, p, o, g} | acc]
+
+      _ ->
+        throw({:halt, acc})
+    end
+  end
+
+  defp delete_collected_quads(_db, []), do: {:ok, 0}
+
+  defp delete_collected_quads(db, quads) do
+    case delete_quads(db, quads, sync: true) do
+      :ok -> {:ok, length(quads)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp collect_move_batches(db, src_id, tgt_id) do
+    prefix = QuadIndex.gspo_prefix(src_id)
+
+    try do
+      case ErlangAdapter.fold_keys(db, :gspo, prefix, {[], [], 0}, fn key, acc ->
+             collect_move_batch(key, src_id, tgt_id, acc)
+           end) do
+        {:error, reason} -> {:error, reason}
+        batches -> {:ok, batches}
+      end
+    catch
+      {:halt, batches} -> {:ok, batches}
+      {:exit, reason} -> {:error, reason}
+    end
+  end
+
+  defp collect_move_batch(
+         key,
+         src_id,
+         tgt_id,
+         {puts_acc, deletes_acc, count_acc}
+       ) do
+    case key do
+      <<^src_id::unsigned-big-integer-size(64), _::binary>> ->
+        {_g, s, p, o} = QuadIndex.decode_gspo_key(key)
+
+        {
+          put_ops_for_quad(s, p, o, tgt_id) ++ puts_acc,
+          delete_ops_for_quad(s, p, o, src_id) ++ deletes_acc,
+          count_acc + 1
+        }
+
+      _ ->
+        throw({:halt, {puts_acc, deletes_acc, count_acc}})
+    end
+  end
+
+  defp apply_move_batches(_db, [], [], _quad_count), do: {:ok, 0}
+
+  defp apply_move_batches(db, puts, deletes, quad_count) do
+    delete_batch = Enum.map(deletes, fn {cf, key} -> {cf, key} end)
+    put_batch = Enum.map(puts, fn {cf, key, value} -> {cf, key, value} end)
+
+    with :ok <- maybe_delete_batch(db, delete_batch),
+         :ok <- maybe_write_batch(db, put_batch) do
+      {:ok, quad_count}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp maybe_delete_batch(_db, []), do: :ok
+
+  defp maybe_delete_batch(db, delete_batch),
+    do: ErlangAdapter.delete_batch(db, delete_batch, true)
+
+  defp maybe_write_batch(_db, []), do: :ok
+  defp maybe_write_batch(db, put_batch), do: ErlangAdapter.write_batch(db, put_batch, true)
 end

@@ -246,10 +246,7 @@ defmodule TripleStore.SPARQL.CostModel do
           {:cont, :ok}
 
         validator ->
-          case validator.(value) do
-            :ok -> {:cont, :ok}
-            error -> {:halt, error}
-          end
+          validate_weight_entry(validator, value)
       end
     end)
   end
@@ -257,6 +254,13 @@ defmodule TripleStore.SPARQL.CostModel do
   # Validates that a value is a positive float
   defp validate_positive_float(value) when is_number(value) and value > 0, do: :ok
   defp validate_positive_float(_value), do: {:error, {:invalid_weight, :must_be_positive_float}}
+
+  defp validate_weight_entry(validator, value) do
+    case validator.(value) do
+      :ok -> {:cont, :ok}
+      error -> {:halt, error}
+    end
+  end
 
   # Validates that a value is a positive integer
   defp validate_positive_integer(value) when is_integer(value) and value > 0, do: :ok
@@ -585,9 +589,7 @@ defmodule TripleStore.SPARQL.CostModel do
       # I/O: Initial positioning + seeks during iteration
       # Each iterator does O(OUT / ci) seeks on average
       avg_seeks_per_iterator =
-        Enum.reduce(pattern_cards, 0.0, fn card, acc ->
-          if card > 0, do: acc + output_estimate / card, else: acc
-        end)
+        Enum.reduce(pattern_cards, 0.0, &accumulate_leapfrog_seeks(&1, &2, output_estimate))
 
       io = avg_seeks_per_iterator * @index_seek_cost
 
@@ -598,6 +600,11 @@ defmodule TripleStore.SPARQL.CostModel do
   # ===========================================================================
   # Public API - Index Scan Costs
   # ===========================================================================
+
+  defp accumulate_leapfrog_seeks(card, acc, output_estimate) when card > 0,
+    do: acc + output_estimate / card
+
+  defp accumulate_leapfrog_seeks(_card, acc, _output_estimate), do: acc
 
   @doc """
   Estimates the cost of an index scan for a triple pattern.

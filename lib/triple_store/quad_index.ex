@@ -78,6 +78,87 @@ defmodule TripleStore.QuadIndex do
   # Default graph ID (reserved, never allocated by dictionary)
   @default_graph_id 0
 
+  @quad_pattern_selections %{
+    {:bound, :bound, :bound, :bound} => %{
+      index: :gspo,
+      prefix_len: 24,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:bound, :bound, :bound, :var} => %{
+      index: :spog,
+      prefix_len: 24,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:bound, :bound, :var, :bound} => %{
+      index: :gspo,
+      prefix_len: 16,
+      needs_filter: true,
+      filter_positions: [:p]
+    },
+    {:bound, :var, :var, :bound} => %{
+      index: :gspo,
+      prefix_len: 8,
+      needs_filter: true,
+      filter_positions: [:s, :p]
+    },
+    {:var, :bound, :bound, :bound} => %{
+      index: :gpos,
+      prefix_len: 24,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:var, :bound, :var, :bound} => %{
+      index: :gpos,
+      prefix_len: 16,
+      needs_filter: true,
+      filter_positions: [:o]
+    },
+    {:var, :var, :bound, :bound} => %{
+      index: :gspo,
+      prefix_len: 16,
+      needs_filter: true,
+      filter_positions: [:p]
+    },
+    {:bound, :bound, :var, :var} => %{
+      index: :spog,
+      prefix_len: 16,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:bound, :var, :var, :var} => %{
+      index: :spog,
+      prefix_len: 8,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:var, :bound, :var, :var} => %{
+      index: :posg,
+      prefix_len: 8,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:var, :var, :bound, :var} => %{
+      index: :spog,
+      prefix_len: 16,
+      needs_filter: true,
+      filter_positions: [:p]
+    },
+    {:var, :var, :var, :bound} => %{
+      index: :gspo,
+      prefix_len: 8,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:var, :var, :var, :var} => %{
+      index: :gspo,
+      prefix_len: 0,
+      needs_filter: false,
+      filter_positions: []
+    }
+  }
+
   # ===========================================================================
   # Guards
   # ===========================================================================
@@ -1032,61 +1113,7 @@ defmodule TripleStore.QuadIndex do
   def select_index_for_quad(_pattern), do: :no_match
 
   # Private function for index selection logic
-  defp do_select_index_for_quad(pattern) do
-    case pattern do
-      # Fully bound - use GSPO with max prefix
-      {:bound, :bound, :bound, :bound} ->
-        %{index: :gspo, prefix_len: 24, needs_filter: false, filter_positions: []}
-
-      # S-P-O bound, graph unbound - use SPOG (cross-graph subject lookup)
-      {:bound, :bound, :bound, :var} ->
-        %{index: :spog, prefix_len: 24, needs_filter: false, filter_positions: []}
-
-      # G-S bound, pattern unbound - use GSPO with 16-byte prefix, filter on p
-      {:bound, :bound, :var, :bound} ->
-        %{index: :gspo, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
-
-      # G bound only - use GSPO with 8-byte prefix, filter on s, p
-      {:bound, :var, :var, :bound} ->
-        %{index: :gspo, prefix_len: 8, needs_filter: true, filter_positions: [:s, :p]}
-
-      # P-O-G bound - use GPOS
-      {:var, :bound, :bound, :bound} ->
-        %{index: :gpos, prefix_len: 24, needs_filter: false, filter_positions: []}
-
-      # G-P bound - use GPOS with 16-byte prefix, filter on o
-      {:var, :bound, :var, :bound} ->
-        %{index: :gpos, prefix_len: 16, needs_filter: true, filter_positions: [:o]}
-
-      # G-O bound - use GSPO with g prefix, filter on s, p
-      {:var, :var, :bound, :bound} ->
-        %{index: :gspo, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
-
-      # S-P bound - use SPOG with 16-byte prefix
-      {:bound, :bound, :var, :var} ->
-        %{index: :spog, prefix_len: 16, needs_filter: false, filter_positions: []}
-
-      # S bound only - use SPOG with 8-byte prefix
-      {:bound, :var, :var, :var} ->
-        %{index: :spog, prefix_len: 8, needs_filter: false, filter_positions: []}
-
-      # P bound only - use POSG with 8-byte prefix
-      {:var, :bound, :var, :var} ->
-        %{index: :posg, prefix_len: 8, needs_filter: false, filter_positions: []}
-
-      # S-O bound - use SPOG with 16-byte prefix, filter on p
-      {:var, :var, :bound, :var} ->
-        %{index: :spog, prefix_len: 16, needs_filter: true, filter_positions: [:p]}
-
-      # G bound only - use GSPO with 8-byte prefix
-      {:var, :var, :var, :bound} ->
-        %{index: :gspo, prefix_len: 8, needs_filter: false, filter_positions: []}
-
-      # All vars - use GSPO (will full scan, but GSPO is primary)
-      {:var, :var, :var, :var} ->
-        %{index: :gspo, prefix_len: 0, needs_filter: false, filter_positions: []}
-    end
-  end
+  defp do_select_index_for_quad(pattern), do: Map.fetch!(@quad_pattern_selections, pattern)
 
   @doc """
   Builds the prefix for a quad pattern with specific bound values.
@@ -1154,89 +1181,99 @@ defmodule TripleStore.QuadIndex do
   end
 
   # Builds prefix for specific index based on pattern and values
-  defp build_prefix_for_index(:gspo, {s_pat, p_pat, _o_pat, g_pat}, values, len) do
-    g = if g_pat == :bound, do: Map.get(values, :g, 0), else: nil
-    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
-    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
+  defp build_prefix_for_index(:gspo, pattern, values, len),
+    do: build_gspo_prefix(pattern, values, len)
 
-    cond do
-      len >= 24 and g != nil and s != nil and p != nil ->
-        <<g::64-big, s::64-big, p::64-big>>
+  defp build_prefix_for_index(:gpos, pattern, values, len),
+    do: build_gpos_prefix(pattern, values, len)
 
-      len >= 16 and g != nil and s != nil ->
-        <<g::64-big, s::64-big>>
+  defp build_prefix_for_index(:spog, pattern, values, len),
+    do: build_spog_prefix(pattern, values, len)
 
-      len >= 8 and g != nil ->
-        <<g::64-big>>
+  defp build_prefix_for_index(:posg, pattern, values, len),
+    do: build_posg_prefix(pattern, values, len)
 
-      true ->
-        <<>>
-    end
+  defp build_gspo_prefix({s_pat, p_pat, _o_pat, g_pat}, values, len) do
+    g = bound_value(values, g_pat, :g, 0)
+    s = bound_value(values, s_pat, :s)
+    p = bound_value(values, p_pat, :p)
+
+    build_gspo_prefix(len, g, s, p)
   end
 
-  defp build_prefix_for_index(:gpos, {_s_pat, p_pat, o_pat, g_pat}, values, len) do
-    g = if g_pat == :bound, do: Map.get(values, :g, 0), else: nil
-    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
-    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
+  defp build_gspo_prefix(len, g, s, p)
+       when len >= 24 and not is_nil(g) and not is_nil(s) and not is_nil(p),
+       do: <<g::64-big, s::64-big, p::64-big>>
 
-    cond do
-      len >= 24 and g != nil and p != nil and o != nil ->
-        <<g::64-big, p::64-big, o::64-big>>
+  defp build_gspo_prefix(len, g, s, _p)
+       when len >= 16 and not is_nil(g) and not is_nil(s),
+       do: <<g::64-big, s::64-big>>
 
-      len >= 16 and g != nil and p != nil ->
-        <<g::64-big, p::64-big>>
+  defp build_gspo_prefix(len, g, _s, _p) when len >= 8 and not is_nil(g), do: <<g::64-big>>
+  defp build_gspo_prefix(_len, _g, _s, _p), do: <<>>
 
-      len >= 8 and g != nil ->
-        <<g::64-big>>
+  defp build_gpos_prefix({_s_pat, p_pat, o_pat, g_pat}, values, len) do
+    g = bound_value(values, g_pat, :g, 0)
+    p = bound_value(values, p_pat, :p)
+    o = bound_value(values, o_pat, :o)
 
-      true ->
-        <<>>
-    end
+    build_gpos_prefix(len, g, p, o)
   end
 
-  defp build_prefix_for_index(:spog, {s_pat, p_pat, o_pat, _g_pat}, values, len) do
-    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
-    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
-    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
+  defp build_gpos_prefix(len, g, p, o)
+       when len >= 24 and not is_nil(g) and not is_nil(p) and not is_nil(o),
+       do: <<g::64-big, p::64-big, o::64-big>>
 
-    cond do
-      len >= 24 and s != nil and p != nil and o != nil ->
-        <<s::64-big, p::64-big, o::64-big>>
+  defp build_gpos_prefix(len, g, p, _o)
+       when len >= 16 and not is_nil(g) and not is_nil(p),
+       do: <<g::64-big, p::64-big>>
 
-      len >= 16 and s != nil and p != nil ->
-        <<s::64-big, p::64-big>>
+  defp build_gpos_prefix(len, g, _p, _o) when len >= 8 and not is_nil(g), do: <<g::64-big>>
+  defp build_gpos_prefix(_len, _g, _p, _o), do: <<>>
 
-      len >= 16 and s != nil and o != nil ->
-        # s-o pattern (non-contiguous in SPOG)
-        <<s::64-big, p::64-big>>
+  defp build_spog_prefix({s_pat, p_pat, o_pat, _g_pat}, values, len) do
+    s = bound_value(values, s_pat, :s)
+    p = bound_value(values, p_pat, :p)
+    o = bound_value(values, o_pat, :o)
 
-      len >= 8 and s != nil ->
-        <<s::64-big>>
-
-      true ->
-        <<>>
-    end
+    build_spog_prefix(len, s, p, o)
   end
 
-  defp build_prefix_for_index(:posg, {s_pat, p_pat, o_pat, _g_pat}, values, len) do
-    p = if p_pat == :bound, do: Map.get(values, :p), else: nil
-    o = if o_pat == :bound, do: Map.get(values, :o), else: nil
-    s = if s_pat == :bound, do: Map.get(values, :s), else: nil
+  defp build_spog_prefix(len, s, p, o)
+       when len >= 24 and not is_nil(s) and not is_nil(p) and not is_nil(o),
+       do: <<s::64-big, p::64-big, o::64-big>>
 
-    cond do
-      len >= 24 and p != nil and o != nil and s != nil ->
-        <<p::64-big, o::64-big, s::64-big>>
+  defp build_spog_prefix(len, s, p, _o) when len >= 16 and not is_nil(s) and not is_nil(p),
+    do: <<s::64-big, p::64-big>>
 
-      len >= 16 and p != nil and o != nil ->
-        <<p::64-big, o::64-big>>
+  defp build_spog_prefix(len, s, p, o)
+       when len >= 16 and not is_nil(s) and not is_nil(p) and not is_nil(o),
+       do: <<s::64-big, p::64-big>>
 
-      len >= 8 and p != nil ->
-        <<p::64-big>>
+  defp build_spog_prefix(len, s, _p, _o) when len >= 8 and not is_nil(s), do: <<s::64-big>>
+  defp build_spog_prefix(_len, _s, _p, _o), do: <<>>
 
-      true ->
-        <<>>
-    end
+  defp build_posg_prefix({s_pat, p_pat, o_pat, _g_pat}, values, len) do
+    p = bound_value(values, p_pat, :p)
+    o = bound_value(values, o_pat, :o)
+    s = bound_value(values, s_pat, :s)
+
+    build_posg_prefix(len, p, o, s)
   end
+
+  defp build_posg_prefix(len, p, o, s)
+       when len >= 24 and not is_nil(p) and not is_nil(o) and not is_nil(s),
+       do: <<p::64-big, o::64-big, s::64-big>>
+
+  defp build_posg_prefix(len, p, o, _s) when len >= 16 and not is_nil(p) and not is_nil(o),
+    do: <<p::64-big, o::64-big>>
+
+  defp build_posg_prefix(len, p, _o, _s) when len >= 8 and not is_nil(p), do: <<p::64-big>>
+  defp build_posg_prefix(_len, _p, _o, _s), do: <<>>
+
+  defp bound_value(values, pattern, key, default \\ nil)
+  defp bound_value(values, :bound, key, default), do: Map.get(values, key, default)
+  defp bound_value(_values, :var, _key, _default), do: nil
 
   @doc """
   Checks if a quad matches a pattern.
@@ -1350,25 +1387,21 @@ defmodule TripleStore.QuadIndex do
     end
   end
 
-  defp triple_matches_index_pattern?({s, p, o}, pattern) do
-    case pattern do
-      {{:bound, s_exp}, {:bound, p_exp}, {:bound, o_exp}} ->
-        s == s_exp and p == p_exp and o == o_exp
+  defp triple_matches_index_pattern?(
+         {s, p, o},
+         {{:bound, s_exp}, {:bound, p_exp}, {:bound, o_exp}}
+       ),
+       do: s == s_exp and p == p_exp and o == o_exp
 
-      {{:bound, s_exp}, {:bound, p_exp}, :var} ->
-        s == s_exp and p == p_exp
+  defp triple_matches_index_pattern?({s, p, _o}, {{:bound, s_exp}, {:bound, p_exp}, :var}),
+    do: s == s_exp and p == p_exp
 
-      {{:bound, s_exp}, :var, :var} ->
-        s == s_exp
+  defp triple_matches_index_pattern?({s, _p, _o}, {{:bound, s_exp}, :var, :var}),
+    do: s == s_exp
 
-      {{:bound, s_exp}, :var, {:bound, o_exp}} ->
-        s == s_exp and o == o_exp
+  defp triple_matches_index_pattern?({s, _p, o}, {{:bound, s_exp}, :var, {:bound, o_exp}}),
+    do: s == s_exp and o == o_exp
 
-      :var ->
-        true
-
-      _ ->
-        true
-    end
-  end
+  defp triple_matches_index_pattern?(_triple, :var), do: true
+  defp triple_matches_index_pattern?(_triple, _pattern), do: true
 end

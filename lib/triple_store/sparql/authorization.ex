@@ -457,21 +457,16 @@ defmodule TripleStore.SPARQL.Authorization do
     # Get all graphs from the database
     case QuadOperations.list_graphs(db, include_default: include_default) do
       {:ok, all_graphs} ->
-        # Filter by permission
         accessible =
           Enum.filter(all_graphs, fn graph_term ->
-            case check_permission_for_term(
-                   ctx,
-                   db,
-                   dict_manager,
-                   graph_term,
-                   user_or_public,
-                   permission
-                 ) do
-              {:ok, true} -> true
-              {:ok, false} -> false
-              {:error, _} -> false
-            end
+            accessible_graph?(
+              ctx,
+              db,
+              dict_manager,
+              graph_term,
+              user_or_public,
+              permission
+            )
           end)
 
         graph_iris =
@@ -651,28 +646,73 @@ defmodule TripleStore.SPARQL.Authorization do
 
         {:error, :not_found} ->
           # Not owner, check direct user permissions
-          case get_acl_entry(db, graph_id, "user:#{user_id}") do
-            {:ok, acl_entry} ->
-              permissions = Map.get(acl_entry, "user:#{user_id}", [])
-
-              if permission in permissions do
-                {:ok, true}
-              else
-                # Check role-based permissions
-                check_role_permissions(db, graph_id, graph_term, user, user_roles, permission)
-              end
-
-            {:error, :not_found} ->
-              # No direct permissions, check roles
-              check_role_permissions(db, graph_id, graph_term, user, user_roles, permission)
-
-            {:error, reason} ->
-              {:error, reason}
-          end
+          check_direct_or_role_permissions(
+            db,
+            graph_id,
+            graph_term,
+            user,
+            user_roles,
+            user_id,
+            permission
+          )
 
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  defp accessible_graph?(ctx, db, dict_manager, graph_term, user_or_public, permission) do
+    case check_permission_for_term(
+           ctx,
+           db,
+           dict_manager,
+           graph_term,
+           user_or_public,
+           permission
+         ) do
+      {:ok, true} -> true
+      {:ok, false} -> false
+      {:error, _} -> false
+    end
+  end
+
+  defp check_direct_or_role_permissions(
+         db,
+         graph_id,
+         graph_term,
+         user,
+         user_roles,
+         user_id,
+         permission
+       ) do
+    case get_acl_entry(db, graph_id, "user:#{user_id}") do
+      {:ok, acl_entry} ->
+        acl_entry
+        |> Map.get("user:#{user_id}", [])
+        |> direct_permission_result(db, graph_id, graph_term, user, user_roles, permission)
+
+      {:error, :not_found} ->
+        check_role_permissions(db, graph_id, graph_term, user, user_roles, permission)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp direct_permission_result(
+         permissions,
+         db,
+         graph_id,
+         graph_term,
+         user,
+         user_roles,
+         permission
+       ) do
+    if permission in permissions do
+      {:ok, true}
+    else
+      check_role_permissions(db, graph_id, graph_term, user, user_roles, permission)
     end
   end
 

@@ -1098,39 +1098,56 @@ defmodule TripleStore.Query.Cache do
     _ -> 0
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evict_until_memory_available(state, needed_bytes) do
-    if state.current_memory_bytes + needed_bytes <= state.max_memory_bytes do
-      state
-    else
-      case :ets.first(state.lru_table) do
-        :"$end_of_table" ->
-          # No more entries to evict
-          %{state | skipped_memory: state.skipped_memory + 1}
+    case memory_eviction_status(state, needed_bytes) do
+      :enough_memory ->
+        state
 
-        {_time, key} = lru_key ->
-          case :ets.lookup(state.results_table, key) do
-            [{^key, entry}] ->
-              :ets.delete(state.lru_table, lru_key)
-              :ets.delete(state.results_table, key)
-              remove_from_predicate_index(state, key, entry.predicates)
-              entry_memory = Map.get(entry, :memory_bytes, 0)
+      :out_of_entries ->
+        %{state | skipped_memory: state.skipped_memory + 1}
 
-              new_state = %{
-                state
-                | evictions: state.evictions + 1,
-                  current_memory_bytes: max(0, state.current_memory_bytes - entry_memory)
-              }
-
-              # Recursively evict until we have enough room
-              evict_until_memory_available(new_state, needed_bytes)
-
-            [] ->
-              :ets.delete(state.lru_table, lru_key)
-              evict_until_memory_available(state, needed_bytes)
-          end
-      end
+      {:evict, new_state} ->
+        evict_until_memory_available(new_state, needed_bytes)
     end
+  end
+
+  defp memory_eviction_status(state, needed_bytes) do
+    if state.current_memory_bytes + needed_bytes <= state.max_memory_bytes do
+      :enough_memory
+    else
+      next_memory_eviction(state)
+    end
+  end
+
+  defp next_memory_eviction(state) do
+    case :ets.first(state.lru_table) do
+      :"$end_of_table" -> :out_of_entries
+      {_time, key} = lru_key -> evict_lru_entry(state, lru_key, key)
+    end
+  end
+
+  defp evict_lru_entry(state, lru_key, key) do
+    case :ets.lookup(state.results_table, key) do
+      [{^key, entry}] ->
+        :ets.delete(state.lru_table, lru_key)
+        :ets.delete(state.results_table, key)
+        remove_from_predicate_index(state, key, entry.predicates)
+        {:evict, decrease_entry_memory(state, entry)}
+
+      [] ->
+        :ets.delete(state.lru_table, lru_key)
+        {:evict, state}
+    end
+  end
+
+  defp decrease_entry_memory(state, entry) do
+    entry_memory = Map.get(entry, :memory_bytes, 0)
+
+    %{
+      state
+      | evictions: state.evictions + 1,
+        current_memory_bytes: max(0, state.current_memory_bytes - entry_memory)
+    }
   end
 
   defp do_cleanup_expired(state) do

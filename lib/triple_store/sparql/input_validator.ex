@@ -176,12 +176,7 @@ defmodule TripleStore.SPARQL.InputValidator do
     if depth > @max_pattern_depth do
       {:error, :pattern_too_deep}
     else
-      Enum.reduce_while(patterns, :ok, fn pattern, _acc ->
-        case validate_quad_pattern(pattern) do
-          :ok -> {:cont, :ok}
-          error -> {:halt, error}
-        end
-      end)
+      validate_bgp_patterns(patterns)
     end
   end
 
@@ -388,6 +383,15 @@ defmodule TripleStore.SPARQL.InputValidator do
     with :ok <- validate_query(query) do
       sanitize_query(query)
     end
+  end
+
+  defp validate_bgp_patterns(patterns) do
+    Enum.reduce_while(patterns, :ok, fn pattern, _acc ->
+      case validate_quad_pattern(pattern) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
   end
 
   # Private: Validate IRI syntax (basic check)

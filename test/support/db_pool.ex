@@ -204,23 +204,28 @@ defmodule TripleStore.Test.DbPool do
   defp clear_column_family(db, cf) do
     # Only attempt to clear if database is still alive
     if Process.alive?(db) do
-      case ErlangAdapter.prefix_iterator(db, cf, <<>>) do
-        {:ok, iter} ->
-          try do
-            delete_all_keys(db, cf, iter)
-          after
-            # Only close iterator if the database is still alive
-            if Process.alive?(db) do
-              ErlangAdapter.iterator_close(iter)
-            end
-          end
-
-        {:error, _} ->
-          :ok
-      end
+      clear_column_family_while_alive(db, cf)
     else
       :ok
     end
+  end
+
+  defp clear_column_family_while_alive(db, cf) do
+    case ErlangAdapter.prefix_iterator(db, cf, <<>>) do
+      {:ok, iter} ->
+        try do
+          delete_all_keys(db, cf, iter)
+        after
+          maybe_close_iterator(db, iter)
+        end
+
+      {:error, _} ->
+        :ok
+    end
+  end
+
+  defp maybe_close_iterator(db, iter) do
+    if Process.alive?(db), do: ErlangAdapter.iterator_close(iter), else: :ok
   end
 
   defp delete_all_keys(db, cf, iter) do
