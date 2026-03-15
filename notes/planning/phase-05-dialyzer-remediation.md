@@ -112,10 +112,16 @@ where a small number of stale types currently fan out into many warnings.
 Description: Make batch-processing, progress-reporting, and parallel-load result
 shapes explicit.
 
-- [ ] **Task 3.1.1** Description: Introduce concrete internal types for loader
+- [x] **Task 3.1.1** Description: Introduce concrete internal types for loader
   progress options, write options, encoded batches, and halt/error results.
-- [ ] **Task 3.1.2** Description: Reconcile the public and private loader
+  Completed on 2026-03-15 by verifying that the post-Phase-2 loader pipeline no
+  longer had unresolved contract drift in those areas; the only remaining
+  loader-specific Dialyzer noise was an unused alternate path-validation branch.
+- [x] **Task 3.1.2** Description: Reconcile the public and private loader
   contracts for file, string, stream, sequential, and parallel loading paths.
+  Completed on 2026-03-15 by removing that dead validation branch and its
+  unreachable helpers in `TripleStore.Loader`, which reduced the Dialyzer
+  backlog from `157` to `154`.
 
 ### Section 3.2: Export Pipeline Typing
 

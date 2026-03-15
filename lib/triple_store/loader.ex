@@ -2123,15 +2123,14 @@ defmodule TripleStore.Loader do
   # Private - Path Validation
   # ===========================================================================
 
-  @spec validate_file_path(Path.t(), [Path.t()] | nil) ::
-          {:ok, Path.t()} | {:error, :invalid_path}
-  defp validate_file_path(path, allowed_dirs \\ nil) do
+  @spec validate_file_path(Path.t()) :: {:ok, Path.t()} | {:error, :invalid_path}
+  defp validate_file_path(path) do
     if has_path_traversal?(path) do
       {:error, :invalid_path}
     else
       path
       |> Path.expand()
-      |> validate_expanded_file_path(allowed_dirs)
+      |> validate_expanded_file_path()
     end
   rescue
     _ -> {:error, :invalid_path}
@@ -2326,20 +2325,7 @@ defmodule TripleStore.Loader do
   defp normalize_stage_count(n) when is_integer(n), do: n
   defp normalize_stage_count(_invalid), do: System.schedulers_online()
 
-  defp validate_expanded_file_path(expanded, allowed_dirs) do
-    if requires_allowed_dir_check?(expanded, allowed_dirs) and
-         not within_allowed_dirs?(expanded, allowed_dirs) do
-      {:error, :invalid_path}
-    else
-      {:ok, expanded}
-    end
-  end
-
-  defp requires_allowed_dir_check?(_expanded, nil), do: false
-
-  defp requires_allowed_dir_check?(expanded, _allowed_dirs) do
-    Path.type(expanded) == :absolute
-  end
+  defp validate_expanded_file_path(expanded), do: {:ok, expanded}
 
   # Check if a path contains path traversal attempts
   # This checks for literal "..", URL-encoded variants, and other bypasses
@@ -2370,25 +2356,6 @@ defmodule TripleStore.Loader do
     Enum.any?(dot_dot_checks, fn pattern ->
       String.contains?(normalized, pattern)
     end)
-  end
-
-  # Check if a path is within the list of allowed directories
-  defp within_allowed_dirs?(path, allowed_dirs) do
-    normalized_path = normalize_path(path)
-
-    Enum.any?(allowed_dirs, fn dir ->
-      normalized_allowed = normalize_path(dir)
-      # Check if path starts with allowed directory (with trailing slash for proper prefix match)
-      String.starts_with?(normalized_path <> "/", normalized_allowed <> "/") or
-        normalized_path == normalized_allowed
-    end)
-  end
-
-  # Normalize a path for comparison
-  defp normalize_path(path) do
-    path
-    |> Path.expand()
-    |> String.replace_trailing("/", "")
   end
 
   @spec check_file_size(Path.t(), pos_integer()) ::
