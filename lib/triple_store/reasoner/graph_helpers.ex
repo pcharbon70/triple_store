@@ -183,16 +183,21 @@ defmodule TripleStore.Reasoner.GraphHelpers do
   def graph_ids(opts) do
     case Keyword.get(opts, :graph_ids) do
       ids when is_list(ids) ->
-        if Enum.all?(ids, fn i -> is_integer(i) and i >= 0 end) do
-          {:ok, ids}
-        else
-          :error
-        end
+        validate_graph_ids(ids)
 
       _ ->
         :error
     end
   end
+
+  defp validate_graph_ids(ids) do
+    case Enum.all?(ids, &valid_non_negative_integer?/1) do
+      true -> {:ok, ids}
+      false -> :error
+    end
+  end
+
+  defp valid_non_negative_integer?(value), do: is_integer(value) and value >= 0
 
   # ============================================================================
   # Validation

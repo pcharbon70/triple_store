@@ -117,32 +117,36 @@ defmodule TripleStore.SPARQL.Update.RateLimiter do
       {:ok, {max_ops, window_seconds}} ->
         now = System.system_time(:second)
         key = {user_id, operation}
-
-        case get_rate_limit_state(key) do
-          {count, window_start} when now - window_start < window_seconds ->
-            # Within current window
-            if count < max_ops do
-              set_rate_limit_state(key, {count + 1, window_start})
-              :ok
-            else
-              emit_rate_limit_telemetry(user_id, operation, count, max_ops)
-              {:error, :rate_limited}
-            end
-
-          {_count, _window_start} ->
-            # Window expired, start fresh
-            set_rate_limit_state(key, {1, now})
-            :ok
-
-          :not_found ->
-            # First operation in window
-            set_rate_limit_state(key, {1, now})
-            :ok
-        end
+        apply_rate_limit(key, now, user_id, operation, max_ops, window_seconds)
 
       {:error, :unknown_operation} ->
         # Unknown operation - allow by default
         :ok
+    end
+  end
+
+  defp apply_rate_limit(key, now, user_id, operation, max_ops, window_seconds) do
+    case get_rate_limit_state(key) do
+      {count, window_start} when now - window_start < window_seconds ->
+        apply_rate_limit_window(key, window_start, user_id, operation, count, max_ops)
+
+      {_count, _window_start} ->
+        set_rate_limit_state(key, {1, now})
+        :ok
+
+      :not_found ->
+        set_rate_limit_state(key, {1, now})
+        :ok
+    end
+  end
+
+  defp apply_rate_limit_window(key, window_start, user_id, operation, count, max_ops) do
+    if count < max_ops do
+      set_rate_limit_state(key, {count + 1, window_start})
+      :ok
+    else
+      emit_rate_limit_telemetry(user_id, operation, count, max_ops)
+      {:error, :rate_limited}
     end
   end
 

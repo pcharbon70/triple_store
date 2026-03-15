@@ -84,25 +84,7 @@ defmodule TripleStore.SPARQL.Update.Modify do
       insert_graphs = Helpers.extract_graphs_from_templates(insert_template)
       all_graphs = Enum.uniq(delete_graphs ++ insert_graphs)
 
-      # Check write authorization on all affected graphs
-      # If graphs can't be determined (variables in templates), skip check
-      # and rely on pattern execution authorization
-      case all_graphs do
-        [] ->
-          # Can't determine graphs statically - proceed with execution
-          # (authorization will be checked by pattern executor)
-          execute_after_auth(ctx, delete_template, insert_template, pattern)
-
-        _ ->
-          # Check authorization on determined graphs
-          case Helpers.check_multi_graph_authorization(ctx, all_graphs, :write) do
-            :ok ->
-              execute_after_auth(ctx, delete_template, insert_template, pattern)
-
-            {:error, :unauthorized} ->
-              {:error, :unauthorized}
-          end
-      end
+      authorize_modify_graphs(ctx, all_graphs, delete_template, insert_template, pattern)
     end
   end
 
@@ -465,29 +447,8 @@ defmodule TripleStore.SPARQL.Update.Modify do
     valid_deletes = Enum.filter(delete_quads, &valid_quad?/1)
     valid_inserts = Enum.filter(insert_quads, &valid_quad?/1)
 
-    # First delete, then insert
-    delete_count =
-      if valid_deletes == [] do
-        0
-      else
-        case QuadOperations.delete_quads(ctx.db, valid_deletes, []) do
-          :ok -> length(valid_deletes)
-          {:error, _} -> 0
-        end
-      end
-
-    insert_count =
-      if valid_inserts == [] do
-        0
-      else
-        # Insert each quad and count
-        Enum.reduce(valid_inserts, 0, fn {s_id, p_id, o_id, g_id}, count ->
-          case QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
-            :ok -> count + 1
-            {:error, _} -> count
-          end
-        end)
-      end
+    delete_count = delete_valid_quads(ctx, valid_deletes)
+    insert_count = insert_valid_quads(ctx, valid_inserts)
 
     {:ok, delete_count + insert_count}
   end
@@ -498,6 +459,37 @@ defmodule TripleStore.SPARQL.Update.Modify do
        do: true
 
   defp valid_quad?(_), do: false
+
+  defp authorize_modify_graphs(ctx, [], delete_template, insert_template, pattern) do
+    execute_after_auth(ctx, delete_template, insert_template, pattern)
+  end
+
+  defp authorize_modify_graphs(ctx, all_graphs, delete_template, insert_template, pattern) do
+    case Helpers.check_multi_graph_authorization(ctx, all_graphs, :write) do
+      :ok -> execute_after_auth(ctx, delete_template, insert_template, pattern)
+      {:error, :unauthorized} -> {:error, :unauthorized}
+    end
+  end
+
+  defp delete_valid_quads(_ctx, []), do: 0
+
+  defp delete_valid_quads(ctx, valid_deletes) do
+    case QuadOperations.delete_quads(ctx.db, valid_deletes, []) do
+      :ok -> length(valid_deletes)
+      {:error, _} -> 0
+    end
+  end
+
+  defp insert_valid_quads(_ctx, []), do: 0
+
+  defp insert_valid_quads(ctx, valid_inserts) do
+    Enum.reduce(valid_inserts, 0, fn {s_id, p_id, o_id, g_id}, count ->
+      case QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
+        :ok -> count + 1
+        {:error, _} -> count
+      end
+    end)
+  end
 
   # Executes a batch of operations
   defp execute_batch(_db, []), do: :ok
