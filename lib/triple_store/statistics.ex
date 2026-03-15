@@ -226,11 +226,12 @@ defmodule TripleStore.Statistics do
   @typedoc "Lazy statistics wrapper for on-demand collection"
   @type lazy_stats :: %{
           required(:__lazy__) => true,
+          required(:__module__) => module(),
           required(:__db__) => db_ref(),
-          optional(:__cache__) => boolean(),
-          optional(:__ttl__) => pos_integer(),
-          optional(:__collected_at__) => integer() | nil,
-          optional(:__cached_stats__) => map() | nil
+          required(:__cache__) => boolean(),
+          required(:__ttl__) => pos_integer(),
+          required(:__collected_at__) => integer() | nil,
+          required(:__cached_stats__) => map() | nil
         }
 
   # ===========================================================================
@@ -567,7 +568,7 @@ defmodule TripleStore.Statistics do
   - `{:ok, summary}` - All graphs summary map
   - `{:error, reason}` - On failure
   """
-  @spec get_cached_all_graphs_summary(db_ref(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec get_cached_all_graphs_summary(db_ref(), keyword()) :: {:ok, map()}
   def get_cached_all_graphs_summary(db, opts \\ []) do
     cache_key = all_graphs_cache_key()
 
@@ -584,13 +585,8 @@ defmodule TripleStore.Statistics do
 
       [] ->
         # Cache miss - compute and cache
-        case all_graphs_summary(db, opts) do
-          {:ok, summary} = result ->
-            cache_all_graphs_summary(cache_key, summary, result)
-
-          error ->
-            error
-        end
+        {:ok, summary} = result = all_graphs_summary(db, opts)
+        cache_all_graphs_summary(cache_key, summary, result)
     end
   end
 
@@ -933,8 +929,8 @@ defmodule TripleStore.Statistics do
       {:error, {:missing_keys, keys}} ->
         raise ArgumentError, "Invalid statistics: missing required keys: #{inspect(keys)}"
 
-      {:error, {:invalid_type, key, value}} ->
-        raise ArgumentError, "Invalid statistics: #{key} has invalid value: #{inspect(value)}"
+      {:error, {:invalid_types, errors}} ->
+        raise ArgumentError, "Invalid statistics: #{inspect(errors)}"
 
       {:error, reason} ->
         raise ArgumentError, "Invalid statistics: #{inspect(reason)}"

@@ -200,10 +200,19 @@ module, the cache, and the server around their real return shapes.
 Description: Bring the public statistics API into line with the maps and tuples
 actually returned by the implementation.
 
-- [ ] **Task 5.1.1** Description: Reconcile `Statistics` contracts for warming,
-  collecting, loading, counting, summaries, and histogram builders.
-- [ ] **Task 5.1.2** Description: Decide explicitly where APIs should stay broad
+- [x] **Task 5.1.1** Description: Reconcile `Statistics` contracts for warming,
+  collecting, loading, counting, summaries, and histogram builders. Completed
+  on 2026-03-15 by tightening the lazy wrapper shape to the keys the module
+  actually returns, aligning the cached all-graphs summary path to the current
+  always-successful `all_graphs_summary/2` flow, and correcting the
+  `validate_stats!/1` error handling to the real `validate_stats_structure/1`
+  result family.
+- [x] **Task 5.1.2** Description: Decide explicitly where APIs should stay broad
   and where the implementation contracts should be narrowed to real shapes.
+  Completed on 2026-03-15 by keeping the public summary APIs broad but
+  narrowing the internal lazy and validation contracts to their actual map and
+  error shapes, which removed the core `Statistics` warnings and reduced the
+  Dialyzer backlog from `102` to `99`.
 
 ### Section 5.2: Cache and Server Contracts
 
