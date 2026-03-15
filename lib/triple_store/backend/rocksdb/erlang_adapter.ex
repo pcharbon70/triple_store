@@ -161,6 +161,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
           | :spog
           | :posg
           | :acl
+          | :derivation_provenance
   @type cf_handle :: reference()
   @type cf_name :: charlist()
   @type iterator_ref :: pid()

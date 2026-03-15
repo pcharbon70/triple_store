@@ -115,9 +115,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   @typedoc "Execution context containing database and dictionary references"
   @type context :: %{
-          db: reference(),
-          dict_manager: GenServer.server(),
-          user: map() | nil
+          required(:db) => TripleStore.db_ref(),
+          required(:dict_manager) => TripleStore.manager(),
+          optional(:user) => map() | nil
         }
 
   @typedoc "A quad (subject, predicate, object, optional graph)"

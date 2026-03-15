@@ -165,7 +165,9 @@ defmodule TripleStore do
   alias TripleStore.Loader
   alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.DerivedStore
+  alias TripleStore.Reasoner.GraphReasoningConfig
   alias TripleStore.Reasoner.ReasoningProfile
+  alias TripleStore.Reasoner.ReasoningConfig
   alias TripleStore.Reasoner.ReasoningStatus
   alias TripleStore.Reasoner.SemiNaive
   alias TripleStore.SPARQL.Query
@@ -839,34 +841,24 @@ defmodule TripleStore do
   defp materialize_global(store, opts) do
     alias TripleStore.Reasoner.GraphScopedReasoner
 
-    profile = Keyword.get(opts, :profile, :owl2rl)
-    tbox_graph = Keyword.get(opts, :tbox_graph)
-    inferred_graph = Keyword.get(opts, :inferred_graph)
-
-    config_opts = [
-      profile: profile,
-      tbox_graph: tbox_graph,
-      inferred_graph: inferred_graph
-    ]
-
-    GraphScopedReasoner.materialize_all(store, config_opts)
+    with {:ok, config} <- build_reasoning_config(opts, :global) do
+      GraphScopedReasoner.materialize_all(store.db,
+        config: config,
+        parallel: Keyword.get(opts, :parallel, true)
+      )
+    end
   end
 
   # Hybrid reasoning using GraphScopedReasoner
   defp materialize_hybrid(store, opts) do
     alias TripleStore.Reasoner.GraphScopedReasoner
 
-    profile = Keyword.get(opts, :profile, :owl2rl)
-    graph_configs = Keyword.get(opts, :graph_configs, %{})
-    tbox_graph = Keyword.get(opts, :tbox_graph)
-
-    config_opts = [
-      profile: profile,
-      graph_configs: graph_configs,
-      tbox_graph: tbox_graph
-    ]
-
-    GraphScopedReasoner.materialize_hybrid(store, config_opts)
+    with {:ok, config} <- build_reasoning_config(opts, :hybrid) do
+      GraphScopedReasoner.materialize_hybrid(store.db,
+        config: config,
+        parallel: Keyword.get(opts, :parallel, true)
+      )
+    end
   end
 
   @doc """
@@ -908,16 +900,13 @@ defmodule TripleStore do
   def materialize_graph(store, graph_id, opts \\ []) do
     alias TripleStore.Reasoner.GraphScopedReasoner
 
-    profile = Keyword.get(opts, :profile, :owl2rl)
-    tbox_graph = Keyword.get(opts, :tbox_graph)
-
-    config_opts = [
-      graph_id: graph_id,
-      profile: profile,
-      tbox_graph: tbox_graph
-    ]
-
-    GraphScopedReasoner.materialize_graph(store, config_opts)
+    with {:ok, config} <- build_reasoning_config(opts, :local) do
+      GraphScopedReasoner.materialize_graph(store.db,
+        graph_id: graph_id,
+        config: config,
+        parallel: Keyword.get(opts, :parallel, true)
+      )
+    end
   end
 
   @doc """
@@ -963,18 +952,13 @@ defmodule TripleStore do
   def materialize_graphs(store, graph_ids, opts \\ []) do
     alias TripleStore.Reasoner.GraphScopedReasoner
 
-    profile = Keyword.get(opts, :profile, :owl2rl)
-    tbox_graph = Keyword.get(opts, :tbox_graph)
-    parallel = Keyword.get(opts, :parallel, true)
-
-    config_opts = [
-      graph_ids: graph_ids,
-      profile: profile,
-      tbox_graph: tbox_graph,
-      parallel: parallel
-    ]
-
-    GraphScopedReasoner.materialize_graphs(store, config_opts)
+    with {:ok, config} <- build_reasoning_config(opts, :local) do
+      GraphScopedReasoner.materialize_graphs(store.db,
+        graph_ids: graph_ids,
+        config: config,
+        parallel: Keyword.get(opts, :parallel, true)
+      )
+    end
   end
 
   @doc """
@@ -1024,19 +1008,12 @@ defmodule TripleStore do
   def materialize_all(store, opts \\ []) do
     alias TripleStore.Reasoner.GraphScopedReasoner
 
-    profile = Keyword.get(opts, :profile, :owl2rl)
-    storage_strategy = Keyword.get(opts, :storage_strategy, :same_as_premises)
-    inferred_graph = Keyword.get(opts, :inferred_graph)
-    tbox_graph = Keyword.get(opts, :tbox_graph)
-
-    config_opts = [
-      profile: profile,
-      storage_strategy: storage_strategy,
-      inferred_graph: inferred_graph,
-      tbox_graph: tbox_graph
-    ]
-
-    GraphScopedReasoner.materialize_all(store, config_opts)
+    with {:ok, config} <- build_reasoning_config(opts, :global) do
+      GraphScopedReasoner.materialize_all(store.db,
+        config: config,
+        parallel: Keyword.get(opts, :parallel, true)
+      )
+    end
   end
 
   @doc """
@@ -1140,24 +1117,21 @@ defmodule TripleStore do
 
   """
   @spec reasoning_status(store(), reasoning_status_opts()) :: {:ok, map()} | {:error, term()}
-  def reasoning_status(%{db: db} = _store, opts) when is_list(opts) do
+  def reasoning_status(_store, opts) when is_list(opts) do
     graph_id = Keyword.get(opts, :graph_id)
 
-    if graph_id do
-      reasoning_status_for_graph(db, graph_id)
+    if is_nil(graph_id) do
+      reasoning_status_all_graphs()
     else
-      # Return aggregate status for all graphs
-      reasoning_status_all_graphs(db)
+      reasoning_status_for_graph(graph_id)
     end
   end
 
   # Get reasoning status for a specific graph
-  defp reasoning_status_for_graph(_db, graph_id) do
+  defp reasoning_status_for_graph(graph_id) do
     alias TripleStore.Reasoner.GraphReasoningStatus
 
-    key = {:graph, graph_id}
-
-    case GraphReasoningStatus.load(key) do
+    case GraphReasoningStatus.load(graph_status_key(graph_id)) do
       {:ok, status} ->
         {:ok, GraphReasoningStatus.summary(status)}
 
@@ -1181,23 +1155,18 @@ defmodule TripleStore do
   end
 
   # Get aggregate reasoning status for all graphs
-  defp reasoning_status_all_graphs(_db) do
+  defp reasoning_status_all_graphs do
     alias TripleStore.Reasoner.GraphReasoningStatus
 
-    # List all stored graph statuses
-    stored_keys = GraphReasoningStatus.list_stored()
-
-    # Load all statuses
     statuses =
-      Enum.map(stored_keys, fn key ->
+      GraphReasoningStatus.list_stored()
+      |> Enum.reduce(%{}, fn key, acc ->
         case GraphReasoningStatus.load(key) do
-          {:ok, status} -> status
-          {:error, _} -> nil
+          {:ok, status} -> Map.put(acc, status.graph_id, status)
+          {:error, _} -> acc
         end
       end)
-      |> Enum.reject(&is_nil/1)
 
-    # Get aggregate stats
     aggregate = GraphReasoningStatus.aggregate(statuses)
 
     {:ok,
@@ -1470,20 +1439,21 @@ defmodule TripleStore do
   end
 
   defp encode_explanation_quad(manager, quad, graph_id) do
-    with {:ok, {s_id, _}} <- Adapter.term_to_id(manager, elem(quad, 0)),
-         {:ok, {p_id, _}} <- Adapter.term_to_id(manager, elem(quad, 1)),
-         {:ok, {o_id, _}} <- Adapter.term_to_id(manager, elem(quad, 2)) do
+    with {:ok, s_id} <- Adapter.term_to_id(manager, elem(quad, 0)),
+         {:ok, p_id} <- Adapter.term_to_id(manager, elem(quad, 1)),
+         {:ok, o_id} <- Adapter.term_to_id(manager, elem(quad, 2)) do
       {:ok, {graph_id, s_id, p_id, o_id}}
     end
   end
 
-  defp load_provenance_tracker(db, graph_id, provenance_source)
-       when provenance_source in [:database, :memory] do
+  defp load_provenance_tracker(db, graph_id, :database) do
     case DerivationProvenance.load(db, graph_id) do
       {:ok, loaded} -> loaded
-      _error -> DerivationProvenance.new()
+      {:error, _reason} -> DerivationProvenance.new()
     end
   end
+
+  defp load_provenance_tracker(_db, _graph_id, :memory), do: DerivationProvenance.new()
 
   defp load_provenance_tracker(_db, _graph_id, provenance_source) do
     throw({:error, {:invalid_provenance_source, provenance_source}})
@@ -1551,11 +1521,7 @@ defmodule TripleStore do
     database_open = ErlangAdapter.is_open(db)
     dict_manager_alive = is_pid(dict_manager) and Process.alive?(dict_manager)
 
-    triple_count =
-      case Statistics.triple_count(db) do
-        {:ok, count} -> count
-        _ -> 0
-      end
+    {:ok, triple_count} = Statistics.triple_count(db)
 
     status =
       cond do
@@ -2067,6 +2033,59 @@ defmodule TripleStore do
     hash = :erlang.phash2(path)
     "triple_store_status_#{hash}"
   end
+
+  defp graph_status_key(graph_id) when is_integer(graph_id) and graph_id >= 0 do
+    :"graph_#{graph_id}"
+  end
+
+  defp build_reasoning_config(opts, scope) when scope in [:local, :global, :hybrid] do
+    with {:ok, graph_configs} <- normalize_graph_configs(Keyword.get(opts, :graph_configs)),
+         {:ok, config} <-
+           ReasoningConfig.new(build_reasoning_config_opts(opts, scope, graph_configs)) do
+      {:ok, config}
+    end
+  end
+
+  defp build_reasoning_config_opts(opts, scope, graph_configs) do
+    [
+      profile: Keyword.get(opts, :profile, :owl2rl),
+      parallel: Keyword.get(opts, :parallel, true),
+      scope: scope
+    ]
+    |> maybe_put_reasoning_opt(:tbox_graph, Keyword.get(opts, :tbox_graph))
+    |> maybe_put_reasoning_opt(:inferred_graph, Keyword.get(opts, :inferred_graph))
+    |> maybe_put_reasoning_opt(:storage_strategy, Keyword.get(opts, :storage_strategy))
+    |> maybe_put_reasoning_opt(:graph_configs, graph_configs)
+  end
+
+  defp maybe_put_reasoning_opt(opts, _key, nil), do: opts
+  defp maybe_put_reasoning_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp normalize_graph_configs(nil), do: {:ok, nil}
+
+  defp normalize_graph_configs(graph_configs) when is_map(graph_configs) do
+    Enum.reduce_while(graph_configs, {:ok, %{}}, fn {graph_id, config}, {:ok, acc} ->
+      case normalize_graph_config(graph_id, config) do
+        {:ok, normalized} -> {:cont, {:ok, Map.put(acc, graph_id, normalized)}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp normalize_graph_configs(_invalid), do: {:error, :invalid_graph_configs}
+
+  defp normalize_graph_config(graph_id, %GraphReasoningConfig{} = config)
+       when config.graph_id == graph_id,
+       do: {:ok, config}
+
+  defp normalize_graph_config(_graph_id, %GraphReasoningConfig{}),
+    do: {:error, :graph_config_mismatch}
+
+  defp normalize_graph_config(graph_id, config_opts) when is_list(config_opts) do
+    GraphReasoningConfig.new(Keyword.put(config_opts, :graph_id, graph_id))
+  end
+
+  defp normalize_graph_config(_graph_id, _invalid), do: {:error, :invalid_graph_config}
 
   # Convert raw error reasons to structured TripleStore.Error exceptions.
   # Delegates to the centralized Error.from_reason/2 for consistency.

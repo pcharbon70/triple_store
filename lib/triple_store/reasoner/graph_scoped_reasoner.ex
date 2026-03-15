@@ -122,6 +122,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
           graph_id: graph_id()
         }
 
+  @typedoc "Set of reasoning triples stored in a MapSet"
+  @type triple_set :: MapSet.t()
+
   # ============================================================================
   # Public API - Graph-Local Reasoning
   # ============================================================================
@@ -391,23 +394,23 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
-  defp materialize_graphs_sequential(db, graph_ids, _config, opts) do
+  defp materialize_graphs_sequential(db, graph_ids, config, opts) do
     Enum.reduce_while(graph_ids, {:ok, %{}}, fn graph_id, {:ok, acc} ->
-      case materialize_graph(db, Keyword.put(opts, :graph_id, graph_id)) do
+      case materialize_single_graph(db, graph_id, config, opts) do
         {:ok, stats} -> {:cont, {:ok, Map.put(acc, graph_id, stats)}}
         {:error, reason} -> {:halt, {:error, {graph_id, reason}}}
       end
     end)
   end
 
-  defp materialize_graphs_parallel(db, graph_ids, _config, opts) do
+  defp materialize_graphs_parallel(db, graph_ids, config, opts) do
     # Materialize graphs in parallel using Task.async_stream
     max_concurrency = min(length(graph_ids), System.schedulers_online())
 
     graph_ids
     |> Task.async_stream(
       fn graph_id ->
-        case materialize_graph(db, Keyword.put(opts, :graph_id, graph_id)) do
+        case materialize_single_graph(db, graph_id, config, opts) do
           {:ok, stats} -> {:ok, graph_id, stats}
           {:error, reason} -> {:error, graph_id, reason}
         end
@@ -426,6 +429,13 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       {:exit, reason}, _acc ->
         {:halt, {:error, {:task_crashed, reason}}}
     end)
+  end
+
+  defp materialize_single_graph(db, graph_id, config, opts) do
+    with {:ok, graph_config} <- resolve_graph_config(config, graph_id),
+         :ok <- check_graph_participation(graph_config) do
+      do_materialize_graph(db, graph_id, config, graph_config, opts)
+    end
   end
 
   # ============================================================================
@@ -584,13 +594,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     try do
       facts =
         ErlangAdapter.fold(db, :gspo, prefix, MapSet.new(), fn {key, _value}, acc ->
-          case QuadIndex.key_to_quad(:gspo, key) do
-            {_g, _s, _p, _o} = quad ->
-              MapSet.put(acc, quad_to_triple(quad))
-
-            _error ->
-              acc
-          end
+          {_g, _s, _p, _o} = quad = QuadIndex.key_to_quad(:gspo, key)
+          MapSet.put(acc, quad_to_triple(quad))
         end)
 
       {:ok, facts}
@@ -615,18 +620,20 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       {:ok, graph_results} = lookup_in_graph_facts(db, graph_id, pattern)
 
       # Union both result sets
-      {:ok, MapSet.union(tbox_results, graph_results)}
+      {:ok, merge_triple_sets(tbox_results, graph_results)}
     end
   end
 
   # Lookup facts in TBox (in-memory MapSet)
-  @spec lookup_in_tbox_facts(pattern_union(), MapSet.t(id_triple())) ::
-          {:ok, MapSet.t(id_triple())}
-  defp lookup_in_tbox_facts(_pattern, tbox_facts) when map_size(tbox_facts) == 0 do
-    {:ok, MapSet.new()}
+  defp lookup_in_tbox_facts(pattern, tbox_facts) do
+    if MapSet.size(tbox_facts) == 0 do
+      {:ok, MapSet.new()}
+    else
+      do_lookup_in_tbox_facts(pattern, tbox_facts)
+    end
   end
 
-  defp lookup_in_tbox_facts({:pattern, [s, p, o]}, tbox_facts) do
+  defp do_lookup_in_tbox_facts({:pattern, [s, p, o]}, tbox_facts) do
     # Pattern match against TBox triples
     matches =
       Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
@@ -636,7 +643,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     {:ok, MapSet.new(matches)}
   end
 
-  defp lookup_in_tbox_facts({:quad_pattern, [_g, s, p, o]}, tbox_facts) do
+  defp do_lookup_in_tbox_facts({:quad_pattern, [_g, s, p, o]}, tbox_facts) do
     # Quad pattern with variable/ignored graph - match on SPO
     matches =
       Enum.filter(tbox_facts, fn {fact_s, fact_p, fact_o} ->
@@ -646,7 +653,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     {:ok, MapSet.new(matches)}
   end
 
-  defp lookup_in_tbox_facts(_pattern, _tbox_facts) do
+  defp do_lookup_in_tbox_facts(_pattern, _tbox_facts) do
     # Unsupported pattern, return empty
     {:ok, MapSet.new()}
   end
@@ -662,16 +669,12 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # Private Functions - Graph-Scoped Lookup/Store
   # ============================================================================
 
-  @spec lookup_in_graph_facts(db_ref(), graph_id(), pattern_union()) ::
-          {:ok, MapSet.t(id_triple())}
   defp lookup_in_graph_facts(db, graph_id, pattern) do
     # Build a quad pattern bound to the specific graph
     quad_pattern = bind_graph_to_pattern(pattern, graph_id)
     lookup_quads_as_triples_in_graph(db, quad_pattern, graph_id)
   end
 
-  @spec lookup_quads_as_triples_in_graph(db_ref(), quad_pattern(), graph_id()) ::
-          {:ok, MapSet.t(id_triple())}
   defp lookup_quads_as_triples_in_graph(
          db,
          {:quad_pattern, [{:bound, graph_id}, s, p, o]},
@@ -762,7 +765,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       # Union both result sets
       case {tbox_matches, graph_matches} do
         {{:ok, tbox_results}, {:ok, graph_results}} ->
-          {:ok, MapSet.union(tbox_results, graph_results)}
+          {:ok, merge_triple_sets(tbox_results, graph_results)}
 
         {{:ok, _tbox_results}, {:error, _reason}} ->
           # If graph lookup fails, the error is fatal since it's the primary source
@@ -795,7 +798,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
     # Extract bound values for prefix building
     bound_values =
-      %{}
+      %{g: 0, s: 0, p: 0, o: 0}
       |> maybe_add_bound_value(:s, s)
       |> maybe_add_bound_value(:p, p)
       |> maybe_add_bound_value(:o, o)
@@ -849,20 +852,16 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
        ) do
     results =
       ErlangAdapter.fold(db, index, prefix, [], fn {key, _value}, acc ->
-        case QuadIndex.key_to_quad(index, key) do
-          {_g, s, p, o} ->
-            maybe_collect_index_result(
-              acc,
-              {s, p, o},
-              quad_pattern,
-              bound_values,
-              needs_filter,
-              filter_positions
-            )
+        {_g, s, p, o} = QuadIndex.key_to_quad(index, key)
 
-          _error ->
-            acc
-        end
+        maybe_collect_index_result(
+          acc,
+          {s, p, o},
+          quad_pattern,
+          bound_values,
+          needs_filter,
+          filter_positions
+        )
       end)
 
     {:ok, MapSet.new(results)}
@@ -1092,11 +1091,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       {:ok, status} ->
         updated =
           status
-          |> GraphReasoningStatus.record_materialization(%{
-            derived_count: stats.total_derived,
-            iterations: stats.iterations,
-            duration_ms: stats.duration_ms
-          })
+          |> GraphReasoningStatus.record_materialization(
+            graph_status_materialization_stats(stats)
+          )
           |> GraphReasoningStatus.update_config(graph_config)
 
         GraphReasoningStatus.store(updated, status_key(graph_id))
@@ -1112,11 +1109,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
         updated =
           status
-          |> GraphReasoningStatus.record_materialization(%{
-            derived_count: stats.total_derived,
-            iterations: stats.iterations,
-            duration_ms: stats.duration_ms
-          })
+          |> GraphReasoningStatus.record_materialization(
+            graph_status_materialization_stats(stats)
+          )
 
         GraphReasoningStatus.store(updated, status_key(graph_id))
     end
@@ -1201,10 +1196,17 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   end
 
   defp maybe_add_explicit_quad(key, acc) do
-    case QuadIndex.key_to_quad(:gspo, key) do
-      {_g, _s, _p, _o} = quad -> MapSet.put(acc, quad_to_triple(quad))
-      _error -> acc
-    end
+    {_g, _s, _p, _o} = quad = QuadIndex.key_to_quad(:gspo, key)
+    MapSet.put(acc, quad_to_triple(quad))
+  end
+
+  defp graph_status_materialization_stats(stats) do
+    %{
+      derived_count: stats.total_derived,
+      iterations: stats.iterations,
+      duration_ms: stats.duration_ms,
+      rules_applied: stats.rules_applied
+    }
   end
 
   defp maybe_collect_index_result(
@@ -1215,16 +1217,21 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
          needs_filter,
          filter_positions
        ) do
-    case needs_filter and
-           not matches_quad_pattern?(
-             {s, p, o, :ignored},
-             quad_pattern,
-             bound_values,
-             filter_positions
-           ) do
-      true -> acc
-      false -> [triple | acc]
+    if needs_filter and
+         not matches_quad_pattern?(
+           {s, p, o, :ignored},
+           quad_pattern,
+           bound_values,
+           filter_positions
+         ) do
+      acc
+    else
+      [triple | acc]
     end
+  end
+
+  defp merge_triple_sets(left, right) do
+    Enum.reduce(right, left, fn triple, acc -> MapSet.put(acc, triple) end)
   end
 
   defp track_default_graph_config(
