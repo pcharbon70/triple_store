@@ -52,7 +52,7 @@ defmodule TripleStore.Snapshot do
   @cleanup_interval :timer.seconds(60)
 
   @type snapshot_ref :: reference()
-  @type db_ref :: reference()
+  @type db_ref :: TripleStore.db_ref()
   @type option :: {:ttl, pos_integer()}
 
   @doc """

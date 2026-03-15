@@ -80,10 +80,10 @@ defmodule TripleStore.Transaction do
   @type manager :: GenServer.server()
 
   @typedoc "Database handle"
-  @type db_ref :: pid() | reference()
+  @type db_ref :: TripleStore.db_ref()
 
   @typedoc "Dictionary manager reference"
-  @type dict_manager :: GenServer.server()
+  @type dict_manager :: TripleStore.manager()
 
   @typedoc "Execution context"
   @type context :: %{db: db_ref(), dict_manager: dict_manager()}

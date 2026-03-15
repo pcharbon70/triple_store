@@ -45,7 +45,7 @@ defmodule TripleStore.Dictionary.IdToString do
   @type rdf_term :: RDF.IRI.t() | RDF.BlankNode.t() | RDF.Literal.t()
 
   @typedoc "Database reference from RocksDB NIF"
-  @type db_ref :: reference()
+  @type db_ref :: TripleStore.db_ref()
 
   # ===========================================================================
   # Public API

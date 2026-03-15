@@ -21,9 +21,8 @@ defmodule Mix.Tasks.Conformance do
     {opts, _argv, invalid} = OptionParser.parse(args, strict: @switches)
 
     if invalid != [] do
-      invalid
-      |> Enum.map_join(", ", fn {switch, _value} -> "--#{switch}" end)
-      |> then(&Mix.raise("unknown options for mix conformance: #{&1}"))
+      invalid_switches = Enum.map_join(invalid, ", ", fn {switch, _value} -> "--#{switch}" end)
+      Mix.raise("unknown options for mix conformance: #{invalid_switches}")
     end
 
     mode =

@@ -70,7 +70,7 @@ defmodule TripleStore.Quad.CacheWarmer do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: term()
+  @type db_ref :: TripleStore.db_ref()
 
   @typedoc "Graph ID"
   @type graph_id :: non_neg_integer()

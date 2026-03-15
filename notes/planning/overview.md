@@ -150,3 +150,4 @@ spargebra = "0.2"
 - [Phase 3: Advanced Query Processing](phase-03-advanced-query-processing.md)
 - [Phase 4: OWL 2 RL Reasoning](phase-04-owl2rl-reasoning.md)
 - [Phase 5: Production Hardening](phase-05-production-hardening.md)
+- [Phase 5 Companion: Dialyzer Remediation](phase-05-dialyzer-remediation.md)

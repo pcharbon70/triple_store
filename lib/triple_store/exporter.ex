@@ -54,7 +54,7 @@ defmodule TripleStore.Exporter do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: reference()
+  @type db_ref :: TripleStore.db_ref()
 
   @typedoc "Triple pattern for filtering"
   @type pattern :: Index.pattern()
@@ -751,7 +751,7 @@ defmodule TripleStore.Exporter do
   """
   @spec export_graphs(
           db_ref(),
-          TripleStore.Dictionary.manager(),
+          TripleStore.manager(),
           [RDF.IRI.t() | RDF.BlankNode.t()],
           keyword()
         ) :: {:ok, RDF.Dataset.t()} | {:error, term()}
@@ -852,7 +852,7 @@ defmodule TripleStore.Exporter do
   """
   @spec export_single_graph(
           db_ref(),
-          TripleStore.Dictionary.manager(),
+          TripleStore.manager(),
           RDF.IRI.t() | RDF.BlankNode.t(),
           keyword()
         ) :: {:ok, RDF.Graph.t()} | {:error, term()}
@@ -903,7 +903,7 @@ defmodule TripleStore.Exporter do
   """
   @spec export_multiple_graphs(
           db_ref(),
-          TripleStore.Dictionary.manager(),
+          TripleStore.manager(),
           [RDF.IRI.t() | RDF.BlankNode.t()],
           keyword()
         ) :: {:ok, RDF.Dataset.t()} | {:error, term()}

@@ -220,8 +220,6 @@ defmodule TripleStore.Loader do
 
   alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Dictionary.Manager
-  alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Index
 
   require Logger
@@ -231,10 +229,10 @@ defmodule TripleStore.Loader do
   # ===========================================================================
 
   @typedoc "Database reference"
-  @type db_ref :: reference()
+  @type db_ref :: TripleStore.db_ref()
 
   @typedoc "Dictionary manager process"
-  @type manager :: Manager.manager() | ShardedManager.t()
+  @type manager :: TripleStore.manager()
 
   @typedoc "Memory budget options for automatic batch sizing"
   @type memory_budget :: :low | :medium | :high | :auto

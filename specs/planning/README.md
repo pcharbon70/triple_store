@@ -10,6 +10,7 @@ This specs system reuses the existing implementation plans in `notes/planning/` 
 - [`notes/planning/phase-03-advanced-query-processing.md`](../../notes/planning/phase-03-advanced-query-processing.md)
 - [`notes/planning/phase-04-owl2rl-reasoning.md`](../../notes/planning/phase-04-owl2rl-reasoning.md)
 - [`notes/planning/phase-05-production-hardening.md`](../../notes/planning/phase-05-production-hardening.md)
+- [`notes/planning/phase-05-dialyzer-remediation.md`](../../notes/planning/phase-05-dialyzer-remediation.md)
 
 ## Alignment Rules
 

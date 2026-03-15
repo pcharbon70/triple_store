@@ -6,6 +6,9 @@ Phase 5 prepares the triple store for production deployment through benchmarking
 
 The focus is on measuring and optimizing real-world performance, providing operational visibility through Telemetry integration, and delivering a clean, well-documented public API.
 
+Companion planning for the Dialyzer cleanup backlog lives in
+[`phase-05-dialyzer-remediation.md`](phase-05-dialyzer-remediation.md).
+
 ---
 
 ## 5.1 Benchmarking Suite

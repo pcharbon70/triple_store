@@ -12,6 +12,7 @@ defmodule TripleStore.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       elixirc_paths: elixirc_paths(Mix.env()),
+      dialyzer: dialyzer(),
 
       # Docs
       name: "TripleStore",
@@ -58,6 +59,12 @@ defmodule TripleStore.MixProject do
 
       # Property-based testing
       {:stream_data, "~> 1.0", only: :test}
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:mix]
     ]
   end
 
