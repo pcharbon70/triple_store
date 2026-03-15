@@ -219,10 +219,19 @@ actually returned by the implementation.
 Description: Align the deprecated cache and current server-side statistics
 implementations with the corrected core contracts.
 
-- [ ] **Task 5.2.1** Description: Reconcile `Statistics.Cache` contracts with the
-  current compute and refresh behavior.
-- [ ] **Task 5.2.2** Description: Fix stale impossible matches and refresh-path
-  contracts in the statistics server code.
+- [x] **Task 5.2.1** Description: Reconcile `Statistics.Cache` contracts with the
+  current compute and refresh behavior. Completed on 2026-03-15 by making the
+  cache computation helpers return explicit `{:error, reason}` tuples when the
+  underlying statistics collection or histogram scan raises, and by updating the
+  synchronous histogram fetch path to honor that contract instead of assuming
+  success.
+- [x] **Task 5.2.2** Description: Fix stale impossible matches and refresh-path
+  contracts in the statistics server code. Completed on 2026-03-15 by aligning
+  the server state DB handle to `Statistics.db_ref()`, routing refreshes
+  through a helper that converts raised refresh failures into explicit error
+  tuples, and preserving the existing reply contracts around `get_stats/1` and
+  `refresh/1`. These changes removed the remaining statistics cache/server
+  warnings and reduced the Dialyzer backlog from `99` to `94`.
 
 ---
 
