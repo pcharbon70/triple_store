@@ -128,10 +128,16 @@ shapes explicit.
 Description: Replace vague exporter contracts with the concrete stream and graph
 conversion shapes the code actually returns.
 
-- [ ] **Task 3.2.1** Description: Narrow exporter stream contracts to real stream
-  shapes and count return types.
-- [ ] **Task 3.2.2** Description: Remove stale dictionary-manager type references
-  and fix graph/quad lookup assumptions in the exporter code.
+- [x] **Task 3.2.1** Description: Narrow exporter stream contracts to real stream
+  shapes and count return types. Completed on 2026-03-15 by confirming the
+  post-Phase-2 exporter stream and count contracts were already aligned, then
+  removing the remaining dead alternate path-validation branch that Dialyzer
+  still treated as stale code.
+- [x] **Task 3.2.2** Description: Remove stale dictionary-manager type references
+  and fix graph/quad lookup assumptions in the exporter code. Completed on
+  2026-03-15 by updating the quad export helpers to pass the fully populated
+  lookup-value map expected by the current quad lookup spec, which reduced the
+  Dialyzer backlog from `154` to `145`.
 
 ---
 
