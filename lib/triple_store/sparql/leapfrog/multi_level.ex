@@ -370,8 +370,6 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
   # ===========================================================================
 
   # Enter a new level (create iterators and find first value)
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp enter_level(exec, level_idx) do
     variable = Enum.at(exec.var_order, level_idx)
 
@@ -388,45 +386,7 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
            exec.current_bindings
          ) do
       {:ok, iterators} when iterators != [] ->
-        case Leapfrog.new(iterators, max_iterations: exec.max_iterations) do
-          {:ok, lf} ->
-            case Leapfrog.search(lf) do
-              {:ok, lf} ->
-                {:ok, value} = Leapfrog.current(lf)
-
-                new_level = %{
-                  variable: variable,
-                  leapfrog: lf,
-                  value: value,
-                  level_idx: level_idx
-                }
-
-                new_bindings = Map.put(exec.current_bindings, variable, value)
-
-                new_exec = %{
-                  exec
-                  | levels: [new_level | exec.levels],
-                    current_bindings: new_bindings
-                }
-
-                {:ok, new_exec}
-
-              {:exhausted, lf} ->
-                Leapfrog.close(lf)
-                :no_match
-
-              {:error, reason} ->
-                Leapfrog.close(lf)
-                {:error, reason}
-            end
-
-          {:exhausted, lf} ->
-            Leapfrog.close(lf)
-            :no_match
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        enter_level_with_iterators(exec, variable, level_idx, iterators)
 
       {:ok, []} ->
         :no_match
@@ -434,6 +394,51 @@ defmodule TripleStore.SPARQL.Leapfrog.MultiLevel do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp enter_level_with_iterators(exec, variable, level_idx, iterators) do
+    case Leapfrog.new(iterators, max_iterations: exec.max_iterations) do
+      {:ok, lf} ->
+        enter_level_with_leapfrog(exec, variable, level_idx, lf)
+
+      {:exhausted, lf} ->
+        Leapfrog.close(lf)
+        :no_match
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp enter_level_with_leapfrog(exec, variable, level_idx, lf) do
+    case Leapfrog.search(lf) do
+      {:ok, searched_lf} ->
+        {:ok, value} = Leapfrog.current(searched_lf)
+        {:ok, push_level(exec, variable, level_idx, searched_lf, value)}
+
+      {:exhausted, exhausted_lf} ->
+        Leapfrog.close(exhausted_lf)
+        :no_match
+
+      {:error, reason} ->
+        Leapfrog.close(lf)
+        {:error, reason}
+    end
+  end
+
+  defp push_level(exec, variable, level_idx, lf, value) do
+    new_level = %{
+      variable: variable,
+      leapfrog: lf,
+      value: value,
+      level_idx: level_idx
+    }
+
+    %{
+      exec
+      | levels: [new_level | exec.levels],
+        current_bindings: Map.put(exec.current_bindings, variable, value)
+    }
   end
 
   # Advance at a level (find next value in leapfrog)

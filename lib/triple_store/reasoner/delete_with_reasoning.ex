@@ -439,40 +439,45 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   # Private Functions - Database Operations
   # ============================================================================
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp partition_by_source(db, triples) do
     {explicit, derived} =
       Enum.reduce(triples, {[], []}, fn triple, {exp_acc, der_acc} ->
-        case Index.triple_exists?(db, triple) do
-          {:ok, true} ->
-            {[triple | exp_acc], der_acc}
-
-          {:ok, false} ->
-            case DerivedStore.derived_exists?(db, triple) do
-              {:ok, true} ->
-                {exp_acc, [triple | der_acc]}
-
-              {:ok, false} ->
-                {exp_acc, der_acc}
-
-              {:error, reason} ->
-                Logger.warning(
-                  "Error checking derived store for triple #{inspect(triple)}: #{inspect(reason)}"
-                )
-
-                {exp_acc, der_acc}
-            end
-
-          {:error, reason} ->
-            Logger.warning(
-              "Error checking index for triple #{inspect(triple)}: #{inspect(reason)}"
-            )
-
-            {exp_acc, der_acc}
-        end
+        classify_triple_source(db, triple, exp_acc, der_acc)
       end)
 
     {:ok, Enum.reverse(explicit), Enum.reverse(derived)}
+  end
+
+  defp classify_triple_source(db, triple, exp_acc, der_acc) do
+    case Index.triple_exists?(db, triple) do
+      {:ok, true} ->
+        {[triple | exp_acc], der_acc}
+
+      {:ok, false} ->
+        classify_derived_triple_source(db, triple, exp_acc, der_acc)
+
+      {:error, reason} ->
+        log_partition_warning("index", triple, reason)
+        {exp_acc, der_acc}
+    end
+  end
+
+  defp classify_derived_triple_source(db, triple, exp_acc, der_acc) do
+    case DerivedStore.derived_exists?(db, triple) do
+      {:ok, true} ->
+        {exp_acc, [triple | der_acc]}
+
+      {:ok, false} ->
+        {exp_acc, der_acc}
+
+      {:error, reason} ->
+        log_partition_warning("derived store", triple, reason)
+        {exp_acc, der_acc}
+    end
+  end
+
+  defp log_partition_warning(source, triple, reason) do
+    Logger.warning("Error checking #{source} for triple #{inspect(triple)}: #{inspect(reason)}")
   end
 
   defp delete_explicit_facts(_db, []), do: :ok

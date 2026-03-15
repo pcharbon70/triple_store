@@ -307,22 +307,9 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
     result =
       patterns
       |> Enum.reduce_while({:ok, [initial_bindings]}, fn pattern, {:ok, bindings_list} ->
-        # For each current binding set, try to extend it
-        extended =
-          bindings_list
-          |> Enum.flat_map(fn bindings ->
-            extend_bindings_with_facts(pattern, bindings, valid_facts)
-          end)
-
-        # Check binding set size limit
-        if length(extended) > 1000 do
-          {:halt, {:error, :binding_limit_exceeded}}
-        else
-          case extended do
-            [] -> {:cont, {:ok, []}}
-            _ -> {:cont, {:ok, extended}}
-          end
-        end
+        bindings_list
+        |> extend_quad_binding_sets(pattern, valid_facts)
+        |> continue_quad_binding_search()
       end)
 
     case result do
@@ -330,6 +317,18 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
       {:error, _} = error -> error
     end
   end
+
+  defp extend_quad_binding_sets(bindings_list, pattern, valid_facts) do
+    Enum.flat_map(bindings_list, fn bindings ->
+      extend_bindings_with_facts(pattern, bindings, valid_facts)
+    end)
+  end
+
+  defp continue_quad_binding_search(extended) when length(extended) > 1000 do
+    {:halt, {:error, :binding_limit_exceeded}}
+  end
+
+  defp continue_quad_binding_search(extended), do: {:cont, {:ok, extended}}
 
   defp extend_bindings_with_facts({:pattern, [ps, pp, po]}, bindings, valid_facts) do
     # Substitute known bindings into the pattern

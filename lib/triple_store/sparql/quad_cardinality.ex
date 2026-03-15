@@ -964,63 +964,83 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   @spec estimate_with_histogram(quad_pattern(), %{term_id() => %{term_id() => non_neg_integer()}}) ::
           cardinality()
   def estimate_with_histogram({:quad, subject, predicate, object, graph}, histograms) do
-    cond do
-      # Fully bound pattern - exact lookup
-      constant?(subject) and constant?(predicate) and constant?(object) and constant?(graph) ->
-        # Check if this exact quad exists in histograms
-        graph_id = get_constant_id(graph)
-        pred_id = get_constant_id(predicate)
+    case histogram_estimate_case(subject, predicate, object, graph) do
+      :fully_bound ->
+        estimate_histogram_exact(histograms, graph, predicate)
 
-        case get_in(histograms, [graph_id, pred_id]) do
-          nil -> @min_cardinality
-          # Exact match, return at most 1
-          count when count > 0 -> min(count, 1.0)
-        end
+      :graph_predicate ->
+        estimate_histogram_graph_predicate(histograms, graph, predicate)
 
-      # Graph-scoped with bound predicate - use histogram directly
-      constant?(graph) and constant?(predicate) ->
-        graph_id = get_constant_id(graph)
-        pred_id = get_constant_id(predicate)
+      :graph_only ->
+        estimate_histogram_graph_total(histograms, graph)
 
-        case get_in(histograms, [graph_id, pred_id]) do
-          nil -> @min_cardinality
-          count when count > 0 -> count * 1.0
-        end
+      :predicate_only ->
+        estimate_histogram_predicate_total(histograms, predicate)
 
-      # Graph-scoped with variable predicate - estimate from total graph quads
-      constant?(graph) ->
-        graph_id = get_constant_id(graph)
-
-        case Map.get(histograms, graph_id) do
-          nil ->
-            @min_cardinality
-
-          graph_histogram ->
-            # Sum all predicates in this graph
-            total_quads = graph_histogram |> Map.values() |> Enum.sum()
-            total_quads * 1.0
-        end
-
-      # Cross-graph with bound predicate - sum across all graphs
-      constant?(predicate) ->
-        pred_id = get_constant_id(predicate)
-
-        histograms
-        |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
-          case Map.get(graph_histogram, pred_id) do
-            nil -> acc
-            count -> acc + count
-          end
-        end)
-
-      # Cross-graph with variable predicate - sum all quads across all graphs
-      true ->
-        histograms
-        |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
-          total_in_graph = graph_histogram |> Map.values() |> Enum.sum()
-          acc + total_in_graph
-        end)
+      :all_graphs ->
+        estimate_histogram_total(histograms)
     end
+  end
+
+  defp histogram_estimate_case(subject, predicate, object, graph) do
+    case {constant?(subject), constant?(predicate), constant?(object), constant?(graph)} do
+      {true, true, true, true} -> :fully_bound
+      {_subject, true, _object, true} -> :graph_predicate
+      {_subject, _predicate, _object, true} -> :graph_only
+      {_subject, true, _object, _graph} -> :predicate_only
+      _ -> :all_graphs
+    end
+  end
+
+  defp estimate_histogram_exact(histograms, graph, predicate) do
+    graph_id = get_constant_id(graph)
+    pred_id = get_constant_id(predicate)
+
+    case get_in(histograms, [graph_id, pred_id]) do
+      nil -> @min_cardinality
+      count when count > 0 -> min(count, 1.0)
+    end
+  end
+
+  defp estimate_histogram_graph_predicate(histograms, graph, predicate) do
+    graph_id = get_constant_id(graph)
+    pred_id = get_constant_id(predicate)
+
+    case get_in(histograms, [graph_id, pred_id]) do
+      nil -> @min_cardinality
+      count when count > 0 -> count * 1.0
+    end
+  end
+
+  defp estimate_histogram_graph_total(histograms, graph) do
+    graph_id = get_constant_id(graph)
+
+    case Map.get(histograms, graph_id) do
+      nil -> @min_cardinality
+      graph_histogram -> sum_graph_histogram(graph_histogram) * 1.0
+    end
+  end
+
+  defp estimate_histogram_predicate_total(histograms, predicate) do
+    pred_id = get_constant_id(predicate)
+
+    histograms
+    |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
+      acc + Map.get(graph_histogram, pred_id, 0)
+    end)
+  end
+
+  defp estimate_histogram_total(histograms) do
+    histograms
+    |> Enum.reduce(0.0, fn {_graph_id, graph_histogram}, acc ->
+      acc + sum_graph_histogram(graph_histogram)
+    end)
+  end
+
+  defp sum_graph_histogram(graph_histogram) do
+    graph_histogram
+    |> Map.values()
+    |> Enum.sum()
   end
 
   @doc """

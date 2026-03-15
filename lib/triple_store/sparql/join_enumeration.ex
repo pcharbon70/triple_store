@@ -371,29 +371,17 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
         |> Stream.filter(&valid_plan?/1)
         |> Enum.min_by(fn plan -> plan.cost.total end, fn -> nil end)
 
-      if best_plan do
-        {:ok, best_plan}
-      else
-        # No valid plan without Cartesian products - allow them
-        best_plan_with_cartesian =
-          permutations(indices)
-          |> Stream.map(fn order ->
-            build_left_deep_plan(order, indexed_patterns, join_graph, stats,
-              allow_cartesian: true
-            )
-          end)
-          |> Enum.min_by(fn plan -> plan.cost.total end, fn -> nil end)
+      case best_plan do
+        nil ->
+          best_cartesian_left_deep_plan(indices, indexed_patterns, join_graph, stats)
+          |> wrap_best_plan()
 
-        if best_plan_with_cartesian do
-          {:ok, best_plan_with_cartesian}
-        else
-          {:error, :no_valid_plan}
-        end
+        plan ->
+          {:ok, plan}
       end
     end
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp build_left_deep_plan(order, indexed_patterns, join_graph, stats, opts \\ []) do
     allow_cartesian = Keyword.get(opts, :allow_cartesian, false)
 
@@ -402,70 +390,13 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
         nil
 
       [first] ->
-        pattern = Map.get(indexed_patterns, first)
-        cardinality = Cardinality.estimate_pattern(pattern, stats)
-        cost = CostModel.pattern_cost(pattern, stats)
-
-        %{
-          tree: {:scan, pattern},
-          cost: cost,
-          cardinality: cardinality,
-          pattern_set: MapSet.new([first]),
-          valid: true
-        }
+        build_single_pattern_plan(first, indexed_patterns, stats)
 
       [first | rest] ->
-        # Start with first pattern
         initial = build_left_deep_plan([first], indexed_patterns, join_graph, stats, opts)
 
-        # Join remaining patterns left-to-right
         Enum.reduce(rest, initial, fn idx, acc ->
-          if acc == nil or not acc.valid do
-            acc
-          else
-            pattern = Map.get(indexed_patterns, idx)
-            right_set = MapSet.new([idx])
-
-            # Check connectivity
-            connected = sets_connected?(acc.pattern_set, right_set, join_graph)
-
-            if not connected and not allow_cartesian do
-              %{acc | valid: false}
-            else
-              join_vars =
-                shared_variables_between_sets(
-                  Map.values(indexed_patterns)
-                  |> Enum.sort_by(fn p ->
-                    Map.keys(indexed_patterns) |> Enum.find(&(Map.get(indexed_patterns, &1) == p))
-                  end),
-                  acc.pattern_set,
-                  right_set
-                )
-
-              # Get right side cardinality and cost
-              right_card = Cardinality.estimate_pattern(pattern, stats)
-              right_cost = CostModel.pattern_cost(pattern, stats)
-
-              # Select join strategy
-              {strategy, join_cost} =
-                CostModel.select_join_strategy(acc.cardinality, right_card, join_vars, stats)
-
-              # Calculate output cardinality
-              output_card =
-                Cardinality.estimate_join(acc.cardinality, right_card, join_vars, stats)
-
-              # Build join node
-              right_node = {:scan, pattern}
-
-              %{
-                tree: {:join, strategy, acc.tree, right_node, join_vars},
-                cost: CostModel.total_plan_cost([acc.cost, right_cost, join_cost]),
-                cardinality: output_card,
-                pattern_set: MapSet.union(acc.pattern_set, right_set),
-                valid: true
-              }
-            end
-          end
+          extend_left_deep_plan(acc, idx, indexed_patterns, join_graph, stats, allow_cartesian)
         end)
     end
   end
@@ -477,7 +408,6 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   # DPccp Algorithm
   # ===========================================================================
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp dpccp_enumerate(patterns, stats) do
     n = length(patterns)
     join_graph = build_join_graph(patterns)
@@ -510,17 +440,13 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
       memo =
         2..n
         |> Enum.reduce(initial_memo, fn size, memo ->
-          enumerate_subsets_of_size(full_set, size)
-          |> Enum.reduce(memo, fn subset, memo ->
-            best_plan =
-              find_best_plan_for_subset(subset, memo, join_graph, indexed_patterns, stats)
-
-            if best_plan do
-              Map.put(memo, subset, best_plan)
-            else
-              memo
-            end
-          end)
+          reduce_subset_plans(
+            enumerate_subsets_of_size(full_set, size),
+            memo,
+            join_graph,
+            indexed_patterns,
+            stats
+          )
         end)
 
       case Map.get(memo, full_set) do
@@ -556,7 +482,6 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
   end
 
   # Generate connected complement pairs (ccp)
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp generate_ccp(subset, join_graph) do
     subset_list = MapSet.to_list(subset)
     n = MapSet.size(subset)
@@ -571,21 +496,114 @@ defmodule TripleStore.SPARQL.JoinEnumeration do
         |> Enum.map(&MapSet.new/1)
       end)
       |> Enum.flat_map(fn left ->
-        right = MapSet.difference(subset, left)
-
-        # Check if left and right are connected
-        if sets_connected?(left, right, join_graph) do
-          # Return ordered pair to avoid duplicates
-          if Enum.min(MapSet.to_list(left)) < Enum.min(MapSet.to_list(right)) do
-            [{left, right}]
-          else
-            []
-          end
-        else
-          []
-        end
+        build_connected_complement_pair(subset, left, join_graph)
       end)
     end
+  end
+
+  defp wrap_best_plan(nil), do: {:error, :no_valid_plan}
+  defp wrap_best_plan(plan), do: {:ok, plan}
+
+  defp best_cartesian_left_deep_plan(indices, indexed_patterns, join_graph, stats) do
+    permutations(indices)
+    |> Stream.map(fn order ->
+      build_left_deep_plan(order, indexed_patterns, join_graph, stats, allow_cartesian: true)
+    end)
+    |> Enum.min_by(fn plan -> plan.cost.total end, fn -> nil end)
+  end
+
+  defp build_single_pattern_plan(index, indexed_patterns, stats) do
+    pattern = Map.get(indexed_patterns, index)
+
+    %{
+      tree: {:scan, pattern},
+      cost: CostModel.pattern_cost(pattern, stats),
+      cardinality: Cardinality.estimate_pattern(pattern, stats),
+      pattern_set: MapSet.new([index]),
+      valid: true
+    }
+  end
+
+  defp extend_left_deep_plan(nil, _idx, _indexed_patterns, _join_graph, _stats, _allow_cartesian),
+    do: nil
+
+  defp extend_left_deep_plan(
+         %{valid: false} = acc,
+         _idx,
+         _indexed_patterns,
+         _join_graph,
+         _stats,
+         _allow_cartesian
+       ),
+       do: acc
+
+  defp extend_left_deep_plan(acc, idx, indexed_patterns, join_graph, stats, allow_cartesian) do
+    pattern = Map.get(indexed_patterns, idx)
+    right_set = MapSet.new([idx])
+
+    case sets_connected?(acc.pattern_set, right_set, join_graph) or allow_cartesian do
+      false ->
+        %{acc | valid: false}
+
+      true ->
+        build_left_deep_join_plan(acc, pattern, right_set, indexed_patterns, stats)
+    end
+  end
+
+  defp build_left_deep_join_plan(acc, pattern, right_set, indexed_patterns, stats) do
+    join_vars =
+      shared_variables_between_sets(
+        ordered_indexed_patterns(indexed_patterns),
+        acc.pattern_set,
+        right_set
+      )
+
+    right_card = Cardinality.estimate_pattern(pattern, stats)
+    right_cost = CostModel.pattern_cost(pattern, stats)
+
+    {strategy, join_cost} =
+      CostModel.select_join_strategy(acc.cardinality, right_card, join_vars, stats)
+
+    output_card = Cardinality.estimate_join(acc.cardinality, right_card, join_vars, stats)
+    right_node = {:scan, pattern}
+
+    %{
+      tree: {:join, strategy, acc.tree, right_node, join_vars},
+      cost: CostModel.total_plan_cost([acc.cost, right_cost, join_cost]),
+      cardinality: output_card,
+      pattern_set: MapSet.union(acc.pattern_set, right_set),
+      valid: true
+    }
+  end
+
+  defp ordered_indexed_patterns(indexed_patterns) do
+    indexed_patterns
+    |> Enum.sort_by(fn {index, _pattern} -> index end)
+    |> Enum.map(fn {_index, pattern} -> pattern end)
+  end
+
+  defp maybe_store_subset_plan(nil, memo, _subset), do: memo
+  defp maybe_store_subset_plan(best_plan, memo, subset), do: Map.put(memo, subset, best_plan)
+
+  defp reduce_subset_plans(subsets, memo, join_graph, indexed_patterns, stats) do
+    Enum.reduce(subsets, memo, fn subset, acc_memo ->
+      subset
+      |> find_best_plan_for_subset(acc_memo, join_graph, indexed_patterns, stats)
+      |> maybe_store_subset_plan(acc_memo, subset)
+    end)
+  end
+
+  defp build_connected_complement_pair(subset, left, join_graph) do
+    right = MapSet.difference(subset, left)
+
+    case sets_connected?(left, right, join_graph) and ordered_ccp_pair?(left, right) do
+      true -> [{left, right}]
+      false -> []
+    end
+  end
+
+  defp ordered_ccp_pair?(left, right) do
+    Enum.min(MapSet.to_list(left)) < Enum.min(MapSet.to_list(right))
   end
 
   defp build_join_plan(left_plan, right_plan, left_set, right_set, indexed_patterns, stats) do

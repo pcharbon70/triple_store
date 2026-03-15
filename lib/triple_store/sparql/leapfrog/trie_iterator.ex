@@ -190,27 +190,32 @@ defmodule TripleStore.SPARQL.Leapfrog.TrieIterator do
 
     case ErlangAdapter.iterator_seek(iter.iter_ref, seek_key) do
       :ok ->
-        # After seeking, get the current entry
-        case ErlangAdapter.iterator_next(iter.iter_ref) do
-          {:ok, key, _value} ->
-            if String.starts_with?(key, iter.prefix) do
-              value = extract_value_at_level(key, iter.level)
-              {:ok, %{iter | current_key: key, current_value: value, exhausted: false}}
-            else
-              # Seek went past the prefix boundary
-              {:exhausted, %{iter | current_key: nil, current_value: nil, exhausted: true}}
-            end
-
-          :iterator_end ->
-            {:exhausted, %{iter | current_key: nil, current_value: nil, exhausted: true}}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        handle_seek_result(iter)
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp handle_seek_result(iter) do
+    case ErlangAdapter.iterator_next(iter.iter_ref) do
+      {:ok, key, _value} -> update_seek_position(iter, key)
+      :iterator_end -> exhausted_iterator(iter)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp update_seek_position(iter, key) do
+    if String.starts_with?(key, iter.prefix) do
+      value = extract_value_at_level(key, iter.level)
+      {:ok, %{iter | current_key: key, current_value: value, exhausted: false}}
+    else
+      exhausted_iterator(iter)
+    end
+  end
+
+  defp exhausted_iterator(iter) do
+    {:exhausted, %{iter | current_key: nil, current_value: nil, exhausted: true}}
   end
 
   @doc """

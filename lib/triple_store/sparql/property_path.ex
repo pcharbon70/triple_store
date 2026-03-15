@@ -286,43 +286,15 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Evaluate a chain of predicates efficiently
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+  defp evaluate_predicate_chain(ctx, binding, subject, [pred], object) do
+    evaluate_link_predicate(ctx, binding, subject, pred, object)
+  end
+
   defp evaluate_predicate_chain(ctx, binding, subject, [pred | rest], object) do
-    case rest do
-      [] ->
-        # Last predicate - connect to final object
-        evaluate_link_predicate(ctx, binding, subject, pred, object)
+    {:variable, var_name} = intermediate = gen_intermediate_var("chain")
 
-      _ ->
-        # Intermediate predicate - use a generated variable
-        {:variable, var_name} = intermediate = gen_intermediate_var("chain")
-
-        case evaluate_link_predicate(ctx, binding, subject, pred, intermediate) do
-          {:ok, stream} ->
-            # Chain to rest of predicates
-            result_stream =
-              Stream.flat_map(stream, fn intermediate_binding ->
-                case evaluate_predicate_chain(
-                       ctx,
-                       intermediate_binding,
-                       intermediate,
-                       rest,
-                       object
-                     ) do
-                  {:ok, rest_stream} ->
-                    # Remove intermediate variable from final bindings
-                    Stream.map(rest_stream, &Map.delete(&1, var_name))
-
-                  {:error, _} ->
-                    []
-                end
-              end)
-
-            {:ok, result_stream}
-
-          {:error, _} = error ->
-            error
-        end
+    with {:ok, stream} <- evaluate_link_predicate(ctx, binding, subject, pred, intermediate) do
+      {:ok, predicate_chain_stream(ctx, stream, intermediate, rest, object, var_name)}
     end
   end
 
@@ -333,7 +305,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # Use bidirectional BFS when both endpoints are bound
   # This can be significantly faster for sparse graphs where the path
   # might be long but the search space expands exponentially
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_bidirectional(ctx, binding, _subject, path, _object, s_resolved, o_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -347,20 +318,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
     with {:ok, s_id} <- term_to_id(s_resolved, dict_manager),
          {:ok, o_id} <- term_to_id(o_resolved, dict_manager) do
-      if s_id == :not_found or o_id == :not_found do
-        {:ok, empty_stream()}
-      else
-        # Check identity first for zero-or-more
-        if include_identity and s_id == o_id do
-          {:ok, Stream.map([binding], & &1)}
-        else
-          # Bidirectional BFS
-          case bidirectional_bfs(ctx, inner_path, s_id, o_id) do
-            true -> {:ok, Stream.map([binding], & &1)}
-            false -> {:ok, empty_stream()}
-          end
-        end
-      end
+      bidirectional_result(ctx, binding, inner_path, include_identity, s_id, o_id)
     end
   end
 
@@ -616,10 +574,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
         binding_stream =
           Stream.flat_map(triple_stream, fn {s_id, _p_id, o_id} ->
-            case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
+            extend_path_match(binding, subject, object, s_id, o_id, dict_manager)
           end)
 
         {:ok, binding_stream}
@@ -631,7 +586,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # Sequence Path (p1/p2)
   # ===========================================================================
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_sequence(ctx, binding, subject, left, right, object) do
     # Generate a unique intermediate variable name
     {:variable, var_name} = intermediate = gen_intermediate_var("seq")
@@ -642,14 +596,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # For each result, evaluate right path: intermediate-[right]->object
         result_stream =
           Stream.flat_map(left_stream, fn intermediate_binding ->
-            case do_evaluate(ctx, intermediate_binding, intermediate, right, object) do
-              {:ok, right_stream} ->
-                # Filter out the intermediate variable from results
-                Stream.map(right_stream, &Map.delete(&1, var_name))
-
-              {:error, _} ->
-                []
-            end
+            sequence_result(ctx, intermediate_binding, intermediate, right, object, var_name)
           end)
 
         {:ok, result_stream}
@@ -665,20 +612,11 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   defp evaluate_alternative(ctx, binding, subject, left, right, object) do
     # Evaluate both paths and concatenate results
-    case do_evaluate(ctx, binding, subject, left, object) do
-      {:ok, left_stream} ->
-        case do_evaluate(ctx, binding, subject, right, object) do
-          {:ok, right_stream} ->
-            # Concatenate streams (left results first, then right)
-            combined = Stream.concat(left_stream, right_stream)
-            {:ok, combined}
-
-          {:error, _} = error ->
-            error
-        end
-
-      {:error, _} = error ->
-        error
+    with {:ok, left_stream} <- do_evaluate(ctx, binding, subject, left, object),
+         {:ok, right_stream} <- do_evaluate(ctx, binding, subject, right, object) do
+      {:ok, Stream.concat(left_stream, right_stream)}
+    else
+      {:error, _} = error -> error
     end
   end
 
@@ -695,7 +633,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # Negated Property Set (!(p1|p2|...))
   # ===========================================================================
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_negated_property_set(ctx, binding, subject, excluded_iris, object) do
     %{db: db, dict_manager: dict_manager} = ctx
 
@@ -725,20 +662,15 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
         case Index.lookup(db, index_pattern) do
           {:ok, triple_stream} ->
-            # Filter out excluded predicates
-            binding_stream =
-              triple_stream
-              |> Stream.reject(fn {_s_id, p_id, _o_id} ->
-                MapSet.member?(excluded_ids, p_id)
-              end)
-              |> Stream.flat_map(fn {s_id, _p_id, o_id} ->
-                case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
-                  {:ok, new_binding} -> [new_binding]
-                  {:error, _} -> []
-                end
-              end)
-
-            {:ok, binding_stream}
+            {:ok,
+             negated_property_binding_stream(
+               triple_stream,
+               excluded_ids,
+               binding,
+               subject,
+               object,
+               dict_manager
+             )}
         end
       end
     end
@@ -787,7 +719,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Both subject and object are bound - check for path existence (including identity)
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_zero_or_more_both_bound(
          ctx,
          binding,
@@ -799,27 +730,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
          dict_manager
        ) do
     # Check identity first (zero steps)
-    if terms_equal?(s_resolved, o_resolved, dict_manager) do
-      {:ok, Stream.map([binding], & &1)}
-    else
-      # Check for one-or-more path
-      case evaluate_one_or_more(ctx, binding, subject, inner_path, object) do
-        {:ok, stream} ->
-          # If any result exists, return the binding
-          if Enum.any?(stream) do
-            {:ok, Stream.map([binding], & &1)}
-          else
-            {:ok, empty_stream()}
-          end
-
-        {:error, _} = error ->
-          error
-      end
+    case terms_equal?(s_resolved, o_resolved, dict_manager) do
+      true -> identity_result(binding)
+      false -> evaluate_zero_or_more_bound_path(ctx, binding, subject, inner_path, object)
     end
   end
 
   # Subject bound, object unbound - forward BFS
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_zero_or_more_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -830,16 +747,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new([s_id]))
 
         # Convert reachable IDs to bindings
-        binding_stream =
-          reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, object, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(reachable, binding, object, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -851,7 +759,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   # Object bound, subject unbound - find nodes that can reach object via path
   # This is equivalent to finding nodes reachable from object via reversed path
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_zero_or_more_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -862,16 +769,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         reachable = bfs_forward(ctx, reversed_path, MapSet.new([o_id]), MapSet.new([o_id]))
 
         # Convert reachable IDs to bindings
-        binding_stream =
-          reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, subject, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(reachable, binding, subject, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -963,36 +861,21 @@ defmodule TripleStore.SPARQL.PropertyPath do
          o_resolved,
          dict_manager
        ) do
-    case term_to_id(s_resolved, dict_manager) do
-      {:ok, s_id} when s_id != :not_found ->
-        case term_to_id(o_resolved, dict_manager) do
-          {:ok, o_id} when o_id != :not_found ->
-            # BFS from subject, excluding the start itself
-            reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new())
+    with {:ok, s_id} when s_id != :not_found <- term_to_id(s_resolved, dict_manager),
+         {:ok, o_id} when o_id != :not_found <- term_to_id(o_resolved, dict_manager) do
+      reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new())
 
-            if MapSet.member?(reachable, o_id) do
-              {:ok, Stream.map([binding], & &1)}
-            else
-              {:ok, empty_stream()}
-            end
-
-          {:ok, :not_found} ->
-            {:ok, empty_stream()}
-
-          {:error, _} = error ->
-            error
-        end
-
-      {:ok, :not_found} ->
-        {:ok, empty_stream()}
-
-      {:error, _} = error ->
-        error
+      case MapSet.member?(reachable, o_id) do
+        true -> identity_result(binding)
+        false -> {:ok, empty_stream()}
+      end
+    else
+      {:ok, :not_found} -> {:ok, empty_stream()}
+      {:error, _} = error -> error
     end
   end
 
   # Subject bound, object unbound - forward BFS excluding start
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_one_or_more_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -1001,16 +884,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # BFS to find all reachable nodes, excluding the start itself
         reachable = bfs_forward(ctx, inner_path, MapSet.new([s_id]), MapSet.new())
 
-        binding_stream =
-          reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, object, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(reachable, binding, object, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -1021,7 +895,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Object bound, subject unbound - find nodes that can reach object via path (at least one step)
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_one_or_more_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -1031,16 +904,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         reversed_path = reverse_path(inner_path)
         reachable = bfs_forward(ctx, reversed_path, MapSet.new([o_id]), MapSet.new())
 
-        binding_stream =
-          reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, subject, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(reachable, binding, subject, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -1131,26 +995,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
          dict_manager
        ) do
     # Check identity first
-    if terms_equal?(s_resolved, o_resolved, dict_manager) do
-      {:ok, Stream.map([binding], & &1)}
-    else
-      # Check for exactly one step
-      case do_evaluate(ctx, binding, subject, inner_path, object) do
-        {:ok, stream} ->
-          if Enum.any?(stream) do
-            {:ok, Stream.map([binding], & &1)}
-          else
-            {:ok, empty_stream()}
-          end
-
-        {:error, _} = error ->
-          error
-      end
+    case terms_equal?(s_resolved, o_resolved, dict_manager) do
+      true -> identity_result(binding)
+      false -> evaluate_zero_or_one_bound_path(ctx, binding, subject, inner_path, object)
     end
   end
 
   # Subject bound, object unbound - identity + one step
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_zero_or_one_forward(ctx, binding, _subject, inner_path, object, s_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -1162,16 +1013,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # Include identity (s_id itself) and one-step nodes
         all_reachable = MapSet.put(one_step, s_id)
 
-        binding_stream =
-          all_reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, object, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(all_reachable, binding, object, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -1182,7 +1024,6 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Object bound, subject unbound - identity + one step via reversed path
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_zero_or_one_reverse(ctx, binding, subject, inner_path, _object, o_resolved) do
     %{dict_manager: dict_manager} = ctx
 
@@ -1195,16 +1036,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # Include identity and one-step nodes
         all_reachable = MapSet.put(one_step, o_id)
 
-        binding_stream =
-          all_reachable
-          |> Stream.flat_map(fn node_id ->
-            case maybe_bind(binding, subject, node_id, dict_manager) do
-              {:ok, new_binding} -> [new_binding]
-              {:error, _} -> []
-            end
-          end)
-
-        {:ok, binding_stream}
+        {:ok, bind_reachable_nodes(all_reachable, binding, subject, dict_manager)}
 
       {:ok, :not_found} ->
         {:ok, empty_stream()}
@@ -1302,40 +1134,132 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   # Get nodes reachable in exactly one step via the inner path (forward)
   @spec get_one_step_forward(context(), path_expr(), term()) :: MapSet.t()
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp get_one_step_forward(ctx, inner_path, node_id) do
     %{dict_manager: dict_manager} = ctx
+    {:variable, var_name} = target_var = gen_intermediate_var("step")
 
-    # Decode the node ID to an algebra term
-    case Term.decode(node_id, dict_manager) do
-      {:ok, node_term} ->
-        # Create a variable for the target
-        {:variable, var_name} = target_var = gen_intermediate_var("step")
-
-        # Evaluate the inner path
-        case do_evaluate(ctx, %{}, node_term, inner_path, target_var) do
-          {:ok, stream} ->
-            stream
-            |> Enum.flat_map(fn binding ->
-              case Map.get(binding, var_name) do
-                nil ->
-                  []
-
-                term ->
-                  case term_to_id(term, dict_manager) do
-                    {:ok, id} when id != :not_found -> [id]
-                    _ -> []
-                  end
-              end
-            end)
-            |> MapSet.new()
-
-          {:error, _} ->
-            MapSet.new()
-        end
-
-      {:error, _} ->
+    with {:ok, node_term} <- Term.decode(node_id, dict_manager),
+         {:ok, stream} <- do_evaluate(ctx, %{}, node_term, inner_path, target_var) do
+      collect_target_ids(stream, var_name, dict_manager)
+    else
+      _ ->
         MapSet.new()
+    end
+  end
+
+  defp chain_predicate_result(ctx, intermediate_binding, intermediate, rest, object, var_name) do
+    case evaluate_predicate_chain(ctx, intermediate_binding, intermediate, rest, object) do
+      {:ok, rest_stream} -> Stream.map(rest_stream, &Map.delete(&1, var_name))
+      {:error, _} -> []
+    end
+  end
+
+  defp predicate_chain_stream(ctx, stream, intermediate, rest, object, var_name) do
+    Stream.flat_map(stream, fn intermediate_binding ->
+      chain_predicate_result(ctx, intermediate_binding, intermediate, rest, object, var_name)
+    end)
+  end
+
+  defp bidirectional_result(ctx, binding, inner_path, include_identity, s_id, o_id) do
+    cond do
+      s_id == :not_found or o_id == :not_found ->
+        {:ok, empty_stream()}
+
+      include_identity and s_id == o_id ->
+        identity_result(binding)
+
+      true ->
+        case bidirectional_bfs(ctx, inner_path, s_id, o_id) do
+          true -> identity_result(binding)
+          false -> {:ok, empty_stream()}
+        end
+    end
+  end
+
+  defp extend_path_match(binding, subject, object, s_id, o_id, dict_manager) do
+    case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
+      {:ok, new_binding} -> [new_binding]
+      {:error, _} -> []
+    end
+  end
+
+  defp sequence_result(ctx, intermediate_binding, intermediate, right, object, var_name) do
+    case do_evaluate(ctx, intermediate_binding, intermediate, right, object) do
+      {:ok, right_stream} -> Stream.map(right_stream, &Map.delete(&1, var_name))
+      {:error, _} -> []
+    end
+  end
+
+  defp identity_result(binding), do: {:ok, Stream.map([binding], & &1)}
+
+  defp evaluate_zero_or_more_bound_path(ctx, binding, subject, inner_path, object) do
+    case evaluate_one_or_more(ctx, binding, subject, inner_path, object) do
+      {:ok, stream} -> stream_presence_result(binding, stream)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp stream_presence_result(binding, stream) do
+    case Enum.any?(stream) do
+      true -> identity_result(binding)
+      false -> {:ok, empty_stream()}
+    end
+  end
+
+  defp bind_reachable_nodes(reachable, binding, term, dict_manager) do
+    Stream.flat_map(reachable, fn node_id ->
+      case maybe_bind(binding, term, node_id, dict_manager) do
+        {:ok, new_binding} -> [new_binding]
+        {:error, _} -> []
+      end
+    end)
+  end
+
+  defp evaluate_zero_or_one_bound_path(ctx, binding, subject, inner_path, object) do
+    case do_evaluate(ctx, binding, subject, inner_path, object) do
+      {:ok, stream} -> stream_presence_result(binding, stream)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp negated_property_binding_stream(
+         triple_stream,
+         excluded_ids,
+         binding,
+         subject,
+         object,
+         dict_manager
+       ) do
+    triple_stream
+    |> Stream.reject(fn {_s_id, p_id, _o_id} -> MapSet.member?(excluded_ids, p_id) end)
+    |> Stream.flat_map(fn {s_id, _p_id, o_id} ->
+      extend_binding_results(binding, subject, object, s_id, o_id, dict_manager)
+    end)
+  end
+
+  defp extend_binding_results(binding, subject, object, s_id, o_id, dict_manager) do
+    case extend_binding(binding, subject, object, s_id, o_id, dict_manager) do
+      {:ok, new_binding} -> [new_binding]
+      {:error, _} -> []
+    end
+  end
+
+  defp collect_target_ids(stream, var_name, dict_manager) do
+    stream
+    |> Enum.flat_map(fn binding -> extract_target_ids(binding, var_name, dict_manager) end)
+    |> MapSet.new()
+  end
+
+  defp extract_target_ids(binding, var_name, dict_manager) do
+    case Map.get(binding, var_name) do
+      nil ->
+        []
+
+      term ->
+        case term_to_id(term, dict_manager) do
+          {:ok, id} when id != :not_found -> [id]
+          _ -> []
+        end
     end
   end
 

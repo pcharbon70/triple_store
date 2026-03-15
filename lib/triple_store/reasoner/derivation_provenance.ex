@@ -335,18 +335,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     prefix = if graph_id, do: <<graph_id::64-big>>, else: <<>>
 
     derivations =
-      ErlangAdapter.fold(db, @provenance_cf, prefix, [], fn {key, value}, acc ->
-        case decode_provenance_key(key) do
-          {:ok, {_g, _s, _p, _o} = quad} ->
-            case decode_derivation(value) do
-              {:ok, derivation} -> [{quad, derivation} | acc]
-              _error -> acc
-            end
-
-          _error ->
-            acc
-        end
-      end)
+      ErlangAdapter.fold(db, @provenance_cf, prefix, [], &collect_persisted_derivation/2)
 
     tracker = %__MODULE__{
       derivations: Map.new(derivations),
@@ -356,6 +345,15 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     {:ok, tracker}
   rescue
     error -> {:error, error}
+  end
+
+  defp collect_persisted_derivation({key, value}, acc) do
+    with {:ok, {_g, _s, _p, _o} = quad} <- decode_provenance_key(key),
+         {:ok, derivation} <- decode_derivation(value) do
+      [{quad, derivation} | acc]
+    else
+      _ -> acc
+    end
   end
 
   @doc """

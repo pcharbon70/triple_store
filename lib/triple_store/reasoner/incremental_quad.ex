@@ -218,14 +218,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     # Store function that adds derived quads with graph_id
     store_fn = fn new_facts ->
       Agent.update(agent, fn current ->
-        # Add graph_id to derived triples
-        new_quads_with_graph =
-          new_facts
-          |> MapSet.to_list()
-          |> Enum.map(fn {s, p, o} -> {graph_id, s, p, o} end)
-          |> MapSet.new()
-
-        MapSet.union(current, new_quads_with_graph)
+        MapSet.union(current, attach_graph_id(new_facts, graph_id))
       end)
 
       :ok
@@ -553,6 +546,13 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
 
   defp convert_rule_pattern({:pattern, [s, p, o]}) do
     {convert_term(s), convert_term(p), convert_term(o)}
+  end
+
+  defp attach_graph_id(new_facts, graph_id) do
+    new_facts
+    |> MapSet.to_list()
+    |> Enum.map(fn {s, p, o} -> {graph_id, s, p, o} end)
+    |> MapSet.new()
   end
 
   defp convert_term({:var, _name}), do: :var

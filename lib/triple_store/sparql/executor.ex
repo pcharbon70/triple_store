@@ -285,6 +285,7 @@ defmodule TripleStore.SPARQL.Executor do
   Backward-compatible alias for `quad_pattern?/1`.
   """
   @spec is_quad_pattern?(term()) :: boolean()
+  # credo:disable-for-next-line Credo.Check.Readability.PredicateFunctionNames
   def is_quad_pattern?(pattern), do: quad_pattern?(pattern)
 
   @doc """
@@ -307,6 +308,7 @@ defmodule TripleStore.SPARQL.Executor do
   Backward-compatible alias for `triple_pattern?/1`.
   """
   @spec is_triple_pattern?(term()) :: boolean()
+  # credo:disable-for-next-line Credo.Check.Readability.PredicateFunctionNames
   def is_triple_pattern?(pattern), do: triple_pattern?(pattern)
 
   @doc """
@@ -552,22 +554,7 @@ defmodule TripleStore.SPARQL.Executor do
             convert_and_execute_pattern(ctx, pattern, graph_term, initial_binding)
 
           {:ok, false} ->
-            # User does not have access - check if graph exists first
-            # If graph doesn't exist, return empty results (not an error)
-            # This matches SPARQL semantics where querying a non-existent graph returns no results
-            case internal_to_rdf(graph_term) do
-              {:ok, graph_iri} ->
-                if QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph_iri) do
-                  {:error, :unauthorized}
-                else
-                  # Graph doesn't exist - return empty stream
-                  {:ok, []}
-                end
-
-              :error ->
-                # Invalid term - return empty stream
-                {:ok, []}
-            end
+            handle_unauthorized_graph_access(ctx, graph_term)
 
           {:error, _reason} = auth_error ->
             auth_error
@@ -620,76 +607,99 @@ defmodule TripleStore.SPARQL.Executor do
 
     case QuadOperations.list_graphs(ctx.db, include_default: true) do
       {:ok, graph_terms} when is_list(graph_terms) ->
-        # Check for too many graphs before filtering
-        if length(graph_terms) > @max_graphs_in_variable_query do
-          :telemetry.execute(
-            [:triple_store, :sparql, :executor, :too_many_graphs],
-            %{
-              graph_count: length(graph_terms),
-              max_allowed: @max_graphs_in_variable_query
-            },
-            %{}
-          )
+        case validate_graph_variable_query_limit(graph_terms) do
+          :ok ->
+            authorized_graphs = authorized_graphs(ctx, graph_terms, user_or_public)
 
-          {:error, {:too_many_graphs, length(graph_terms), @max_graphs_in_variable_query}}
-        else
-          # Filter graphs by authorization first
-          # This is O(n) but n is typically the number of graphs (not quads)
-          # Also convert RDF.IRI terms to internal format {:named_node, iri}
-          # Special case: default graph IRI should be converted to :default_graph
-          authorized_graphs =
-            graph_terms
-            |> Enum.filter(fn graph_term ->
-              case Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
-                {:ok, true} -> true
-                _ -> false
-              end
-            end)
-            |> Enum.map(fn graph_term ->
-              # Convert RDF.IRI to internal format
-              case graph_term do
-                %RDF.IRI{value: "http://www.w3.org/ns/graphs/default"} -> :default_graph
-                %RDF.IRI{value: value} -> {:named_node, value}
-                %RDF.BlankNode{value: value} -> {:blank_node, value}
-                _ -> graph_term
-              end
-            end)
+            results =
+              execute_graph_variable_results(
+                ctx,
+                pattern,
+                var_name,
+                initial_binding,
+                authorized_graphs
+              )
 
-          # Simplified approach: iterate over graphs and collect all results
-          # This is less memory-efficient but more reliable
-          results =
-            Enum.flat_map(authorized_graphs, fn graph ->
-              # Debug: log graph iteration
-              # IO.inspect({:graph, graph}, label: "ITERATING GRAPH")
-              # Normalize graph term - convert :default to :default_graph
-              normalized_graph =
-                case graph do
-                  :default -> :default_graph
-                  other -> other
-                end
+            {:ok, results}
 
-              # Bind graph variable in initial binding BEFORE executing pattern
-              # Use internal format for expression evaluation to work correctly
-              graph_binding = Map.put(initial_binding, var_name, normalized_graph)
-
-              case execute_in_named_graph(ctx, pattern, normalized_graph, graph_binding) do
-                {:ok, stream} ->
-                  # Convert graph term to RDF format for result bindings
-                  graph_value = convert_graph_term_to_rdf(normalized_graph)
-                  # Replace graph variable with RDF format in final results
-                  stream
-                  |> Enum.map(fn binding -> Map.put(binding, var_name, graph_value) end)
-
-                {:error, _} ->
-                  []
-              end
-            end)
-
-          {:ok, results}
+          {:error, reason} ->
+            {:error, reason}
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp handle_unauthorized_graph_access(ctx, graph_term) do
+    case internal_to_rdf(graph_term) do
+      {:ok, graph_iri} -> unauthorized_graph_result(ctx, graph_iri)
+      :error -> {:ok, []}
+    end
+  end
+
+  defp unauthorized_graph_result(ctx, graph_iri) do
+    case QuadOperations.graph_exists?(ctx.db, ctx.dict_manager, graph_iri) do
+      true -> {:error, :unauthorized}
+      false -> {:ok, []}
+    end
+  end
+
+  defp validate_graph_variable_query_limit(graph_terms) do
+    graph_count = length(graph_terms)
+
+    case graph_count > @max_graphs_in_variable_query do
+      true ->
+        :telemetry.execute(
+          [:triple_store, :sparql, :executor, :too_many_graphs],
+          %{graph_count: graph_count, max_allowed: @max_graphs_in_variable_query},
+          %{}
+        )
+
+        {:error, {:too_many_graphs, graph_count, @max_graphs_in_variable_query}}
+
+      false ->
+        :ok
+    end
+  end
+
+  defp authorized_graphs(ctx, graph_terms, user_or_public) do
+    graph_terms
+    |> Enum.filter(&graph_readable?(ctx, &1, user_or_public))
+    |> Enum.map(&normalize_listed_graph_term/1)
+  end
+
+  defp graph_readable?(ctx, graph_term, user_or_public) do
+    case Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
+      {:ok, true} -> true
+      _ -> false
+    end
+  end
+
+  defp normalize_listed_graph_term(%RDF.IRI{value: "http://www.w3.org/ns/graphs/default"}),
+    do: :default_graph
+
+  defp normalize_listed_graph_term(%RDF.IRI{value: value}), do: {:named_node, value}
+  defp normalize_listed_graph_term(%RDF.BlankNode{value: value}), do: {:blank_node, value}
+  defp normalize_listed_graph_term(:default), do: :default_graph
+  defp normalize_listed_graph_term(graph_term), do: graph_term
+
+  defp execute_graph_variable_results(ctx, pattern, var_name, initial_binding, authorized_graphs) do
+    Enum.flat_map(authorized_graphs, fn graph ->
+      execute_graph_variable_graph(ctx, pattern, var_name, initial_binding, graph)
+    end)
+  end
+
+  defp execute_graph_variable_graph(ctx, pattern, var_name, initial_binding, normalized_graph) do
+    graph_binding = Map.put(initial_binding, var_name, normalized_graph)
+
+    case execute_in_named_graph(ctx, pattern, normalized_graph, graph_binding) do
+      {:ok, stream} ->
+        graph_value = convert_graph_term_to_rdf(normalized_graph)
+        Enum.map(stream, &Map.put(&1, var_name, graph_value))
+
+      {:error, _} ->
+        []
     end
   end
 
@@ -975,7 +985,7 @@ defmodule TripleStore.SPARQL.Executor do
     case check_range_query_opportunity(ctx, binding, s, p, o) do
       {:use_range_index, predicate_id, var_name, min_val, max_val} ->
         # Use range index for this pattern
-        execute_range_pattern(ctx, binding, s, p, o, predicate_id, var_name, min_val, max_val)
+        execute_range_pattern(ctx, binding, s, predicate_id, var_name, {min_val, max_val})
 
       :use_regular_index ->
         execute_regular_pattern(ctx, binding, s, p, o)
@@ -1028,24 +1038,13 @@ defmodule TripleStore.SPARQL.Executor do
 
           quads when is_list(quads) ->
             # Convert matching quads to bindings
+            quad_pattern = {s, p, o, g}
+
             binding_stream =
-              Stream.flat_map(quads, fn {s_id, p_id, o_id, g_id} ->
-                case extend_binding_from_quad_match(
-                       binding,
-                       s,
-                       p,
-                       o,
-                       g,
-                       s_id,
-                       p_id,
-                       o_id,
-                       g_id,
-                       dict_manager
-                     ) do
-                  {:ok, new_binding} -> [new_binding]
-                  {:error, _} -> []
-                end
-              end)
+              Stream.flat_map(
+                quads,
+                &bindings_from_quad_match(binding, quad_pattern, &1, dict_manager)
+              )
 
             {:ok, binding_stream}
         end
@@ -1096,7 +1095,7 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # Execute pattern using range index
-  defp execute_range_pattern(ctx, binding, s, _p, _o, predicate_id, var_name, min_val, max_val) do
+  defp execute_range_pattern(ctx, binding, s, predicate_id, var_name, {min_val, max_val}) do
     %{db: db, dict_manager: dict_manager} = ctx
 
     # Emit telemetry for range index usage
@@ -1114,27 +1113,7 @@ defmodule TripleStore.SPARQL.Executor do
 
         binding_stream =
           Stream.flat_map(range_results, fn {subject_id, float_value} ->
-            # Create a typed literal for the float value.
-            # Note: We use xsd:double as the canonical type for range index results.
-            # The original datatype (integer, decimal, float) is not preserved in the
-            # range index for performance reasons. SPARQL numeric comparisons handle
-            # type promotion correctly, so this works for filter evaluation. If exact
-            # type preservation is needed, disable range index for that predicate.
-            value_term =
-              {:literal, :typed, Float.to_string(float_value),
-               "http://www.w3.org/2001/XMLSchema#double"}
-
-            # Build binding with subject
-            # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-            case maybe_bind(binding, s, subject_id, dict_manager) do
-              {:ok, binding_with_subject} ->
-                # Bind the object variable directly with the term value
-                final_binding = Map.put(binding_with_subject, var_name, value_term)
-                [final_binding]
-
-              {:error, _} ->
-                []
-            end
+            build_range_binding(binding, s, subject_id, dict_manager, var_name, float_value)
           end)
 
         {:ok, binding_stream}
@@ -1332,7 +1311,12 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Extend a binding with values from a matched quad
   # Similar to extend_binding_from_match but handles 4 positions
-  defp extend_binding_from_quad_match(binding, s, p, o, g, s_id, p_id, o_id, g_id, dict_manager) do
+  defp extend_binding_from_quad_match(
+         binding,
+         {s, p, o, g},
+         {s_id, p_id, o_id, g_id},
+         dict_manager
+       ) do
     with {:ok, binding1} <- maybe_bind(binding, s, s_id, dict_manager),
          {:ok, binding2} <- maybe_bind(binding1, p, p_id, dict_manager),
          {:ok, binding3} <- maybe_bind(binding2, o, o_id, dict_manager) do
@@ -1508,12 +1492,7 @@ defmodule TripleStore.SPARQL.Executor do
     right_list = Enum.to_list(right)
 
     Stream.flat_map(left, fn left_binding ->
-      Enum.flat_map(right_list, fn right_binding ->
-        case merge_bindings(left_binding, right_binding) do
-          {:ok, merged} -> [merged]
-          :incompatible -> []
-        end
-      end)
+      Enum.flat_map(right_list, &merge_join_bindings(left_binding, &1))
     end)
   end
 
@@ -2400,36 +2379,7 @@ defmodule TripleStore.SPARQL.Executor do
   @spec distinct(Enumerable.t()) :: binding_stream()
   def distinct(stream) do
     Stream.transform(stream, {MapSet.new(), 0}, fn binding, {seen, count} ->
-      if MapSet.member?(seen, binding) do
-        {[], {seen, count}}
-      else
-        new_count = count + 1
-
-        # Check if we've exceeded the limit
-        if new_count > @max_distinct_size do
-          :telemetry.execute(
-            [:triple_store, :sparql, :executor, :distinct_limit_exceeded],
-            %{limit: @max_distinct_size},
-            %{}
-          )
-
-          raise TripleStore.SPARQL.LimitExceededError,
-            message: "DISTINCT limit exceeded: more than #{@max_distinct_size} unique bindings",
-            limit: @max_distinct_size,
-            operation: :distinct
-        end
-
-        # Emit telemetry at intervals to monitor memory growth
-        if rem(new_count, 10_000) == 0 do
-          :telemetry.execute(
-            [:triple_store, :sparql, :executor, :distinct],
-            %{unique_count: new_count, seen_size: MapSet.size(seen)},
-            %{}
-          )
-        end
-
-        {[binding], {MapSet.put(seen, binding), new_count}}
-      end
+      handle_distinct_binding(binding, seen, count)
     end)
   end
 
@@ -3109,28 +3059,117 @@ defmodule TripleStore.SPARQL.Executor do
 
   defp extract_numeric_from_type(str, type) do
     cond do
-      String.contains?(type, "integer") or String.contains?(type, "int") or
-        String.contains?(type, "long") or String.contains?(type, "short") or
-          String.contains?(type, "byte") ->
-        case Integer.parse(str) do
-          {n, ""} -> {:integer, n}
-          _ -> :error
-        end
+      integer_datatype?(type) ->
+        parse_integer_numeric(str)
 
-      String.contains?(type, "decimal") ->
-        case Float.parse(str) do
-          {n, ""} -> {:decimal, n}
-          _ -> :error
-        end
+      decimal_datatype?(type) ->
+        parse_decimal_numeric(str)
 
-      String.contains?(type, "double") or String.contains?(type, "float") ->
-        case Float.parse(str) do
-          {n, ""} -> {:double, n}
-          _ -> :error
-        end
+      floating_datatype?(type) ->
+        parse_double_numeric(str)
 
       true ->
         :error
+    end
+  end
+
+  defp bindings_from_quad_match(binding, quad_pattern, quad_ids, dict_manager) do
+    case extend_binding_from_quad_match(binding, quad_pattern, quad_ids, dict_manager) do
+      {:ok, new_binding} -> [new_binding]
+      {:error, _} -> []
+    end
+  end
+
+  defp build_range_binding(binding, s, subject_id, dict_manager, var_name, float_value) do
+    value_term = range_value_term(float_value)
+
+    case maybe_bind(binding, s, subject_id, dict_manager) do
+      {:ok, binding_with_subject} ->
+        [Map.put(binding_with_subject, var_name, value_term)]
+
+      {:error, _} ->
+        []
+    end
+  end
+
+  defp range_value_term(float_value) do
+    {:literal, :typed, Float.to_string(float_value), "http://www.w3.org/2001/XMLSchema#double"}
+  end
+
+  defp maybe_emit_distinct_progress(new_count, seen) do
+    if rem(new_count, 10_000) == 0 do
+      :telemetry.execute(
+        [:triple_store, :sparql, :executor, :distinct],
+        %{unique_count: new_count, seen_size: MapSet.size(seen)},
+        %{}
+      )
+    end
+  end
+
+  defp merge_join_bindings(left_binding, right_binding) do
+    case merge_bindings(left_binding, right_binding) do
+      {:ok, merged} -> [merged]
+      :incompatible -> []
+    end
+  end
+
+  defp handle_distinct_binding(binding, seen, count) do
+    case MapSet.member?(seen, binding) do
+      true ->
+        {[], {seen, count}}
+
+      false ->
+        new_count = count + 1
+        check_distinct_limit!(new_count)
+        maybe_emit_distinct_progress(new_count, seen)
+        {[binding], {MapSet.put(seen, binding), new_count}}
+    end
+  end
+
+  defp check_distinct_limit!(new_count) when new_count > @max_distinct_size do
+    :telemetry.execute(
+      [:triple_store, :sparql, :executor, :distinct_limit_exceeded],
+      %{limit: @max_distinct_size},
+      %{}
+    )
+
+    raise TripleStore.SPARQL.LimitExceededError,
+      message: "DISTINCT limit exceeded: more than #{@max_distinct_size} unique bindings",
+      limit: @max_distinct_size,
+      operation: :distinct
+  end
+
+  defp check_distinct_limit!(_new_count), do: :ok
+
+  defp integer_datatype?(type) do
+    String.contains?(type, "integer") or String.contains?(type, "int") or
+      String.contains?(type, "long") or String.contains?(type, "short") or
+      String.contains?(type, "byte")
+  end
+
+  defp decimal_datatype?(type), do: String.contains?(type, "decimal")
+
+  defp floating_datatype?(type),
+    do: String.contains?(type, "double") or String.contains?(type, "float")
+
+  defp parse_integer_numeric(str) do
+    case Integer.parse(str) do
+      {n, ""} -> {:integer, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_decimal_numeric(str) do
+    case Float.parse(str) do
+      {n, ""} -> {:decimal, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_double_numeric(str) do
+    case Float.parse(str) do
+      {n, ""} -> {:double, n}
+      _ -> :error
     end
   end
 
