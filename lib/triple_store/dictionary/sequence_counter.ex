@@ -60,6 +60,9 @@ defmodule TripleStore.Dictionary.SequenceCounter do
   @typedoc "Counter reference (GenServer pid or name)"
   @type counter :: GenServer.server()
 
+  @typedoc "Shared store handle used for persisted counter state"
+  @type db_ref :: TripleStore.db_ref()
+
   @typedoc "Dictionary-allocated term types"
   @type dict_type :: :uri | :bnode | :literal
 
@@ -615,7 +618,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
     end
   end
 
-  @spec load_counter(reference(), dict_type()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec load_counter(db_ref(), dict_type()) :: {:ok, non_neg_integer()} | {:error, term()}
   defp load_counter(db, type) do
     key = counter_key(type)
 
@@ -633,7 +636,7 @@ defmodule TripleStore.Dictionary.SequenceCounter do
     end
   end
 
-  @spec persist_counter(reference(), dict_type(), non_neg_integer()) :: :ok | {:error, term()}
+  @spec persist_counter(db_ref(), dict_type(), non_neg_integer()) :: :ok | {:error, term()}
   defp persist_counter(db, type, value) do
     key = counter_key(type)
     binary = <<value::64-big>>

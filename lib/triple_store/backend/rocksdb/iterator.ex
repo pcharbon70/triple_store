@@ -419,10 +419,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           collect_continuing(iter_ref, prefix, [{key, value} | acc])
         end
 
-      :iterator_end ->
-        Enum.reverse(acc)
-
-      {:error, _reason} ->
+      _other ->
         Enum.reverse(acc)
     end
   end
@@ -439,10 +436,7 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           collect_continuing(iter_ref, prefix, [{key, value} | acc])
         end
 
-      :iterator_end ->
-        Enum.reverse(acc)
-
-      {:error, _reason} ->
+      _other ->
         Enum.reverse(acc)
     end
   end

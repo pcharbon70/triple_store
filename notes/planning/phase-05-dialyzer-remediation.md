@@ -73,23 +73,32 @@ layers inherit.
 Description: Bring the adapter specs into line with the actual iterator and
 prefix-stream behavior.
 
-- [ ] **Task 2.1.1** Description: Reconcile `ErlangAdapter` specs with actual
+- [x] **Task 2.1.1** Description: Reconcile `ErlangAdapter` specs with actual
   return values for iterator navigation, snapshots, prefix streams, and write
-  helpers.
-- [ ] **Task 2.1.2** Description: Remove impossible branches around
+  helpers. Completed on 2026-03-15 by fixing the snapshot reference type alias,
+  aligning snapshot APIs to that alias, and removing unreachable adapter
+  fallback branches that Dialyzer no longer considered possible.
+- [x] **Task 2.1.2** Description: Remove impossible branches around
   `:iterator_end`, invalid column family paths, and other stale pattern matches
-  in the RocksDB adapter and iterator modules.
+  in the RocksDB adapter and iterator modules. Completed on 2026-03-15 by
+  collapsing private iterator/fold catch-all paths to the shapes Dialyzer sees
+  from `:rocksdb.iterator_move/2`, which reduced the backlog from `184` to
+  `168`.
 
 ### Section 2.2: Dictionary and Counter Contracts
 
 Description: Tighten the dictionary and sequence-counter specs to the current
 `pid()`-based store interactions.
 
-- [ ] **Task 2.2.1** Description: Align `Dictionary.Manager`,
+- [x] **Task 2.2.1** Description: Align `Dictionary.Manager`,
   `Dictionary.IdToString`, and `Dictionary.SequenceCounter` contracts with the
-  current lookup and batch-write behavior.
-- [ ] **Task 2.2.2** Description: Fix downstream callers that still assume older
-  dictionary adapter return shapes.
+  current lookup and batch-write behavior. Completed on 2026-03-15 by
+  normalizing the private dictionary and counter DB-handle specs to the
+  canonical `TripleStore.db_ref()` alias introduced in Phase 1.
+- [x] **Task 2.2.2** Description: Fix downstream callers that still assume older
+  dictionary adapter return shapes. Completed on 2026-03-15 by aligning
+  sharded-manager shared-resource contracts with the same store-handle alias,
+  which reduced the Dialyzer backlog from `168` to `157`.
 
 ---
 

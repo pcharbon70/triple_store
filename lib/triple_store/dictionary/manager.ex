@@ -58,6 +58,9 @@ defmodule TripleStore.Dictionary.Manager do
   @typedoc "Manager reference (GenServer pid or name)"
   @type manager :: GenServer.server()
 
+  @typedoc "Shared store handle used by the dictionary runtime"
+  @type db_ref :: TripleStore.db_ref()
+
   @typedoc "RDF term (URI, blank node, or literal)"
   @type rdf_term :: RDF.IRI.t() | RDF.BlankNode.t() | RDF.Literal.t()
 
@@ -467,7 +470,7 @@ defmodule TripleStore.Dictionary.Manager do
   # Private Functions
   # ===========================================================================
 
-  @spec do_get_or_create_id(reference(), SequenceCounter.counter(), :ets.tid(), rdf_term()) ::
+  @spec do_get_or_create_id(db_ref(), SequenceCounter.counter(), :ets.tid(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | {:error, term()}
   defp do_get_or_create_id(db, counter, cache, term) do
     case StringToId.encode_term(term) do
@@ -492,7 +495,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec do_lookup_id(reference(), :ets.tid(), rdf_term()) ::
+  @spec do_lookup_id(db_ref(), :ets.tid(), rdf_term()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp do_lookup_id(db, cache, term) do
     with {:ok, key} <- StringToId.encode_term(term) do
@@ -500,7 +503,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec lookup_in_cache_or_db(reference(), :ets.tid(), binary()) ::
+  @spec lookup_in_cache_or_db(db_ref(), :ets.tid(), binary()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp lookup_in_cache_or_db(db, cache, key) do
     case :ets.lookup(cache, key) do
@@ -509,7 +512,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec lookup_in_rocksdb(reference(), :ets.tid(), binary()) ::
+  @spec lookup_in_rocksdb(db_ref(), :ets.tid(), binary()) ::
           {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
   defp lookup_in_rocksdb(db, cache, key) do
     case ErlangAdapter.get(db, :str2id, key) do
@@ -526,7 +529,7 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @spec create_and_store_id(
-          reference(),
+          db_ref(),
           SequenceCounter.counter(),
           :ets.tid(),
           binary(),
@@ -553,7 +556,7 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   # Optimized batch processing with range allocation
-  @spec do_get_or_create_ids_batch(reference(), SequenceCounter.counter(), :ets.tid(), [
+  @spec do_get_or_create_ids_batch(db_ref(), SequenceCounter.counter(), :ets.tid(), [
           rdf_term()
         ]) ::
           {:ok, [Dictionary.term_id()]} | {:error, term()}
@@ -570,7 +573,7 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @spec process_encoded_terms(
-          reference(),
+          db_ref(),
           SequenceCounter.counter(),
           :ets.tid(),
           [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
@@ -588,7 +591,7 @@ defmodule TripleStore.Dictionary.Manager do
   end
 
   @spec create_missing_ids(
-          reference(),
+          db_ref(),
           SequenceCounter.counter(),
           :ets.tid(),
           [{non_neg_integer(), binary(), rdf_term()}],
@@ -639,7 +642,7 @@ defmodule TripleStore.Dictionary.Manager do
     {unique_terms, key_to_indices}
   end
 
-  @spec encode_and_lookup_terms(reference(), :ets.tid(), [rdf_term()]) ::
+  @spec encode_and_lookup_terms(db_ref(), :ets.tid(), [rdf_term()]) ::
           {[{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}],
            [{non_neg_integer(), term()}]}
   defp encode_and_lookup_terms(db, cache, terms) do
@@ -663,7 +666,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec resolve_encoded_terms(reference(), :ets.tid(), [{non_neg_integer(), binary(), rdf_term()}]) ::
+  @spec resolve_encoded_terms(db_ref(), :ets.tid(), [{non_neg_integer(), binary(), rdf_term()}]) ::
           [{non_neg_integer(), binary(), rdf_term(), Dictionary.term_id() | nil}]
   defp resolve_encoded_terms(db, cache, encoded_terms) do
     {unique_terms, _key_to_indices} = deduplicate_encoded_terms(encoded_terms)
@@ -681,7 +684,7 @@ defmodule TripleStore.Dictionary.Manager do
     end)
   end
 
-  @spec lookup_existing_id(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
+  @spec lookup_existing_id(db_ref(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
   defp lookup_existing_id(db, cache, key) do
     case :ets.lookup(cache, key) do
       [{^key, id}] -> id
@@ -689,7 +692,7 @@ defmodule TripleStore.Dictionary.Manager do
     end
   end
 
-  @spec lookup_existing_id_in_db(reference(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
+  @spec lookup_existing_id_in_db(db_ref(), :ets.tid(), binary()) :: Dictionary.term_id() | nil
   defp lookup_existing_id_in_db(db, cache, key) do
     case ErlangAdapter.get(db, :str2id, key) do
       {:ok, <<id::64-big>>} ->
@@ -730,7 +733,7 @@ defmodule TripleStore.Dictionary.Manager do
   # Assign IDs from ranges and store in RocksDB for unique terms only
   # Returns a map of key -> id
   @spec assign_and_store_unique_ids(
-          reference(),
+          db_ref(),
           :ets.tid(),
           [{binary(), rdf_term()}],
           %{atom() => {non_neg_integer(), non_neg_integer()}}
