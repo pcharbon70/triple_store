@@ -101,7 +101,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   @type id_quad :: {integer(), integer(), integer(), integer()}
 
   @typedoc "Pattern element for matching"
-  @type pattern_element :: :var | {:var, atom()} | :bound | {:bound, non_neg_integer()} | non_neg_integer()
+  @type pattern_element ::
+          :var | {:var, atom()} | :bound | {:bound, non_neg_integer()} | non_neg_integer()
 
   @typedoc "Triple pattern for SPO matching"
   @type pattern :: {:pattern, [pattern_element()]}
@@ -567,19 +568,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
     facts =
       ErlangAdapter.fold(db, :gspo, <<>>, MapSet.new(), fn {key, _value}, acc ->
-        # Check if this quad is in the derived CF
-        if MapSet.member?(derived_keys, key) do
-          # Skip derived quads
-          acc
-        else
-          case QuadIndex.key_to_quad(:gspo, key) do
-            {_g, _s, _p, _o} = quad ->
-              MapSet.put(acc, quad_to_triple(quad))
-
-            _error ->
-              acc
-          end
-        end
+        collect_explicit_quad(key, acc, derived_keys)
       end)
 
     {:ok, facts}
@@ -631,7 +620,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   end
 
   # Lookup facts in TBox (in-memory MapSet)
-  @spec lookup_in_tbox_facts(pattern_union(), MapSet.t(id_triple())) :: {:ok, MapSet.t(id_triple())}
+  @spec lookup_in_tbox_facts(pattern_union(), MapSet.t(id_triple())) ::
+          {:ok, MapSet.t(id_triple())}
   defp lookup_in_tbox_facts(_pattern, tbox_facts) when map_size(tbox_facts) == 0 do
     {:ok, MapSet.new()}
   end
@@ -672,14 +662,16 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   # Private Functions - Graph-Scoped Lookup/Store
   # ============================================================================
 
-  @spec lookup_in_graph_facts(db_ref(), graph_id(), pattern_union()) :: {:ok, MapSet.t(id_triple())}
+  @spec lookup_in_graph_facts(db_ref(), graph_id(), pattern_union()) ::
+          {:ok, MapSet.t(id_triple())}
   defp lookup_in_graph_facts(db, graph_id, pattern) do
     # Build a quad pattern bound to the specific graph
     quad_pattern = bind_graph_to_pattern(pattern, graph_id)
     lookup_quads_as_triples_in_graph(db, quad_pattern, graph_id)
   end
 
-  @spec lookup_quads_as_triples_in_graph(db_ref(), quad_pattern(), graph_id()) :: {:ok, MapSet.t(id_triple())}
+  @spec lookup_quads_as_triples_in_graph(db_ref(), quad_pattern(), graph_id()) ::
+          {:ok, MapSet.t(id_triple())}
   defp lookup_quads_as_triples_in_graph(
          db,
          {:quad_pattern, [{:bound, graph_id}, s, p, o]},
@@ -859,20 +851,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
       ErlangAdapter.fold(db, index, prefix, [], fn {key, _value}, acc ->
         case QuadIndex.key_to_quad(index, key) do
           {_g, s, p, o} ->
-            if needs_filter do
-              if matches_quad_pattern?(
-                   {s, p, o, :ignored},
-                   quad_pattern,
-                   bound_values,
-                   filter_positions
-                 ) do
-                [{s, p, o} | acc]
-              else
-                acc
-              end
-            else
-              [{s, p, o} | acc]
-            end
+            maybe_collect_index_result(
+              acc,
+              {s, p, o},
+              quad_pattern,
+              bound_values,
+              needs_filter,
+              filter_positions
+            )
 
           _error ->
             acc
@@ -1183,12 +1169,14 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
             # Graph has no explicit configuration - use default
             default_gc = GraphReasoningConfig.default(graph_id)
 
-            if hybrid_mode? do
-              # Track unconfigured graphs for warning
-              {Map.put(local_acc, graph_id, default_gc), global_acc, [graph_id | unconf_acc]}
-            else
-              {Map.put(local_acc, graph_id, default_gc), global_acc, unconf_acc}
-            end
+            track_default_graph_config(
+              local_acc,
+              global_acc,
+              unconf_acc,
+              graph_id,
+              default_gc,
+              hybrid_mode?
+            )
         end
       end)
 
@@ -1203,6 +1191,62 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
 
     {local, global}
+  end
+
+  defp collect_explicit_quad(key, acc, derived_keys) do
+    case MapSet.member?(derived_keys, key) do
+      true -> acc
+      false -> maybe_add_explicit_quad(key, acc)
+    end
+  end
+
+  defp maybe_add_explicit_quad(key, acc) do
+    case QuadIndex.key_to_quad(:gspo, key) do
+      {_g, _s, _p, _o} = quad -> MapSet.put(acc, quad_to_triple(quad))
+      _error -> acc
+    end
+  end
+
+  defp maybe_collect_index_result(
+         acc,
+         {s, p, o} = triple,
+         quad_pattern,
+         bound_values,
+         needs_filter,
+         filter_positions
+       ) do
+    case needs_filter and
+           not matches_quad_pattern?(
+             {s, p, o, :ignored},
+             quad_pattern,
+             bound_values,
+             filter_positions
+           ) do
+      true -> acc
+      false -> [triple | acc]
+    end
+  end
+
+  defp track_default_graph_config(
+         local_acc,
+         global_acc,
+         unconf_acc,
+         graph_id,
+         default_gc,
+         true
+       ) do
+    {Map.put(local_acc, graph_id, default_gc), global_acc, [graph_id | unconf_acc]}
+  end
+
+  defp track_default_graph_config(
+         local_acc,
+         global_acc,
+         unconf_acc,
+         graph_id,
+         default_gc,
+         false
+       ) do
+    {Map.put(local_acc, graph_id, default_gc), global_acc, unconf_acc}
   end
 
   defp get_all_graph_ids(db) do

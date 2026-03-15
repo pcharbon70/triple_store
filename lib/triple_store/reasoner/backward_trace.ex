@@ -201,25 +201,12 @@ defmodule TripleStore.Reasoner.BackwardTrace do
   `true` if the derived fact could have used the input fact via this rule.
   """
   @spec could_derive?(term_triple(), term_triple(), Rule.t(), fact_set()) :: boolean()
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def could_derive?(derived, input, rule, all_facts) do
-    # Check if derived matches the rule head
     case PatternMatcher.match_rule_head(derived, rule.head) do
       {:ok, head_bindings} ->
-        # Check if input matches any body pattern with consistent bindings
-        patterns = Rule.body_patterns(rule)
-
-        Enum.any?(patterns, fn pattern ->
-          case PatternMatcher.match_rule_head(input, pattern) do
-            {:ok, input_bindings} ->
-              # Check binding consistency and other patterns
-              consistent_bindings?(head_bindings, input_bindings) and
-                other_patterns_satisfiable?(rule, input, head_bindings, all_facts)
-
-            :no_match ->
-              false
-          end
-        end)
+        rule
+        |> Rule.body_patterns()
+        |> Enum.any?(&pattern_could_derive_input?(&1, input, head_bindings, rule, all_facts))
 
       :no_match ->
         false
@@ -230,44 +217,13 @@ defmodule TripleStore.Reasoner.BackwardTrace do
   # Private Functions - Tracing
   # ============================================================================
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp trace_recursive(facts_to_trace, all_derived, rules, state, max_depth) do
-    if state.current_depth >= max_depth or MapSet.size(facts_to_trace) == 0 do
-      state
-    else
-      # Find all facts that haven't been visited yet
-      unvisited = MapSet.difference(facts_to_trace, state.visited)
-
-      if MapSet.size(unvisited) == 0 do
+    case trace_should_continue?(facts_to_trace, state, max_depth) do
+      false ->
         state
-      else
-        # Mark as visited
-        new_visited = MapSet.union(state.visited, unvisited)
 
-        # Find all derived facts that depend on the unvisited facts
-        new_dependents =
-          unvisited
-          |> Enum.flat_map(fn fact ->
-            find_direct_dependents(fact, all_derived, rules)
-            |> MapSet.to_list()
-          end)
-          |> MapSet.new()
-
-        # Filter to only derived facts (not explicit)
-        new_invalid = MapSet.intersection(new_dependents, all_derived)
-
-        # Update state
-        new_state = %{
-          potentially_invalid: MapSet.union(state.potentially_invalid, new_invalid),
-          visited: new_visited,
-          current_depth: state.current_depth + 1,
-          max_depth_reached: max(state.max_depth_reached, state.current_depth + 1),
-          facts_examined: state.facts_examined + MapSet.size(unvisited)
-        }
-
-        # Recursively trace from newly found invalid facts
-        trace_recursive(new_invalid, all_derived, rules, new_state, max_depth)
-      end
+      true ->
+        continue_trace_recursive(facts_to_trace, all_derived, rules, state, max_depth)
     end
   end
 
@@ -325,32 +281,74 @@ defmodule TripleStore.Reasoner.BackwardTrace do
   # Check if other body patterns can be satisfied given bindings
   # This is a simplified check - in a full implementation, we'd verify
   # that the other patterns actually have matching facts
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp other_patterns_satisfiable?(rule, input, bindings, all_facts) do
-    patterns = Rule.body_patterns(rule)
-
-    # For rules with multiple body patterns, check that other patterns
-    # could be satisfied. This is conservative - we assume they could be
-    # if the bindings are consistent.
-    case patterns do
+    case Rule.body_patterns(rule) do
       [_single] ->
-        # Only one pattern, input matches it, we're done
         true
 
       multiple ->
-        # Multiple patterns - check if any pattern besides the one matching input
-        # could have facts satisfying it
-        Enum.any?(multiple, fn pattern ->
-          case PatternMatcher.match_rule_head(input, pattern) do
-            {:ok, _} ->
-              # This is the pattern that input matches
-              true
+        Enum.any?(multiple, &pattern_or_facts_satisfiable?(&1, input, bindings, all_facts))
+    end
+  end
 
-            :no_match ->
-              # Check if this pattern could match any facts with current bindings
-              pattern_satisfiable?(pattern, bindings, all_facts)
-          end
-        end)
+  defp pattern_could_derive_input?(pattern, input, head_bindings, rule, all_facts) do
+    case PatternMatcher.match_rule_head(input, pattern) do
+      {:ok, input_bindings} ->
+        consistent_bindings?(head_bindings, input_bindings) and
+          other_patterns_satisfiable?(rule, input, head_bindings, all_facts)
+
+      :no_match ->
+        false
+    end
+  end
+
+  defp trace_should_continue?(facts_to_trace, state, max_depth) do
+    state.current_depth < max_depth and MapSet.size(facts_to_trace) > 0
+  end
+
+  defp continue_trace_recursive(facts_to_trace, all_derived, rules, state, max_depth) do
+    unvisited = MapSet.difference(facts_to_trace, state.visited)
+
+    case MapSet.size(unvisited) do
+      0 ->
+        state
+
+      _ ->
+        new_dependents = collect_new_dependents(unvisited, all_derived, rules)
+        new_invalid = MapSet.intersection(new_dependents, all_derived)
+
+        state
+        |> next_trace_state(unvisited, new_invalid)
+        |> then(&trace_recursive(new_invalid, all_derived, rules, &1, max_depth))
+    end
+  end
+
+  defp collect_new_dependents(unvisited, all_derived, rules) do
+    unvisited
+    |> Enum.flat_map(fn fact ->
+      fact
+      |> find_direct_dependents(all_derived, rules)
+      |> MapSet.to_list()
+    end)
+    |> MapSet.new()
+  end
+
+  defp next_trace_state(state, unvisited, new_invalid) do
+    next_depth = state.current_depth + 1
+
+    %{
+      potentially_invalid: MapSet.union(state.potentially_invalid, new_invalid),
+      visited: MapSet.union(state.visited, unvisited),
+      current_depth: next_depth,
+      max_depth_reached: max(state.max_depth_reached, next_depth),
+      facts_examined: state.facts_examined + MapSet.size(unvisited)
+    }
+  end
+
+  defp pattern_or_facts_satisfiable?(pattern, input, bindings, all_facts) do
+    case PatternMatcher.match_rule_head(input, pattern) do
+      {:ok, _} -> true
+      :no_match -> pattern_satisfiable?(pattern, bindings, all_facts)
     end
   end
 

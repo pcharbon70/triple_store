@@ -206,7 +206,6 @@ defmodule TripleStore.Reasoner.DeltaComputation do
           non_neg_integer(),
           [Rule.condition()]
         ) :: [Rule.binding()]
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def generate_bindings(lookup_fn, patterns, delta, delta_index, delta_pos, conditions) do
     patterns
     |> Enum.with_index()
@@ -214,34 +213,18 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       use_delta = pos == delta_pos
 
       Enum.flat_map(bindings, fn binding ->
-        # Substitute known bindings into pattern
-        substituted_terms = Enum.map(terms, &Rule.substitute(&1, binding))
-        substituted_pattern = {:pattern, substituted_terms}
-
-        # Get matching facts from delta or full database
-        matching_facts =
-          get_matching_facts(
-            lookup_fn,
-            substituted_pattern,
-            delta,
-            delta_index,
-            use_delta
-          )
-
-        # Extend binding for each match
-        matching_facts
-        |> Enum.flat_map(fn fact ->
-          case unify_pattern_with_fact(pattern, fact, binding) do
-            {:ok, extended_binding} -> [extended_binding]
-            :no_match -> []
-          end
-        end)
+        expand_bindings_for_pattern(
+          lookup_fn,
+          pattern,
+          terms,
+          binding,
+          delta,
+          delta_index,
+          use_delta
+        )
       end)
     end)
-    |> Enum.filter(fn binding ->
-      # Apply conditions to filter bindings
-      Enum.all?(conditions, &Rule.evaluate_condition(&1, binding))
-    end)
+    |> Enum.filter(&binding_satisfies_conditions?(&1, conditions))
   end
 
   @doc """
@@ -424,28 +407,61 @@ defmodule TripleStore.Reasoner.DeltaComputation do
     |> Enum.reject(fn triple -> MapSet.member?(existing, triple) end)
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp get_matching_facts(lookup_fn, pattern, delta, delta_index, use_delta) do
-    if use_delta do
-      # Match from delta facts
-      match_pattern_against_facts(pattern, delta, delta_index)
-    else
-      # Match from full database
-      case pattern_to_lookup(pattern) do
-        {:ground, triple} ->
-          # Exact triple lookup - return if exists
-          [triple]
+    case use_delta do
+      true -> match_pattern_against_facts(pattern, delta, delta_index)
+      false -> lookup_matching_facts(lookup_fn, pattern)
+    end
+  end
 
-        {:lookup, lookup_pattern} ->
-          case lookup_fn.(lookup_pattern) do
-            {:ok, facts} ->
-              facts
+  defp expand_bindings_for_pattern(
+         lookup_fn,
+         pattern,
+         terms,
+         binding,
+         delta,
+         delta_index,
+         use_delta
+       ) do
+    substituted_pattern =
+      terms
+      |> Enum.map(&Rule.substitute(&1, binding))
+      |> then(&{:pattern, &1})
 
-            {:error, reason} ->
-              Logger.warning("Lookup failed during delta computation: #{inspect(reason)}")
-              []
-          end
-      end
+    lookup_fn
+    |> get_matching_facts(substituted_pattern, delta, delta_index, use_delta)
+    |> Enum.flat_map(&extend_binding_with_fact(pattern, &1, binding))
+  end
+
+  defp extend_binding_with_fact(pattern, fact, binding) do
+    case unify_pattern_with_fact(pattern, fact, binding) do
+      {:ok, extended_binding} -> [extended_binding]
+      :no_match -> []
+    end
+  end
+
+  defp binding_satisfies_conditions?(binding, conditions) do
+    Enum.all?(conditions, &Rule.evaluate_condition(&1, binding))
+  end
+
+  defp lookup_matching_facts(lookup_fn, pattern) do
+    case pattern_to_lookup(pattern) do
+      {:ground, triple} ->
+        [triple]
+
+      {:lookup, lookup_pattern} ->
+        fetch_lookup_facts(lookup_fn, lookup_pattern)
+    end
+  end
+
+  defp fetch_lookup_facts(lookup_fn, lookup_pattern) do
+    case lookup_fn.(lookup_pattern) do
+      {:ok, facts} ->
+        facts
+
+      {:error, reason} ->
+        Logger.warning("Lookup failed during delta computation: #{inspect(reason)}")
+        []
     end
   end
 

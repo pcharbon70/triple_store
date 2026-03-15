@@ -202,10 +202,7 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
     affected_quads =
       Enum.reduce(relevant_rules, MapSet.new(), fn rule, acc ->
         Enum.reduce(affected_graphs, acc, fn affected_graph_id, inner_acc ->
-          case find_rule_derivations_in_graph(db, rule, affected_graph_id, deleted_triple) do
-            {:ok, quads} -> MapSet.union(inner_acc, quads)
-            {:error, _} -> inner_acc
-          end
+          merge_rule_derivations(db, rule, affected_graph_id, deleted_triple, inner_acc)
         end)
       end)
 
@@ -244,14 +241,23 @@ defmodule TripleStore.Reasoner.BackwardTraceQuad do
 
   defp get_all_graphs_with_derivations(db) do
     # Scan the derived column family for all graph IDs
-    case ErlangAdapter.fold_keys(db, :derived, <<>>, MapSet.new(), fn key, acc ->
-           case DerivedStore.decode_derived_key(key) do
-             {:ok, {g, _s, _p, _o}} -> MapSet.put(acc, g)
-             _ -> acc
-           end
-         end) do
+    case ErlangAdapter.fold_keys(db, :derived, <<>>, MapSet.new(), &collect_graph_id_from_key/2) do
       {:ok, graphs} -> graphs
       _error -> MapSet.new()
+    end
+  end
+
+  defp merge_rule_derivations(db, rule, affected_graph_id, deleted_triple, acc) do
+    case find_rule_derivations_in_graph(db, rule, affected_graph_id, deleted_triple) do
+      {:ok, quads} -> MapSet.union(acc, quads)
+      {:error, _} -> acc
+    end
+  end
+
+  defp collect_graph_id_from_key(key, acc) do
+    case DerivedStore.decode_derived_key(key) do
+      {:ok, {g, _s, _p, _o}} -> MapSet.put(acc, g)
+      _ -> acc
     end
   end
 end
