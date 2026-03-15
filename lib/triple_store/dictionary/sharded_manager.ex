@@ -286,7 +286,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
 
   - `{:ok, db}` - Database reference
   """
-  @spec get_db(t()) :: {:ok, reference()}
+  @spec get_db(t()) :: {:ok, TripleStore.db_ref()}
   def get_db(sharded) do
     [first_shard | _] = get_shards(sharded)
     Manager.get_db(first_shard)
@@ -509,7 +509,7 @@ defmodule TripleStore.Dictionary.ShardedManager do
   # Private Functions - Resource Management
   # ===========================================================================
 
-  @spec create_shared_resources(reference()) ::
+  @spec create_shared_resources(TripleStore.db_ref()) ::
           {:ok, pid(), :ets.tid(), pid() | nil} | {:error, term()}
   defp create_shared_resources(db) do
     # Start resources in order, cleaning up on failure

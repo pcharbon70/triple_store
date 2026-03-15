@@ -90,11 +90,15 @@ prefix-stream behavior.
 Description: Tighten the dictionary and sequence-counter specs to the current
 `pid()`-based store interactions.
 
-- [ ] **Task 2.2.1** Description: Align `Dictionary.Manager`,
+- [x] **Task 2.2.1** Description: Align `Dictionary.Manager`,
   `Dictionary.IdToString`, and `Dictionary.SequenceCounter` contracts with the
-  current lookup and batch-write behavior.
-- [ ] **Task 2.2.2** Description: Fix downstream callers that still assume older
-  dictionary adapter return shapes.
+  current lookup and batch-write behavior. Completed on 2026-03-15 by
+  normalizing the private dictionary and counter DB-handle specs to the
+  canonical `TripleStore.db_ref()` alias introduced in Phase 1.
+- [x] **Task 2.2.2** Description: Fix downstream callers that still assume older
+  dictionary adapter return shapes. Completed on 2026-03-15 by aligning
+  sharded-manager shared-resource contracts with the same store-handle alias,
+  which reduced the Dialyzer backlog from `168` to `157`.
 
 ---
 
