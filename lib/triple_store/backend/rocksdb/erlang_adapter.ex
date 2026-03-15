@@ -164,7 +164,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @type cf_handle :: reference()
   @type cf_name :: charlist()
   @type iterator_ref :: pid()
-  @type snapshot_ref :: pid()
+  @type snapshot_ref :: reference()
 
   # Fold function types
   @type fold_fun :: ({binary(), binary()}, term() -> term())
@@ -842,7 +842,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       true
 
   """
-  @spec snapshot(adapter()) :: {:ok, reference()} | {:error, term()}
+  @spec snapshot(adapter()) :: {:ok, snapshot_ref()} | {:error, term()}
   def snapshot(adapter) when is_pid(adapter) do
     GenServer.call(adapter, :snapshot)
   end
@@ -861,7 +861,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Failed to release snapshot
 
   """
-  @spec release_snapshot(adapter(), reference()) :: :ok | {:error, term()}
+  @spec release_snapshot(adapter(), snapshot_ref()) :: :ok | {:error, term()}
   def release_snapshot(adapter, snapshot_ref)
       when is_pid(adapter) and is_reference(snapshot_ref) do
     GenServer.call(adapter, {:release_snapshot, snapshot_ref})
@@ -886,7 +886,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Error occurred
 
   """
-  @spec snapshot_get(adapter(), reference(), column_family(), binary()) ::
+  @spec snapshot_get(adapter(), snapshot_ref(), column_family(), binary()) ::
           {:ok, binary()} | :not_found | {:error, term()}
   def snapshot_get(adapter, snapshot_ref, cf, key)
       when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(key) do
@@ -911,7 +911,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec snapshot_prefix_iterator(adapter(), reference(), column_family(), binary()) ::
+  @spec snapshot_prefix_iterator(adapter(), snapshot_ref(), column_family(), binary()) ::
           {:ok, iterator_ref()} | {:error, term()}
   def snapshot_prefix_iterator(adapter, snapshot_ref, cf, prefix)
       when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
@@ -935,7 +935,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   - `{:error, reason}` - Failed to create iterator
 
   """
-  @spec snapshot_prefix_iterator(adapter(), reference(), column_family(), binary(), keyword()) ::
+  @spec snapshot_prefix_iterator(adapter(), snapshot_ref(), column_family(), binary(), keyword()) ::
           {:ok, iterator_ref()} | {:error, term()}
   def snapshot_prefix_iterator(adapter, snapshot_ref, cf, prefix, opts)
       when is_pid(adapter) and is_reference(snapshot_ref) and is_atom(cf) and is_binary(prefix) do
@@ -1234,7 +1234,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1245,7 +1244,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1256,7 +1254,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1271,9 +1268,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
         end
 
       {:error, _reason} = error ->
-        {:reply, error, state}
-
-      error ->
         {:reply, error, state}
     end
   end
@@ -1470,7 +1464,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1522,7 +1515,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1538,7 +1530,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1554,7 +1545,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1570,7 +1560,6 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:reply, result, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
-      error -> {:reply, error, state}
     end
   end
 
@@ -1914,10 +1903,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
                 acc
               end
 
-            :iterator_end ->
-              acc
-
-            {:error, _reason} ->
+            _other ->
               acc
           end
         after
@@ -1944,10 +1930,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
                 acc
               end
 
-            :iterator_end ->
-              acc
-
-            {:error, _reason} ->
+            _other ->
               acc
           end
         after
@@ -1969,10 +1952,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
           acc
         end
 
-      :iterator_end ->
-        acc
-
-      {:error, _reason} ->
+      _other ->
         acc
     end
   end
@@ -1987,10 +1967,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
           acc
         end
 
-      :iterator_end ->
-        acc
-
-      {:error, _reason} ->
+      _other ->
         acc
     end
   end

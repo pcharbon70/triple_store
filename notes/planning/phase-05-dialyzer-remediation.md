@@ -73,12 +73,17 @@ layers inherit.
 Description: Bring the adapter specs into line with the actual iterator and
 prefix-stream behavior.
 
-- [ ] **Task 2.1.1** Description: Reconcile `ErlangAdapter` specs with actual
+- [x] **Task 2.1.1** Description: Reconcile `ErlangAdapter` specs with actual
   return values for iterator navigation, snapshots, prefix streams, and write
-  helpers.
-- [ ] **Task 2.1.2** Description: Remove impossible branches around
+  helpers. Completed on 2026-03-15 by fixing the snapshot reference type alias,
+  aligning snapshot APIs to that alias, and removing unreachable adapter
+  fallback branches that Dialyzer no longer considered possible.
+- [x] **Task 2.1.2** Description: Remove impossible branches around
   `:iterator_end`, invalid column family paths, and other stale pattern matches
-  in the RocksDB adapter and iterator modules.
+  in the RocksDB adapter and iterator modules. Completed on 2026-03-15 by
+  collapsing private iterator/fold catch-all paths to the shapes Dialyzer sees
+  from `:rocksdb.iterator_move/2`, which reduced the backlog from `184` to
+  `168`.
 
 ### Section 2.2: Dictionary and Counter Contracts
 
