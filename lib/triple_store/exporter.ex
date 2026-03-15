@@ -244,7 +244,7 @@ defmodule TripleStore.Exporter do
 
   # Validate file path to prevent path traversal attacks
   # When allowed_dirs is specified, validates that the path is within those directories
-  defp validate_file_path(path, allowed_dirs \\ nil) when is_binary(path) do
+  defp validate_file_path(path) when is_binary(path) do
     # Check for path traversal in the original path before expansion
     # This catches attempts like "../", "..\\", "%2e%2e", etc.
     if has_path_traversal?(path) do
@@ -252,27 +252,13 @@ defmodule TripleStore.Exporter do
     else
       path
       |> Path.expand()
-      |> validate_expanded_file_path(allowed_dirs)
+      |> validate_expanded_file_path()
     end
   rescue
     _ -> {:error, :invalid_path}
   end
 
-  defp validate_expanded_file_path(_path, nil), do: :ok
-
-  defp validate_expanded_file_path(expanded_path, allowed_dirs) do
-    expanded_path
-    |> Path.dirname()
-    |> validate_export_parent(allowed_dirs)
-  end
-
-  defp validate_export_parent(parent, allowed_dirs) do
-    if Path.type(parent) == :absolute and within_allowed_dirs?(parent, allowed_dirs) do
-      :ok
-    else
-      {:error, :invalid_path}
-    end
-  end
+  defp validate_expanded_file_path(_expanded_path), do: :ok
 
   # Check if a path contains path traversal attempts
   # This checks for literal "..", URL-encoded variants, and other bypasses
@@ -303,25 +289,6 @@ defmodule TripleStore.Exporter do
     Enum.any?(dot_dot_checks, fn pattern ->
       String.contains?(normalized, pattern)
     end)
-  end
-
-  # Check if a path is within the list of allowed directories
-  defp within_allowed_dirs?(path, allowed_dirs) do
-    normalized_path = normalize_path(path)
-
-    Enum.any?(allowed_dirs, fn dir ->
-      normalized_allowed = normalize_path(dir)
-      # Check if path starts with allowed directory (with trailing slash for proper prefix match)
-      String.starts_with?(normalized_path <> "/", normalized_allowed <> "/") or
-        normalized_path == normalized_allowed
-    end)
-  end
-
-  # Normalize a path for comparison
-  defp normalize_path(path) do
-    path
-    |> Path.expand()
-    |> String.replace_trailing("/", "")
   end
 
   # ===========================================================================
@@ -804,7 +771,8 @@ defmodule TripleStore.Exporter do
 
     with_telemetry(%{operation: :default_graph, path: nil}, fn ->
       # Get quads from default graph (ID 0)
-      internal_quads = QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: 0})
+      internal_quads =
+        QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, quad_lookup_values(0))
 
       # Convert to RDF.Graph (triples only, no graph context)
       with {:ok, rdf_quads} <- Adapter.to_rdf_quads(db, internal_quads) do
@@ -1312,7 +1280,7 @@ defmodule TripleStore.Exporter do
   defp lookup_graph_quads(graph_id, db) do
     alias TripleStore.QuadOperations
 
-    QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, %{g: graph_id})
+    QuadOperations.lookup_quads(db, {:var, :var, :var, :bound}, quad_lookup_values(graph_id))
   end
 
   defp maybe_include_default_graph(quads, _db, false), do: quads
@@ -1338,6 +1306,10 @@ defmodule TripleStore.Exporter do
       {:error, _} = error ->
         {:halt, error}
     end
+  end
+
+  defp quad_lookup_values(graph_id) do
+    %{s: 0, p: 0, o: 0, g: graph_id}
   end
 
   defp finalize_dataset_export({:ok, rdf_quads}), do: {:ok, RDF.Dataset.new(rdf_quads)}
