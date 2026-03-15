@@ -324,19 +324,11 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
   """
   @spec stream(t()) :: Enumerable.t()
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def stream(%__MODULE__{} = lf) do
     Stream.unfold(lf, fn lf ->
       case search_or_next(lf) do
         {:ok, searched_lf} ->
-          case current(searched_lf) do
-            {:ok, value} ->
-              # Mark that we need to advance next time
-              {value, %{searched_lf | at_match: true}}
-
-            :exhausted ->
-              nil
-          end
+          unfold_current_match(searched_lf)
 
         {:exhausted, _} ->
           nil
@@ -367,46 +359,52 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   end
 
   # Core leapfrog search algorithm
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp do_search(iterators, lf) do
-    # Check iteration limit
-    if lf.iteration_count >= lf.max_iterations do
-      {:error, :max_iterations_exceeded}
-    else
-      # Increment iteration count
-      lf = %{lf | iteration_count: lf.iteration_count + 1}
+    case lf.iteration_count >= lf.max_iterations do
+      true ->
+        {:error, :max_iterations_exceeded}
 
-      # Get min and max values
-      [first | _] = iterators
-      last = List.last(iterators)
+      false ->
+        continue_search(iterators, %{lf | iteration_count: lf.iteration_count + 1})
+    end
+  end
 
-      min_val = get_value(first)
-      max_val = get_value(last)
+  defp unfold_current_match(searched_lf) do
+    case current(searched_lf) do
+      {:ok, value} -> {value, %{searched_lf | at_match: true}}
+      :exhausted -> nil
+    end
+  end
 
-      cond do
-        min_val == :infinity or max_val == :infinity ->
-          # Some iterator exhausted
-          {:exhausted, %{lf | exhausted: true}}
+  defp continue_search(iterators, lf) do
+    [first | _] = iterators
+    last = List.last(iterators)
+    min_val = get_value(first)
+    max_val = get_value(last)
 
-        min_val == max_val ->
-          # All iterators at same value - found a match!
-          {:ok, %{lf | iterators: iterators, current_value: min_val, at_match: true}}
+    cond do
+      min_val == :infinity or max_val == :infinity ->
+        {:exhausted, %{lf | exhausted: true}}
 
-        true ->
-          # min < max: seek min iterator to max value
-          case TrieIteratorProtocol.seek(first, max_val) do
-            {:ok, advanced} ->
-              # Re-sort and continue searching
-              new_iterators = sort_iterators([advanced | tl(iterators)])
-              do_search(new_iterators, lf)
+      min_val == max_val ->
+        {:ok, %{lf | iterators: iterators, current_value: min_val, at_match: true}}
 
-            {:exhausted, _} ->
-              {:exhausted, %{lf | exhausted: true}}
+      true ->
+        seek_min_iterator(first, iterators, max_val, lf)
+    end
+  end
 
-            {:error, reason} ->
-              {:error, reason}
-          end
-      end
+  defp seek_min_iterator(first, iterators, max_val, lf) do
+    case TrieIteratorProtocol.seek(first, max_val) do
+      {:ok, advanced} ->
+        new_iterators = sort_iterators([advanced | tl(iterators)])
+        do_search(new_iterators, lf)
+
+      {:exhausted, _} ->
+        {:exhausted, %{lf | exhausted: true}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

@@ -292,13 +292,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     Stream.unfold(qlf, fn qlf ->
       case search_or_next(qlf) do
         {:ok, searched_lf} ->
-          case bindings(searched_lf) do
-            bindings when map_size(bindings) > 0 ->
-              {bindings, searched_lf}
-
-            %{} ->
-              nil
-          end
+          unfold_quad_bindings(searched_lf)
 
         {:exhausted, _} ->
           nil
@@ -446,32 +440,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Calculate selectivity score for a position
   defp position_selectivity_score(component, _position, stats) do
-    if bound?(component) do
-      # Bound constants are most selective (score 0)
-      0
-    else
-      # Variables have selectivity based on position
-      case QuadCardinality.estimate_pattern(
-             {:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}},
-             stats
-           ) do
-        card when is_number(card) and card > 0 ->
-          # Higher cardinality = lower selectivity = higher score
-          # Use log to scale the score
-          trunc(:math.log(card))
-
-        _error ->
-          # Fallback: use default quad count with logging
-          # This provides a consistent baseline instead of arbitrary 1000
-          default_card = Map.get(stats, :quad_count, 10_000)
-
-          Logger.debug(
-            "QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering"
-          )
-
-          # Log scale of default cardinality
-          trunc(:math.log(max(1, default_card)))
-      end
+    case bound?(component) do
+      true -> 0
+      false -> variable_selectivity_score(stats)
     end
   end
 
@@ -488,29 +459,56 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         bindings =
           case iterators do
             [iter | _] ->
-              case QuadTrieIterator.current_key(iter) do
-                :exhausted ->
-                  %{}
-
-                {:ok, key} ->
-                  # Decode quad key and extract bindings
-                  {g, s, p, o} = QuadTrieIterator.decode_key(key)
-
-                  # Map pattern components to their values
-                  {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
-
-                  %{}
-                  |> maybe_add_binding(s_pat, s, "s")
-                  |> maybe_add_binding(p_pat, p, "p")
-                  |> maybe_add_binding(o_pat, o, "o")
-                  |> maybe_add_binding(g_pat, g, "g")
-              end
+              bindings_from_quad_iterator(iter, pattern)
 
             _ ->
               %{}
           end
 
         %{qlf | bindings: bindings}
+    end
+  end
+
+  defp unfold_quad_bindings(searched_lf) do
+    case bindings(searched_lf) do
+      bindings when map_size(bindings) > 0 -> {bindings, searched_lf}
+      %{} -> nil
+    end
+  end
+
+  defp variable_selectivity_score(stats) do
+    case QuadCardinality.estimate_pattern(
+           {:quad, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}, {:variable, "_"}},
+           stats
+         ) do
+      card when is_number(card) and card > 0 ->
+        trunc(:math.log(card))
+
+      _error ->
+        default_card = Map.get(stats, :quad_count, 10_000)
+
+        Logger.debug(
+          "QuadLeapfrog: Using fallback cardinality #{default_card} for variable ordering"
+        )
+
+        trunc(:math.log(max(1, default_card)))
+    end
+  end
+
+  defp bindings_from_quad_iterator(iter, pattern) do
+    case QuadTrieIterator.current_key(iter) do
+      :exhausted ->
+        %{}
+
+      {:ok, key} ->
+        {g, s, p, o} = QuadTrieIterator.decode_key(key)
+        {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
+
+        %{}
+        |> maybe_add_binding(s_pat, s, "s")
+        |> maybe_add_binding(p_pat, p, "p")
+        |> maybe_add_binding(o_pat, o, "o")
+        |> maybe_add_binding(g_pat, g, "g")
     end
   end
 
