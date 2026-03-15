@@ -225,7 +225,7 @@ defmodule TripleStore.Dictionary.Manager do
 
   - `{:ok, db}` - Database reference
   """
-  @spec get_db(manager()) :: {:ok, reference()}
+  @spec get_db(manager()) :: {:ok, TripleStore.db_ref()}
   def get_db(manager) do
     GenServer.call(manager, :get_db)
   end
@@ -739,8 +739,7 @@ defmodule TripleStore.Dictionary.Manager do
     # Track current offset for each type and build a single batch write for all
     # newly assigned dictionary entries to minimize BEAM/NIF round-trips.
     {operations, key_to_id, _final_ranges} =
-      Enum.reduce(unique_terms, {[], %{}, type_ranges}, fn {key, term},
-                                                           {ops, ids, ranges} ->
+      Enum.reduce(unique_terms, {[], %{}, type_ranges}, fn {key, term}, {ops, ids, ranges} ->
         type = get_term_type(term)
         type_tag = type_to_tag(type)
         {start_seq, offset} = Map.fetch!(ranges, type)

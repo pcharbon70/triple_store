@@ -130,8 +130,11 @@ defmodule TripleStore.Dictionary do
   @typedoc "RDF term representation (URI, blank node, or literal)"
   @type rdf_term :: RDF.IRI.t() | RDF.BlankNode.t() | RDF.Literal.t()
 
-  @typedoc "Database reference from RocksDB NIF"
-  @type db_ref :: reference()
+  @typedoc "Database handle for the active RocksDB adapter process"
+  @type db_ref :: TripleStore.db_ref()
+
+  @typedoc "Dictionary manager reference (single manager or sharded supervisor)"
+  @type manager :: TripleStore.manager()
 
   # ===========================================================================
   # Constants

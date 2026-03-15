@@ -147,7 +147,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   alias TripleStore.Backend.RocksDB.Iterator
 
   @type adapter :: pid()
-  @type db_ref :: reference()
+  @type db_ref :: adapter()
   @type column_family ::
           :id2str
           | :str2id

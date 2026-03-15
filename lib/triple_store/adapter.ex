@@ -72,10 +72,10 @@ defmodule TripleStore.Adapter do
   @type term_id :: Dictionary.term_id()
 
   @typedoc "Dictionary manager process"
-  @type manager :: Manager.manager() | ShardedManager.t()
+  @type manager :: TripleStore.manager()
 
   @typedoc "Database reference"
-  @type db_ref :: reference()
+  @type db_ref :: TripleStore.db_ref()
 
   @batch_timeout :timer.minutes(5)
   @manager_batch_size 30_000

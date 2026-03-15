@@ -7,13 +7,14 @@ to a clean exit on the current TripleStore codebase. It extends Phase 5
 Production Hardening because the current Dialyzer backlog is primarily contract
 and type-governance work rather than feature delivery.
 
-Current baseline on this branch after the initial Phase 1 start on 2026-03-15:
+Current baseline on this branch after the Phase 1 Section 1.2 shared-type
+normalization on 2026-03-15:
 
-- `318` total Dialyzer issues
+- `184` total Dialyzer issues
 - Dominant categories: `invalid_contract`, `call`, `no_return`, `pattern_match`,
   `unused_fun`, and `pattern_match_cov`
-- Highest-volume files: `loader.ex`, `statistics.ex`, `exporter.ex`,
-  `graph_scoped_reasoner.ex`, and `triple_store.ex`
+- Highest-volume files: `graph_scoped_reasoner.ex`, `triple_store.ex`,
+  `erlang_adapter.ex`, `quad_index.ex`, and `health.ex`
 
 ## Success Criteria
 
@@ -50,11 +51,15 @@ application warnings rather than tooling false positives.
 Description: Normalize common database, store, manager, and batch-result types
 so subsystem modules stop inventing subtly different aliases.
 
-- [ ] **Task 1.2.1** Description: Define or centralize canonical `db_ref`,
+- [x] **Task 1.2.1** Description: Define or centralize canonical `db_ref`,
   `store`, and manager types that reflect the current runtime handles.
-- [ ] **Task 1.2.2** Description: Replace stale aliases such as generic
+  Completed on 2026-03-15 by centralizing the public aliases in `TripleStore`
+  and aligning the RocksDB adapter DB handle type with the current `pid()`-backed
+  runtime.
+- [x] **Task 1.2.2** Description: Replace stale aliases such as generic
   `reference()` handles and removed dictionary manager types across loader,
-  exporter, statistics, and public API modules.
+  exporter, statistics, and public API modules. Completed on 2026-03-15, which
+  reduced the Dialyzer backlog from `318` to `184`.
 
 ---
 

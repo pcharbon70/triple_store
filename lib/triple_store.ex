@@ -179,11 +179,20 @@ defmodule TripleStore do
   # Types
   # ===========================================================================
 
+  @typedoc "Database handle managed by the RocksDB adapter process"
+  @type db_ref :: ErlangAdapter.db_ref()
+
+  @typedoc "Dictionary manager reference (single manager or sharded supervisor)"
+  @type manager :: DictManager.manager() | ShardedManager.t()
+
+  @typedoc "Transaction manager reference"
+  @type transaction_manager :: Transaction.manager()
+
   @typedoc "Store handle containing database and manager references"
   @type store :: %{
-          db: pid() | reference(),
-          dict_manager: GenServer.server(),
-          transaction: GenServer.server() | nil,
+          db: db_ref(),
+          dict_manager: manager(),
+          transaction: transaction_manager() | nil,
           path: String.t()
         }
 
