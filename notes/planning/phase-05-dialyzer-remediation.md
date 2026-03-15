@@ -151,10 +151,20 @@ orchestration with the corrected lower-level contracts.
 Description: Bring `TripleStore` wrapper specs into line with the actual
 delegated return values.
 
-- [ ] **Task 4.1.1** Description: Reconcile public contracts for materialization,
+- [x] **Task 4.1.1** Description: Reconcile public contracts for materialization,
   reasoning status, explanation, and `load_string!` wrapper functions.
-- [ ] **Task 4.1.2** Description: Remove wrapper branches and helper functions
+  Completed on 2026-03-15 by correcting the graph-aware materialization wrapper
+  calls, normalizing graph-local config construction, fixing graph `0`
+  reasoning-status lookups, and aligning explanation-term encoding with the
+  adapter's real `term_to_id/2` return shape.
+- [x] **Task 4.1.2** Description: Remove wrapper branches and helper functions
   that become unreachable once the delegated contracts are corrected.
+  Completed on 2026-03-15 by splitting the provenance-source handling into
+  explicit database and memory paths, tightening the simple public health check
+  to the actual statistics return shape, and adding the missing
+  `:derivation_provenance` RocksDB column-family type needed by persisted
+  provenance helpers. These changes removed the remaining `TripleStore`
+  wrapper-level warnings and reduced the Dialyzer backlog from `145` to `126`.
 
 ### Section 4.2: Graph-Scoped Reasoning and Updates
 

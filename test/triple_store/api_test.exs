@@ -380,6 +380,73 @@ defmodule TripleStore.APITest do
     end
   end
 
+  describe "graph-aware reasoning wrappers" do
+    setup do
+      path =
+        Path.join(System.tmp_dir!(), "triple_store_quad_api_test_#{:rand.uniform(1_000_000)}")
+
+      on_exit(fn ->
+        File.rm_rf!(path)
+      end)
+
+      {:ok, store} = TripleStore.open(path, schema: :quad)
+
+      on_exit(fn ->
+        try do
+          TripleStore.close(store)
+        rescue
+          _ -> :ok
+        end
+      end)
+
+      {:ok, store: store}
+    end
+
+    test "reasoning_status/2 handles graph_id 0 as a graph-specific request", %{store: store} do
+      assert {:ok, status} = TripleStore.reasoning_status(store, graph_id: 0)
+      assert status.graph_id == 0
+      assert status.state in [:initialized, :materialized]
+    end
+
+    test "materialize_graph/3 builds a local graph reasoning config", %{store: store} do
+      assert {:ok, stats} = TripleStore.materialize_graph(store, 0, profile: :rdfs)
+      assert is_map(stats)
+      assert stats.graph_id == 0
+    end
+
+    test "materialize_all/2 builds a global reasoning config", %{store: store} do
+      assert {:ok, stats} =
+               TripleStore.materialize_all(store,
+                 profile: :rdfs,
+                 storage_strategy: :per_graph_cf
+               )
+
+      assert is_map(stats)
+      assert Map.has_key?(stats, :total_derived)
+    end
+
+    test "materialize/2 normalizes hybrid graph config keywords", %{store: store} do
+      assert {:ok, stats} =
+               TripleStore.materialize(store,
+                 scope: :hybrid,
+                 profile: :rdfs,
+                 graph_configs: %{0 => [scope: :local]}
+               )
+
+      assert is_map(stats)
+    end
+
+    test "explain_inference/4 returns a non-derived error for explicit quads", %{store: store} do
+      quad = {
+        RDF.iri("http://example.org/alice"),
+        RDF.iri("http://example.org/knows"),
+        RDF.iri("http://example.org/bob")
+      }
+
+      assert {:error, :not_a_derived_quad} = TripleStore.explain_inference(store, quad, 0)
+    end
+  end
+
   # ===========================================================================
   # Bang Function Tests
   # ===========================================================================
