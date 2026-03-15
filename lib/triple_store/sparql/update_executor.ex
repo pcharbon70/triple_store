@@ -635,28 +635,12 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   @doc false
   @spec invalidate_cache_for_operations([term()]) :: :ok
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   def invalidate_cache_for_operations(operations) do
     # Skip if cache is not running
     if cache_running?() do
-      predicates = extract_predicates_from_operations(operations)
-
-      if predicates == :full_invalidation do
-        # Complex operation - invalidate everything
-        emit_full_invalidation()
-        QueryCache.invalidate()
-      else
-        case MapSet.size(predicates) do
-          0 ->
-            # No predicates extracted - skip invalidation
-            :ok
-
-          _n ->
-            # Targeted invalidation based on predicates
-            emit_predicate_invalidation(predicates)
-            QueryCache.invalidate_predicates(predicates)
-        end
-      end
+      operations
+      |> extract_predicates_from_operations()
+      |> invalidate_cache_for_predicates()
     else
       :ok
     end
@@ -758,20 +742,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   # Extract predicates from WHERE patterns
   @spec extract_predicates_from_pattern(term()) :: MapSet.t()
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp extract_predicates_from_pattern({:bgp, triples}) when is_list(triples) do
-    Enum.reduce(triples, MapSet.new(), fn triple, acc ->
-      case triple do
-        {:triple, _s, p, _o} ->
-          case ast_term_to_rdf(p) do
-            nil -> acc
-            pred -> MapSet.put(acc, pred)
-          end
-
-        _ ->
-          acc
-      end
-    end)
+    Enum.reduce(triples, MapSet.new(), &extract_bgp_predicate/2)
   end
 
   defp extract_predicates_from_pattern({:triple, _s, p, _o}) do
@@ -788,6 +760,27 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     # Return empty and let caller decide
     MapSet.new()
   end
+
+  defp invalidate_cache_for_predicates(:full_invalidation) do
+    emit_full_invalidation()
+    QueryCache.invalidate()
+  end
+
+  defp invalidate_cache_for_predicates(predicates) when map_size(predicates) == 0, do: :ok
+
+  defp invalidate_cache_for_predicates(predicates) do
+    emit_predicate_invalidation(predicates)
+    QueryCache.invalidate_predicates(predicates)
+  end
+
+  defp extract_bgp_predicate({:triple, _s, p, _o}, acc) do
+    case ast_term_to_rdf(p) do
+      nil -> acc
+      pred -> MapSet.put(acc, pred)
+    end
+  end
+
+  defp extract_bgp_predicate(_triple, acc), do: acc
 
   # Convert AST term to RDF term (only for ground terms)
   defp ast_term_to_rdf({:named_node, iri}), do: RDF.iri(iri)
