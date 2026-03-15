@@ -158,10 +158,13 @@ defmodule TripleStore do
   - `:all` - All available reasoning rules
   """
 
+  alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager, as: DictManager
   alias TripleStore.Dictionary.ShardedManager
   alias TripleStore.Loader
+  alias TripleStore.Reasoner.DerivationProvenance
+  alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningStatus
   alias TripleStore.Reasoner.SemiNaive
@@ -1441,79 +1444,61 @@ defmodule TripleStore do
   @spec explain_inference(store(), RDF.Statement.t(), non_neg_integer(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def explain_inference(store, quad, graph_id, opts \\ []) do
-    alias TripleStore.Adapter
-    alias TripleStore.Reasoner.DerivationProvenance
-    alias TripleStore.Reasoner.DerivedStore
-
     db = store.db
     manager = store.dict_manager
     provenance_source = Keyword.get(opts, :provenance_source, :memory)
 
-    # Convert RDF terms to dictionary-encoded IDs
-    {s_id, _} =
-      case Adapter.term_to_id(manager, elem(quad, 0)) do
-        {:ok, id} -> id
-        error -> throw(error)
-      end
-
-    {p_id, _} =
-      case Adapter.term_to_id(manager, elem(quad, 1)) do
-        {:ok, id} -> id
-        error -> throw(error)
-      end
-
-    {o_id, _} =
-      case Adapter.term_to_id(manager, elem(quad, 2)) do
-        {:ok, id} -> id
-        error -> throw(error)
-      end
-
-    id_quad = {graph_id, s_id, p_id, o_id}
-
-    # Get provenance tracker
-    tracker =
-      case provenance_source do
-        :database ->
-          case DerivationProvenance.load(db, graph_id) do
-            {:ok, loaded} -> loaded
-            _error -> DerivationProvenance.new()
-          end
-
-        :memory ->
-          # For in-memory, we'd need to track during reasoning
-          # For now, fall back to database
-          case DerivationProvenance.load(db, graph_id) do
-            {:ok, loaded} -> loaded
-            _error -> DerivationProvenance.new()
-          end
-      end
-
-    # Check if this is a derived quad
-    case DerivedStore.derived_quad_exists?(db, id_quad) do
-      {:ok, true} ->
-        # Try to explain the derivation
-        case DerivationProvenance.explain_inference(tracker, id_quad, db) do
-          {:ok, explanation} ->
-            # Add RDF term version to the explanation
-            explanation_with_terms =
-              Map.put(explanation, :quad, quad)
-              |> Map.put(:graph_id, graph_id)
-
-            {:ok, explanation_with_terms}
-
-          :error ->
-            {:error, :no_provenance_found}
-        end
-
-      {:ok, false} ->
-        {:error, :not_a_derived_quad}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, id_quad} <- encode_explanation_quad(manager, quad, graph_id),
+         tracker <- load_provenance_tracker(db, graph_id, provenance_source),
+         {:ok, explanation} <- explain_derived_quad(db, tracker, id_quad) do
+      {:ok, attach_explanation_terms(explanation, quad, graph_id)}
+    else
+      {:error, reason} -> {:error, reason}
     end
   catch
     :throw, {:error, reason} -> {:error, reason}
     error -> {:error, error}
+  end
+
+  defp encode_explanation_quad(manager, quad, graph_id) do
+    with {:ok, {s_id, _}} <- Adapter.term_to_id(manager, elem(quad, 0)),
+         {:ok, {p_id, _}} <- Adapter.term_to_id(manager, elem(quad, 1)),
+         {:ok, {o_id, _}} <- Adapter.term_to_id(manager, elem(quad, 2)) do
+      {:ok, {graph_id, s_id, p_id, o_id}}
+    end
+  end
+
+  defp load_provenance_tracker(db, graph_id, provenance_source)
+       when provenance_source in [:database, :memory] do
+    case DerivationProvenance.load(db, graph_id) do
+      {:ok, loaded} -> loaded
+      _error -> DerivationProvenance.new()
+    end
+  end
+
+  defp load_provenance_tracker(_db, _graph_id, provenance_source) do
+    throw({:error, {:invalid_provenance_source, provenance_source}})
+  end
+
+  defp explain_derived_quad(db, tracker, id_quad) do
+    case DerivedStore.derived_quad_exists?(db, id_quad) do
+      {:ok, true} -> explain_tracked_quad(tracker, id_quad, db)
+      {:ok, false} -> {:error, :not_a_derived_quad}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp explain_tracked_quad(tracker, id_quad, db) do
+    case DerivationProvenance.explain_inference(tracker, id_quad, db) do
+      {:ok, explanation} -> {:ok, explanation}
+      :error -> {:error, :no_provenance_found}
+    end
+  end
+
+  defp attach_explanation_terms(explanation, quad, graph_id) do
+    explanation
+    |> Map.put(:quad, quad)
+    |> Map.put(:graph_id, graph_id)
   end
 
   # ===========================================================================

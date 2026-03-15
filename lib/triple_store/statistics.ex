@@ -586,23 +586,7 @@ defmodule TripleStore.Statistics do
         # Cache miss - compute and cache
         case all_graphs_summary(db, opts) do
           {:ok, summary} = result ->
-            # Cache the result using insert_new to prevent race conditions
-            # If another process inserted the value while we were computing,
-            # we use their value instead (which should be identical)
-            case :ets.insert_new(@quad_cache_table, {cache_key, summary}) do
-              true ->
-                # We successfully inserted our computed value
-                result
-
-              false ->
-                # Another process beat us to it - their value is in cache
-                # Read and return the cached value to ensure consistency
-                case :ets.lookup(@quad_cache_table, cache_key) do
-                  [{^cache_key, cached_summary}] -> {:ok, cached_summary}
-                  # Cache was cleared, return our computed value
-                  [] -> result
-                end
-            end
+            cache_all_graphs_summary(cache_key, summary, result)
 
           error ->
             error
@@ -1089,21 +1073,9 @@ defmodule TripleStore.Statistics do
 
   # Get from cache or collect
   defp get_lazy_cached(lazy_stats, key) do
-    if should_refresh_cache?(lazy_stats) do
-      case collect_for_key(lazy_stats.__db__, key) do
-        {:ok, value} ->
-          if lazy_stats.__cache__ do
-            update_lazy_cache(lazy_stats, key, value)
-          end
-
-          {:ok, value}
-
-        error ->
-          error
-      end
-    else
-      # Return cached value
-      {:ok, Map.get(lazy_stats.__cached_stats__, key)}
+    case should_refresh_cache?(lazy_stats) do
+      true -> collect_lazy_value(lazy_stats, key)
+      false -> {:ok, Map.get(lazy_stats.__cached_stats__, key)}
     end
   end
 
@@ -1153,6 +1125,34 @@ defmodule TripleStore.Statistics do
   end
 
   defp collect_for_key(_db, key), do: {:error, {:unsupported_key, key}}
+
+  defp cache_all_graphs_summary(cache_key, summary, result) do
+    case :ets.insert_new(@quad_cache_table, {cache_key, summary}) do
+      true -> result
+      false -> fetch_cached_all_graphs_summary(cache_key, result)
+    end
+  end
+
+  defp fetch_cached_all_graphs_summary(cache_key, fallback) do
+    case :ets.lookup(@quad_cache_table, cache_key) do
+      [{^cache_key, cached_summary}] -> {:ok, cached_summary}
+      [] -> fallback
+    end
+  end
+
+  defp collect_lazy_value(lazy_stats, key) do
+    case collect_for_key(lazy_stats.__db__, key) do
+      {:ok, value} -> {:ok, maybe_cache_lazy_value(lazy_stats, key, value)}
+      error -> error
+    end
+  end
+
+  defp maybe_cache_lazy_value(%{__cache__: true} = lazy_stats, key, value) do
+    update_lazy_cache(lazy_stats, key, value)
+    value
+  end
+
+  defp maybe_cache_lazy_value(_lazy_stats, _key, value), do: value
 
   # Update lazy cache with new value
   defp update_lazy_cache(lazy_stats, key, value) do
@@ -1898,28 +1898,29 @@ defmodule TripleStore.Statistics do
       end)
 
     # Scale up histogram counts if sampling was used
-    final_histogram =
-      if use_sampling and sample_rate > 0 do
-        scale_factor = 1.0 / sample_rate
-
-        histogram
-        |> Enum.map(fn {graph_id, predicates} ->
-          scaled_predicates =
-            Enum.map(predicates, fn {pred_id, count} ->
-              # Scale count and ensure at least 1
-              scaled_count = max(trunc(count * scale_factor), 1)
-              {pred_id, scaled_count}
-            end)
-            |> Map.new()
-
-          {graph_id, scaled_predicates}
-        end)
-        |> Map.new()
-      else
-        histogram
-      end
+    final_histogram = maybe_scale_graph_histogram(histogram, use_sampling, sample_rate)
 
     {:ok, final_histogram}
+  end
+
+  defp maybe_scale_graph_histogram(histogram, true, sample_rate) when sample_rate > 0 do
+    scale_factor = 1.0 / sample_rate
+
+    histogram
+    |> Enum.map(fn {graph_id, predicates} ->
+      {graph_id, scale_graph_predicates(predicates, scale_factor)}
+    end)
+    |> Map.new()
+  end
+
+  defp maybe_scale_graph_histogram(histogram, _use_sampling, _sample_rate), do: histogram
+
+  defp scale_graph_predicates(predicates, scale_factor) do
+    predicates
+    |> Enum.map(fn {pred_id, count} ->
+      {pred_id, max(trunc(count * scale_factor), 1)}
+    end)
+    |> Map.new()
   end
 
   @doc """
@@ -2290,27 +2291,55 @@ defmodule TripleStore.Statistics do
         start_bucket = min(max(start_bucket, 0), bucket_count - 1)
         end_bucket = min(max(end_bucket, 0), bucket_count - 1)
 
-        # Sum counts in range (with fractional bucket handling)
         count =
-          start_bucket..end_bucket
-          |> Enum.reduce(0.0, fn bucket_idx, acc ->
-            bucket_count_val = Enum.at(buckets, bucket_idx, 0)
-
-            # Calculate fraction of bucket in range
-            bucket_start = hist_min + bucket_idx * bucket_width
-            bucket_end = bucket_start + bucket_width
-
-            overlap_start = max(query_min, bucket_start)
-            overlap_end = min(query_max, bucket_end)
-            overlap_fraction = (overlap_end - overlap_start) / bucket_width
-
-            acc + bucket_count_val * overlap_fraction
-          end)
+          sum_histogram_overlap(
+            buckets,
+            hist_min,
+            bucket_width,
+            start_bucket,
+            end_bucket,
+            query_min,
+            query_max
+          )
 
         # Return selectivity as fraction of total
         min(count / total, 1.0)
       end
     end
+  end
+
+  defp sum_histogram_overlap(
+         buckets,
+         hist_min,
+         bucket_width,
+         start_bucket,
+         end_bucket,
+         query_min,
+         query_max
+       ) do
+    start_bucket..end_bucket
+    |> Enum.reduce(0.0, fn bucket_idx, acc ->
+      acc +
+        histogram_bucket_overlap(
+          buckets,
+          hist_min,
+          bucket_width,
+          bucket_idx,
+          query_min,
+          query_max
+        )
+    end)
+  end
+
+  defp histogram_bucket_overlap(buckets, hist_min, bucket_width, bucket_idx, query_min, query_max) do
+    bucket_count = Enum.at(buckets, bucket_idx, 0)
+    bucket_start = hist_min + bucket_idx * bucket_width
+    bucket_end = bucket_start + bucket_width
+    overlap_start = max(query_min, bucket_start)
+    overlap_end = min(query_max, bucket_end)
+    overlap_fraction = (overlap_end - overlap_start) / bucket_width
+
+    bucket_count * overlap_fraction
   end
 
   # ===========================================================================
