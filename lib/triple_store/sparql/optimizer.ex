@@ -118,64 +118,64 @@ defmodule TripleStore.SPARQL.Optimizer do
     if explain? do
       explain(algebra, opts)
     else
-      # Validate query depth first (prevents stack overflow from deep nesting)
-      case validate_query_depth(algebra) do
-        :ok ->
-          # Then validate branch width (prevents stack overflow from wide trees)
-          case validate_branch_width(algebra) do
-            :ok ->
-              # Finally validate query complexity (prevents resource exhaustion)
-              case validate_query_complexity(algebra) do
-                :ok ->
-                  run_pipeline(algebra, opts)
-
-                {:error, reason} ->
-                  # Emit telemetry for rejected query
-                  :telemetry.execute(
-                    [:triple_store, :sparql, :optimizer, :complexity_rejected],
-                    %{node_count: count_nodes(algebra)},
-                    %{reason: reason}
-                  )
-
-                  raise ArgumentError, """
-                  Query complexity exceeds limits: #{inspect(reason)}
-
-                  Limits:
-                  - Max nodes: #{@max_nodes}
-                  - Max BGP patterns: #{@max_bgp_patterns}
-                  - Max joins: #{@max_joins}
-                  - Max filters: #{@max_filters}
-
-                  This may indicate a malformed query or an attack.
-                  """
-              end
-
-            {:error, :too_wide} ->
-              # Emit telemetry for width rejection
-              :telemetry.execute(
-                [:triple_store, :sparql, :optimizer, :width_rejected],
-                %{max_width: analyze_branch_width(algebra)},
-                %{max_width: @max_branch_width}
-              )
-
-              raise ArgumentError,
-                    "Query tree too wide (max branch width: #{@max_branch_width}). " <>
-                      "This may indicate a malformed query or an attack."
-          end
-
-        {:error, :too_deep} ->
-          # Emit telemetry for depth rejection
-          :telemetry.execute(
-            [:triple_store, :sparql, :optimizer, :depth_rejected],
-            %{node_count: count_nodes(algebra)},
-            %{max_depth: @max_depth}
-          )
-
-          raise ArgumentError,
-                "Query too deeply nested (max depth: #{@max_depth}). " <>
-                  "This may indicate a malformed query or an attack."
-      end
+      optimize_with_validation(algebra, opts)
     end
+  end
+
+  defp optimize_with_validation(algebra, opts) do
+    with :ok <- validate_query_depth(algebra),
+         :ok <- validate_branch_width(algebra),
+         :ok <- validate_query_complexity(algebra) do
+      run_pipeline(algebra, opts)
+    else
+      {:error, :too_deep} -> reject_query_depth(algebra)
+      {:error, :too_wide} -> reject_query_width(algebra)
+      {:error, reason} -> reject_query_complexity(algebra, reason)
+    end
+  end
+
+  defp reject_query_depth(algebra) do
+    :telemetry.execute(
+      [:triple_store, :sparql, :optimizer, :depth_rejected],
+      %{node_count: count_nodes(algebra)},
+      %{max_depth: @max_depth}
+    )
+
+    raise ArgumentError,
+          "Query too deeply nested (max depth: #{@max_depth}). " <>
+            "This may indicate a malformed query or an attack."
+  end
+
+  defp reject_query_width(algebra) do
+    :telemetry.execute(
+      [:triple_store, :sparql, :optimizer, :width_rejected],
+      %{max_width: analyze_branch_width(algebra)},
+      %{max_width: @max_branch_width}
+    )
+
+    raise ArgumentError,
+          "Query tree too wide (max branch width: #{@max_branch_width}). " <>
+            "This may indicate a malformed query or an attack."
+  end
+
+  defp reject_query_complexity(algebra, reason) do
+    :telemetry.execute(
+      [:triple_store, :sparql, :optimizer, :complexity_rejected],
+      %{node_count: count_nodes(algebra)},
+      %{reason: reason}
+    )
+
+    raise ArgumentError, """
+    Query complexity exceeds limits: #{inspect(reason)}
+
+    Limits:
+    - Max nodes: #{@max_nodes}
+    - Max BGP patterns: #{@max_bgp_patterns}
+    - Max joins: #{@max_joins}
+    - Max filters: #{@max_filters}
+
+    This may indicate a malformed query or an attack.
+    """
   end
 
   # ===========================================================================
@@ -207,74 +207,48 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Analyze depth of algebra tree
   # Returns {metrics, depth} where depth is the maximum nesting level
-  defp analyze_depth_recursive(algebra, acc) do
-    case algebra do
-      {:bgp, _patterns} ->
-        {acc, 0}
+  defp analyze_depth_recursive({:bgp, _patterns}, acc), do: {acc, 0}
+  defp analyze_depth_recursive({:filter, _expr, pattern}, acc), do: unary_depth(pattern, acc)
+  defp analyze_depth_recursive({:join, left, right}, acc), do: binary_depth(left, right, acc)
 
-      {:filter, _expr, pattern} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive({:left_join, left, right, _filter}, acc),
+    do: binary_depth(left, right, acc)
 
-      {:join, left, right} ->
-        {acc, left_depth} = analyze_depth_recursive(left, acc)
-        {acc, right_depth} = analyze_depth_recursive(right, acc)
-        {acc, 1 + max(left_depth, right_depth)}
+  defp analyze_depth_recursive({:union, left, right}, acc), do: binary_depth(left, right, acc)
+  defp analyze_depth_recursive({:minus, left, right}, acc), do: binary_depth(left, right, acc)
 
-      {:left_join, left, right, _filter} ->
-        {acc, left_depth} = analyze_depth_recursive(left, acc)
-        {acc, right_depth} = analyze_depth_recursive(right, acc)
-        {acc, 1 + max(left_depth, right_depth)}
+  defp analyze_depth_recursive({:extend, pattern, _var, _expr}, acc),
+    do: unary_depth(pattern, acc)
 
-      {:union, left, right} ->
-        {acc, left_depth} = analyze_depth_recursive(left, acc)
-        {acc, right_depth} = analyze_depth_recursive(right, acc)
-        {acc, 1 + max(left_depth, right_depth)}
+  defp analyze_depth_recursive({:group, pattern, _vars, _aggs}, acc),
+    do: unary_depth(pattern, acc)
 
-      {:minus, left, right} ->
-        {acc, left_depth} = analyze_depth_recursive(left, acc)
-        {acc, right_depth} = analyze_depth_recursive(right, acc)
-        {acc, 1 + max(left_depth, right_depth)}
+  defp analyze_depth_recursive({:project, pattern, _vars}, acc), do: unary_depth(pattern, acc)
+  defp analyze_depth_recursive({:distinct, pattern}, acc), do: unary_depth(pattern, acc)
+  defp analyze_depth_recursive({:reduced, pattern}, acc), do: unary_depth(pattern, acc)
 
-      {:extend, pattern, _var, _expr} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive({:order_by, pattern, _conditions}, acc),
+    do: unary_depth(pattern, acc)
 
-      {:group, pattern, _vars, _aggs} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive({:slice, pattern, _offset, _limit}, acc),
+    do: unary_depth(pattern, acc)
 
-      {:project, pattern, _vars} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive({:graph, _term, pattern}, acc), do: unary_depth(pattern, acc)
 
-      {:distinct, pattern} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive({:service, _endpoint, pattern, _silent}, acc),
+    do: unary_depth(pattern, acc)
 
-      {:reduced, pattern} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp analyze_depth_recursive(_algebra, acc), do: {acc, 0}
 
-      {:order_by, pattern, _conditions} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
+  defp unary_depth(pattern, acc) do
+    {acc, child_depth} = analyze_depth_recursive(pattern, acc)
+    {acc, child_depth + 1}
+  end
 
-      {:slice, pattern, _offset, _limit} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
-
-      {:graph, _term, pattern} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
-
-      {:service, _endpoint, pattern, _silent} ->
-        {acc, child_depth} = analyze_depth_recursive(pattern, acc)
-        {acc, child_depth + 1}
-
-      _ ->
-        {acc, 0}
-    end
+  defp binary_depth(left, right, acc) do
+    {acc, left_depth} = analyze_depth_recursive(left, acc)
+    {acc, right_depth} = analyze_depth_recursive(right, acc)
+    {acc, 1 + max(left_depth, right_depth)}
   end
 
   # ===========================================================================
@@ -345,60 +319,75 @@ defmodule TripleStore.SPARQL.Optimizer do
   defp do_analyze_width(algebra, depth, depth_counts, max_depth) do
     new_max_depth = max(max_depth, depth)
     new_counts = Map.update(depth_counts, depth, 1, &(&1 + 1))
+    do_analyze_width_node(algebra, depth, new_counts, new_max_depth)
+  end
 
-    case algebra do
-      {:bgp, _patterns} ->
-        {new_counts, new_max_depth}
+  defp do_analyze_width_node({:bgp, _patterns}, _depth, new_counts, new_max_depth),
+    do: {new_counts, new_max_depth}
 
-      {:filter, _expr, pattern} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:filter, _expr, pattern}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:join, left, right} ->
-        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
-        do_analyze_width(right, depth + 1, counts, max1)
+  defp do_analyze_width_node({:join, left, right}, depth, new_counts, new_max_depth),
+    do: binary_width(left, right, depth, new_counts, new_max_depth)
 
-      {:left_join, left, right, _filter} ->
-        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
-        do_analyze_width(right, depth + 1, counts, max1)
+  defp do_analyze_width_node(
+         {:left_join, left, right, _filter},
+         depth,
+         new_counts,
+         new_max_depth
+       ),
+       do: binary_width(left, right, depth, new_counts, new_max_depth)
 
-      {:union, left, right} ->
-        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
-        do_analyze_width(right, depth + 1, counts, max1)
+  defp do_analyze_width_node({:union, left, right}, depth, new_counts, new_max_depth),
+    do: binary_width(left, right, depth, new_counts, new_max_depth)
 
-      {:minus, left, right} ->
-        {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
-        do_analyze_width(right, depth + 1, counts, max1)
+  defp do_analyze_width_node({:minus, left, right}, depth, new_counts, new_max_depth),
+    do: binary_width(left, right, depth, new_counts, new_max_depth)
 
-      {:extend, pattern, _var, _expr} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:extend, pattern, _var, _expr}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:group, pattern, _vars, _aggs} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:group, pattern, _vars, _aggs}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:project, pattern, _vars} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:project, pattern, _vars}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:distinct, pattern} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:distinct, pattern}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:reduced, pattern} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:reduced, pattern}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:order_by, pattern, _conditions} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:order_by, pattern, _conditions}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:slice, pattern, _offset, _limit} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node(
+         {:slice, pattern, _offset, _limit},
+         depth,
+         new_counts,
+         new_max_depth
+       ),
+       do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:graph, _term, pattern} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node({:graph, _term, pattern}, depth, new_counts, new_max_depth),
+    do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      {:service, _endpoint, pattern, _silent} ->
-        do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
+  defp do_analyze_width_node(
+         {:service, _endpoint, pattern, _silent},
+         depth,
+         new_counts,
+         new_max_depth
+       ),
+       do: do_analyze_width(pattern, depth + 1, new_counts, new_max_depth)
 
-      _ ->
-        {new_counts, new_max_depth}
-    end
+  defp do_analyze_width_node(_algebra, _depth, new_counts, new_max_depth),
+    do: {new_counts, new_max_depth}
+
+  defp binary_width(left, right, depth, new_counts, new_max_depth) do
+    {counts, max1} = do_analyze_width(left, depth + 1, new_counts, new_max_depth)
+    do_analyze_width(right, depth + 1, counts, max1)
   end
 
   # ===========================================================================
@@ -1053,44 +1042,44 @@ defmodule TripleStore.SPARQL.Optimizer do
 
   # Generate execution steps
   defp _generate_execution_steps(algebra, index, acc) do
-    step =
-      case algebra do
-        {:bgp, patterns} ->
-          %{step: index, type: :scan_bgp, detail: "Scan #{length(patterns)} pattern(s)"}
+    step = execution_step(algebra, index)
+    children = execution_step_children(algebra)
+    child_steps = execution_steps_for_children(children, index + 1)
 
-        {:filter, _expr, _child} ->
-          %{step: index, type: :filter, detail: "Apply filter expression"}
+    {[step | child_steps ++ acc], index}
+  end
 
-        {:join, _left, _right} ->
-          %{step: index, type: :join, detail: "Join two sub-results"}
+  defp execution_step({:bgp, patterns}, index),
+    do: %{step: index, type: :scan_bgp, detail: "Scan #{length(patterns)} pattern(s)"}
 
-        {:project, _vars, _child} ->
-          %{step: index, type: :project, detail: "Project variables"}
+  defp execution_step({:filter, _expr, _child}, index),
+    do: %{step: index, type: :filter, detail: "Apply filter expression"}
 
-        {:union, _left, _right} ->
-          %{step: index, type: :union, detail: "Combine results with UNION"}
+  defp execution_step({:join, _left, _right}, index),
+    do: %{step: index, type: :join, detail: "Join two sub-results"}
 
-        _ ->
-          %{step: index, type: :other, detail: "Other operation"}
-      end
+  defp execution_step({:project, _vars, _child}, index),
+    do: %{step: index, type: :project, detail: "Project variables"}
 
-    # Get child operations
-    children =
-      case algebra do
-        {:join, left, right} -> [left, right]
-        {:filter, _expr, child} -> [child]
-        {:project, _vars, child} -> [child]
-        _ -> []
-      end
+  defp execution_step({:union, _left, _right}, index),
+    do: %{step: index, type: :union, detail: "Combine results with UNION"}
 
-    # Process children and build steps list
-    {child_steps, _} =
-      Enum.reduce(children, {[], index + 1}, fn child, {steps_acc, next_index} ->
+  defp execution_step(_algebra, index),
+    do: %{step: index, type: :other, detail: "Other operation"}
+
+  defp execution_step_children({:join, left, right}), do: [left, right]
+  defp execution_step_children({:filter, _expr, child}), do: [child]
+  defp execution_step_children({:project, _vars, child}), do: [child]
+  defp execution_step_children(_algebra), do: []
+
+  defp execution_steps_for_children(children, index) do
+    {steps, _next_index} =
+      Enum.reduce(children, {[], index}, fn child, {steps_acc, next_index} ->
         {new_steps, final_index} = _generate_execution_steps(child, next_index, steps_acc)
         {new_steps, final_index}
       end)
 
-    {[step | child_steps ++ acc], index}
+    steps
   end
 
   # Format explain output as readable string
@@ -2487,6 +2476,7 @@ defmodule TripleStore.SPARQL.Optimizer do
   Backward-compatible alias for `quad_pattern?/1`.
   """
   @spec is_quad_pattern?(term()) :: boolean()
+  # credo:disable-for-next-line Credo.Check.Readability.PredicateFunctionNames
   def is_quad_pattern?(pattern), do: quad_pattern?(pattern)
 
   @doc """
