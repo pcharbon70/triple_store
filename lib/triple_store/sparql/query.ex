@@ -825,31 +825,14 @@ defmodule TripleStore.SPARQL.Query do
   defp validate_select_query(_), do: {:error, :invalid_query}
 
   # Build lazy stream from pattern
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp build_stream(ctx, pattern, metadata, project_vars) do
-    case execute_pattern(ctx, pattern) do
-      {:ok, stream} ->
-        # Apply solution modifiers (these are all lazy except order_by)
-        stream = apply_modifiers(stream, metadata.modifiers)
+    with {:ok, stream} <- execute_pattern(ctx, pattern) do
+      projected_stream =
+        stream
+        |> apply_modifiers(metadata.modifiers)
+        |> project_stream(project_vars, metadata.variables)
 
-        # Project to specified variables if provided
-        stream =
-          case project_vars do
-            nil ->
-              # Use variables from query
-              case metadata.variables do
-                nil -> stream
-                vars -> Executor.project(stream, extract_variable_names(vars))
-              end
-
-            vars when is_list(vars) ->
-              Executor.project(stream, vars)
-          end
-
-        {:ok, stream}
-
-      {:error, _} = error ->
-        error
+      {:ok, projected_stream}
     end
   end
 
@@ -1081,162 +1064,87 @@ defmodule TripleStore.SPARQL.Query do
     {:error, {:pattern_depth_exceeded, depth}}
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-  defp execute_pattern(ctx, pattern, depth) do
-    case pattern do
-      {:bgp, triples} ->
-        Executor.execute_bgp(ctx, triples)
+  defp execute_pattern(ctx, {:bgp, triples}, _depth), do: Executor.execute_bgp(ctx, triples)
 
-      {:join, left, right} ->
-        # Check if either side is a path with a blank node subject
-        # In that case, we need a bind-join where bindings are passed from the other side
-        cond do
-          path_with_blank_node_subject?(right) ->
-            execute_bind_join_with_path(ctx, left, right, depth)
-
-          path_with_blank_node_subject?(left) ->
-            # Symmetric case: path on left, bind from right
-            execute_bind_join_with_path(ctx, right, left, depth)
-
-          true ->
-            with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
-                 {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
-              {:ok, Executor.hash_join(left_stream, right_stream)}
-            end
-        end
-
-      {:left_join, left, right, expr} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
-             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
-          opts =
-            if expr do
-              [filter: fn binding -> Executor.evaluate_filter(expr, binding) end]
-            else
-              []
-            end
-
-          {:ok, Executor.left_join(left_stream, right_stream, opts)}
-        end
-
-      {:union, left, right} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
-             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
-          # SPARQL UNION returns distinct results (like SQL UNION, not UNION ALL)
-          # Apply distinct to remove duplicate bindings from the combined streams
-          {:ok, left_stream |> Stream.concat(right_stream) |> Executor.distinct()}
-        end
-
-      {:minus, left, right} ->
-        with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
-             {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
-          {:ok, Executor.anti_join(left_stream, right_stream)}
-        end
-
-      # FILTER NOT EXISTS { pattern } -> anti-join
-      {:filter, {:not, {:exists, exists_pattern}}, inner} ->
-        with {:ok, inner_stream} <- execute_pattern(ctx, inner, depth + 1),
-             {:ok, exists_stream} <- execute_pattern(ctx, exists_pattern, depth + 1) do
-          {:ok, Executor.anti_join(inner_stream, exists_stream)}
-        end
-
-      # FILTER EXISTS { pattern } -> semi-join (keep only bindings with matches)
-      {:filter, {:exists, exists_pattern}, inner} ->
-        with {:ok, inner_stream} <- execute_pattern(ctx, inner, depth + 1),
-             {:ok, exists_stream} <- execute_pattern(ctx, exists_pattern, depth + 1) do
-          {:ok, Executor.semi_join(inner_stream, exists_stream)}
-        end
-
-      {:filter, expr, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          {:ok, Executor.filter(stream, expr)}
-        end
-
-      {:project, inner, vars} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          var_names = extract_variable_names(vars)
-          {:ok, Executor.project(stream, var_names)}
-        end
-
-      {:distinct, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          {:ok, Executor.distinct(stream)}
-        end
-
-      {:reduced, inner} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          {:ok, Executor.reduced(stream)}
-        end
-
-      {:slice, inner, offset, limit} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          {:ok, Executor.slice(stream, offset || 0, limit)}
-        end
-
-      {:order_by, inner, order_conditions} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          comparators = convert_order_conditions(order_conditions)
-          {:ok, Executor.order_by(stream, comparators)}
-        end
-
-      {:extend, inner, {:variable, var_name}, expr} ->
-        # BIND push-down optimization: if the expression is a constant,
-        # pre-bind it before executing inner patterns for efficient lookups
-        case try_constant_bind_pushdown(ctx, inner, var_name, expr, depth) do
-          {:ok, _} = result ->
-            result
-
-          :not_constant ->
-            # Non-constant expression: execute inner first, then extend bindings
-            with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-              extended =
-                Stream.map(stream, fn binding ->
-                  case Expression.evaluate(expr, binding) do
-                    {:ok, value} -> Map.put(binding, var_name, value)
-                    :error -> binding
-                  end
-                end)
-
-              {:ok, extended}
-            end
-        end
-
-      {:group, inner, group_vars, aggregates} ->
-        with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
-          grouped =
-            if Enum.empty?(group_vars) do
-              # Implicit grouping - all solutions form one group
-              Executor.implicit_group(stream, aggregates)
-            else
-              # Explicit GROUP BY
-              Executor.group_by(stream, group_vars, aggregates)
-            end
-
-          {:ok, grouped}
-        end
-
-      # Property path pattern
-      {:path, subject, path_expr, object} ->
-        PropertyPath.evaluate(
-          %{db: ctx.db, dict_manager: ctx.dict_manager},
-          %{},
-          subject,
-          path_expr,
-          object
-        )
-
-      # GRAPH clause - execute in graph context
-      {:graph, graph_spec, inner_pattern} ->
-        Executor.execute_graph(ctx, graph_spec, inner_pattern, %{})
-
-      nil ->
-        # Empty pattern - return unit stream
-        {:ok, Executor.unit_stream()}
-
-      other ->
-        {:error, {:unsupported_pattern, other}}
-    end
+  defp execute_pattern(ctx, {:join, left, right}, depth) do
+    execute_join_pattern(ctx, left, right, depth)
   end
+
+  defp execute_pattern(ctx, {:left_join, left, right, expr}, depth) do
+    with_two_patterns(ctx, left, right, depth, fn left_stream, right_stream ->
+      Executor.left_join(left_stream, right_stream, left_join_options(expr))
+    end)
+  end
+
+  defp execute_pattern(ctx, {:union, left, right}, depth) do
+    with_two_patterns(ctx, left, right, depth, fn left_stream, right_stream ->
+      left_stream
+      |> Stream.concat(right_stream)
+      |> Executor.distinct()
+    end)
+  end
+
+  defp execute_pattern(ctx, {:minus, left, right}, depth) do
+    with_two_patterns(ctx, left, right, depth, &Executor.anti_join/2)
+  end
+
+  defp execute_pattern(ctx, {:filter, {:not, {:exists, exists_pattern}}, inner}, depth) do
+    with_two_patterns(ctx, inner, exists_pattern, depth, &Executor.anti_join/2)
+  end
+
+  defp execute_pattern(ctx, {:filter, {:exists, exists_pattern}, inner}, depth) do
+    with_two_patterns(ctx, inner, exists_pattern, depth, &Executor.semi_join/2)
+  end
+
+  defp execute_pattern(ctx, {:filter, expr, inner}, depth) do
+    with_inner_pattern(ctx, inner, depth, &Executor.filter(&1, expr))
+  end
+
+  defp execute_pattern(ctx, {:project, inner, vars}, depth) do
+    with_inner_pattern(ctx, inner, depth, &Executor.project(&1, extract_variable_names(vars)))
+  end
+
+  defp execute_pattern(ctx, {:distinct, inner}, depth) do
+    with_inner_pattern(ctx, inner, depth, &Executor.distinct/1)
+  end
+
+  defp execute_pattern(ctx, {:reduced, inner}, depth) do
+    with_inner_pattern(ctx, inner, depth, &Executor.reduced/1)
+  end
+
+  defp execute_pattern(ctx, {:slice, inner, offset, limit}, depth) do
+    with_inner_pattern(ctx, inner, depth, &Executor.slice(&1, offset || 0, limit))
+  end
+
+  defp execute_pattern(ctx, {:order_by, inner, order_conditions}, depth) do
+    comparators = convert_order_conditions(order_conditions)
+    with_inner_pattern(ctx, inner, depth, &Executor.order_by(&1, comparators))
+  end
+
+  defp execute_pattern(ctx, {:extend, inner, {:variable, var_name}, expr}, depth) do
+    execute_extend_pattern(ctx, inner, var_name, expr, depth)
+  end
+
+  defp execute_pattern(ctx, {:group, inner, group_vars, aggregates}, depth) do
+    with_inner_pattern(ctx, inner, depth, &group_stream(&1, group_vars, aggregates))
+  end
+
+  defp execute_pattern(ctx, {:path, subject, path_expr, object}, _depth) do
+    PropertyPath.evaluate(
+      %{db: ctx.db, dict_manager: ctx.dict_manager},
+      %{},
+      subject,
+      path_expr,
+      object
+    )
+  end
+
+  defp execute_pattern(ctx, {:graph, graph_spec, inner_pattern}, _depth) do
+    Executor.execute_graph(ctx, graph_spec, inner_pattern, %{})
+  end
+
+  defp execute_pattern(_ctx, nil, _depth), do: {:ok, Executor.unit_stream()}
+  defp execute_pattern(_ctx, other, _depth), do: {:error, {:unsupported_pattern, other}}
 
   # Check if a pattern is a path with a blank node as subject
   # These require bind-join to pass bindings from the left side
@@ -1270,6 +1178,74 @@ defmodule TripleStore.SPARQL.Query do
 
       {:ok, result_stream}
     end
+  end
+
+  defp execute_join_pattern(ctx, left, right, depth) do
+    cond do
+      path_with_blank_node_subject?(right) ->
+        execute_bind_join_with_path(ctx, left, right, depth)
+
+      path_with_blank_node_subject?(left) ->
+        execute_bind_join_with_path(ctx, right, left, depth)
+
+      true ->
+        with_two_patterns(ctx, left, right, depth, &Executor.hash_join/2)
+    end
+  end
+
+  defp execute_extend_pattern(ctx, inner, var_name, expr, depth) do
+    case try_constant_bind_pushdown(ctx, inner, var_name, expr, depth) do
+      {:ok, _} = result ->
+        result
+
+      :not_constant ->
+        with_inner_pattern(ctx, inner, depth, &extend_stream(&1, expr, var_name))
+    end
+  end
+
+  defp with_two_patterns(ctx, left, right, depth, fun) do
+    with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1),
+         {:ok, right_stream} <- execute_pattern(ctx, right, depth + 1) do
+      {:ok, fun.(left_stream, right_stream)}
+    end
+  end
+
+  defp with_inner_pattern(ctx, inner, depth, fun) do
+    with {:ok, stream} <- execute_pattern(ctx, inner, depth + 1) do
+      {:ok, fun.(stream)}
+    end
+  end
+
+  defp left_join_options(nil), do: []
+
+  defp left_join_options(expr) do
+    [filter: fn binding -> Executor.evaluate_filter(expr, binding) end]
+  end
+
+  defp extend_stream(stream, expr, var_name) do
+    Stream.map(stream, &extend_binding_with_expr(&1, expr, var_name))
+  end
+
+  defp extend_binding_with_expr(binding, expr, var_name) do
+    case Expression.evaluate(expr, binding) do
+      {:ok, value} -> Map.put(binding, var_name, value)
+      :error -> binding
+    end
+  end
+
+  defp group_stream(stream, [], aggregates), do: Executor.implicit_group(stream, aggregates)
+
+  defp group_stream(stream, group_vars, aggregates),
+    do: Executor.group_by(stream, group_vars, aggregates)
+
+  defp project_stream(stream, nil, nil), do: stream
+
+  defp project_stream(stream, nil, vars) do
+    Executor.project(stream, extract_variable_names(vars))
+  end
+
+  defp project_stream(stream, vars, _metadata_vars) when is_list(vars) do
+    Executor.project(stream, vars)
   end
 
   # Apply solution modifiers to stream
