@@ -609,56 +609,15 @@ defmodule TripleStore.Loader do
   @spec load_string(db_ref(), manager(), String.t(), atom(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   def load_string(db, manager, content, format, opts \\ []) do
-    # Check if :graph option is provided
     graph_opt = Keyword.get(opts, :graph)
-
-    # Check if this is a quad store
     {:ok, is_quad} = ErlangAdapter.is_quad_store?(db)
 
-    cond do
-      # Named graph specified - load as quads
-      graph_opt && graph_opt != :default ->
-        case parse_string(content, format, Keyword.take(opts, [:base_iri])) do
-          {:ok, graph} ->
-            triples = RDF.Graph.triples(graph)
-            quads = triples_to_quads(triples, graph_opt)
-            batch_size = resolve_batch_size(opts)
-            load_quads(db, manager, quads, batch_size, opts)
+    case parse_string(content, format, Keyword.take(opts, [:base_iri])) do
+      {:ok, graph} ->
+        load_parsed_string(db, manager, graph, graph_opt, is_quad, opts)
 
-          {:error, _} = error ->
-            error
-        end
-
-      # Quad store with default graph - load as quads with graph_id 0
-      is_quad ->
-        base_iri = Keyword.get(opts, :base_iri)
-        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
-
-        case parse_string(content, format, parse_opts) do
-          {:ok, graph} ->
-            triples = RDF.Graph.triples(graph)
-            quads = triples_to_quads(triples, :default)
-            batch_size = resolve_batch_size(opts)
-            load_quads(db, manager, quads, batch_size, opts)
-
-          {:error, _} = error ->
-            error
-        end
-
-      # Triple store - use original triple loading logic
-      true ->
-        batch_size = resolve_batch_size(opts)
-        base_iri = Keyword.get(opts, :base_iri)
-        parse_opts = if base_iri, do: [base_iri: base_iri], else: []
-
-        case parse_string(content, format, parse_opts) do
-          {:ok, graph} ->
-            triples = RDF.Graph.triples(graph)
-            load_triples(db, manager, triples, batch_size, opts)
-
-          {:error, _} = error ->
-            error
-        end
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -1392,55 +1351,26 @@ defmodule TripleStore.Loader do
          start_time
        ) do
     Enum.reduce_while(graph_files, {:ok, %{}}, fn {graph, path}, {:ok, summary} ->
-      # Call progress callback if provided
-      callback_result =
-        if progress_callback do
-          progress_info = %{
-            graph: graph,
-            file: Path.basename(path),
-            loaded_so_far: map_size(summary),
-            total_files: map_size(graph_files),
-            elapsed_ms: System.monotonic_time(:millisecond) - start_time
-          }
-
-          case progress_callback.(progress_info) do
-            :continue -> :continue
-            :halt -> :halt
-          end
-        else
-          :continue
-        end
-
-      # Check if callback requested halt
-      if callback_result == :halt do
+      if maybe_report_graph_file_progress(
+           progress_callback,
+           graph,
+           path,
+           summary,
+           graph_files,
+           start_time
+         ) == :halt do
         {:halt, {:ok, summary}}
       else
-        # Load single file to graph
-        load_opts =
-          opts
-          |> Keyword.put(:clear_graph, clear_graphs?)
-          |> Keyword.delete(:on_conflict)
-          |> Keyword.delete(:progress_callback)
-
-        case load_to_graph(db, manager, path, graph, load_opts) do
-          {:ok, count} ->
-            {:cont, {:ok, Map.put(summary, graph, count)}}
-
-          {:halted, count} ->
-            {:cont, {:ok, Map.put(summary, graph, count)}}
-
-          {:error, reason} ->
-            case on_conflict do
-              :continue ->
-                {:cont, {:ok, Map.put(summary, graph, {:error, reason})}}
-
-              :stop ->
-                {:halt, {:ok, Map.put(summary, graph, {:error, reason})}}
-
-              :abort ->
-                {:halt, {:error, {:load_error, graph, path, reason}}}
-            end
-        end
+        load_file_to_graph_and_update(
+          db,
+          manager,
+          graph,
+          path,
+          summary,
+          opts,
+          clear_graphs?,
+          on_conflict
+        )
       end
     end)
   end
@@ -1649,43 +1579,13 @@ defmodule TripleStore.Loader do
   @spec load_triples_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map(), map()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp load_triples_sequential(db, manager, triples, batch_size, progress_opts, write_opts) do
-    triples
-    |> Stream.chunk_every(batch_size)
-    |> Stream.with_index(1)
-    |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
-      # Check max triples limit before processing batch
-      if total >= @max_triples do
-        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
-      else
-        batch_start = System.monotonic_time()
-        batch_count = length(batch)
-
-        # Don't process batch if it would exceed max triples
-        if total + batch_count > @max_triples do
-          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
-        else
-          case process_batch(db, manager, batch, write_opts) do
-            :ok ->
-              new_total = total + batch_count
-              batch_duration = System.monotonic_time() - batch_start
-
-              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
-
-              # Check if we should report progress and handle cancellation
-              case maybe_report_progress(progress_opts, batch_number, new_total) do
-                :continue ->
-                  {:cont, {:ok, new_total}}
-
-                :halt ->
-                  {:halt, {:halted, new_total}}
-              end
-
-            {:error, reason} ->
-              {:halt, {:error, reason}}
-          end
-        end
-      end
-    end)
+    load_batches_sequential(
+      triples,
+      batch_size,
+      write_opts,
+      &process_batch(db, manager, &1, write_opts),
+      &maybe_report_progress(progress_opts, &1, &2)
+    )
   end
 
   # Parallel loading - Flow-based pipeline
@@ -1847,28 +1747,19 @@ defmodule TripleStore.Loader do
     else
       batch_start = System.monotonic_time()
 
-      case Index.insert_triples(db, internal_triples, sync: write_opts.sync) do
-        :ok ->
-          batch_count = length(internal_triples)
-          new_total = total + batch_count
-          batch_duration = System.monotonic_time() - batch_start
-
-          emit_batch_telemetry(batch_count, batch_duration, batch_num, write_opts.sync)
-
-          # Report progress and handle cancellation
-          case maybe_report_progress(progress_opts, batch_num, new_total) do
-            :continue ->
-              {new_total, batch_num}
-
-            :halt ->
-              set_halted(halt_ref)
-              {new_total, batch_num}
-          end
-
-        {:error, _reason} = error ->
-          Agent.update(error_agent, fn _ -> error end)
-          {total, batch_num}
-      end
+      handle_encoded_batch_write(
+        Index.insert_triples(db, internal_triples, sync: write_opts.sync),
+        internal_triples,
+        batch_start,
+        %{
+          batch_num: batch_num,
+          total: total,
+          progress_opts: progress_opts,
+          write_opts: write_opts,
+          halt_ref: halt_ref,
+          error_agent: error_agent
+        }
+      )
     end
   end
 
@@ -1882,6 +1773,44 @@ defmodule TripleStore.Loader do
     )
   end
 
+  defp handle_encoded_batch_write(
+         :ok,
+         internal_triples,
+         batch_start,
+         %{
+           batch_num: batch_num,
+           total: total,
+           progress_opts: progress_opts,
+           write_opts: write_opts,
+           halt_ref: halt_ref
+         }
+       ) do
+    batch_count = length(internal_triples)
+    new_total = total + batch_count
+    batch_duration = System.monotonic_time() - batch_start
+
+    emit_batch_telemetry(batch_count, batch_duration, batch_num, write_opts.sync)
+
+    case maybe_report_progress(progress_opts, batch_num, new_total) do
+      :continue ->
+        {new_total, batch_num}
+
+      :halt ->
+        set_halted(halt_ref)
+        {new_total, batch_num}
+    end
+  end
+
+  defp handle_encoded_batch_write(
+         {:error, _reason} = error,
+         _internal_triples,
+         _batch_start,
+         %{batch_num: batch_num, total: total, error_agent: error_agent}
+       ) do
+    Agent.update(error_agent, fn _ -> error end)
+    {total, batch_num}
+  end
+
   # Report progress if callback is set and interval is reached
   # Includes timeout protection to prevent slow/hanging callbacks from blocking load
   @spec maybe_report_progress(map(), pos_integer(), non_neg_integer()) :: :continue | :halt
@@ -1892,25 +1821,9 @@ defmodule TripleStore.Loader do
          batch_number,
          total
        ) do
-    # Only report on interval boundaries
     if rem(batch_number, interval) == 0 do
-      elapsed_ms = System.monotonic_time(:millisecond) - start_time
-      rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
-
-      progress_info = %{
-        triples_loaded: total,
-        batch_number: batch_number,
-        elapsed_ms: elapsed_ms,
-        rate_per_second: rate
-      }
-
-      # Call callback with timeout to prevent blocking
-      task = Task.async(fn -> callback.(progress_info) end)
-
-      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
-        {:ok, :halt} -> :halt
-        _ -> :continue
-      end
+      callback
+      |> report_progress_callback(build_progress_info(:triples, batch_number, total, start_time))
     else
       :continue
     end
@@ -1935,45 +1848,13 @@ defmodule TripleStore.Loader do
   @spec load_quads_sequential(db_ref(), manager(), Enumerable.t(), pos_integer(), map(), map()) ::
           {:ok, non_neg_integer()} | {:error, term()} | {:halted, non_neg_integer()}
   defp load_quads_sequential(db, manager, quads, batch_size, progress_opts, write_opts) do
-    alias TripleStore.QuadOperations
-
-    quads
-    |> Stream.chunk_every(batch_size)
-    |> Stream.with_index(1)
-    |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
-      # Check max triples limit before processing batch
-      if total >= @max_triples do
-        {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
-      else
-        batch_start = System.monotonic_time()
-        batch_count = length(batch)
-
-        # Don't process batch if it would exceed max triples
-        if total + batch_count > @max_triples do
-          {:halt, {:error, {:max_triples_exceeded, @max_triples}}}
-        else
-          case process_quad_batch(db, manager, batch, write_opts) do
-            :ok ->
-              new_total = total + batch_count
-              batch_duration = System.monotonic_time() - batch_start
-
-              emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
-
-              # Check if we should report progress and handle cancellation
-              case maybe_report_quad_progress(progress_opts, batch_number, new_total) do
-                :continue ->
-                  {:cont, {:ok, new_total}}
-
-                :halt ->
-                  {:halt, {:halted, new_total}}
-              end
-
-            {:error, reason} ->
-              {:halt, {:error, reason}}
-          end
-        end
-      end
-    end)
+    load_batches_sequential(
+      quads,
+      batch_size,
+      write_opts,
+      &process_quad_batch(db, manager, &1, write_opts),
+      &maybe_report_quad_progress(progress_opts, &1, &2)
+    )
   end
 
   # Parallel quad loading - Flow-based pipeline for quads
@@ -2173,23 +2054,8 @@ defmodule TripleStore.Loader do
          total
        ) do
     if rem(batch_number, interval) == 0 do
-      elapsed_ms = System.monotonic_time(:millisecond) - start_time
-      rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
-
-      progress_info = %{
-        quads_loaded: total,
-        batch_number: batch_number,
-        elapsed_ms: elapsed_ms,
-        rate_per_second: rate
-      }
-
-      # Call callback with timeout to prevent blocking
-      task = Task.async(fn -> callback.(progress_info) end)
-
-      case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
-        {:ok, :halt} -> :halt
-        _ -> :continue
-      end
+      callback
+      |> report_progress_callback(build_progress_info(:quads, batch_number, total, start_time))
     else
       :continue
     end
@@ -2197,15 +2063,7 @@ defmodule TripleStore.Loader do
 
   # Resolve stage count from options, defaulting to CPU cores
   @spec resolve_stages(keyword()) :: pos_integer()
-  defp resolve_stages(opts) do
-    case Keyword.get(opts, :stages) do
-      nil -> System.schedulers_online()
-      n when is_integer(n) and n >= @min_stages and n <= @max_stages -> n
-      n when is_integer(n) and n < @min_stages -> @min_stages
-      n when is_integer(n) and n > @max_stages -> @max_stages
-      _ -> System.schedulers_online()
-    end
-  end
+  defp resolve_stages(opts), do: normalize_stage_count(Keyword.get(opts, :stages))
 
   # ===========================================================================
   # Private - Telemetry Helper
@@ -2270,27 +2128,219 @@ defmodule TripleStore.Loader do
   @spec validate_file_path(Path.t(), [Path.t()] | nil) ::
           {:ok, Path.t()} | {:error, :invalid_path}
   defp validate_file_path(path, allowed_dirs \\ nil) do
-    # Check for path traversal in the original path before expansion
-    # This catches attempts like "../", "..\\", "%2e%2e", etc.
     if has_path_traversal?(path) do
       {:error, :invalid_path}
     else
-      expanded = Path.expand(path)
-
-      # If allowed_dirs is specified, verify the path is within them
-      if allowed_dirs != nil and Path.type(expanded) == :absolute do
-        if within_allowed_dirs?(expanded, allowed_dirs) do
-          {:ok, expanded}
-        else
-          {:error, :invalid_path}
-        end
-      else
-        # No directory restrictions or relative path - safe to use
-        {:ok, expanded}
-      end
+      path
+      |> Path.expand()
+      |> validate_expanded_file_path(allowed_dirs)
     end
   rescue
     _ -> {:error, :invalid_path}
+  end
+
+  defp load_parsed_string(db, manager, graph, graph_opt, is_quad, opts) do
+    batch_size = resolve_batch_size(opts)
+    triples = RDF.Graph.triples(graph)
+
+    case determine_load_string_mode(graph_opt, is_quad) do
+      {:quads, graph_term} ->
+        quads = triples_to_quads(triples, graph_term)
+        load_quads(db, manager, quads, batch_size, opts)
+
+      :triples ->
+        load_triples(db, manager, triples, batch_size, opts)
+    end
+  end
+
+  defp determine_load_string_mode(graph_opt, _is_quad)
+       when not is_nil(graph_opt) and graph_opt != :default,
+       do: {:quads, graph_opt}
+
+  defp determine_load_string_mode(_graph_opt, true), do: {:quads, :default}
+  defp determine_load_string_mode(_graph_opt, false), do: :triples
+
+  defp maybe_report_graph_file_progress(
+         nil,
+         _graph,
+         _path,
+         _summary,
+         _graph_files,
+         _start_time
+       ),
+       do: :continue
+
+  defp maybe_report_graph_file_progress(
+         progress_callback,
+         graph,
+         path,
+         summary,
+         graph_files,
+         start_time
+       ) do
+    progress_info = %{
+      graph: graph,
+      file: Path.basename(path),
+      loaded_so_far: map_size(summary),
+      total_files: map_size(graph_files),
+      elapsed_ms: System.monotonic_time(:millisecond) - start_time
+    }
+
+    progress_callback.(progress_info)
+  end
+
+  defp load_file_to_graph_and_update(
+         db,
+         manager,
+         graph,
+         path,
+         summary,
+         opts,
+         clear_graphs?,
+         on_conflict
+       ) do
+    load_opts =
+      opts
+      |> Keyword.put(:clear_graph, clear_graphs?)
+      |> Keyword.delete(:on_conflict)
+      |> Keyword.delete(:progress_callback)
+
+    db
+    |> load_to_graph(manager, path, graph, load_opts)
+    |> handle_graph_load_result(graph, path, summary, on_conflict)
+  end
+
+  defp handle_graph_load_result({:ok, count}, graph, _path, summary, _on_conflict) do
+    {:cont, {:ok, Map.put(summary, graph, count)}}
+  end
+
+  defp handle_graph_load_result({:halted, count}, graph, _path, summary, _on_conflict) do
+    {:cont, {:ok, Map.put(summary, graph, count)}}
+  end
+
+  defp handle_graph_load_result({:error, reason}, graph, path, summary, on_conflict) do
+    case on_conflict do
+      :continue ->
+        {:cont, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+      :stop ->
+        {:halt, {:ok, Map.put(summary, graph, {:error, reason})}}
+
+      :abort ->
+        {:halt, {:error, {:load_error, graph, path, reason}}}
+    end
+  end
+
+  defp load_batches_sequential(items, batch_size, write_opts, process_fun, progress_fun) do
+    items
+    |> Stream.chunk_every(batch_size)
+    |> Stream.with_index(1)
+    |> Enum.reduce_while({:ok, 0}, fn {batch, batch_number}, {:ok, total} ->
+      handle_sequential_batch(batch, batch_number, total, write_opts, process_fun, progress_fun)
+    end)
+  end
+
+  defp handle_sequential_batch(
+         batch,
+         batch_number,
+         total,
+         write_opts,
+         process_fun,
+         progress_fun
+       ) do
+    batch_count = length(batch)
+
+    with :ok <- ensure_batch_limit(total, batch_count),
+         batch_start = System.monotonic_time(),
+         :ok <- process_fun.(batch) do
+      finalize_sequential_batch(
+        total,
+        batch_count,
+        batch_number,
+        batch_start,
+        write_opts,
+        progress_fun
+      )
+    else
+      {:error, reason} ->
+        {:halt, {:error, reason}}
+    end
+  end
+
+  defp ensure_batch_limit(total, batch_count) do
+    if total >= @max_triples or total + batch_count > @max_triples do
+      {:error, {:max_triples_exceeded, @max_triples}}
+    else
+      :ok
+    end
+  end
+
+  defp finalize_sequential_batch(
+         total,
+         batch_count,
+         batch_number,
+         batch_start,
+         write_opts,
+         progress_fun
+       ) do
+    new_total = total + batch_count
+    batch_duration = System.monotonic_time() - batch_start
+
+    emit_batch_telemetry(batch_count, batch_duration, batch_number, write_opts.sync)
+
+    case progress_fun.(batch_number, new_total) do
+      :continue ->
+        {:cont, {:ok, new_total}}
+
+      :halt ->
+        {:halt, {:halted, new_total}}
+    end
+  end
+
+  defp build_progress_info(kind, batch_number, total, start_time) do
+    elapsed_ms = System.monotonic_time(:millisecond) - start_time
+    rate = if elapsed_ms > 0, do: total / elapsed_ms * 1000, else: 0.0
+
+    %{
+      batch_number: batch_number,
+      elapsed_ms: elapsed_ms,
+      rate_per_second: rate
+    }
+    |> Map.put(progress_count_key(kind), total)
+  end
+
+  defp progress_count_key(:triples), do: :triples_loaded
+  defp progress_count_key(:quads), do: :quads_loaded
+
+  defp report_progress_callback(callback, progress_info) do
+    task = Task.async(fn -> callback.(progress_info) end)
+
+    case Task.yield(task, @progress_callback_timeout) || Task.shutdown(task) do
+      {:ok, :halt} -> :halt
+      _ -> :continue
+    end
+  end
+
+  defp normalize_stage_count(nil), do: System.schedulers_online()
+
+  defp normalize_stage_count(n) when is_integer(n) and n < @min_stages, do: @min_stages
+  defp normalize_stage_count(n) when is_integer(n) and n > @max_stages, do: @max_stages
+  defp normalize_stage_count(n) when is_integer(n), do: n
+  defp normalize_stage_count(_invalid), do: System.schedulers_online()
+
+  defp validate_expanded_file_path(expanded, allowed_dirs) do
+    if requires_allowed_dir_check?(expanded, allowed_dirs) and
+         not within_allowed_dirs?(expanded, allowed_dirs) do
+      {:error, :invalid_path}
+    else
+      {:ok, expanded}
+    end
+  end
+
+  defp requires_allowed_dir_check?(_expanded, nil), do: false
+
+  defp requires_allowed_dir_check?(expanded, _allowed_dirs) do
+    Path.type(expanded) == :absolute
   end
 
   # Check if a path contains path traversal attempts

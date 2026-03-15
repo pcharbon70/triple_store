@@ -1024,26 +1024,8 @@ defmodule TripleStore.Adapter do
   defp split_inline_terms(terms) do
     terms
     |> Enum.with_index()
-    |> Enum.reduce_while({:ok, {%{}, []}}, fn {term, idx}, {:ok, {resolved_ids, dictionary_terms}} ->
-      if Dictionary.inline_encodable?(term) do
-        case encode_inline_literal(term) do
-          {:ok, id} ->
-            {:cont, {:ok, {Map.put(resolved_ids, idx, id), dictionary_terms}}}
-
-          {:error, reason} ->
-            {:halt, {:error, reason}}
-        end
-      else
-        {:cont, {:ok, {resolved_ids, [{idx, term} | dictionary_terms]}}}
-      end
-    end)
-    |> case do
-      {:ok, {resolved_ids, dictionary_terms}} ->
-        {:ok, resolved_ids, Enum.reverse(dictionary_terms)}
-
-      error ->
-        error
-    end
+    |> Enum.reduce_while({%{}, []}, &accumulate_term_resolution/2)
+    |> finalize_inline_term_split()
   end
 
   defp resolve_dictionary_terms(_manager, []), do: {:ok, []}
@@ -1106,23 +1088,54 @@ defmodule TripleStore.Adapter do
   end
 
   defp manager_kind(manager) do
-    case resolve_manager_pid(manager) do
-      pid when is_pid(pid) ->
-        case Process.info(pid, :dictionary) do
-          {:dictionary, dict} ->
-            case Keyword.get(dict, :"$initial_call") do
-              {:supervisor, ShardedManager, 1} -> :sharded
-              _ -> :manager
-            end
+    manager
+    |> resolve_manager_pid()
+    |> manager_kind_from_pid()
+  end
 
-          _ ->
-            :manager
-        end
-
-      _ ->
-        :manager
+  defp accumulate_term_resolution({term, idx}, {resolved_ids, dictionary_terms}) do
+    if Dictionary.inline_encodable?(term) do
+      add_inline_term(term, idx, resolved_ids, dictionary_terms)
+    else
+      {:cont, {resolved_ids, [{idx, term} | dictionary_terms]}}
     end
   end
+
+  defp add_inline_term(term, idx, resolved_ids, dictionary_terms) do
+    case encode_inline_literal(term) do
+      {:ok, id} ->
+        {:cont, {Map.put(resolved_ids, idx, id), dictionary_terms}}
+
+      {:error, reason} ->
+        {:halt, {:error, reason}}
+    end
+  end
+
+  defp finalize_inline_term_split({resolved_ids, dictionary_terms})
+       when is_map(resolved_ids) and is_list(dictionary_terms) do
+    {:ok, resolved_ids, Enum.reverse(dictionary_terms)}
+  end
+
+  defp finalize_inline_term_split({:error, _reason} = error), do: error
+
+  defp manager_kind_from_pid(pid) when is_pid(pid) do
+    pid
+    |> Process.info(:dictionary)
+    |> manager_kind_from_process_info()
+  end
+
+  defp manager_kind_from_pid(_pid), do: :manager
+
+  defp manager_kind_from_process_info({:dictionary, dict}) do
+    dict
+    |> Keyword.get(:"$initial_call")
+    |> manager_kind_from_initial_call()
+  end
+
+  defp manager_kind_from_process_info(_), do: :manager
+
+  defp manager_kind_from_initial_call({:supervisor, ShardedManager, 1}), do: :sharded
+  defp manager_kind_from_initial_call(_), do: :manager
 
   defp resolve_manager_pid(manager) when is_pid(manager), do: manager
   defp resolve_manager_pid(manager), do: GenServer.whereis(manager)
