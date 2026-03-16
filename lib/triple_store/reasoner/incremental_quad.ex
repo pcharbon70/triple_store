@@ -53,6 +53,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
   alias TripleStore.Reasoner.SemiNaive
 
   # Database-related imports for the database API
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.DerivedStore
@@ -211,14 +212,14 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     lookup_fn = fn pattern ->
       all_facts = Agent.get(agent, & &1)
       graph_facts = filter_facts_by_graph(all_facts, graph_id)
-      facts_with_tbox = MapSet.union(graph_facts, tbox_facts)
+      facts_with_tbox = merge_fact_sets(graph_facts, tbox_facts)
       {:ok, match_quad_pattern(pattern, facts_with_tbox)}
     end
 
     # Store function that adds derived quads with graph_id
     store_fn = fn new_facts ->
       Agent.update(agent, fn current ->
-        MapSet.union(current, attach_graph_id(new_facts, graph_id))
+        merge_fact_sets(current, attach_graph_id(new_facts, graph_id))
       end)
 
       :ok
@@ -370,7 +371,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     lookup_fn = fn pattern ->
       with {:ok, graph_facts} <-
              QuadIndex.lookup_all_fold(db, graph_id, convert_rule_pattern(pattern)) do
-        all_facts = MapSet.union(MapSet.new(graph_facts), tbox_facts)
+        all_facts = merge_fact_sets(MapSet.new(graph_facts), tbox_facts)
         {:ok, match_quad_pattern(pattern, all_facts)}
       end
     end
@@ -378,7 +379,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     {:ok, agent} = Agent.start_link(fn -> MapSet.new() end)
 
     store_fn = fn new_facts ->
-      Agent.update(agent, fn existing -> MapSet.union(existing, new_facts) end)
+      Agent.update(agent, fn existing -> merge_fact_sets(existing, new_facts) end)
       :ok
     end
 
@@ -538,7 +539,7 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
       lookup_pattern = convert_rule_pattern(pattern)
 
       with {:ok, graph_facts} <- QuadIndex.lookup_all_fold(db, graph_id, lookup_pattern) do
-        all_facts = MapSet.union(MapSet.new(graph_facts), tbox_facts)
+        all_facts = merge_fact_sets(MapSet.new(graph_facts), tbox_facts)
         {:ok, all_facts}
       end
     end
@@ -553,6 +554,10 @@ defmodule TripleStore.Reasoner.IncrementalQuad do
     |> MapSet.to_list()
     |> Enum.map(fn {s, p, o} -> {graph_id, s, p, o} end)
     |> MapSet.new()
+  end
+
+  defp merge_fact_sets(left, right) do
+    Enum.reduce(right, left, &MapSet.put(&2, &1))
   end
 
   defp convert_term({:var, _name}), do: :var

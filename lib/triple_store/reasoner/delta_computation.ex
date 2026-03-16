@@ -134,7 +134,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       {:ok, new_facts} = DeltaComputation.apply_rule_delta(lookup, rule, delta, existing)
   """
   @spec apply_rule_delta(
-          (Rule.pattern() -> {:ok, [triple()]} | {:error, term()}),
+          (Rule.graph_pattern() -> {:ok, [fact()]} | {:error, term()}),
           Rule.t(),
           fact_set(),
           fact_set(),
@@ -199,8 +199,8 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   List of bindings (maps from variable names to terms).
   """
   @spec generate_bindings(
-          (Rule.pattern() -> {:ok, [triple()]} | {:error, term()}),
-          [Rule.pattern()],
+          (Rule.graph_pattern() -> {:ok, [fact()]} | {:error, term()}),
+          [Rule.graph_pattern()],
           fact_set(),
           predicate_index(),
           non_neg_integer(),
@@ -209,7 +209,8 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   def generate_bindings(lookup_fn, patterns, delta, delta_index, delta_pos, conditions) do
     patterns
     |> Enum.with_index()
-    |> Enum.reduce([%{}], fn {{:pattern, terms} = pattern, pos}, bindings ->
+    |> Enum.reduce([%{}], fn {pattern, pos}, bindings ->
+      terms = pattern_terms(pattern)
       use_delta = pos == delta_pos
 
       Enum.flat_map(bindings, fn binding ->
@@ -423,10 +424,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
          delta_index,
          use_delta
        ) do
-    substituted_pattern =
-      terms
-      |> Enum.map(&Rule.substitute(&1, binding))
-      |> then(&{:pattern, &1})
+    substituted_pattern = substitute_pattern(pattern, terms, binding)
 
     lookup_fn
     |> get_matching_facts(substituted_pattern, delta, delta_index, use_delta)
@@ -542,11 +540,33 @@ defmodule TripleStore.Reasoner.DeltaComputation do
   defp pattern_element({:var, _}), do: :var
   defp pattern_element(_), do: :bound
 
+  defp pattern_terms({:pattern, terms}), do: terms
+  defp pattern_terms({:quad_pattern, terms}), do: terms
+
+  defp substitute_pattern({:pattern, _original_terms}, terms, binding) do
+    {:pattern, Enum.map(terms, &Rule.substitute(&1, binding))}
+  end
+
+  defp substitute_pattern({:quad_pattern, _original_terms}, terms, binding) do
+    {:quad_pattern, Enum.map(terms, &Rule.substitute(&1, binding))}
+  end
+
   defp unify_pattern_with_fact({:pattern, [ps, pp, po]}, {fs, fp, fo}, binding) do
     with {:ok, b1} <- unify_term(ps, fs, binding),
          {:ok, b2} <- unify_term(pp, fp, b1),
          {:ok, b3} <- unify_term(po, fo, b2) do
       {:ok, b3}
+    else
+      :no_match -> :no_match
+    end
+  end
+
+  defp unify_pattern_with_fact({:quad_pattern, [pg, ps, pp, po]}, {fg, fs, fp, fo}, binding) do
+    with {:ok, b1} <- unify_term(pg, fg, binding),
+         {:ok, b2} <- unify_term(ps, fs, b1),
+         {:ok, b3} <- unify_term(pp, fp, b2),
+         {:ok, b4} <- unify_term(po, fo, b3) do
+      {:ok, b4}
     else
       :no_match -> :no_match
     end

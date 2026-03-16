@@ -226,8 +226,6 @@ defmodule TripleStore.Reasoner.ForwardRederive do
       bindings_satisfy_conditions?(bindings_list, Rule.body_conditions(rule))
     else
       :no_match -> false
-      {:ok, []} -> false
-      {:error, :binding_limit_exceeded} -> log_binding_limit_exceeded()
     end
   end
 
@@ -252,15 +250,6 @@ defmodule TripleStore.Reasoner.ForwardRederive do
     Enum.any?(bindings_list, fn bindings ->
       satisfies_conditions?(conditions, bindings)
     end)
-  end
-
-  defp log_binding_limit_exceeded do
-    Logger.warning(
-      "Binding set limit exceeded during re-derivation check, " <>
-        "conservatively marking fact as non-re-derivable"
-    )
-
-    false
   end
 
   defp extend_binding_sets(bindings_list, pattern, valid_facts) do

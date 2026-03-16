@@ -209,8 +209,6 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   end
 
   # Converts pattern and bindings to quads for deletion
-  defp pattern_to_quads(_ctx, _pattern, []), do: {:ok, []}
-
   defp pattern_to_quads(_ctx, {:bgp, _patterns}, _bindings) do
     # This is a simplified implementation - a full implementation would
     # need to properly instantiate pattern variables with bindings

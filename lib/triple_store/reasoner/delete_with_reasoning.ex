@@ -484,10 +484,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   defp delete_explicit_facts(db, triples), do: Index.delete_triples(db, triples)
 
   defp get_all_derived_facts(db) do
-    case DerivedStore.lookup_derived(db, {:var, :var, :var}) do
-      {:ok, stream} -> {:ok, stream |> Enum.to_list() |> MapSet.new()}
-      error -> error
-    end
+    {:ok, stream} = DerivedStore.lookup_derived(db, {:var, :var, :var})
+    {:ok, stream |> Enum.to_list() |> MapSet.new()}
   end
 
   defp backward_trace_db(deleted_set, all_derived, rules, max_depth) do

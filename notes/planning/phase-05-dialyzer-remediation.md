@@ -245,11 +245,20 @@ durable part of local and CI quality gates.
 Description: Clear the smaller remaining warning classes that will still exist
 after the major contract families are fixed.
 
-- [ ] **Task 6.1.1** Description: Remove the remaining `pattern_match`,
+- [x] **Task 6.1.1** Description: Remove the remaining `pattern_match`,
   `pattern_match_cov`, `unused_fun`, `unknown_type`, and `call_without_opaque`
-  issues in secondary modules.
-- [ ] **Task 6.1.2** Description: Rerun Dialyzer after each remediation batch and
-  keep the delta grouped by category to avoid reintroducing drift.
+  issues in secondary modules. Completed on 2026-03-16 by reconciling the
+  last residual branches and types in `QuadIndex`, `Health`, backup/graph
+  backup helpers, SPARQL authorization/executor/update helpers, result-stream
+  and query-cache support, and the remaining reasoning utility modules. This
+  pass also fixed a real quad-pattern bug in `DeltaComputation`, where
+  substituted quad patterns were being rebuilt as triple patterns during
+  semi-naive evaluation.
+- [x] **Task 6.1.2** Description: Rerun Dialyzer after each remediation batch and
+  keep the delta grouped by category to avoid reintroducing drift. Completed on
+  2026-03-16 by tracking the residual backlog from `94` issues at the start of
+  Phase 6 to `24`, then `7`, then `1`, and finally `0` after the last
+  `TBoxCache` analyzer cleanup.
 
 ### Section 6.2: Workflow Enforcement
 

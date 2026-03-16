@@ -121,9 +121,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
                 else
                   acc
                 end
-
-              _error ->
-                acc
             end
         end)
 
@@ -173,9 +170,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
                 else
                   acc
                 end
-
-              _error ->
-                acc
             end
         end)
         |> Enum.sort()
@@ -238,7 +232,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   @doc """
   Returns the list of built-in TBox predicate IRIs.
   """
-  @spec built_in_tbox_predicates() :: MapSet.t(String.t())
   def built_in_tbox_predicates, do: @tbox_predicates
 
   # ============================================================================

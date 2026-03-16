@@ -252,8 +252,8 @@ defmodule TripleStore.SPARQL.Validation do
       Validation.emit_validation_telemetry(:path_traversal_detected, "path_traversal", %{})
 
   """
-  @spec emit_validation_telemetry(atom(), String.t(), keyword()) :: :ok
-  def emit_validation_telemetry(reason, iri, metadata \\ []) do
+  @spec emit_validation_telemetry(atom(), String.t(), map()) :: :ok
+  def emit_validation_telemetry(reason, iri, metadata \\ %{}) do
     :telemetry.execute(
       [:triple_store, :sparql, :validation_failure],
       %{reason: reason},

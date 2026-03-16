@@ -48,10 +48,10 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   @doc """
   Executes a CLEAR operation.
   """
-  @spec execute_clear(map(), keyword() | atom()) :: {:ok, non_neg_integer()} | {:error, term()}
+  @spec execute_clear(map(), keyword() | atom() | {:clear, keyword() | atom()}) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def execute_clear(ctx, {:clear, target}) do
-    graph_target = Keyword.get(target, "graph", target)
-    silent = Keyword.get(target, "silent", false)
+    {graph_target, silent} = clear_target_and_silent(target)
     # Normalize parser atoms to internal atoms
     normalized_target = normalize_clear_target(graph_target)
     execute_clear(ctx, normalized_target, silent)
@@ -80,6 +80,12 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   defp normalize_clear_target(:default_graph), do: :default
   defp normalize_clear_target(:all_named), do: :named
   defp normalize_clear_target(other), do: other
+
+  defp clear_target_and_silent(target) when is_list(target) do
+    {Helpers.get_prop(target, "graph", target), Helpers.get_prop(target, "silent", false)}
+  end
+
+  defp clear_target_and_silent(target), do: {target, false}
 
   @doc """
   Executes a COPY GRAPH operation.
@@ -402,13 +408,8 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   end
 
   # Check if two graph terms are equal
-  defp graphs_equal?(g1, g2) when g1 == g2, do: true
-  defp graphs_equal?(:default, :default_graph), do: true
-  defp graphs_equal?(:default_graph, :default), do: true
-  defp graphs_equal?(g1, g2) when is_binary(g1) and is_binary(g2), do: g1 == g2
-  defp graphs_equal?(%RDF.IRI{} = g1, %RDF.IRI{} = g2), do: g1.value == g2.value
-  defp graphs_equal?(g1, g2) when is_binary(g1) and is_struct(g2), do: g1 == to_string(g2)
-  defp graphs_equal?(g1, g2) when is_struct(g1) and is_binary(g2), do: to_string(g1) == g2
+  defp graphs_equal?(:default, :default), do: true
+  defp graphs_equal?(%RDF.IRI{value: left}, %RDF.IRI{value: right}), do: left == right
   defp graphs_equal?(_, _), do: false
 
   defp clear_quad_graphs(ctx, graphs, on_error) do

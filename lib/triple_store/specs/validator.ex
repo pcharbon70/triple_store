@@ -749,7 +749,6 @@ defmodule TripleStore.Specs.Validator do
   end
 
   defp count_ids(%MapSet{} = ids), do: MapSet.size(ids)
-  defp count_ids(ids) when is_list(ids), do: length(ids)
 
   defp file_exists?(repo_root, relative_path) do
     repo_root

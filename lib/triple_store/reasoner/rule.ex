@@ -85,6 +85,9 @@ defmodule TripleStore.Reasoner.Rule do
   @typedoc "A term in a rule pattern (variable or constant)"
   @type rule_term :: variable() | iri_term() | blank_node() | literal_term()
 
+  @typedoc "A ground term captured in a variable binding"
+  @type bound_term :: iri_term() | blank_node() | literal_term() | term()
+
   @typedoc "A triple pattern in a rule body or head"
   @type pattern :: {:pattern, [rule_term()]}
 
@@ -100,6 +103,9 @@ defmodule TripleStore.Reasoner.Rule do
 
   @typedoc "A dictionary-encoded ID triple: {subject_id, predicate_id, object_id}"
   @type id_triple :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
+
+  @typedoc "A ground triple in rule-term form"
+  @type term_triple :: {rule_term(), rule_term(), rule_term()}
 
   @typedoc "A graph term in a quad pattern"
   @type graph_term ::
@@ -174,7 +180,7 @@ defmodule TripleStore.Reasoner.Rule do
       ...>   description: "Class membership through subclass"
       ...> )
   """
-  @spec new(atom(), [body_element()], pattern(), keyword()) :: t()
+  @spec new(atom(), [body_element()], graph_pattern(), keyword()) :: t()
   def new(name, body, head, opts \\ []) when is_atom(name) and is_list(body) do
     %__MODULE__{
       name: name,
