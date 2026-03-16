@@ -191,7 +191,8 @@ defmodule TripleStore.SPARQL.ResultStream do
           items: list(),
           total: non_neg_integer(),
           page: pos_integer(),
-          page_size: pos_integer()
+          page_size: pos_integer(),
+          total_pages: non_neg_integer()
         }
   def paginate(enumerable, page, page_size \\ @default_batch_size) do
     offset = (page - 1) * page_size
@@ -227,14 +228,14 @@ defmodule TripleStore.SPARQL.ResultStream do
     def count(%{enumerable: enumerable}), do: Enumerable.count(enumerable)
 
     def member?(%{enumerable: enumerable}, element) when is_list(enumerable) do
-      element in enumerable
+      {:ok, element in enumerable}
     end
 
     def member?(%{enumerable: enumerable}, element) do
       # For non-list enumerables, do linear search
       # First convert to list to avoid infinite recursion
       list = Enum.to_list(enumerable)
-      element in list
+      {:ok, element in list}
     end
 
     def slice(%{enumerable: enumerable}), do: Enumerable.slice(enumerable)

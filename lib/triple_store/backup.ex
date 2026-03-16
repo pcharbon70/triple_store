@@ -528,20 +528,14 @@ defmodule TripleStore.Backup do
   def verify_quad_backup(backup_path) do
     with {:ok, :valid} <- verify(backup_path) do
       # Check for all 4 quad indices using list_column_families
-      case ErlangAdapter.list_column_families(backup_path) do
-        {:ok, indices} when is_list(indices) ->
-          quad_indices = [:gspo, :gpos, :spog, :posg]
-          missing = Enum.reject(quad_indices, &(&1 in indices))
+      indices = ErlangAdapter.list_column_families(backup_path)
+      quad_indices = ~w(gspo gpos spog posg)
+      missing = Enum.reject(quad_indices, &(&1 in indices))
 
-          if Enum.empty?(missing) do
-            {:ok, :valid}
-          else
-            {:error, {:missing_indices, missing}}
-          end
-
-        {:error, _reason} ->
-          # Fallback: just verify basic backup is valid
-          {:ok, :valid}
+      if Enum.empty?(missing) do
+        {:ok, :valid}
+      else
+        {:error, {:missing_indices, missing}}
       end
     end
   end

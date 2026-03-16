@@ -148,7 +148,7 @@ defmodule TripleStore.GraphBackup do
       with :ok <- validate_backup_path(backup_path),
            :ok <- ensure_parent_directory(backup_path),
            {:ok, quad_count} <- get_graph_quad_count(store, graph_id),
-           {:ok, _} <- export_graph_to_file(store, graph_id, backup_path, batch_size),
+           :ok <- export_graph_to_file(store, graph_id, backup_path, batch_size),
            :ok <- write_backup_metadata(backup_path, store, graph_id, quad_count, include_stats) do
         metadata = build_backup_metadata(backup_path, store, graph_id, quad_count)
         {{:ok, metadata}, %{quad_count: quad_count}}
@@ -493,12 +493,8 @@ defmodule TripleStore.GraphBackup do
   defp get_graph_name(store, graph_id) do
     # Try to get graph name from dictionary
     case TripleStore.Adapter.id_to_term(store.dict_manager, graph_id) do
-      {:ok, term} when is_tuple(term) ->
-        # For IRIs, return the string representation
-        case term do
-          %RDF.IRI{} = iri -> RDF.IRI.to_string(iri)
-          _ -> nil
-        end
+      {:ok, %RDF.IRI{} = iri} ->
+        RDF.IRI.to_string(iri)
 
       _ ->
         nil
@@ -508,14 +504,8 @@ defmodule TripleStore.GraphBackup do
   defp get_graph_statistics(store, graph_id) do
     alias TripleStore.Statistics
 
-    case Statistics.graph_statistics(store.db, graph_id) do
-      {:ok, stats} ->
-        stats
-
-      {:error, _} ->
-        # Return basic stats if full statistics not available
-        %{quad_count: get_graph_quad_count(store, graph_id) |> elem(1)}
-    end
+    {:ok, stats} = Statistics.graph_statistics(store.db, graph_id)
+    stats
   end
 
   defp validate_backup_file(path, true) do

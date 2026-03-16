@@ -1157,27 +1157,21 @@ defmodule TripleStore.QuadIndex do
         }) ::
           pattern_match()
   def build_quad_prefix(pattern, values) when is_tuple(pattern) and is_map(values) do
-    selection = select_index_for_quad(pattern)
+    %{
+      index: index,
+      prefix_len: len,
+      needs_filter: needs_filter,
+      filter_positions: filter_positions
+    } = do_select_index_for_quad(pattern)
 
-    case selection do
-      :no_match ->
-        %{index: :gspo, prefix: <<>>, needs_filter: false, filter_positions: []}
+    prefix = build_prefix_for_index(index, pattern, values, len)
 
-      %{
-        index: index,
-        prefix_len: len,
-        needs_filter: needs_filter,
-        filter_positions: filter_positions
-      } ->
-        prefix = build_prefix_for_index(index, pattern, values, len)
-
-        %{
-          index: index,
-          prefix: prefix,
-          needs_filter: needs_filter,
-          filter_positions: filter_positions
-        }
-    end
+    %{
+      index: index,
+      prefix: prefix,
+      needs_filter: needs_filter,
+      filter_positions: filter_positions
+    }
   end
 
   # Builds prefix for specific index based on pattern and values
@@ -1351,7 +1345,7 @@ defmodule TripleStore.QuadIndex do
       # => [{100, 200, 300}, {100, 400, 500}]
   """
   @spec lookup_all_fold(term(), term_id(), TripleStore.Reasoner.PatternMatcher.index_pattern()) ::
-          {:ok, [TripleStore.Reasoner.PatternMatcher.term_triple()]} | {:error, term()}
+          {:ok, [TripleStore.Reasoner.PatternMatcher.triple()]} | {:error, term()}
   def lookup_all_fold(db, graph_id, pattern) do
     prefix = graph_pattern_to_lookup_prefix(graph_id, pattern)
 

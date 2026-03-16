@@ -380,10 +380,7 @@ defmodule TripleStore.Reasoner.Incremental do
     prospective_facts = MapSet.new(triples)
 
     lookup_fn = fn pattern ->
-      case DerivedStore.make_lookup_fn(db, :both).(pattern) do
-        {:ok, db_facts} -> {:ok, db_facts}
-        error -> error
-      end
+      DerivedStore.make_lookup_fn(db, :both).(pattern)
     end
 
     {:ok, agent} = Agent.start_link(fn -> MapSet.new() end)

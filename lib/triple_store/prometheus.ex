@@ -710,11 +710,7 @@ defmodule TripleStore.Prometheus do
 
   defp update_gauge_values(store, gauges) do
     # Get triple count
-    triple_count =
-      case TripleStore.Statistics.triple_count(store.db) do
-        {:ok, count} -> count
-        _ -> gauges.triples
-      end
+    {:ok, triple_count} = TripleStore.Statistics.triple_count(store.db)
 
     # Get memory estimate
     memory = :erlang.memory(:total)

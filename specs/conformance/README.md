@@ -20,3 +20,6 @@ Current automation validates the documentation graph:
 - governance rejects tracked generated native binaries under `priv/native`
 
 It does not yet execute scenario-specific implementation tests automatically.
+
+Static type-contract enforcement is handled separately by `mix dialyzer`, which
+is now part of the tracked pre-commit hook and the GitHub `CI` workflow.

@@ -9,6 +9,7 @@ defmodule TripleStore.Reasoner.TBoxCache do
     {:nowarn_function, tbox_triple?: 1},
     {:nowarn_function, categorize_tbox_triples: 1},
     {:nowarn_function, recompute_hierarchies: 2},
+    {:nowarn_function, recompute_tbox_update: 3},
     {:nowarn_function, handle_tbox_update: 4},
     {:nowarn_function, store_hierarchy: 3},
     {:nowarn_function, register_key: 2}
@@ -1267,9 +1268,8 @@ defmodule TripleStore.Reasoner.TBoxCache do
   end
 
   defp recompute_tbox_update(current_facts, key, invalidated) do
-    case recompute_hierarchies(current_facts, key) do
-      {:ok, stats} -> {:ok, tbox_update_result(true, invalidated, stats)}
-      {:error, _} = error -> error
+    with {:ok, stats} <- recompute_hierarchies(current_facts, key) do
+      {:ok, tbox_update_result(true, invalidated, stats)}
     end
   end
 

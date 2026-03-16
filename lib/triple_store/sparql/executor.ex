@@ -205,10 +205,13 @@ defmodule TripleStore.SPARQL.Executor do
   @type binding_stream :: Enumerable.t()
 
   @typedoc "Database reference"
-  @type db :: reference()
+  @type db :: TripleStore.db_ref()
 
   @typedoc "Dictionary manager reference"
-  @type dict_manager :: GenServer.server()
+  @type dict_manager :: TripleStore.manager()
+
+  @typedoc "Graph variable passed to GRAPH ?g execution helpers"
+  @type graph_variable :: String.t() | {:variable, String.t()}
 
   @typedoc "Execution context containing database, dictionary, and optional user references"
   @type context :: %{
@@ -600,9 +603,10 @@ defmodule TripleStore.SPARQL.Executor do
   with many graphs.
 
   """
-  @spec execute_with_graph_variable(context(), term(), String.t(), binding()) ::
+  @spec execute_with_graph_variable(context(), term(), graph_variable(), binding()) ::
           {:ok, binding_stream()} | {:error, term()}
-  def execute_with_graph_variable(ctx, pattern, var_name, initial_binding) do
+  def execute_with_graph_variable(ctx, pattern, graph_variable, initial_binding) do
+    var_name = graph_variable_name(graph_variable)
     user_or_public = Map.get(ctx, :user, :public)
 
     case QuadOperations.list_graphs(ctx.db, include_default: true) do
@@ -775,10 +779,8 @@ defmodule TripleStore.SPARQL.Executor do
     # Execute each quad pattern sequentially, extending bindings
     result =
       Enum.reduce_while(quad_patterns, {:ok, initial_stream}, fn quad_pattern, {:ok, stream} ->
-        case extend_bindings(ctx, stream, quad_pattern) do
-          {:ok, new_stream} -> {:cont, {:ok, new_stream}}
-          {:error, _reason} = error -> {:halt, error}
-        end
+        {:ok, new_stream} = extend_bindings(ctx, stream, quad_pattern)
+        {:cont, {:ok, new_stream}}
       end)
 
     result
@@ -1054,12 +1056,10 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Extract pattern type (:bound or :var) from term pattern
   defp pattern_type({:bound, _id}), do: :bound
-  defp pattern_type({:var, _name}), do: :var
   defp pattern_type(:var), do: :var
 
   # Extract value from bound pattern, return nil for var
   defp value_from_pattern({:bound, id}), do: id
-  defp value_from_pattern({:var, _name}), do: nil
   defp value_from_pattern(:var), do: nil
 
   # Check if this pattern can use a range index
@@ -3615,13 +3615,8 @@ defmodule TripleStore.SPARQL.Executor do
           {:ok, id} ->
             # Use Index pattern format: {:bound, id} for bound, :var for variable
             # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-            case Index.lookup_all(db, {{:bound, id}, :var, :var}) do
-              {:ok, triples} ->
-                triples
-
-              _ ->
-                []
-            end
+            {:ok, triples} = Index.lookup_all(db, {{:bound, id}, :var, :var})
+            triples
 
           _ ->
             []
@@ -3710,12 +3705,13 @@ defmodule TripleStore.SPARQL.Executor do
   # Fetch triples for a list of blank node IDs
   defp fetch_triples_for_blank_nodes(db, bnode_ids) do
     Enum.flat_map(bnode_ids, fn bnode_id ->
-      case Index.lookup_all(db, {{:bound, bnode_id}, :var, :var}) do
-        {:ok, bnode_triples} -> bnode_triples
-        _ -> []
-      end
+      {:ok, bnode_triples} = Index.lookup_all(db, {{:bound, bnode_id}, :var, :var})
+      bnode_triples
     end)
   end
+
+  defp graph_variable_name({:variable, name}), do: name
+  defp graph_variable_name(name), do: name
 
   # Check if an ID represents a blank node (type tag 1)
   defp blank_node_id?(id) when is_integer(id) do

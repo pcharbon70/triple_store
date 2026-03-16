@@ -246,7 +246,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   The list of QuadTrieIterator structs.
 
   """
-  @spec iterators(t()) :: [QuadTrieIterator.t()]
+  @spec iterators(t()) :: [Leapfrog.iterator()]
   def iterators(%__MODULE__{leapfrog: lf}), do: Leapfrog.iterators(lf)
 
   @doc """
@@ -458,7 +458,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
         bindings =
           case iterators do
-            [iter | _] ->
+            [%QuadTrieIterator{} = iter | _] ->
               bindings_from_quad_iterator(iter, pattern)
 
             _ ->
@@ -495,7 +495,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     end
   end
 
-  defp bindings_from_quad_iterator(iter, pattern) do
+  defp bindings_from_quad_iterator(%QuadTrieIterator{} = iter, pattern) do
     case QuadTrieIterator.current_key(iter) do
       :exhausted ->
         %{}

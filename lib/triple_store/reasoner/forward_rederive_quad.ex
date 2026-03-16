@@ -140,7 +140,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
       |> MapSet.new()
 
     # Combine with TBox facts
-    base_valid_triples = MapSet.union(all_explicit_triples, tbox_facts)
+    base_valid_triples = merge_fact_sets(all_explicit_triples, tbox_facts)
 
     # Process each potentially invalid quad
     {keep_quads, delete_quads} =
@@ -169,7 +169,7 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
         valid_for_check =
           base_valid_triples
           |> MapSet.difference(potentially_invalid_triples)
-          |> MapSet.union(kept_triples)
+          |> then(&Enum.reduce(kept_triples, &1, fn triple, acc -> MapSet.put(acc, triple) end))
           |> MapSet.delete({s, p, o})
 
         # Convert back to in-memory format for rederiver (terms)
@@ -404,4 +404,8 @@ defmodule TripleStore.Reasoner.ForwardRederiveQuad do
   defp evaluate_term({:bound, _} = bound, _bindings), do: bound
   defp evaluate_term(value, _bindings) when is_integer(value), do: {:bound, value}
   defp evaluate_term(_other, _bindings), do: nil
+
+  defp merge_fact_sets(left, right) do
+    Enum.reduce(right, left, &MapSet.put(&2, &1))
+  end
 end

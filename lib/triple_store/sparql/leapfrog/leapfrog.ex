@@ -44,7 +44,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   the invariant that index 0 has the smallest value.
   """
 
-  alias TripleStore.SPARQL.Leapfrog.{TrieIterator, TrieIteratorProtocol}
+  alias TripleStore.SPARQL.Leapfrog.{QuadTrieIterator, TrieIterator, TrieIteratorProtocol}
 
   # ===========================================================================
   # Types
@@ -63,8 +63,10 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   - `:iteration_count` - Number of search iterations performed
   - `:max_iterations` - Maximum allowed iterations (DoS protection)
   """
+  @type iterator :: TrieIterator.t() | QuadTrieIterator.t()
+
   @type t :: %__MODULE__{
-          iterators: [TrieIterator.t()],
+          iterators: [iterator()],
           current_value: non_neg_integer() | nil,
           exhausted: boolean(),
           at_match: boolean(),
@@ -114,7 +116,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
       {:ok, lf} = Leapfrog.new([iter1, iter2], max_iterations: 10_000)
 
   """
-  @spec new([TrieIterator.t()], keyword()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
+  @spec new([iterator()], keyword()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   def new(iterators, opts \\ [])
 
   def new([], _opts) do
@@ -228,9 +230,6 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
       {:exhausted, _exhausted} ->
         {:exhausted, %{lf | exhausted: true}}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
@@ -282,7 +281,7 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
   The list of iterators.
 
   """
-  @spec iterators(t()) :: [TrieIterator.t()]
+  @spec iterators(t()) :: [iterator()]
   def iterators(%__MODULE__{iterators: iters}), do: iters
 
   @doc """
@@ -402,9 +401,6 @@ defmodule TripleStore.SPARQL.Leapfrog.Leapfrog do
 
       {:exhausted, _} ->
         {:exhausted, %{lf | exhausted: true}}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 

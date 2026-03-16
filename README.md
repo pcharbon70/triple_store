@@ -151,6 +151,10 @@ Governance and conformance entry points:
 - `./scripts/validate_guides_governance.sh`
 - `./scripts/validate_code_docs.sh`
 - `./scripts/run_conformance.sh`
+- `mix dialyzer`
+
+The tracked pre-commit hook and the GitHub `CI` workflow now both enforce a
+clean `mix dialyzer` run as part of the repository quality gate.
 
 ## License
 

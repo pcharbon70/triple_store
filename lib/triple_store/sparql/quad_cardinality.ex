@@ -574,22 +574,18 @@ defmodule TripleStore.SPARQL.QuadCardinality do
         join_vars = MapSet.intersection(acc_vars, pattern_vars) |> MapSet.to_list()
 
         # Check if same graph
-        same_graph =
-          case {MapSet.to_list(acc_graphs), MapSet.to_list(pattern_graphs)} do
-            {[g], [g]} -> true
-            _ -> false
-          end
+        same_graph = same_single_graph?(acc_graphs, pattern_graphs)
 
         # Estimate this join
         if join_vars == [] do
           new_card = acc_card * pattern_card
-          new_vars = MapSet.union(acc_vars, pattern_vars)
-          new_graphs = MapSet.union(acc_graphs, pattern_graphs)
+          new_vars = Enum.reduce(pattern_vars, acc_vars, &MapSet.put(&2, &1))
+          new_graphs = Enum.reduce(pattern_graphs, acc_graphs, &MapSet.put(&2, &1))
           {max(new_card, @min_cardinality), new_vars, new_graphs}
         else
           join_card = estimate_quad_join(acc_card, pattern_card, join_vars, same_graph, stats)
-          new_vars = MapSet.union(acc_vars, pattern_vars)
-          new_graphs = MapSet.union(acc_graphs, pattern_graphs)
+          new_vars = Enum.reduce(pattern_vars, acc_vars, &MapSet.put(&2, &1))
+          new_graphs = Enum.reduce(pattern_graphs, acc_graphs, &MapSet.put(&2, &1))
           {join_card, new_vars, new_graphs}
         end
       end)
@@ -881,12 +877,17 @@ defmodule TripleStore.SPARQL.QuadCardinality do
   end
 
   # Get graph variables from pattern
-  @spec pattern_graph_variables(quad_pattern()) :: MapSet.t(String.t())
   defp pattern_graph_variables({:quad, _s, _p, _o, g}) do
     case extract_var_name(g) do
       nil -> MapSet.new()
       var_name -> MapSet.new([var_name])
     end
+  end
+
+  defp same_single_graph?(acc_graphs, pattern_graphs) do
+    Enum.count(acc_graphs) == 1 and
+      Enum.count(pattern_graphs) == 1 and
+      Enum.at(acc_graphs, 0) == Enum.at(pattern_graphs, 0)
   end
 
   # Extract variable name from term

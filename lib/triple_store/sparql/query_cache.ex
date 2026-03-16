@@ -228,7 +228,7 @@ defmodule TripleStore.SPARQL.QueryCache do
     # Remove expired entries
     now = System.monotonic_time(:millisecond)
 
-    pattern = {{:"$1", :"$2"}, [], [:"$2"]}
+    pattern = [{{:"$1", :"$2"}, [], [:"$2"]}]
     entries = :ets.select(@table_name, pattern)
 
     Enum.each(entries, fn entry ->

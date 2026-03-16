@@ -61,6 +61,12 @@ defmodule TripleStore.Health do
   @typedoc "Store handle"
   @type store :: TripleStore.store()
 
+  @typedoc "A minimal store-like map for health checks that only require a database handle"
+  @type db_store :: %{
+          required(:db) => TripleStore.db_ref(),
+          optional(:dict_manager) => TripleStore.manager()
+        }
+
   @typedoc "Health status"
   @type status :: :healthy | :degraded | :unhealthy
 
@@ -284,10 +290,8 @@ defmodule TripleStore.Health do
     # Get statistics if requested
     triple_count =
       if include_stats do
-        case Statistics.triple_count(db) do
-          {:ok, count} -> count
-          _ -> 0
-        end
+        {:ok, count} = Statistics.triple_count(db)
+        count
       else
         nil
       end
@@ -637,7 +641,7 @@ defmodule TripleStore.Health do
       #    }}
 
   """
-  @spec graph_health(store(), non_neg_integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec graph_health(db_store(), non_neg_integer(), keyword()) :: {:ok, map()}
   def graph_health(%{db: db}, graph_id, opts \\ [])
       when is_integer(graph_id) and graph_id >= 0 do
     include_query_stats = Keyword.get(opts, :include_query_stats, false)
@@ -681,9 +685,6 @@ defmodule TripleStore.Health do
     else
       {:error, :not_found} ->
         {:ok, %{status: :not_found, graph_id: graph_id, checked_at: DateTime.utc_now()}}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
@@ -712,18 +713,16 @@ defmodule TripleStore.Health do
       #    }}
 
   """
-  @spec all_graphs_health(store(), keyword()) :: {:ok, %{non_neg_integer() => map()}}
+  @spec all_graphs_health(db_store(), keyword()) :: {:ok, %{non_neg_integer() => map()}}
   def all_graphs_health(%{db: db} = _store, opts \\ []) do
     include_empty = Keyword.get(opts, :include_empty, true)
     size_threshold = Keyword.get(opts, :size_threshold, 1_000_000)
+    {:ok, histograms} = Statistics.build_per_graph_histograms(db, [])
 
-    case Statistics.build_per_graph_histograms(db, []) do
-      {:ok, histograms} ->
-        histograms
-        |> build_graph_health_map(db, size_threshold)
-        |> filter_empty_graphs(include_empty)
-        |> then(&{:ok, &1})
-    end
+    histograms
+    |> build_graph_health_map(db, size_threshold)
+    |> filter_empty_graphs(include_empty)
+    |> then(&{:ok, &1})
   end
 
   @doc """
@@ -753,20 +752,15 @@ defmodule TripleStore.Health do
   - `:stale_graph` - Graph hasn't been accessed recently (if tracking available)
 
   """
-  @spec graph_health_alerts(store(), keyword()) :: {:ok, [map()]}
+  @spec graph_health_alerts(db_store(), keyword()) :: {:ok, [map()]}
   def graph_health_alerts(%{db: db}, opts \\ []) do
     large_threshold = Keyword.get(opts, :large_graph_threshold, 1_000_000)
     empty_threshold = Keyword.get(opts, :empty_threshold, 0)
+    {:ok, histograms} = Statistics.build_per_graph_histograms(db, [])
 
-    case Statistics.build_per_graph_histograms(db, []) do
-      {:ok, histograms} ->
-        histograms
-        |> collect_graph_health_alerts(db, large_threshold, empty_threshold)
-        |> then(&{:ok, &1})
-
-      _ ->
-        {:ok, []}
-    end
+    histograms
+    |> collect_graph_health_alerts(db, large_threshold, empty_threshold)
+    |> then(&{:ok, &1})
   end
 
   # ===========================================================================
@@ -780,10 +774,8 @@ defmodule TripleStore.Health do
   end
 
   defp graph_health_entry(db, {graph_id, _histogram}, size_threshold) do
-    case graph_health(%{db: db}, graph_id, size_alert_threshold: size_threshold) do
-      {:ok, health} -> {graph_id, health}
-      _ -> {graph_id, %{status: :error, graph_id: graph_id}}
-    end
+    {:ok, health} = graph_health(%{db: db}, graph_id, size_alert_threshold: size_threshold)
+    {graph_id, health}
   end
 
   defp collect_graph_health_alerts(histograms, db, large_threshold, empty_threshold) do
@@ -793,13 +785,8 @@ defmodule TripleStore.Health do
   end
 
   defp graph_alerts_for_id(db, graph_id, large_threshold, empty_threshold) do
-    case graph_health(%{db: db}, graph_id) do
-      {:ok, health} ->
-        check_graph_for_alerts(health, large_threshold, empty_threshold)
-
-      _ ->
-        []
-    end
+    {:ok, health} = graph_health(%{db: db}, graph_id)
+    check_graph_for_alerts(health, large_threshold, empty_threshold)
   end
 
   @doc """
@@ -916,23 +903,13 @@ defmodule TripleStore.Health do
     do: if(quad_count > threshold, do: :degraded, else: :healthy)
 
   defp get_graph_query_stats(graph_id) do
-    case TripleStore.Metrics.get_all() do
-      metrics when is_map(metrics) ->
-        # Extract graph-specific query stats if available
-        %{
-          query_count: Map.get(metrics, :graph_queries, %{}) |> Map.get(graph_id, 0),
-          total_duration_ms:
-            Map.get(metrics, :graph_query_durations, %{}) |> Map.get(graph_id, 0),
-          last_query_at: Map.get(metrics, :graph_last_query, %{}) |> Map.get(graph_id, nil)
-        }
+    metrics = TripleStore.Metrics.get_all()
 
-      _ ->
-        %{
-          query_count: 0,
-          total_duration_ms: 0,
-          last_query_at: nil
-        }
-    end
+    %{
+      query_count: Map.get(metrics, :graph_queries, %{}) |> Map.get(graph_id, 0),
+      total_duration_ms: Map.get(metrics, :graph_query_durations, %{}) |> Map.get(graph_id, 0),
+      last_query_at: Map.get(metrics, :graph_last_query, %{}) |> Map.get(graph_id, nil)
+    }
   end
 
   defp filter_empty_graphs(graphs, true), do: graphs

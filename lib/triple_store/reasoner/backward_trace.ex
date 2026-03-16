@@ -143,7 +143,7 @@ defmodule TripleStore.Reasoner.BackwardTrace do
     # Optionally include the original deleted facts
     potentially_invalid =
       if include_deleted do
-        MapSet.union(result.potentially_invalid, deleted)
+        merge_fact_sets(result.potentially_invalid, deleted)
       else
         result.potentially_invalid
       end
@@ -316,10 +316,9 @@ defmodule TripleStore.Reasoner.BackwardTrace do
       _ ->
         new_dependents = collect_new_dependents(unvisited, all_derived, rules)
         new_invalid = MapSet.intersection(new_dependents, all_derived)
+        next_state = next_trace_state(state, unvisited, new_invalid)
 
-        state
-        |> next_trace_state(unvisited, new_invalid)
-        |> then(&trace_recursive(new_invalid, all_derived, rules, &1, max_depth))
+        trace_recursive(new_invalid, all_derived, rules, next_state, max_depth)
     end
   end
 
@@ -337,12 +336,16 @@ defmodule TripleStore.Reasoner.BackwardTrace do
     next_depth = state.current_depth + 1
 
     %{
-      potentially_invalid: MapSet.union(state.potentially_invalid, new_invalid),
-      visited: MapSet.union(state.visited, unvisited),
+      potentially_invalid: merge_fact_sets(state.potentially_invalid, new_invalid),
+      visited: merge_fact_sets(state.visited, unvisited),
       current_depth: next_depth,
       max_depth_reached: max(state.max_depth_reached, next_depth),
       facts_examined: state.facts_examined + MapSet.size(unvisited)
     }
+  end
+
+  defp merge_fact_sets(left, right) do
+    Enum.reduce(right, left, &MapSet.put(&2, &1))
   end
 
   defp pattern_or_facts_satisfiable?(pattern, input, bindings, all_facts) do

@@ -45,6 +45,9 @@ application warnings rather than tooling false positives.
   positives and reduced the total Dialyzer count from `321` to `318`.
 - [ ] **Task 1.1.2** Description: Document the expected local Dialyzer execution
   flow and capture the before/after warning delta for each remediation batch.
+  Completed on 2026-03-16 by updating the repository docs and governance guide
+  to reference `mix dialyzer`, the tracked pre-commit hook gate, the GitHub
+  `CI` Dialyzer job, and the per-phase backlog deltas recorded in this plan.
 
 ### Section 1.2: Canonical Shared Types
 
@@ -245,18 +248,32 @@ durable part of local and CI quality gates.
 Description: Clear the smaller remaining warning classes that will still exist
 after the major contract families are fixed.
 
-- [ ] **Task 6.1.1** Description: Remove the remaining `pattern_match`,
+- [x] **Task 6.1.1** Description: Remove the remaining `pattern_match`,
   `pattern_match_cov`, `unused_fun`, `unknown_type`, and `call_without_opaque`
-  issues in secondary modules.
-- [ ] **Task 6.1.2** Description: Rerun Dialyzer after each remediation batch and
-  keep the delta grouped by category to avoid reintroducing drift.
+  issues in secondary modules. Completed on 2026-03-16 by reconciling the
+  last residual branches and types in `QuadIndex`, `Health`, backup/graph
+  backup helpers, SPARQL authorization/executor/update helpers, result-stream
+  and query-cache support, and the remaining reasoning utility modules. This
+  pass also fixed a real quad-pattern bug in `DeltaComputation`, where
+  substituted quad patterns were being rebuilt as triple patterns during
+  semi-naive evaluation.
+- [x] **Task 6.1.2** Description: Rerun Dialyzer after each remediation batch and
+  keep the delta grouped by category to avoid reintroducing drift. Completed on
+  2026-03-16 by tracking the residual backlog from `94` issues at the start of
+  Phase 6 to `24`, then `7`, then `1`, and finally `0` after the last
+  `TBoxCache` analyzer cleanup.
 
 ### Section 6.2: Workflow Enforcement
 
 Description: Promote Dialyzer from a manual cleanup tool to a reliable
 repository quality gate.
 
-- [ ] **Task 6.2.1** Description: Integrate green Dialyzer runs into the local
-  hook and GitHub workflow gates.
-- [ ] **Task 6.2.2** Description: Reflect the completed remediation in the
-  planning and governance docs so the clean baseline is maintained.
+- [x] **Task 6.2.1** Description: Integrate green Dialyzer runs into the local
+  hook and GitHub workflow gates. Completed on 2026-03-16 by switching the
+  tracked pre-commit hook to an explicit `mix dialyzer --format short` gate and
+  by adding a dedicated Dialyzer job to `.github/workflows/ci.yml`.
+- [x] **Task 6.2.2** Description: Reflect the completed remediation in the
+  planning and governance docs so the clean baseline is maintained. Completed
+  on 2026-03-16 by updating the root README, the developer guide, the specs
+  governance guide, this remediation plan, and the conformance docs to state
+  that Dialyzer is now a required local and CI quality gate.
