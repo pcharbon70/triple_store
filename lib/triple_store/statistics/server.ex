@@ -59,7 +59,7 @@ defmodule TripleStore.Statistics.Server do
 
   @typedoc "Server state"
   @type state :: %{
-          db: reference(),
+          db: Statistics.db_ref(),
           stats: Statistics.stats() | nil,
           modification_count: non_neg_integer(),
           refresh_threshold: non_neg_integer(),
@@ -419,7 +419,7 @@ defmodule TripleStore.Statistics.Server do
   defp do_refresh(state) do
     start_time = System.monotonic_time()
 
-    case Statistics.refresh(state.db) do
+    case safe_refresh_stats(state.db) do
       {:ok, stats} ->
         duration = System.monotonic_time() - start_time
 
@@ -444,6 +444,12 @@ defmodule TripleStore.Statistics.Server do
         Logger.warning("Statistics refresh failed: #{inspect(reason)}")
         {:error, reason, %{state | refresh_in_progress: false}}
     end
+  end
+
+  defp safe_refresh_stats(db) do
+    Statistics.refresh(db)
+  rescue
+    error -> {:error, error}
   end
 
   defp schedule_periodic_refresh(interval) do

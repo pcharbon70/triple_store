@@ -262,8 +262,13 @@ defmodule TripleStore.Statistics.Cache do
     case state.histogram do
       nil ->
         # Histogram not computed yet, compute synchronously
-        {:ok, histogram} = compute_histogram(state.db)
-        {:reply, {:ok, histogram}, %{state | histogram: histogram}}
+        case compute_histogram(state.db) do
+          {:ok, histogram} ->
+            {:reply, {:ok, histogram}, %{state | histogram: histogram}}
+
+          {:error, _} = error ->
+            {:reply, error, state}
+        end
 
       histogram ->
         {:reply, {:ok, histogram}, state}
@@ -354,9 +359,12 @@ defmodule TripleStore.Statistics.Cache do
       stats = Map.put(base_stats, :computed_at, DateTime.utc_now())
       {:ok, stats}
     end
+  rescue
+    error -> {:error, error}
   end
 
-  @spec compute_histogram(ErlangAdapter.db_ref()) :: {:ok, predicate_histogram()}
+  @spec compute_histogram(ErlangAdapter.db_ref()) ::
+          {:ok, predicate_histogram()} | {:error, term()}
   defp compute_histogram(db) do
     # Get all predicates by scanning the POS index
     # prefix_stream now returns the stream directly (may raise on error)
@@ -370,6 +378,8 @@ defmodule TripleStore.Statistics.Cache do
       end)
 
     {:ok, histogram}
+  rescue
+    error -> {:error, error}
   end
 
   @spec compute_all(ErlangAdapter.db_ref()) ::

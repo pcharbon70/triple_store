@@ -200,20 +200,38 @@ module, the cache, and the server around their real return shapes.
 Description: Bring the public statistics API into line with the maps and tuples
 actually returned by the implementation.
 
-- [ ] **Task 5.1.1** Description: Reconcile `Statistics` contracts for warming,
-  collecting, loading, counting, summaries, and histogram builders.
-- [ ] **Task 5.1.2** Description: Decide explicitly where APIs should stay broad
+- [x] **Task 5.1.1** Description: Reconcile `Statistics` contracts for warming,
+  collecting, loading, counting, summaries, and histogram builders. Completed
+  on 2026-03-15 by tightening the lazy wrapper shape to the keys the module
+  actually returns, aligning the cached all-graphs summary path to the current
+  always-successful `all_graphs_summary/2` flow, and correcting the
+  `validate_stats!/1` error handling to the real `validate_stats_structure/1`
+  result family.
+- [x] **Task 5.1.2** Description: Decide explicitly where APIs should stay broad
   and where the implementation contracts should be narrowed to real shapes.
+  Completed on 2026-03-15 by keeping the public summary APIs broad but
+  narrowing the internal lazy and validation contracts to their actual map and
+  error shapes, which removed the core `Statistics` warnings and reduced the
+  Dialyzer backlog from `102` to `99`.
 
 ### Section 5.2: Cache and Server Contracts
 
 Description: Align the deprecated cache and current server-side statistics
 implementations with the corrected core contracts.
 
-- [ ] **Task 5.2.1** Description: Reconcile `Statistics.Cache` contracts with the
-  current compute and refresh behavior.
-- [ ] **Task 5.2.2** Description: Fix stale impossible matches and refresh-path
-  contracts in the statistics server code.
+- [x] **Task 5.2.1** Description: Reconcile `Statistics.Cache` contracts with the
+  current compute and refresh behavior. Completed on 2026-03-15 by making the
+  cache computation helpers return explicit `{:error, reason}` tuples when the
+  underlying statistics collection or histogram scan raises, and by updating the
+  synchronous histogram fetch path to honor that contract instead of assuming
+  success.
+- [x] **Task 5.2.2** Description: Fix stale impossible matches and refresh-path
+  contracts in the statistics server code. Completed on 2026-03-15 by aligning
+  the server state DB handle to `Statistics.db_ref()`, routing refreshes
+  through a helper that converts raised refresh failures into explicit error
+  tuples, and preserving the existing reply contracts around `get_stats/1` and
+  `refresh/1`. These changes removed the remaining statistics cache/server
+  warnings and reduced the Dialyzer backlog from `99` to `94`.
 
 ---
 
