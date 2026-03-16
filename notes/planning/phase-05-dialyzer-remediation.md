@@ -45,6 +45,9 @@ application warnings rather than tooling false positives.
   positives and reduced the total Dialyzer count from `321` to `318`.
 - [ ] **Task 1.1.2** Description: Document the expected local Dialyzer execution
   flow and capture the before/after warning delta for each remediation batch.
+  Completed on 2026-03-16 by updating the repository docs and governance guide
+  to reference `mix dialyzer`, the tracked pre-commit hook gate, the GitHub
+  `CI` Dialyzer job, and the per-phase backlog deltas recorded in this plan.
 
 ### Section 1.2: Canonical Shared Types
 
@@ -265,7 +268,12 @@ after the major contract families are fixed.
 Description: Promote Dialyzer from a manual cleanup tool to a reliable
 repository quality gate.
 
-- [ ] **Task 6.2.1** Description: Integrate green Dialyzer runs into the local
-  hook and GitHub workflow gates.
-- [ ] **Task 6.2.2** Description: Reflect the completed remediation in the
-  planning and governance docs so the clean baseline is maintained.
+- [x] **Task 6.2.1** Description: Integrate green Dialyzer runs into the local
+  hook and GitHub workflow gates. Completed on 2026-03-16 by switching the
+  tracked pre-commit hook to an explicit `mix dialyzer --format short` gate and
+  by adding a dedicated Dialyzer job to `.github/workflows/ci.yml`.
+- [x] **Task 6.2.2** Description: Reflect the completed remediation in the
+  planning and governance docs so the clean baseline is maintained. Completed
+  on 2026-03-16 by updating the root README, the developer guide, the specs
+  governance guide, this remediation plan, and the conformance docs to state
+  that Dialyzer is now a required local and CI quality gate.

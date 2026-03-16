@@ -44,6 +44,11 @@ The local governance and conformance entry points are:
 - `./scripts/validate_guides_governance.sh`
 - `./scripts/validate_code_docs.sh`
 - `./scripts/run_conformance.sh`
+- `mix dialyzer`
+
+The tracked pre-commit hook runs Dialyzer locally, and the GitHub `CI`
+workflow now gates pull requests on the same `mix dialyzer --format short`
+baseline.
 
 ## Key Concepts
 

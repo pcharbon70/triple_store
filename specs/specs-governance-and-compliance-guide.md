@@ -63,6 +63,11 @@ The repository now ships a baseline validator for the specs graph:
 
 Current automation validates documentation structure and traceability, but it does not yet execute scenario-specific implementation tests automatically.
 
+Repository quality gates now also require a clean Dialyzer baseline:
+
+- `.githooks/pre-commit` runs `mix dialyzer --format short`
+- `.github/workflows/ci.yml` runs a dedicated Dialyzer job on code-bearing changes
+
 Current expectations remain:
 
 1. Baseline changes SHOULD be paired with contract and area-spec updates.
@@ -86,3 +91,4 @@ Current expectations remain:
 5. Update planning references or implementation notes when delivery sequencing changes.
 6. Update guides when public behavior or operator workflows change.
 7. Run `mix conformance` before merging the change.
+8. Run `mix dialyzer` or rely on the tracked hook/CI gate to verify the static contract baseline remains clean.

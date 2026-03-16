@@ -90,8 +90,8 @@ echo "[pre-commit] Running Elixir test suite..."
 echo "[pre-commit] Running Credo strict checks..."
 "${MIX_BIN}" credo --strict
 
-echo "[pre-commit] Running Dialyzer..."
-"${MIX_BIN}" dialyzer
+echo "[pre-commit] Running Dialyzer quality gate..."
+"${MIX_BIN}" dialyzer --format short
 
 staged_files="$(git diff --cached --name-only || true)"
 if [ -z "$staged_files" ]; then
