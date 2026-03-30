@@ -1667,10 +1667,10 @@ defmodule TripleStore.Loader do
   end
 
   # Lock-free halt flag helpers using :atomics
-  @spec halted?(reference()) :: boolean()
+  @spec halted?(:atomics.atomics_ref()) :: boolean()
   defp halted?(halt_ref), do: :atomics.get(halt_ref, 1) == 1
 
-  @spec set_halted(reference()) :: :ok
+  @spec set_halted(:atomics.atomics_ref()) :: :ok
   defp set_halted(halt_ref) do
     :atomics.put(halt_ref, 1, 1)
     :ok
@@ -1692,15 +1692,19 @@ defmodule TripleStore.Loader do
 
   # Write encoded batch with progress reporting (for parallel loading)
   @spec write_encoded_batch_with_progress(
-          db_ref(),
-          {:ok, list()} | {:error, term()} | {:halted, list()},
-          pos_integer(),
           pid(),
-          reference(),
+          {:ok, list()} | {:error, term()} | {:halted, list()},
+          number(),
+          pid(),
+          :atomics.atomics_ref(),
           non_neg_integer(),
-          map(),
-          map()
-        ) :: {non_neg_integer(), pos_integer()}
+          %{
+            callback: (() -> term()) | nil,
+            interval: pos_integer(),
+            start_time: integer()
+          },
+          %{sync: boolean()}
+        ) :: {non_neg_integer(), number()}
   defp write_encoded_batch_with_progress(
          _db,
          {:error, _reason},
@@ -1959,15 +1963,19 @@ defmodule TripleStore.Loader do
 
   # Write encoded quad batch with progress reporting
   @spec write_encoded_quad_batch_with_progress(
-          db_ref(),
-          {:ok, list()} | {:error, term()} | {:halted, list()},
-          pos_integer(),
           pid(),
-          reference(),
+          {:ok, [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]} | {:error, term()} | {:halted, list()},
+          number(),
+          pid(),
+          :atomics.atomics_ref(),
           non_neg_integer(),
-          map(),
-          map()
-        ) :: {non_neg_integer(), pos_integer()}
+          %{
+            callback: (() -> term()) | nil,
+            interval: pos_integer(),
+            start_time: integer()
+          },
+          %{sync: boolean()}
+        ) :: {non_neg_integer(), number()}
   defp write_encoded_quad_batch_with_progress(
          _db,
          {:error, _reason},

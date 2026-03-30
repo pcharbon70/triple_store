@@ -218,14 +218,12 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           positioned: false
         }
 
-        # Monitor the database for unexpected closure only if it's a PID
-        # (erlang-rocksdb db_ref is a reference, not a PID)
-        ref = if is_pid(db_ref), do: Process.monitor(db_ref), else: nil
+        # Note: erlang-rocksdb db_ref is a reference, not a PID, so we don't monitor it
+        {:ok, Map.put(state, :db_monitor_ref, nil)}
 
-        {:ok, Map.put(state, :db_monitor_ref, ref)}
-
-      {:error, _reason} = error ->
-        error
+      {:error, reason} ->
+        # Stop the GenServer if iterator creation fails
+        {:stop, reason}
     end
   end
 
