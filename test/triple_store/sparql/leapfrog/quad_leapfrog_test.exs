@@ -910,9 +910,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       pattern = {:quad, 1, {:variable, "p"}, 3, 0}
       assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
 
-      # Position 1 (predicate) should have depth 1 (graph is bound)
-      [{_pos, _index, depth}] = Enum.at(plan, 1)
-      assert depth == 1
+      # Position 1 (predicate) should have depth 1 (subject is bound before it)
+      [{pos, _index, depth}] = plan
+      assert pos == 1  # Predicate is the variable
+      assert depth == 1  # Subject is bound before predicate
     end
 
     test "selects appropriate index for each iterator" do
@@ -922,6 +923,106 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       # All iterators should use GSPO since graph is bound
       indexes = Enum.map(plan, fn {_pos, index, _depth} -> index end)
       assert Enum.all?(indexes, &(&1 == :gspo))
+    end
+  end
+
+  # ===========================================================================
+  # Section 1.2: Multi-Iterator Creation Tests
+  # ===========================================================================
+
+  describe "Section 1.2: Multi-Iterator Creation" do
+    test "creates 4 iterators for fully unbound pattern", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      # Should create 4 iterators, one per variable
+      assert length(iterators) == 4
+
+      # Each iterator should have metadata
+      Enum.each(iterators, fn tagged_iter ->
+        assert is_map(tagged_iter)
+        assert Map.has_key?(tagged_iter, :iterator)
+        assert Map.has_key?(tagged_iter, :variable_name)
+        assert Map.has_key?(tagged_iter, :position)
+        assert Map.has_key?(tagged_iter, :index)
+      end)
+    end
+
+    test "creates fewer iterators when some components are bound", %{db: db} do
+      pattern = {:quad, 1, {:variable, "p"}, 3, 0}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      # Should create only 1 iterator for the single variable
+      assert length(iterators) == 1
+
+      [iter] = iterators
+      assert iter.position == 1
+      assert iter.variable_name == "p"
+    end
+
+    test "each iterator has correct prefix for its position", %{db: db} do
+      # Pattern: g=0 is bound, s and p are variables, o=3 is bound
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      # Should have 2 iterators (for s and p)
+      assert length(iterators) == 2
+
+      # Find the iterators for each position
+      s_iter = Enum.find(iterators, fn i -> i.position == 0 end)
+      p_iter = Enum.find(iterators, fn i -> i.position == 1 end)
+
+      # S iterator should be at level 1 (after graph in GSPO)
+      assert s_iter.iterator.level == 1
+
+      # P iterator should be at level 2 (after graph and subject in GSPO)
+      assert p_iter.iterator.level == 2
+    end
+
+    test "iterator metadata includes correct variable name and position", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, 2, {:variable, "o"}, 0}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      assert length(iterators) == 2
+
+      # Find iterator for "s"
+      s_iter = Enum.find(iterators, fn i -> i.variable_name == "s" end)
+      assert s_iter.position == 0
+
+      # Find iterator for "o"
+      o_iter = Enum.find(iterators, fn i -> i.variable_name == "o" end)
+      assert o_iter.position == 2
+    end
+
+    test "uses correct index for each iterator position", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      # Graph is bound (0), so all iterators should use GSPO
+      assert length(iterators) == 3
+
+      # All iterators should use GSPO when graph is bound
+      Enum.each(iterators, fn iter ->
+        assert iter.index in [:gspo, :gpos, :spog, :posg]
+      end)
+    end
+
+    test "handles single variable pattern with existing behavior", %{db: db} do
+      pattern = {:quad, 1, 2, {:variable, "o"}, 0}
+
+      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+
+      # Should create 1 iterator for the single variable
+      assert length(iterators) == 1
+
+      [iter] = iterators
+      assert iter.position == 2
+      assert iter.variable_name == "o"
     end
   end
 end

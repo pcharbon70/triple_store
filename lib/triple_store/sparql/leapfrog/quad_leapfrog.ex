@@ -100,22 +100,39 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   @type iterator_plan :: [{position :: non_neg_integer(), index :: index(), prefix_depth :: non_neg_integer()}]
 
   @typedoc """
+  Iterator with quad-specific metadata for multi-iterator joins.
+
+  - `:iterator` - The QuadTrieIterator instance
+  - `:variable_name` - Name of the variable this iterator represents (e.g., "s", "p", "o", "g")
+  - `:position` - Position index in the quad pattern (0=s, 1=p, 2=o, 3=g)
+  - `:index` - Which index this iterator uses
+  """
+  @type tagged_iterator :: %{
+          iterator: QuadTrieIterator.t(),
+          variable_name: String.t(),
+          position: non_neg_integer(),
+          index: index()
+        }
+
+  @typedoc """
   The QuadLeapfrog struct wraps the core Leapfrog with quad-specific metadata.
 
   - `:leapfrog` - The core Leapfrog struct
   - `:variables` - Ordered list of variable names
   - `:pattern` - Original quad pattern
   - `:bindings` - Extracted variable bindings from current match
+  - `:tagged_iterators` - List of tagged iterators with metadata for binding extraction
   """
   @type t :: %__MODULE__{
           leapfrog: Leapfrog.t(),
           variables: [String.t()],
           pattern: tuple(),
-          bindings: map()
+          bindings: map(),
+          tagged_iterators: [tagged_iterator()] | nil
         }
 
   @enforce_keys [:leapfrog, :variables, :pattern]
-  defstruct [:leapfrog, :variables, :pattern, bindings: %{}]
+  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil]
 
   # ===========================================================================
   # Index Strategy (Section 1.1)
@@ -149,20 +166,38 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec index_for_position(tuple(), non_neg_integer()) :: index()
-  def index_for_position({:quad, s, _p, _o, g}, position) when bound?(s) do
+  # Subject position (0) with subject bound
+  def index_for_position({:quad, s, _p, _o, g}, 0) when not is_tuple(s) do
     # Subject bound - use SPOG if graph not bound, otherwise GSPO
-    if bound?(g), do: :gspo, else: :spog
+    if not is_tuple(g), do: :gspo, else: :spog
   end
 
-  def index_for_position({:quad, _s, p, _o, g}, position) when position == 1 do
-    # Predicate position
-    if bound?(g), do: :gpos, else: :posg
+  # Subject position (0) with subject variable
+  def index_for_position({:quad, {:variable, _s}, _p, _o, g}, 0) do
+    # Subject variable - use GSPO if graph bound, SPOG otherwise
+    if not is_tuple(g), do: :gspo, else: :spog
   end
 
-  def index_for_position({:quad, _s, _p, _o, g}, _position) do
-    # Default to GSPO for graph-prefixed access
-    :gspo
+  # Predicate position (1) with predicate bound
+  def index_for_position({:quad, _s, p, _o, g}, 1) when not is_tuple(p) do
+    # Predicate bound - use GPOS if graph bound, POSG otherwise
+    if not is_tuple(g), do: :gpos, else: :posg
   end
+
+  # Predicate position (1) with predicate variable
+  def index_for_position({:quad, _s, {:variable, _p}, _o, g}, 1) do
+    # Predicate variable - use GPOS if graph bound, POSG otherwise
+    if not is_tuple(g), do: :gpos, else: :posg
+  end
+
+  # Object position (2)
+  def index_for_position({:quad, _s, _p, _o, g}, 2) do
+    # Object position - use GSPO if graph bound
+    if not is_tuple(g), do: :gspo, else: :spog
+  end
+
+  # Graph position (3) - always use GSPO/GPOS as primary indices
+  def index_for_position({:quad, _s, _p, _o, _g}, 3), do: :gspo
 
   @doc """
   Plans the iterator creation strategy for a quad pattern.
@@ -208,20 +243,28 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Plan for single variable (existing behavior - prefix scan)
-  defp plan_single_variable({:quad, _s, _p, _o, _g}, components) do
+  defp plan_single_variable({:quad, _s, _p, _o, g}, components) do
     # Find the unbound position
-    {unbound_pos, _} =
+    {_, unbound_pos} =
       components
       |> Enum.with_index()
       |> Enum.find(fn {comp, _idx} -> variable?(comp) end)
 
-    # Count bound components before the unbound position
+    # Count bound components before the unbound position (in SPO order)
     prefix_depth =
       components
       |> Enum.take(unbound_pos)
       |> Enum.count(&bound?/1)
 
-    # Select index based on which components are bound
+    # For subject position (0), add 1 if graph is bound (graph comes before subject in GSPO)
+    prefix_depth =
+      if unbound_pos == 0 and bound?(g) do
+        prefix_depth + 1
+      else
+        prefix_depth
+      end
+
+    # Select index based on which components are bound (including graph)
     selected_index = select_index_for_components(components)
 
     [{unbound_pos, selected_index, prefix_depth}]
@@ -229,15 +272,22 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Plan for multiple variables (new multi-iterator behavior)
   defp plan_multi_variable({:quad, s, p, o, g}, components) do
-    # Create an iterator for each unbound variable position
+    # For multi-iterator joins, all iterators must use the same index
+    # Select the base index based on what's bound
+    base_index =
+      cond do
+        bound?(g) -> :gspo  # Graph-bound: use GSPO for all iterators
+        bound?(s) -> :spog  # Subject-bound but not graph: use SPOG
+        true -> :posg       # Fallback to POSG
+      end
+
+    # Create an iterator for each unbound variable position, all using the same index
     components
     |> Enum.with_index()
     |> Enum.filter(fn {comp, _idx} -> variable?(comp) end)
     |> Enum.map(fn {_comp, pos} ->
-      index = index_for_position({:quad, s, p, o, g}, pos)
-      # Prefix depth is number of bound components at this position
-      prefix_depth = Enum.take(components, pos) |> Enum.count(&bound?/1)
-      {pos, index, prefix_depth}
+      # For plan purposes, prefix_depth is the position (will be recalculated)
+      {pos, base_index, pos}
     end)
   end
 
@@ -289,14 +339,29 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     variables = extract_variables([s, p, o, g])
 
     # Create iterators for each variable position
-    case create_iterators_for_pattern(db, pattern) do
-      {:ok, iterators} ->
-        case Leapfrog.new(iterators) do
+    case do_create_iterators_for_pattern(db, pattern) do
+      {:ok, tagged_iterators} ->
+        # Extract raw iterators for Leapfrog
+        raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
+
+        case Leapfrog.new(raw_iterators) do
           {:ok, lf} ->
-            {:ok, %__MODULE__{leapfrog: lf, variables: variables, pattern: pattern}}
+            {:ok,
+             %__MODULE__{
+               leapfrog: lf,
+               variables: variables,
+               pattern: pattern,
+               tagged_iterators: tagged_iterators
+             }}
 
           {:exhausted, lf} ->
-            {:exhausted, %__MODULE__{leapfrog: lf, variables: variables, pattern: pattern}}
+            {:exhausted,
+             %__MODULE__{
+               leapfrog: lf,
+               variables: variables,
+               pattern: pattern,
+               tagged_iterators: tagged_iterators
+             }}
 
           {:error, reason} ->
             {:error, reason}
@@ -401,6 +466,28 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   """
   @spec exhausted?(t()) :: boolean()
   def exhausted?(%__MODULE__{leapfrog: lf}), do: Leapfrog.exhausted?(lf)
+
+  @doc """
+  Test helper: Creates iterators for a quad pattern.
+
+  This function is primarily for testing multi-iterator creation.
+  For normal use, see `from_pattern/2` which handles the full
+  leapfrog initialization.
+
+  ## Arguments
+
+  - `db` - Database reference
+  - `pattern` - Quad pattern {:quad, s, p, o, g}
+
+  ## Returns
+
+  - `{:ok, iterators}` - List of tagged iterators with metadata
+  - `{:error, reason}` - On failure
+
+  """
+  @spec create_iterators_for_pattern(pid(), tuple()) ::
+          {:ok, [tagged_iterator()]} | {:error, term()}
+  def create_iterators_for_pattern(db, pattern), do: do_create_iterators_for_pattern(db, pattern)
 
   @doc """
   Returns all iterators (for inspection/debugging).
@@ -515,8 +602,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # ===========================================================================
 
   # Creates iterators for all variable positions in a pattern
-  # Uses GSPO index by default for quad patterns
-  defp create_iterators_for_pattern(db, {:quad, s, p, o, g}) do
+  # Section 1.2: Multi-iterator creation for quad joins
+  defp do_create_iterators_for_pattern(db, {:quad, s, p, o, g} = pattern) do
     components = [s, p, o, g]
 
     # Check if all components are bound (fully-specified quad)
@@ -525,18 +612,112 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       # This is more efficient and avoids creating unnecessary iterators
       fully_bound_lookup(db, s, p, o, g)
     else
-      # Build prefix from bound components
-      prefix = build_prefix_from_components(components, [])
+      # Plan multi-iterator strategy using plan from Section 1.1
+      case plan_iterators(pattern) do
+        {:ok, iterator_plan} ->
+          create_iterators_from_plan(db, components, iterator_plan)
 
-      # Create iterator for first variable position after prefix
-      prefix_ids = div(byte_size(prefix), 8)
-
-      # Create iterator at the first unbound position
-      case QuadTrieIterator.new(db, :gspo, prefix, prefix_ids) do
-        {:ok, iter} -> {:ok, [iter]}
-        {:error, reason} -> {:error, reason}
+        {:error, _reason} = error ->
+          error
       end
     end
+  end
+
+  # Creates multiple iterators from an iterator plan
+  # Section 1.2: Create one iterator per variable position
+  defp create_iterators_from_plan(db, components, iterator_plan) do
+    # Create an iterator for each entry in the plan
+    iterator_plan
+    |> Enum.map(fn {position, index, _original_depth} ->
+      component = Enum.at(components, position)
+      variable_name = extract_variable_name(component, position)
+
+      # Build position-specific prefix for this index
+      {prefix, level} = build_prefix_for_index(components, position, index)
+
+      # Create the iterator at the specified position
+      case QuadTrieIterator.new(db, index, prefix, level) do
+        {:ok, iter} ->
+          # Tag the iterator with metadata for binding extraction
+          {:ok,
+           %{
+             iterator: iter,
+             variable_name: variable_name,
+             position: position,
+             index: index
+           }}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end)
+    |> Enum.reduce({:ok, []}, fn
+      {:ok, tagged_iter}, {:ok, acc} -> {:ok, acc ++ [tagged_iter]}
+      {:error, reason}, _acc -> {:error, reason}
+    end)
+  end
+
+  # Builds a position-specific prefix for a given index
+  # Section 1.2: Prefix builder per position and index
+  # Returns {prefix_binary, level}
+  defp build_prefix_for_index(components, position, index) do
+    # Map components to index order
+    components_in_index_order = components_for_index(components, index)
+
+    # Find the index of our target position in this ordering
+    target_position_index = find_position_in_index_order(position, index)
+
+    # Build prefix from all bound components before the target position
+    # For multi-variable joins, we need ALL bound components before this position
+    prefix_components =
+      components_in_index_order
+      |> Enum.take(target_position_index)
+
+    # Build prefix from bound components only (variables can't be in prefix)
+    prefix =
+      prefix_components
+      |> Enum.filter(&bound?/1)
+      |> Enum.map(&extract_bound_value/1)
+      |> Enum.map(fn id -> <<id::64-big>> end)
+      |> IO.iodata_to_binary()
+
+    # The level is the position index in the index-specific order
+    # This tells the QuadTrieIterator which level to scan at
+    {prefix, target_position_index}
+  end
+
+  # Finds the index order position (0-3) for a given quad position in a specific index
+  defp find_position_in_index_order(0, :gspo), do: 1  # s is at index 1 in GSPO
+  defp find_position_in_index_order(1, :gspo), do: 2  # p is at index 2 in GSPO
+  defp find_position_in_index_order(2, :gspo), do: 3  # o is at index 3 in GSPO
+  defp find_position_in_index_order(3, :gspo), do: 0  # g is at index 0 in GSPO
+
+  defp find_position_in_index_order(0, :gpos), do: 3  # s is at index 3 in GPOS
+  defp find_position_in_index_order(1, :gpos), do: 1  # p is at index 1 in GPOS
+  defp find_position_in_index_order(2, :gpos), do: 2  # o is at index 2 in GPOS
+  defp find_position_in_index_order(3, :gpos), do: 0  # g is at index 0 in GPOS
+
+  defp find_position_in_index_order(0, :spog), do: 0  # s is at index 0 in SPOG
+  defp find_position_in_index_order(1, :spog), do: 1  # p is at index 1 in SPOG
+  defp find_position_in_index_order(2, :spog), do: 2  # o is at index 2 in SPOG
+  defp find_position_in_index_order(3, :spog), do: 3  # g is at index 3 in SPOG
+
+  defp find_position_in_index_order(0, :posg), do: 2  # s is at index 2 in POSG
+  defp find_position_in_index_order(1, :posg), do: 0  # p is at index 0 in POSG
+  defp find_position_in_index_order(2, :posg), do: 1  # o is at index 1 in POSG
+  defp find_position_in_index_order(3, :posg), do: 3  # g is at index 3 in POSG
+
+  # Returns components in the order they appear in the given index
+  defp components_for_index([s, p, o, g], :gspo), do: [g, s, p, o]
+  defp components_for_index([s, p, o, g], :gpos), do: [g, p, o, s]
+  defp components_for_index([s, p, o, g], :spog), do: [s, p, o, g]
+  defp components_for_index([s, p, o, g], :posg), do: [p, o, s, g]
+
+  # Extracts variable name from component, with fallback to position-based name
+  defp extract_variable_name({:variable, name}, _position), do: name
+  defp extract_variable_name(_component, position) do
+    # Fallback to position-based name for non-variable components
+    Enum.at(["s", "p", "o", "g"], position, "var_#{position}")
   end
 
   # Direct lookup for fully-bound quads
