@@ -842,4 +842,86 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadTrieIterator.close(iter)
     end
   end
+
+  # ===========================================================================
+  # Section 1.1: Quad Index Strategy Tests
+  # ===========================================================================
+
+  describe "index_for_position/2" do
+    test "returns GSPO when subject and graph are bound" do
+      pattern = {:quad, 42, {:variable, "p"}, 1, 0}
+      assert QuadLeapfrog.index_for_position(pattern, 0) == :gspo
+    end
+
+    test "returns SPOG when subject is bound but graph is not" do
+      pattern = {:quad, 42, {:variable, "p"}, 1, {:variable, "g"}}
+      assert QuadLeapfrog.index_for_position(pattern, 0) == :spog
+    end
+
+    test "returns GPOS when graph is bound and position is predicate" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 1, 0}
+      assert QuadLeapfrog.index_for_position(pattern, 1) == :gpos
+    end
+
+    test "returns GSPO by default for object position" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+      assert QuadLeapfrog.index_for_position(pattern, 2) == :gspo
+    end
+  end
+
+  describe "plan_iterators/1" do
+    test "returns empty plan for fully-bound pattern" do
+      pattern = {:quad, 1, 2, 3, 0}
+      assert {:ok, []} = QuadLeapfrog.plan_iterators(pattern)
+    end
+
+    test "returns single iterator plan for one variable" do
+      pattern = {:quad, {:variable, "s"}, 2, 3, 0}
+      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
+      assert length(plan) == 1
+
+      [{pos, _index, depth}] = plan
+      assert pos == 0  # Subject is the variable
+      assert depth == 1  # Graph is bound before subject
+    end
+
+    test "returns multiple iterators for multiple variables" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
+      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
+      assert length(plan) == 2
+
+      # Should have plans for position 0 (s) and 1 (p)
+      positions = Enum.map(plan, fn {pos, _index, _depth} -> pos end)
+      assert 0 in positions
+      assert 1 in positions
+    end
+
+    test "returns four iterators for fully unbound pattern" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
+      assert length(plan) == 4
+
+      # All four positions should be in the plan
+      positions = Enum.map(plan, fn {pos, _index, _depth} -> pos end)
+      assert Enum.sort(positions) == [0, 1, 2, 3]
+    end
+
+    test "includes prefix depth in iterator plan" do
+      pattern = {:quad, 1, {:variable, "p"}, 3, 0}
+      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
+
+      # Position 1 (predicate) should have depth 1 (graph is bound)
+      [{_pos, _index, depth}] = Enum.at(plan, 1)
+      assert depth == 1
+    end
+
+    test "selects appropriate index for each iterator" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
+      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
+
+      # All iterators should use GSPO since graph is bound
+      indexes = Enum.map(plan, fn {_pos, index, _depth} -> index end)
+      assert Enum.all?(indexes, &(&1 == :gspo))
+    end
+  end
 end

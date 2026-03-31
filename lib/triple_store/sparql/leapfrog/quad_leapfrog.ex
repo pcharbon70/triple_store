@@ -66,6 +66,40 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # ===========================================================================
 
   @typedoc """
+  Quad component position in the 4-tuple.
+
+  - `:bound` - Component is a concrete value (integer ID or atom)
+  - `:variable` - Component is a variable with a name
+  """
+  @type component :: {:bound, non_neg_integer()} | {:variable, String.t()}
+
+  @typedoc """
+  Index selection for a quad join position.
+
+  Each position (0-3 representing s, p, o, g) can use a different index
+  depending on which components are bound. The index determines the
+  prefix scan strategy.
+  """
+  @type index :: :gspo | :gpos | :spog | :posg
+
+  @typedoc """
+  Iterator position specification.
+
+  - `:position` - Position index (0=s, 1=p, 2=o, 3=g)
+  - `:component` - The component at this position
+  - `:index` - Which index to use for this position
+  """
+  @type iterator_position :: {position :: non_neg_integer(), component :: component(), index :: index()}
+
+  @typedoc """
+  Plan for creating iterators for a quad pattern.
+
+  Each entry specifies which index to use for each variable position,
+  along with the prefix depth (number of bound components before it).
+  """
+  @type iterator_plan :: [{position :: non_neg_integer(), index :: index(), prefix_depth :: non_neg_integer()}]
+
+  @typedoc """
   The QuadLeapfrog struct wraps the core Leapfrog with quad-specific metadata.
 
   - `:leapfrog` - The core Leapfrog struct
@@ -82,6 +116,140 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   @enforce_keys [:leapfrog, :variables, :pattern]
   defstruct [:leapfrog, :variables, :pattern, bindings: %{}]
+
+  # ===========================================================================
+  # Index Strategy (Section 1.1)
+  # ===========================================================================
+
+  @doc """
+  Determines the optimal index for a given quad pattern position.
+
+  The index selection is based on which positions are bound:
+  - GSPO (Graph-Subject-Predicate-Object): Best when graph is bound
+  - GPOS (Graph-Predicate-Object-Subject): Best when graph and predicate are bound
+  - SPOG (Subject-Predicate-Object-Graph): Best when subject is bound
+  - POSG (Predicate-Object-Subject-Graph): Best when predicate is bound
+
+  ## Arguments
+
+  - `pattern` - Quad pattern {:quad, s, p, o, g}
+  - `position` - Position index (0=s, 1=p, 2=o, 3=g)
+
+  ## Returns
+
+  - `:gspo`, `:gpos`, `:spog`, or `:posg`
+
+  ## Examples
+
+      index_for_position({:quad, 42, {:variable, "p"}, 1, 0}, 0)
+      # => :gspo (graph bound, prefix scan on graph)
+
+      index_for_position({:quad, {:variable, "s"}, {:variable, "p"}, 1, 0}, 0)
+      # => :gspo (graph bound, scan for s)
+
+  """
+  @spec index_for_position(tuple(), non_neg_integer()) :: index()
+  def index_for_position({:quad, s, _p, _o, g}, position) when bound?(s) do
+    # Subject bound - use SPOG if graph not bound, otherwise GSPO
+    if bound?(g), do: :gspo, else: :spog
+  end
+
+  def index_for_position({:quad, _s, p, _o, g}, position) when position == 1 do
+    # Predicate position
+    if bound?(g), do: :gpos, else: :posg
+  end
+
+  def index_for_position({:quad, _s, _p, _o, g}, _position) do
+    # Default to GSPO for graph-prefixed access
+    :gspo
+  end
+
+  @doc """
+  Plans the iterator creation strategy for a quad pattern.
+
+  Returns a list of iterator specifications, one for each unbound position.
+  Each spec includes the position index, the index to use, and the prefix depth.
+
+  ## Arguments
+
+  - `pattern` - Quad pattern {:quad, s, p, o, g}
+
+  ## Returns
+
+  - `{:ok, iterator_plan()}` - List of iterator specs
+  - `{:error, reason}` - If pattern is invalid
+
+  ## Examples
+
+      {:ok, plan} = plan_iterators({:quad, {:variable, "s"}, {:variable, "p"}, 1, 0})
+      # => [{0, :spog, 0}, {1, :posg, 1}]
+
+  """
+  @spec plan_iterators(tuple()) :: {:ok, iterator_plan()} | {:error, term()}
+  def plan_iterators({:quad, s, p, o, g} = pattern) do
+    components = [s, p, o, g]
+
+    # Count unbound variables
+    unbound_count = Enum.count(components, &variable?/1)
+
+    cond do
+      unbound_count == 0 ->
+        # All bound - no iterators needed (direct lookup)
+        {:ok, []}
+
+      unbound_count == 1 ->
+        # Single unbound - use prefix scan (existing behavior)
+        {:ok, plan_single_variable(pattern, components)}
+
+      true ->
+        # Multiple unbound - need multiple iterators
+        {:ok, plan_multi_variable(pattern, components)}
+    end
+  end
+
+  # Plan for single variable (existing behavior - prefix scan)
+  defp plan_single_variable({:quad, _s, _p, _o, _g}, components) do
+    # Find the unbound position
+    {unbound_pos, _} =
+      components
+      |> Enum.with_index()
+      |> Enum.find(fn {comp, _idx} -> variable?(comp) end)
+
+    # Count bound components before the unbound position
+    prefix_depth =
+      components
+      |> Enum.take(unbound_pos)
+      |> Enum.count(&bound?/1)
+
+    # Select index based on which components are bound
+    selected_index = select_index_for_components(components)
+
+    [{unbound_pos, selected_index, prefix_depth}]
+  end
+
+  # Plan for multiple variables (new multi-iterator behavior)
+  defp plan_multi_variable({:quad, s, p, o, g}, components) do
+    # Create an iterator for each unbound variable position
+    components
+    |> Enum.with_index()
+    |> Enum.filter(fn {comp, _idx} -> variable?(comp) end)
+    |> Enum.map(fn {_comp, pos} ->
+      index = index_for_position({:quad, s, p, o, g}, pos)
+      # Prefix depth is number of bound components at this position
+      prefix_depth = Enum.take(components, pos) |> Enum.count(&bound?/1)
+      {pos, index, prefix_depth}
+    end)
+  end
+
+  # Select optimal index based on which components are bound
+  defp select_index_for_components([s, _p, _o, g]) do
+    cond do
+      bound?(g) and bound?(s) -> :gspo
+      bound?(g) -> :gpos
+      bound?(s) -> :spog
+      true -> :posg
+    end
+  end
 
   # ===========================================================================
   # Public API
