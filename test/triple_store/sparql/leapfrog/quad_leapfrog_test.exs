@@ -1385,4 +1385,204 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadLeapfrog.close(lf)
     end
   end
+
+  # ===========================================================================
+  # Section 2.3: QuadTrieIterator Protocol Enhancements Tests
+  # ===========================================================================
+
+  describe "Section 2.3: QuadTrieIterator Protocol Enhancements" do
+    test "protocol functions work correctly for each position type", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Test each level (position) of QuadTrieIterator
+      for level <- [0, 1, 2, 3] do
+        {:ok, iter} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<0::64-big>>, level)
+
+        # Should implement TrieIteratorProtocol
+        assert TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.current(iter) != nil
+        assert TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.exhausted?(iter) in [true, false]
+
+        # Clean up iterator using the protocol
+        :ok = TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter)
+      end
+    end
+
+    test "key encoding consistency across all positions", %{db: db} do
+      # Insert test data
+      quad = {1, 10, 100, 0}
+      :ok = TripleStore.QuadOperations.insert_quad(db, quad)
+
+      # All four iterators should agree on the same quad key
+      {:ok, iter_g} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 0)
+      {:ok, iter_s} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 1)
+      {:ok, iter_p} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 2)
+      {:ok, iter_o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 3)
+
+      # Get current keys (all should point to the same quad)
+      {:ok, key_g} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_g)
+      {:ok, key_s} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_s)
+      {:ok, key_p} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_p)
+      {:ok, key_o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_o)
+
+      # All keys should be identical (same quad, same full key)
+      assert key_g == key_s
+      assert key_s == key_p
+      assert key_p == key_o
+
+      # Decode and verify the quad values
+      {g, s, p, o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.decode_key(key_g)
+      assert {g, s, p, o} == {0, 1, 10, 100}
+
+      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_g)
+      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_s)
+      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_p)
+      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_o)
+    end
+
+    test "encoding/decoding round-trip for each index", %{db: db} do
+      quad = {1, 10, 100, 0}
+      :ok = TripleStore.QuadOperations.insert_quad(db, quad)
+
+      # Test encoding/decoding for each index
+      for index <- [:gspo, :gpos, :spog, :posg] do
+        {:ok, iter} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, index, <<>>, 0)
+
+        {:ok, key} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter)
+        {g, s, p, o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.decode_key(key)
+
+        # Values should match the original quad (order may differ by index)
+        assert 1 in [g, s, p, o]
+        assert 10 in [g, s, p, o]
+        assert 100 in [g, s, p, o]
+        assert 0 in [g, s, p, o]
+
+        TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter)
+      end
+    end
+  end
+
+  describe "Section 2.4: Stream and Enumeration" do
+    setup %{db: db} do
+      # Insert test data
+      quads = [
+        {1, 10, 100, 0},
+        {1, 10, 101, 0},
+        {1, 11, 100, 0},
+        {2, 10, 100, 0}
+      ]
+
+      Enum.each(quads, fn quad -> TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      :ok
+    end
+
+    test "stream/1 yields binding maps for all matches", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
+
+      # Should get 4 quads worth of bindings
+      assert length(results) == 4
+
+      # Each result should be a map with bindings
+      Enum.each(results, fn binding ->
+        assert is_map(binding)
+        assert map_size(binding) > 0
+      end)
+    end
+
+    test "stream/1 terminates when exhausted", %{db: db} do
+      pattern = {:quad, 1, 10, 100, 0}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
+
+      # Single exact match
+      assert length(results) == 1
+    end
+
+    test "stream/1 is lazy (doesn't materialize all results)", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Stream should be a Stream struct (lazy)
+      stream = QuadLeapfrog.stream(qlf)
+      assert is_function(stream)
+    end
+
+    test "stream/1 can be halted mid-execution", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Take only 2 results even though there are 4
+      results = QuadLeapfrog.stream(qlf) |> Enum.take(2)
+
+      assert length(results) == 2
+    end
+
+    test "stream/1 works with Enum.take for limiting results", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Take 1 result
+      results = QuadLeapfrog.stream(qlf) |> Enum.take(1)
+
+      assert length(results) == 1
+
+      # Take 3 results
+      {:ok, qlf2} = QuadLeapfrog.from_pattern(db, pattern)
+      results2 = QuadLeapfrog.stream(qlf2) |> Enum.take(3)
+
+      assert length(results2) == 3
+    end
+
+    test "stream/1 handles empty results", %{db: db} do
+      # Pattern that won't match anything
+      pattern = {:quad, 999, 999, 999, 999}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
+
+      assert length(results) == 0
+    end
+
+    test "stream/1 works with bound patterns", %{db: db} do
+      # Only subject bound
+      pattern = {:quad, 1, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
+
+      # Subject 1 appears in 3 quads
+      assert length(results) == 3
+
+      # All results should have subject = 1
+      Enum.each(results, fn binding ->
+        assert Map.get(binding, :s) == 1
+      end)
+    end
+
+    test "stream/1 preserves binding variable names", %{db: db} do
+      pattern = {:quad, {:variable, "subject"}, {:variable, "predicate"}, {:variable, "object"}, {:variable, "graph"}}
+
+      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      [first | _] = QuadLeapfrog.stream(qlf) |> Enum.take(1)
+
+      # Should have keys matching variable names
+      assert Map.has_key?(first, :subject)
+      assert Map.has_key?(first, :predicate)
+      assert Map.has_key?(first, :object)
+      assert Map.has_key?(first, :graph)
+    end
+  end
 end
