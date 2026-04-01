@@ -342,29 +342,44 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     case do_create_iterators_for_pattern(db, pattern) do
       {:ok, tagged_iterators} ->
         # Section 1.3: Validate iterator list before passing to Leapfrog
-        with :ok <- validate_iterators(tagged_iterators),
-             raw_iterators = Enum.map(tagged_iterators, & &1.iterator) do
-          case Leapfrog.new(raw_iterators) do
-            {:ok, lf} ->
-              {:ok,
-               %__MODULE__{
-                 leapfrog: lf,
-                 variables: variables,
-                 pattern: pattern,
-                 tagged_iterators: tagged_iterators
-               }}
+        with :ok <- validate_iterators(tagged_iterators) do
+          # Handle empty iterator list (fully-bound pattern with direct lookup)
+          if tagged_iterators == [] do
+            # For fully-bound patterns, we've already verified the quad exists
+            # Return an exhausted state since there's nothing to iterate
+            {:exhausted,
+             %__MODULE__{
+               leapfrog: nil,
+               variables: variables,
+               pattern: pattern,
+               tagged_iterators: [],
+               bindings: %{}
+             }}
+          else
+            raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
 
-            {:exhausted, lf} ->
-              {:exhausted,
-               %__MODULE__{
-                 leapfrog: lf,
-                 variables: variables,
-                 pattern: pattern,
-                 tagged_iterators: tagged_iterators
-               }}
+            case Leapfrog.new(raw_iterators) do
+              {:ok, lf} ->
+                {:ok,
+                 %__MODULE__{
+                   leapfrog: lf,
+                   variables: variables,
+                   pattern: pattern,
+                   tagged_iterators: tagged_iterators
+                 }}
 
-            {:error, reason} ->
-              {:error, reason}
+              {:exhausted, lf} ->
+                {:exhausted,
+                 %__MODULE__{
+                   leapfrog: lf,
+                   variables: variables,
+                   pattern: pattern,
+                   tagged_iterators: tagged_iterators
+                 }}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
           end
         end
 
@@ -377,8 +392,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # Returns :ok if valid, {:error, reason} if invalid
   defp validate_iterators([]) do
     # Empty iterator list means fully-bound pattern with direct lookup
-    # This is handled by fully_bound_lookup, so we shouldn't get here
-    {:error, :no_iterators}
+    # Empty iterator list is valid (direct lookup path)
+    :ok
   end
 
   defp validate_iterators(tagged_iterators) do
@@ -487,6 +502,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec exhausted?(t()) :: boolean()
+  def exhausted?(%__MODULE__{leapfrog: nil}), do: true
   def exhausted?(%__MODULE__{leapfrog: lf}), do: Leapfrog.exhausted?(lf)
 
   @doc """
@@ -539,6 +555,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec close(t()) :: :ok
+  def close(%__MODULE__{leapfrog: nil}), do: :ok
   def close(%__MODULE__{leapfrog: lf}) do
     Leapfrog.close(lf)
   end

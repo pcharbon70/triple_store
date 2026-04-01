@@ -1208,4 +1208,49 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadLeapfrog.close(lf)
     end
   end
+
+  # ===========================================================================
+  # Section 1.5: Additional Unit Tests
+  # ===========================================================================
+
+  describe "Section 1.5: Additional Unit Tests" do
+    test "three-variable pattern creates 3 iterators", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Pattern with 3 variables
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Should create 3 iterators (one for each variable)
+      assert length(lf.tagged_iterators) == 3
+
+      # Verify positions
+      positions = Enum.map(lf.tagged_iterators, & &1.position)
+      assert Enum.sort(positions) == [0, 1, 2]  # s, p, o positions
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "fully-bound pattern uses direct lookup", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Fully-bound pattern
+      pattern = {:quad, 1, 10, 100, 0}
+
+      # Fully-bound patterns return exhausted immediately (nothing to iterate)
+      # The quad exists, so the result is known without iteration
+      {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Should have empty tagged_iterators (direct lookup path)
+      assert lf.tagged_iterators == []
+
+      # Should be marked as exhausted
+      assert QuadLeapfrog.exhausted?(lf)
+
+      QuadLeapfrog.close(lf)
+    end
+  end
 end
