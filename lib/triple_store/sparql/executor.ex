@@ -168,7 +168,6 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.SPARQL.Leapfrog.QuadLeapfrog
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
-  alias TripleStore.SPARQL.QuadCardinality
   alias TripleStore.SPARQL.QuadPatternRecognition
   alias TripleStore.SPARQL.Term
   alias TripleStore.SPARQL.Validation
@@ -1005,7 +1004,7 @@ defmodule TripleStore.SPARQL.Executor do
     # This function should only be called for quad stores
     {:ok, true} = ErlangAdapter.is_quad_store?(ctx.db)
 
-    %{db: db, dict_manager: dict_manager} = ctx
+    %{db: _db, dict_manager: dict_manager} = ctx
 
     # Convert SPARQL terms to index patterns for analysis
     with {:ok, s_pattern} <- term_to_index_pattern(s, binding, dict_manager),
@@ -1070,15 +1069,13 @@ defmodule TripleStore.SPARQL.Executor do
 
         {:ok, binding_stream}
 
-      {:error, _reason} = error ->
+      {:error, _reason} ->
         # Fall back to single iterator on error
-        _ = Logger.warning("QuadLeapfrog creation failed, falling back to single iterator")
         execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
     end
   rescue
-    e ->
+    _e ->
       # On any error, fall back to single iterator
-      _ = Logger.warning("QuadLeapfrog execution failed: #{inspect(e)}, falling back")
       execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
   end
 
@@ -1097,7 +1094,7 @@ defmodule TripleStore.SPARQL.Executor do
     {:variable, var_name}
   end
 
-  defp term_to_leapfrog_component(term, binding, dict_manager) do
+  defp term_to_leapfrog_component(term, _binding, dict_manager) do
     case Term.encode(term, dict_manager) do
       {:ok, id} -> {:bound, id}
       {:error, :not_found} -> {:bound, nil}
@@ -1157,14 +1154,6 @@ defmodule TripleStore.SPARQL.Executor do
       end
     end
   end
-
-  # Extract pattern type (:bound or :var) from term pattern
-  defp pattern_type({:bound, _id}), do: :bound
-  defp pattern_type(:var), do: :var
-
-  # Extract value from bound pattern, return nil for var
-  defp value_from_pattern({:bound, id}), do: id
-  defp value_from_pattern(:var), do: nil
 
   # Extract pattern type (:bound or :var) from term pattern
   defp pattern_type({:bound, _id}), do: :bound

@@ -276,9 +276,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # Build prefix from bound components for an index
   # Only includes bound components at their positions
   defp build_prefix_with_bound([s, p, o, g], index) do
-    # Create a list of {position, component} pairs
-    components_with_positions = [{0, g}, {1, s}, {2, p}, {3, o}]
-
     # Reorder according to index
     ordered_with_positions = case index do
       :gspo -> [{0, g}, {1, s}, {2, p}, {3, o}]  # g, s, p, o
@@ -834,13 +831,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       fully_bound_lookup(db, s, p, o, g)
     else
       # Plan multi-iterator strategy using plan from Section 1.1
-      case plan_iterators(pattern) do
-        {:ok, iterator_plan} ->
-          create_iterators_from_plan(db, components, iterator_plan)
-
-        {:error, _reason} = error ->
-          error
-      end
+      {:ok, iterator_plan} = plan_iterators(pattern)
+      create_iterators_from_plan(db, components, iterator_plan)
     end
   end
 
@@ -1040,19 +1032,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp normalize_graph_id(_), do: 0
 
   # Build prefix from bound components
-  defp build_prefix_from_components([], acc), do: IO.iodata_to_binary(:lists.reverse(acc))
-
-  defp build_prefix_from_components([component | rest], acc) do
-    value = extract_bound_value(component)
-
-    if bound?(component) do
-      build_prefix_from_components(rest, [<<value::64-big>> | acc])
-    else
-      # Stop at first unbound component
-      IO.iodata_to_binary(:lists.reverse(acc))
-    end
-  end
-
   # Extract variable names from components
   defp extract_variables(components) do
     components
@@ -1257,7 +1236,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
   end
 
-  defp add_variable_binding(bindings, pattern, position, value, default_name) do
+  defp add_variable_binding(bindings, pattern, position, value, _default_name) do
     {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
     component = Enum.at([s_pat, p_pat, o_pat, g_pat], position)
 

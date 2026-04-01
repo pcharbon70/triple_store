@@ -26,7 +26,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
       => :use_multi_iterator
   """
 
-  alias TripleStore.SPARQL.{Cardinality, QuadCardinality, Leapfrog.QuadLeapfrog}
+  alias TripleStore.SPARQL.{Cardinality, QuadCardinality}
 
   # ===========================================================================
   # Types
