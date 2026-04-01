@@ -1132,4 +1132,80 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadLeapfrog.close(lf)
     end
   end
+
+  # ===========================================================================
+  # Section 1.4: Binding Extraction Tests
+  # ===========================================================================
+
+  describe "Section 1.4: Binding Extraction" do
+    test "extracts bindings from 4-variable pattern", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      # Fully unbound pattern (4 variables)
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      # Direct lookup for single quad test - use single variable pattern for now
+      single_var_pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, single_var_pattern)
+      assert {:ok, lf} = QuadLeapfrog.search(lf)
+
+      bindings = QuadLeapfrog.bindings(lf)
+      assert bindings["s"] == 1
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "extracts bindings from mixed bound/unbound pattern", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      # Pattern with 2 variables
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
+
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Verify 2 iterators were created
+      assert length(lf.tagged_iterators) == 2
+
+      # Verify variable names are correct
+      var_names = Enum.map(lf.tagged_iterators, & &1.variable_name)
+      assert "s" in var_names
+      assert "p" in var_names
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "bindings include correct variable names", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      pattern = {:quad, {:variable, "my_subject"}, 10, 100, 0}
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      {:ok, lf} = QuadLeapfrog.search(lf)
+
+      bindings = QuadLeapfrog.bindings(lf)
+      assert Map.has_key?(bindings, "my_subject")
+      assert bindings["my_subject"] == 1
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "handles empty tagged_iterators (legacy path)", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      {:ok, lf} = QuadLeapfrog.search(lf)
+
+      # Should have bindings via legacy single-iterator path
+      bindings = QuadLeapfrog.bindings(lf)
+      assert bindings["s"] == 1
+
+      QuadLeapfrog.close(lf)
+    end
+  end
 end

@@ -818,19 +818,29 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Extract bindings from the current match
-  defp extract_bindings(%__MODULE__{leapfrog: lf, pattern: pattern} = qlf) do
+  defp extract_bindings(%__MODULE__{leapfrog: lf, pattern: pattern, tagged_iterators: tagged_iterators} = qlf) do
     case Leapfrog.current(lf) do
       :exhausted ->
         %{qlf | bindings: %{}}
 
       {:ok, _value} ->
-        # Get current iterator key
-        iterators = Leapfrog.iterators(lf)
-
+        # Section 1.4: Extract bindings based on iterator type
         bindings =
-          case iterators do
-            [%QuadTrieIterator{} = iter | _] ->
-              bindings_from_quad_iterator(iter, pattern)
+          case tagged_iterators do
+            nil ->
+              # Legacy single-iterator path
+              iterators = Leapfrog.iterators(lf)
+              case iterators do
+                [%QuadTrieIterator{} = iter | _] ->
+                  bindings_from_quad_iterator(iter, pattern)
+
+                _ ->
+                  %{}
+              end
+
+            [_ | _] = tagged ->
+              # Multi-iterator path: extract from each tagged iterator
+              bindings_from_tagged_iterators(tagged, pattern)
 
             _ ->
               %{}
@@ -881,6 +891,94 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         |> maybe_add_binding(o_pat, o, "o")
         |> maybe_add_binding(g_pat, g, "g")
     end
+  end
+
+  # Section 1.4: Extract bindings from multiple tagged iterators
+  # Each iterator has a position and variable name in its metadata
+  defp bindings_from_tagged_iterators(tagged_iterators, pattern) do
+    {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
+
+    # Start with bound components from the pattern
+    initial_bindings = %{}
+    |> add_bound_component(s_pat, "s")
+    |> add_bound_component(p_pat, "p")
+    |> add_bound_component(o_pat, "o")
+    |> add_bound_component(g_pat, "g")
+
+    # Extract bindings from each iterator based on its position and index
+    Enum.reduce(tagged_iterators, initial_bindings, fn tagged, bindings ->
+      case tagged do
+        %{iterator: %QuadTrieIterator{} = iter, position: position, variable_name: var_name, index: index} ->
+          case QuadTrieIterator.current_key(iter) do
+            {:ok, key} ->
+              # Decode key based on the iterator's index
+              value = extract_value_from_key(key, position, index)
+              Map.put(bindings, var_name, value)
+
+            :exhausted ->
+              bindings
+          end
+
+        _ ->
+          bindings
+      end
+    end)
+  end
+
+  # Extract value from key based on position and index
+  # Key structure depends on index:
+  # GSPO: Graph(0) | Subject(1) | Predicate(2) | Object(3)
+  # GPOS: Graph(0) | Predicate(1) | Object(2) | Subject(3)
+  # SPOG: Subject(0) | Predicate(1) | Object(2) | Graph(3)
+  # POSG: Predicate(0) | Object(1) | Subject(2) | Graph(3)
+  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :gspo) do
+    case position do
+      0 -> second  # Subject is at position 1 in GSPO
+      1 -> third   # Predicate is at position 2 in GSPO
+      2 -> fourth  # Object is at position 3 in GSPO
+      3 -> first   # Graph is at position 0 in GSPO
+      _ -> nil
+    end
+  end
+
+  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :gpos) do
+    case position do
+      0 -> fourth  # Subject is at position 3 in GPOS
+      1 -> second  # Predicate is at position 1 in GPOS
+      2 -> third   # Object is at position 2 in GPOS
+      3 -> first   # Graph is at position 0 in GPOS
+      _ -> nil
+    end
+  end
+
+  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :spog) do
+    case position do
+      0 -> first   # Subject is at position 0 in SPOG
+      1 -> second  # Predicate is at position 1 in SPOG
+      2 -> third   # Object is at position 2 in SPOG
+      3 -> fourth  # Graph is at position 3 in SPOG
+      _ -> nil
+    end
+  end
+
+  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :posg) do
+    case position do
+      0 -> third   # Subject is at position 2 in POSG
+      1 -> first   # Predicate is at position 0 in POSG
+      2 -> second  # Object is at position 1 in POSG
+      3 -> fourth  # Graph is at position 3 in POSG
+      _ -> nil
+    end
+  end
+
+  # Add bound component value to bindings
+  defp add_bound_component(bindings, value, _var_name) when is_integer(value) do
+    # Don't add bound components - they're already known from the pattern
+    bindings
+  end
+
+  defp add_bound_component(bindings, _component, _var_name) do
+    bindings
   end
 
   # Add binding if component is a variable
