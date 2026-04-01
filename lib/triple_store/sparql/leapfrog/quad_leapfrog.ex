@@ -664,8 +664,18 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Creates multiple iterators from an iterator plan
   # Section 1.2: Create one iterator per variable position
+  # Section 2.1.1: Order iterators by selectivity for performance
   defp create_iterators_from_plan(db, components, iterator_plan) do
     # Create an iterator for each entry in the plan
+    with {:ok, tagged_iterators} <- do_create_iterators_from_plan(db, components, iterator_plan) do
+      # Section 2.1.1: Order iterators by selectivity (bound components first)
+      ordered_iterators = order_iterators_by_selectivity(tagged_iterators, components)
+      {:ok, ordered_iterators}
+    end
+  end
+
+  # Creates iterators from plan (internal helper)
+  defp do_create_iterators_from_plan(db, components, iterator_plan) do
     iterator_plan
     |> Enum.map(fn {position, index, _original_depth} ->
       component = Enum.at(components, position)
@@ -751,6 +761,40 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp components_for_index([s, p, o, g], :gpos), do: [g, p, o, s]
   defp components_for_index([s, p, o, g], :spog), do: [s, p, o, g]
   defp components_for_index([s, p, o, g], :posg), do: [p, o, s, g]
+
+  # Section 2.1.1: Order iterators by selectivity
+  # Bound components should come first (most selective), then order by position
+  defp order_iterators_by_selectivity(tagged_iterators, components) do
+    # Separate bound and unbound positions based on original components
+    # Bound positions are more selective and should come first
+    {bound_iterators, unbound_iterators} =
+      split_with(tagged_iterators, fn tagged ->
+        component = Enum.at(components, tagged.position)
+        bound?(component)
+      end)
+
+    # Sort bound iterators by position (lower positions typically more selective)
+    sorted_bound = Enum.sort_by(bound_iterators, & &1.position)
+
+    # Sort unbound iterators by position (consistent ordering for predictability)
+    sorted_unbound = Enum.sort_by(unbound_iterators, & &1.position)
+
+    # Combine: bound first, then unbound
+    sorted_bound ++ sorted_unbound
+  end
+
+  # Backwards-compatible split_with for older Elixir versions
+  defp split_with(enumerable, fun) do
+    enumerable
+    |> Enum.reduce({[], []}, fn item, {true_list, false_list} ->
+      if fun.(item) do
+        {[item | true_list], false_list}
+      else
+        {true_list, [item | false_list]}
+      end
+    end)
+    |> (fn {true_list, false_list} -> {Enum.reverse(true_list), Enum.reverse(false_list)} end).()
+  end
 
   # Extracts variable name from component, with fallback to position-based name
   defp extract_variable_name({:variable, name}, _position), do: name

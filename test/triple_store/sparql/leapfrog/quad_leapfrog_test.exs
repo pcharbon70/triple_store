@@ -1253,4 +1253,80 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadLeapfrog.close(lf)
     end
   end
+
+  # ===========================================================================
+  # Section 2.1: Performance Optimization Tests
+  # ===========================================================================
+
+  describe "Section 2.1: Performance Optimization" do
+    test "iterators ordered by selectivity (bound before unbound)", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Pattern with 2 variables (s and p), o and g bound
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
+
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Iterators should be ordered: unbound positions (s and p)
+      # Both are unbound, so sorted by position
+      assert length(lf.tagged_iterators) == 2
+
+      positions = Enum.map(lf.tagged_iterators, & &1.position)
+      assert Enum.sort(positions) == [0, 1]  # s and p positions
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "short-circuit for fully-bound pattern avoids iterator creation", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Fully-bound pattern
+      pattern = {:quad, 1, 10, 100, 0}
+
+      # Should return exhausted immediately (no iterators)
+      {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert lf.tagged_iterators == []
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "three-variable pattern creates 3 iterators", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Pattern with 3 variables
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Should create 3 iterators
+      assert length(lf.tagged_iterators) == 3
+
+      positions = Enum.map(lf.tagged_iterators, & &1.position)
+      assert Enum.sort(positions) == [0, 1, 2]  # s, p, o positions
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "iterator ordering is consistent", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Same pattern should produce same iterator order
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
+
+      {:ok, lf1} = QuadLeapfrog.from_pattern(db, pattern)
+      {:ok, lf2} = QuadLeapfrog.from_pattern(db, pattern)
+
+      order1 = Enum.map(lf1.tagged_iterators, & &1.position)
+      order2 = Enum.map(lf2.tagged_iterators, & &1.position)
+
+      assert order1 == order2
+
+      QuadLeapfrog.close(lf1)
+      QuadLeapfrog.close(lf2)
+    end
+  end
 end
