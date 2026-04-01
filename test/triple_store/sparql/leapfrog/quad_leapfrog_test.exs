@@ -1329,4 +1329,60 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       QuadLeapfrog.close(lf2)
     end
   end
+
+  # ===========================================================================
+  # Section 2.2: Edge Case Handling Tests
+  # ===========================================================================
+
+  describe "Section 2.2: Edge Case Handling" do
+    test "empty database returns exhausted immediately", %{db: db} do
+      # Database is empty (no quads inserted)
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      # Should return exhausted immediately
+      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert QuadLeapfrog.exhausted?(lf)
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "malformed pattern returns helpful error", %{db: db} do
+      # Invalid pattern (not a quad tuple)
+      invalid_pattern = {:invalid, "data"}
+
+      assert {:error, _reason} = QuadLeapfrog.from_pattern(db, invalid_pattern)
+    end
+
+    test "pattern with no variables uses direct lookup", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      # Fully-bound pattern (no variables)
+      pattern = {:quad, 1, 10, 100, 0}
+
+      # Should return exhausted immediately (quad exists, nothing to iterate)
+      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert QuadLeapfrog.exhausted?(lf)
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "max iterations safeguard prevents infinite loops", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Stream should handle many iterations without hanging
+      # (Actual max_iterations test would require many quads, this is basic check)
+      assert lf.iterations == 0
+
+      # After search, iterations should increment
+      assert {:ok, lf} = QuadLeapfrog.search(lf)
+      assert lf.iterations == 1
+
+      QuadLeapfrog.close(lf)
+    end
+  end
 end

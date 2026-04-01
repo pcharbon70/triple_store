@@ -132,7 +132,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         }
 
   @enforce_keys [:leapfrog, :variables, :pattern]
-  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil]
+  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil, iterations: 0]
+
+  # Maximum iterations before giving up (Section 2.2.2: safeguard)
+  @max_iterations 10_000
 
   # ===========================================================================
   # Index Strategy (Section 1.1)
@@ -335,58 +338,66 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   """
   @spec from_pattern(pid(), tuple()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   def from_pattern(db, {:quad, s, p, o, g} = pattern) do
-    # Determine variable ordering
-    variables = extract_variables([s, p, o, g])
+    # Section 2.2.3: Validate pattern structure before iterator creation
+    with :ok <- validate_quad_pattern(pattern) do
+      # Determine variable ordering
+      variables = extract_variables([s, p, o, g])
 
-    # Create iterators for each variable position
-    case do_create_iterators_for_pattern(db, pattern) do
-      {:ok, tagged_iterators} ->
-        # Section 1.3: Validate iterator list before passing to Leapfrog
-        with :ok <- validate_iterators(tagged_iterators) do
-          # Handle empty iterator list (fully-bound pattern with direct lookup)
-          if tagged_iterators == [] do
-            # For fully-bound patterns, we've already verified the quad exists
-            # Return an exhausted state since there's nothing to iterate
-            {:exhausted,
-             %__MODULE__{
-               leapfrog: nil,
-               variables: variables,
-               pattern: pattern,
-               tagged_iterators: [],
-               bindings: %{}
-             }}
-          else
-            raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
+      # Create iterators for each variable position
+      case do_create_iterators_for_pattern(db, pattern) do
+        {:ok, tagged_iterators} ->
+          # Section 1.3: Validate iterator list before passing to Leapfrog
+          with :ok <- validate_iterators(tagged_iterators) do
+            # Handle empty iterator list (fully-bound pattern with direct lookup)
+            if tagged_iterators == [] do
+              # For fully-bound patterns, we've already verified the quad exists
+              # Return an exhausted state since there's nothing to iterate
+              {:exhausted,
+               %__MODULE__{
+                 leapfrog: nil,
+                 variables: variables,
+                 pattern: pattern,
+                 tagged_iterators: [],
+                 bindings: %{}
+               }}
+            else
+              raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
 
-            case Leapfrog.new(raw_iterators) do
-              {:ok, lf} ->
-                {:ok,
-                 %__MODULE__{
-                   leapfrog: lf,
-                   variables: variables,
-                   pattern: pattern,
-                   tagged_iterators: tagged_iterators
-                 }}
+              case Leapfrog.new(raw_iterators) do
+                {:ok, lf} ->
+                  {:ok,
+                   %__MODULE__{
+                     leapfrog: lf,
+                     variables: variables,
+                     pattern: pattern,
+                     tagged_iterators: tagged_iterators
+                   }}
 
-              {:exhausted, lf} ->
-                {:exhausted,
-                 %__MODULE__{
-                   leapfrog: lf,
-                   variables: variables,
-                   pattern: pattern,
-                   tagged_iterators: tagged_iterators
-                 }}
+                {:exhausted, lf} ->
+                  {:exhausted,
+                   %__MODULE__{
+                     leapfrog: lf,
+                     variables: variables,
+                     pattern: pattern,
+                     tagged_iterators: tagged_iterators
+                   }}
 
-              {:error, reason} ->
-                {:error, reason}
+                {:error, reason} ->
+                  {:error, reason}
+              end
             end
           end
-        end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
+
+  # Section 2.2.3: Validate quad pattern structure
+  # Returns :ok if valid, {:error, reason} if invalid
+  defp validate_quad_pattern({:quad, _s, _p, _o, _g}), do: :ok
+  defp validate_quad_pattern(_pattern), do: {:error, :invalid_quad_pattern}
 
   # Section 1.3: Validate iterator list before passing to Leapfrog
   # Returns :ok if valid, {:error, reason} if invalid
@@ -426,18 +437,23 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec search(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def search(%__MODULE__{leapfrog: lf} = qlf) do
-    case Leapfrog.search(lf) do
-      {:ok, lf} ->
-        qlf = %{qlf | leapfrog: lf}
-        qlf = extract_bindings(qlf)
-        {:ok, qlf}
+  def search(%__MODULE__{leapfrog: lf, iterations: iterations} = qlf) do
+    # Section 2.2.2: Check max iteration safeguard
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case Leapfrog.search(lf) do
+        {:ok, lf} ->
+          qlf = %{qlf | leapfrog: lf, iterations: iterations + 1}
+          qlf = extract_bindings(qlf)
+          {:ok, qlf}
 
-      {:exhausted, lf} ->
-        {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+        {:exhausted, lf} ->
+          {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -458,18 +474,23 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec next(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def next(%__MODULE__{leapfrog: lf} = qlf) do
-    case Leapfrog.next(lf) do
-      {:ok, lf} ->
-        qlf = %{qlf | leapfrog: lf}
-        qlf = extract_bindings(qlf)
-        {:ok, qlf}
+  def next(%__MODULE__{leapfrog: lf, iterations: iterations} = qlf) do
+    # Section 2.2.2: Check max iteration safeguard
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case Leapfrog.next(lf) do
+        {:ok, lf} ->
+          qlf = %{qlf | leapfrog: lf, iterations: iterations + 1}
+          qlf = extract_bindings(qlf)
+          {:ok, qlf}
 
-      {:exhausted, lf} ->
-        {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+        {:exhausted, lf} ->
+          {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
