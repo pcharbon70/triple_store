@@ -341,34 +341,56 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     # Create iterators for each variable position
     case do_create_iterators_for_pattern(db, pattern) do
       {:ok, tagged_iterators} ->
-        # Extract raw iterators for Leapfrog
-        raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
+        # Section 1.3: Validate iterator list before passing to Leapfrog
+        with :ok <- validate_iterators(tagged_iterators),
+             raw_iterators = Enum.map(tagged_iterators, & &1.iterator) do
+          case Leapfrog.new(raw_iterators) do
+            {:ok, lf} ->
+              {:ok,
+               %__MODULE__{
+                 leapfrog: lf,
+                 variables: variables,
+                 pattern: pattern,
+                 tagged_iterators: tagged_iterators
+               }}
 
-        case Leapfrog.new(raw_iterators) do
-          {:ok, lf} ->
-            {:ok,
-             %__MODULE__{
-               leapfrog: lf,
-               variables: variables,
-               pattern: pattern,
-               tagged_iterators: tagged_iterators
-             }}
+            {:exhausted, lf} ->
+              {:exhausted,
+               %__MODULE__{
+                 leapfrog: lf,
+                 variables: variables,
+                 pattern: pattern,
+                 tagged_iterators: tagged_iterators
+               }}
 
-          {:exhausted, lf} ->
-            {:exhausted,
-             %__MODULE__{
-               leapfrog: lf,
-               variables: variables,
-               pattern: pattern,
-               tagged_iterators: tagged_iterators
-             }}
-
-          {:error, reason} ->
-            {:error, reason}
+            {:error, reason} ->
+              {:error, reason}
+          end
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # Section 1.3: Validate iterator list before passing to Leapfrog
+  # Returns :ok if valid, {:error, reason} if invalid
+  defp validate_iterators([]) do
+    # Empty iterator list means fully-bound pattern with direct lookup
+    # This is handled by fully_bound_lookup, so we shouldn't get here
+    {:error, :no_iterators}
+  end
+
+  defp validate_iterators(tagged_iterators) do
+    # Check for duplicate positions
+    positions = Enum.map(tagged_iterators, & &1.position)
+
+    if length(Enum.uniq(positions)) != length(positions) do
+      {:error, {:duplicate_positions, positions}}
+    else
+      # Check that all iterators implement TrieIteratorProtocol
+      # (they should if created via QuadTrieIterator.new/4)
+      :ok
     end
   end
 

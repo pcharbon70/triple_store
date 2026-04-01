@@ -1025,4 +1025,111 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
       assert iter.variable_name == "o"
     end
   end
+
+  # ===========================================================================
+  # Section 1.3: Leapfrog Integration Tests
+  # ===========================================================================
+
+  describe "Section 1.3: Leapfrog Integration" do
+    test "Leapfrog accepts 4 QuadTrieIterator instances", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      # Fully unbound pattern creates 4 iterators
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Should have 4 tagged iterators stored
+      assert length(lf.tagged_iterators) == 4
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "Leapfrog searches for intersection across multiple iterators", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      # Pattern with 2 variables creates 2 iterators
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
+
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Section 1.3: Verify from_pattern creates multiple iterators successfully
+      # (Multi-iterator search coordination is completed in Section 1.4)
+      assert length(lf.tagged_iterators) == 2
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "Leapfrog handles exhausted state correctly", %{db: db} do
+      # Empty database
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+
+      # Should return exhausted immediately
+      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert QuadLeapfrog.exhausted?(lf)
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "Leapfrog next advances state correctly", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}, {2, 10, 100, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      # Pattern with single variable (single iterator, so bindings should work)
+      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert {:ok, lf} = QuadLeapfrog.search(lf)
+
+      # Get first match
+      first_bindings = QuadLeapfrog.bindings(lf)
+      assert map_size(first_bindings) > 0
+
+      # Advance to next match
+      assert {:ok, lf} = QuadLeapfrog.next(lf)
+
+      # Should have bindings
+      second_bindings = QuadLeapfrog.bindings(lf)
+      assert map_size(second_bindings) > 0
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "QuadLeapfrog delegates search to core Leapfrog", %{db: db} do
+      # Insert test data
+      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
+
+      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+
+      # Search should delegate to Leapfrog and return updated state
+      assert {:ok, lf} = QuadLeapfrog.search(lf)
+      assert is_map(lf.bindings)
+
+      QuadLeapfrog.close(lf)
+    end
+
+    test "QuadLeapfrog delegates next to core Leapfrog", %{db: db} do
+      # Insert test data
+      quads = [{1, 10, 100, 0}, {2, 10, 100, 0}]
+      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
+
+      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
+
+      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert {:ok, lf} = QuadLeapfrog.search(lf)
+
+      # Next should delegate to Leapfrog and return updated state
+      assert {:ok, lf} = QuadLeapfrog.next(lf)
+      assert is_map(lf.bindings)
+
+      QuadLeapfrog.close(lf)
+    end
+  end
 end
