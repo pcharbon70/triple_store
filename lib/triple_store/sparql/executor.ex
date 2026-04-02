@@ -1037,7 +1037,6 @@ defmodule TripleStore.SPARQL.Executor do
     case pattern do
       {:bound, id} -> {:bound, id}
       :var -> {:variable, "_"}
-      {:not_found, _} -> {:bound, nil}
     end
   end
 

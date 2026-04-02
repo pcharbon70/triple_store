@@ -249,7 +249,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
 
   # Truncate float to integer for display
   defp trunc_float(float) when is_float(float), do: Kernel.trunc(float)
-  defp trunc_float(int), do: int
+  defp trunc_float(int) when is_integer(int), do: int
 
   # Translate a single component to Leapfrog format
   defp translate_component({:variable, _name} = var), do: var
