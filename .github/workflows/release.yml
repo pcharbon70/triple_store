@@ -58,7 +58,7 @@ jobs:
         run: mix deps.get
 
       - name: Compile with warnings as errors
-        run: mix compile --warnings-as-errors
+        run: ./scripts/compile_strict.sh
 
       - name: Validate specs governance
         run: ./scripts/validate_specs_governance.sh

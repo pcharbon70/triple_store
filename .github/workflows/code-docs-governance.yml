@@ -52,7 +52,7 @@ jobs:
         run: mix deps.get
 
       - name: Compile with warnings as errors
-        run: mix compile --warnings-as-errors
+        run: ./scripts/compile_strict.sh
 
       - name: Validate code docs
         run: ./scripts/validate_code_docs.sh
