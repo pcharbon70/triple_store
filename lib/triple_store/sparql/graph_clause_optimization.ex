@@ -37,6 +37,7 @@ defmodule TripleStore.SPARQL.GraphClauseOptimization do
   @type graph_clause :: :static | :variable
   @type strategy :: :graph_prefixed_single_iterator | :four_iterator_enumeration
                  | :sequential_graph_iteration | :direct_lookup
+                 | :multi_iterator_with_bound_graph
   @type analysis :: %{
                  graph_type: graph_clause(),
                  recommended_strategy: strategy(),

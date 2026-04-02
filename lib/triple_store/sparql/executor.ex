@@ -1025,12 +1025,11 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Build a quad pattern tuple from individual patterns
   defp build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern) do
-    {
+    {:quad,
       pattern_to_component(s_pattern),
       pattern_to_component(p_pattern),
       pattern_to_component(o_pattern),
-      pattern_to_component(g_pattern)
-    }
+      pattern_to_component(g_pattern)}
   end
 
   # Convert term pattern to component format for analysis

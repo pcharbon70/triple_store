@@ -242,10 +242,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
 
   # Estimate cardinality for a quad pattern
   defp estimate_cardinality(pattern, stats) do
-    case QuadCardinality.estimate_pattern(pattern, stats) do
-      {:ok, card} -> card
-      _ -> 1_000.0  # Default estimate when stats unavailable
-    end
+    QuadCardinality.estimate_pattern(pattern, stats)
   rescue
     _ -> 1_000.0  # Fallback estimate
   end
