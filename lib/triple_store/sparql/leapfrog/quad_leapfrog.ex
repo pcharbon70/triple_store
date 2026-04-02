@@ -7,6 +7,14 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   efficient iteration over quad indices.
 
   ## Current Implementation Status
+  @moduledoc """
+  Quad-specific Leapfrog join for 4-way joins on quad patterns.
+
+  Extends the core Leapfrog algorithm to handle quad patterns with subject,
+  predicate, object, and graph components. Uses QuadTrieIterator for
+  efficient iteration over quad indices.
+
+  ## Current Implementation Status
 
   **IMPORTANT**: This module provides the structure and variable ordering logic
   for quad patterns, but full integration with the core Leapfrog algorithm
@@ -275,6 +283,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Build prefix from bound components for an index
   # Only includes bound components at their positions
+  @dialyzer {:nowarn_function, build_prefix_with_bound: 2}
   defp build_prefix_with_bound([s, p, o, g], index) do
     # Reorder according to index
     ordered_with_positions = case index do
@@ -506,6 +515,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Section 2.2.3: Validate quad pattern structure
   # Returns :ok if valid, {:error, reason} if invalid
+  @dialyzer {:nowarn_function, validate_quad_pattern: 1}
   defp validate_quad_pattern({:quad, _s, _p, _o, _g}), do: :ok
   defp validate_quad_pattern(_pattern), do: {:error, :invalid_quad_pattern}
 
@@ -1107,9 +1117,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     end
   end
 
-  defp unfold_quad_bindings(%__MODULE__{leapfrog: nil} = searched_lf) do
+  defp unfold_quad_bindings(%__MODULE__{leapfrog: nil, bindings: bindings} = searched_lf) do
     # Fully-bound pattern: yield empty binding once
-    {bindings(searched_lf), searched_lf}
+    {bindings, searched_lf}
   end
 
   defp unfold_quad_bindings(searched_lf) do

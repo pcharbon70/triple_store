@@ -247,9 +247,10 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
     _ -> 1_000.0  # Fallback estimate
   end
 
-  # Truncate float to integer for display
-  defp trunc_float(float) when is_float(float), do: Kernel.trunc(float)
-  defp trunc_float(int) when is_integer(int), do: int
+  # Truncate number to integer for display
+  defp trunc_float(value) when is_number(value) do
+    Kernel.trunc(value)
+  end
 
   # Translate a single component to Leapfrog format
   defp translate_component({:variable, _name} = var), do: var
