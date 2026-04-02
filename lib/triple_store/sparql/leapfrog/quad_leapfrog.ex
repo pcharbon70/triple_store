@@ -7,6 +7,14 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   efficient iteration over quad indices.
 
   ## Current Implementation Status
+  @moduledoc """
+  Quad-specific Leapfrog join for 4-way joins on quad patterns.
+
+  Extends the core Leapfrog algorithm to handle quad patterns with subject,
+  predicate, object, and graph components. Uses QuadTrieIterator for
+  efficient iteration over quad indices.
+
+  ## Current Implementation Status
 
   **IMPORTANT**: This module provides the structure and variable ordering logic
   for quad patterns, but full integration with the core Leapfrog algorithm
@@ -132,7 +140,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         }
 
   @enforce_keys [:leapfrog, :variables, :pattern]
-  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil]
+  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil, iterations: 0, yielded: false, advanced: false]
+
+  # Maximum iterations before giving up (Section 2.2.2: safeguard)
+  @max_iterations 10_000
 
   # ===========================================================================
   # Index Strategy (Section 1.1)
@@ -267,28 +278,85 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     # Select index based on which components are bound (including graph)
     selected_index = select_index_for_components(components)
 
-    [{unbound_pos, selected_index, prefix_depth}]
+    [{unbound_pos, selected_index, prefix_depth, <<>>}]
+  end
+
+  # Build prefix from bound components for an index
+  # Only includes bound components at their positions
+  @dialyzer {:nowarn_function, build_prefix_with_bound: 2}
+  defp build_prefix_with_bound([s, p, o, g], index) do
+    # Reorder according to index
+    ordered_with_positions = case index do
+      :gspo -> [{0, g}, {1, s}, {2, p}, {3, o}]  # g, s, p, o
+      :gpos -> [{0, g}, {1, p}, {2, o}, {3, s}]  # g, p, o, s
+      :spog -> [{0, s}, {1, p}, {2, o}, {3, g}]  # s, p, o, g
+      :posg -> [{0, p}, {1, o}, {2, s}, {3, g}]  # p, o, s, g
+    end
+
+    # Build prefix by putting bound values at their positions
+    # Create a list of values or nil
+    values =
+      ordered_with_positions
+      |> Enum.map(fn {_pos, component} ->
+        if is_integer(component), do: component, else: nil
+      end)
+
+    # Check if there are any bound components
+    has_bindings? = Enum.any?(values, &is_integer/1)
+
+    if has_bindings? do
+      # Get the first two values (graph and subject positions)
+      val0 = Enum.at(values, 0) || 0
+      val1 = Enum.at(values, 1) || 0
+
+      # Build prefix with first two components
+      prefix = <<val0::64-big, val1::64-big>>
+
+      prefix
+    else
+      # No bound components - use empty prefix to scan all quads
+      <<>>
+    end
   end
 
   # Plan for multiple variables (new multi-iterator behavior)
   defp plan_multi_variable({:quad, s, p, o, g}, components) do
-    # For multi-iterator joins, all iterators must use the same index
-    # Select the base index based on what's bound
-    base_index =
-      cond do
-        bound?(g) -> :gspo  # Graph-bound: use GSPO for all iterators
-        bound?(s) -> :spog  # Subject-bound but not graph: use SPOG
-        true -> :posg       # Fallback to POSG
-      end
+    unbound_count = Enum.count(components, &variable?/1)
 
-    # Create an iterator for each unbound variable position, all using the same index
-    components
-    |> Enum.with_index()
-    |> Enum.filter(fn {comp, _idx} -> variable?(comp) end)
-    |> Enum.map(fn {_comp, pos} ->
-      # For plan purposes, prefix_depth is the position (will be recalculated)
-      {pos, base_index, pos}
-    end)
+    if unbound_count >= 3 do
+      # 3+ variables unbound: use single iterator to scan all quads
+      # Build prefix from bound components and use level 3 (deepest level)
+      # Select index based on which components are bound
+      selected_index =
+        cond do
+          bound?(g) -> :gspo  # Graph-bound: use GSPO
+          bound?(s) -> :gspo  # Subject-bound: use GSPO
+          bound?(p) -> :gpos  # Predicate-bound: use GPOS
+          true -> :gspo       # Default to GSPO
+        end
+
+      # Build prefix with bound components
+      prefix = build_prefix_with_bound([s, p, o, g], selected_index)
+
+      [{3, selected_index, 3, prefix}]
+    else
+      # Some components bound: create iterator for each unbound variable
+      # Select the base index based on what's bound
+      base_index =
+        cond do
+          bound?(g) -> :gspo  # Graph-bound: use GSPO for all iterators
+          bound?(s) -> :spog  # Subject-bound but not graph: use SPOG
+          true -> :posg       # Fallback to POSG
+        end
+
+      components
+      |> Enum.with_index()
+      |> Enum.filter(fn {comp, _idx} -> variable?(comp) end)
+      |> Enum.map(fn {_comp, pos} ->
+        # For plan purposes, prefix_depth is the position (will be recalculated)
+        {pos, base_index, pos}
+      end)
+    end
   end
 
   # Select optimal index based on which components are bound
@@ -335,58 +403,121 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   """
   @spec from_pattern(pid(), tuple()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   def from_pattern(db, {:quad, s, p, o, g} = pattern) do
-    # Determine variable ordering
-    variables = extract_variables([s, p, o, g])
+    # Section 2.2.3: Validate pattern structure before iterator creation
+    with :ok <- validate_quad_pattern(pattern) do
+      # Determine variable ordering
+      variables = extract_variables([s, p, o, g])
 
-    # Create iterators for each variable position
-    case do_create_iterators_for_pattern(db, pattern) do
-      {:ok, tagged_iterators} ->
-        # Section 1.3: Validate iterator list before passing to Leapfrog
-        with :ok <- validate_iterators(tagged_iterators) do
-          # Handle empty iterator list (fully-bound pattern with direct lookup)
-          if tagged_iterators == [] do
-            # For fully-bound patterns, we've already verified the quad exists
-            # Return an exhausted state since there's nothing to iterate
-            {:exhausted,
-             %__MODULE__{
-               leapfrog: nil,
-               variables: variables,
-               pattern: pattern,
-               tagged_iterators: [],
-               bindings: %{}
-             }}
-          else
-            raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
-
-            case Leapfrog.new(raw_iterators) do
-              {:ok, lf} ->
+      # Create iterators for each variable position
+      case do_create_iterators_for_pattern(db, pattern) do
+        {:ok, tagged_iterators} ->
+          # Section 1.3: Validate iterator list before passing to Leapfrog
+          with :ok <- validate_iterators(tagged_iterators) do
+            cond do
+              # Single iterator case (4-variable pattern scan) without Leapfrog
+              length(tagged_iterators) == 1 and variable?(s) and variable?(p) and variable?(o) and variable?(g) ->
+                # Single iterator for 4-variable pattern: use direct scan path
                 {:ok,
                  %__MODULE__{
-                   leapfrog: lf,
+                   leapfrog: nil,
                    variables: variables,
                    pattern: pattern,
                    tagged_iterators: tagged_iterators
                  }}
 
-              {:exhausted, lf} ->
-                {:exhausted,
+              # Single iterator case (3-variable pattern scan) without Leapfrog
+              length(tagged_iterators) == 1 and
+                ((variable?(s) and variable?(p) and variable?(o)) or
+                 (variable?(s) and variable?(p) and variable?(g)) or
+                 (variable?(s) and variable?(o) and variable?(g)) or
+                 (variable?(p) and variable?(o) and variable?(g))) ->
+                # Single iterator for 3-variable pattern: use direct scan path
+                {:ok,
                  %__MODULE__{
-                   leapfrog: lf,
+                   leapfrog: nil,
                    variables: variables,
                    pattern: pattern,
                    tagged_iterators: tagged_iterators
                  }}
 
-              {:error, reason} ->
-                {:error, reason}
+              # Handle empty iterator list (fully-bound pattern with direct lookup)
+              tagged_iterators == [] ->
+                # For fully-bound patterns, check if the quad exists
+                graph_id = normalize_graph_id(g)
+                key = <<graph_id::64-big, s::64-big, p::64-big, o::64-big>>
+
+                case ErlangAdapter.get(db, :gspo, key) do
+                  {:ok, _value} ->
+                    # Quad exists - return ok state with empty bindings
+                    # (no variables to bind since all components are bound)
+                    # This allows stream to yield one result
+                    {:ok,
+                     %__MODULE__{
+                       leapfrog: nil,
+                       variables: variables,
+                       pattern: pattern,
+                       tagged_iterators: [],
+                       bindings: %{},
+                       yielded: false
+                     }}
+
+                  :not_found ->
+                    # Quad doesn't exist - return ok state but marked as yielded
+                    # so stream returns 0 results
+                    {:ok,
+                     %__MODULE__{
+                       leapfrog: nil,
+                       variables: variables,
+                       pattern: pattern,
+                       tagged_iterators: [],
+                       bindings: %{},
+                       yielded: true
+                     }}
+
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+
+              # Multi-iterator case: use Leapfrog
+              true ->
+                raw_iterators = Enum.map(tagged_iterators, & &1.iterator)
+
+                case Leapfrog.new(raw_iterators) do
+                  {:ok, lf} ->
+                    {:ok,
+                     %__MODULE__{
+                       leapfrog: lf,
+                       variables: variables,
+                       pattern: pattern,
+                       tagged_iterators: tagged_iterators
+                     }}
+
+                  {:exhausted, lf} ->
+                    {:exhausted,
+                     %__MODULE__{
+                       leapfrog: lf,
+                       variables: variables,
+                       pattern: pattern,
+                       tagged_iterators: tagged_iterators
+                     }}
+
+                  {:error, reason} ->
+                    {:error, reason}
+                end
             end
           end
-        end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
+
+  # Section 2.2.3: Validate quad pattern structure
+  # Returns :ok if valid, {:error, reason} if invalid
+  @dialyzer {:nowarn_function, validate_quad_pattern: 1}
+  defp validate_quad_pattern({:quad, _s, _p, _o, _g}), do: :ok
+  defp validate_quad_pattern(_pattern), do: {:error, :invalid_quad_pattern}
 
   # Section 1.3: Validate iterator list before passing to Leapfrog
   # Returns :ok if valid, {:error, reason} if invalid
@@ -426,18 +557,40 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec search(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def search(%__MODULE__{leapfrog: lf} = qlf) do
-    case Leapfrog.search(lf) do
-      {:ok, lf} ->
-        qlf = %{qlf | leapfrog: lf}
-        qlf = extract_bindings(qlf)
-        {:ok, qlf}
+  def search(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf) do
+    # Direct scan case (4-variable pattern with single iterator)
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case QuadTrieIterator.current(single_iter.iterator) do
+        {:ok, _value} ->
+          # At a valid position, extract bindings
+          qlf = extract_bindings(qlf)
+          {:ok, %{qlf | iterations: iterations + 1}}
 
-      {:exhausted, lf} ->
-        {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+        :exhausted ->
+          {:exhausted, %{qlf | bindings: %{}}}
+      end
+    end
+  end
 
-      {:error, reason} ->
-        {:error, reason}
+  def search(%__MODULE__{leapfrog: lf, iterations: iterations} = qlf) do
+    # Section 2.2.2: Check max iteration safeguard
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case Leapfrog.search(lf) do
+        {:ok, lf} ->
+          qlf = %{qlf | leapfrog: lf, iterations: iterations + 1}
+          qlf = extract_bindings(qlf)
+          {:ok, qlf}
+
+        {:exhausted, lf} ->
+          {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -458,18 +611,51 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec next(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def next(%__MODULE__{leapfrog: lf} = qlf) do
-    case Leapfrog.next(lf) do
-      {:ok, lf} ->
-        qlf = %{qlf | leapfrog: lf}
-        qlf = extract_bindings(qlf)
-        {:ok, qlf}
+  def next(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf) do
+    # Direct scan case: advance to next quad by iterating to the next key
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case ErlangAdapter.iterator_next(single_iter.iterator.iter_ref) do
+        {:ok, key, _value} ->
+          # Update the iterator state
+          iter = %{
+            single_iter.iterator |
+            current_key: key,
+            current_value: QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
+            exhausted: false
+          }
+          updated_iter = %{single_iter | iterator: iter}
+          updated_qlf = %{qlf | tagged_iterators: [updated_iter], iterations: iterations + 1}
+          updated_qlf = extract_bindings(updated_qlf)
+          {:ok, updated_qlf}
 
-      {:exhausted, lf} ->
-        {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+        :iterator_end ->
+          {:exhausted, %{qlf | bindings: %{}}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def next(%__MODULE__{leapfrog: lf, iterations: iterations} = qlf) do
+    # Section 2.2.2: Check max iteration safeguard
+    if iterations >= @max_iterations do
+      {:error, :max_iterations_exceeded}
+    else
+      case Leapfrog.next(lf) do
+        {:ok, lf} ->
+          qlf = %{qlf | leapfrog: lf, iterations: iterations + 1}
+          qlf = extract_bindings(qlf)
+          {:ok, qlf}
+
+        {:exhausted, lf} ->
+          {:exhausted, %{qlf | leapfrog: lf, bindings: %{}}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -590,6 +776,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
         {:exhausted, _} ->
           nil
+
+        {:error, reason} ->
+          raise "QuadLeapfrog stream error: #{inspect(reason)}"
       end
     end)
   end
@@ -652,43 +841,71 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       fully_bound_lookup(db, s, p, o, g)
     else
       # Plan multi-iterator strategy using plan from Section 1.1
-      case plan_iterators(pattern) do
-        {:ok, iterator_plan} ->
-          create_iterators_from_plan(db, components, iterator_plan)
-
-        {:error, _reason} = error ->
-          error
-      end
+      {:ok, iterator_plan} = plan_iterators(pattern)
+      create_iterators_from_plan(db, components, iterator_plan)
     end
   end
 
   # Creates multiple iterators from an iterator plan
   # Section 1.2: Create one iterator per variable position
+  # Section 2.1.1: Order iterators by selectivity for performance
   defp create_iterators_from_plan(db, components, iterator_plan) do
     # Create an iterator for each entry in the plan
+    with {:ok, tagged_iterators} <- do_create_iterators_from_plan(db, components, iterator_plan) do
+      # Section 2.1.1: Order iterators by selectivity (bound components first)
+      ordered_iterators = order_iterators_by_selectivity(tagged_iterators, components)
+      {:ok, ordered_iterators}
+    end
+  end
+
+  # Creates iterators from plan (internal helper)
+  defp do_create_iterators_from_plan(db, components, iterator_plan) do
     iterator_plan
-    |> Enum.map(fn {position, index, _original_depth} ->
-      component = Enum.at(components, position)
-      variable_name = extract_variable_name(component, position)
+    |> Enum.map(fn
+      {position, index, _original_depth, prefix} when is_binary(prefix) ->
+        # For 4-tuple format with prefix (3+ variable case)
+        component = Enum.at(components, position)
+        variable_name = extract_variable_name(component, position)
 
-      # Build position-specific prefix for this index
-      {prefix, level} = build_prefix_for_index(components, position, index)
+        # Create iterator with specified prefix at level 3
+        case QuadTrieIterator.new(db, index, prefix, 3) do
+          {:ok, iter} ->
+            # Tag the iterator with metadata for binding extraction
+            {:ok,
+             %{
+               iterator: iter,
+               variable_name: variable_name,
+               position: position,
+               index: index
+             }}
 
-      # Create the iterator at the specified position
-      case QuadTrieIterator.new(db, index, prefix, level) do
-        {:ok, iter} ->
-          # Tag the iterator with metadata for binding extraction
-          {:ok,
-           %{
-             iterator: iter,
-             variable_name: variable_name,
-             position: position,
-             index: index
-           }}
+          {:error, reason} ->
+            {:error, reason}
+        end
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {position, index, _original_depth} ->
+        # For 3-tuple format (backward compatibility)
+        component = Enum.at(components, position)
+        variable_name = extract_variable_name(component, position)
+
+        # Build position-specific prefix for this index
+        {prefix, level} = build_prefix_for_index(components, position, index)
+
+        # Create the iterator at the specified position
+        case QuadTrieIterator.new(db, index, prefix, level) do
+          {:ok, iter} ->
+            # Tag the iterator with metadata for binding extraction
+            {:ok,
+             %{
+               iterator: iter,
+               variable_name: variable_name,
+               position: position,
+               index: index
+             }}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
     end)
     |> Enum.reduce({:ok, []}, fn
       {:ok, tagged_iter}, {:ok, acc} -> {:ok, acc ++ [tagged_iter]}
@@ -752,6 +969,40 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp components_for_index([s, p, o, g], :spog), do: [s, p, o, g]
   defp components_for_index([s, p, o, g], :posg), do: [p, o, s, g]
 
+  # Section 2.1.1: Order iterators by selectivity
+  # Bound components should come first (most selective), then order by position
+  defp order_iterators_by_selectivity(tagged_iterators, components) do
+    # Separate bound and unbound positions based on original components
+    # Bound positions are more selective and should come first
+    {bound_iterators, unbound_iterators} =
+      split_with(tagged_iterators, fn tagged ->
+        component = Enum.at(components, tagged.position)
+        bound?(component)
+      end)
+
+    # Sort bound iterators by position (lower positions typically more selective)
+    sorted_bound = Enum.sort_by(bound_iterators, & &1.position)
+
+    # Sort unbound iterators by position (consistent ordering for predictability)
+    sorted_unbound = Enum.sort_by(unbound_iterators, & &1.position)
+
+    # Combine: bound first, then unbound
+    sorted_bound ++ sorted_unbound
+  end
+
+  # Backwards-compatible split_with for older Elixir versions
+  defp split_with(enumerable, fun) do
+    enumerable
+    |> Enum.reduce({[], []}, fn item, {true_list, false_list} ->
+      if fun.(item) do
+        {[item | true_list], false_list}
+      else
+        {true_list, [item | false_list]}
+      end
+    end)
+    |> (fn {true_list, false_list} -> {Enum.reverse(true_list), Enum.reverse(false_list)} end).()
+  end
+
   # Extracts variable name from component, with fallback to position-based name
   defp extract_variable_name({:variable, name}, _position), do: name
   defp extract_variable_name(_component, position) do
@@ -791,19 +1042,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp normalize_graph_id(_), do: 0
 
   # Build prefix from bound components
-  defp build_prefix_from_components([], acc), do: IO.iodata_to_binary(:lists.reverse(acc))
-
-  defp build_prefix_from_components([component | rest], acc) do
-    value = extract_bound_value(component)
-
-    if bound?(component) do
-      build_prefix_from_components(rest, [<<value::64-big>> | acc])
-    else
-      # Stop at first unbound component
-      IO.iodata_to_binary(:lists.reverse(acc))
-    end
-  end
-
   # Extract variable names from components
   defp extract_variables(components) do
     components
@@ -835,6 +1073,18 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Extract bindings from the current match
+  defp extract_bindings(%__MODULE__{leapfrog: nil, pattern: pattern, tagged_iterators: [single_iter]} = qlf) do
+    # Direct scan case: extract bindings from the single iterator
+    case QuadTrieIterator.current_key(single_iter.iterator) do
+      {:ok, key} ->
+        bindings = extract_all_bindings_from_key(key, single_iter.index, pattern, %{})
+        %{qlf | bindings: bindings}
+
+      :exhausted ->
+        %{qlf | bindings: %{}}
+    end
+  end
+
   defp extract_bindings(%__MODULE__{leapfrog: lf, pattern: pattern, tagged_iterators: tagged_iterators} = qlf) do
     case Leapfrog.current(lf) do
       :exhausted ->
@@ -865,6 +1115,11 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
         %{qlf | bindings: bindings}
     end
+  end
+
+  defp unfold_quad_bindings(%__MODULE__{leapfrog: nil, bindings: bindings} = searched_lf) do
+    # Fully-bound pattern: yield empty binding once
+    {bindings, searched_lf}
   end
 
   defp unfold_quad_bindings(searched_lf) do
@@ -922,24 +1177,100 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     |> add_bound_component(o_pat, "o")
     |> add_bound_component(g_pat, "g")
 
-    # Extract bindings from each iterator based on its position and index
-    Enum.reduce(tagged_iterators, initial_bindings, fn tagged, bindings ->
-      case tagged do
-        %{iterator: %QuadTrieIterator{} = iter, position: position, variable_name: var_name, index: index} ->
-          case QuadTrieIterator.current_key(iter) do
-            {:ok, key} ->
-              # Decode key based on the iterator's index
-              value = extract_value_from_key(key, position, index)
-              Map.put(bindings, var_name, value)
+    # Check if we have a single iterator for 4-variable pattern (full scan case)
+    if length(tagged_iterators) == 1 and
+         variable?(s_pat) and variable?(p_pat) and variable?(o_pat) and variable?(g_pat) do
+      # Single iterator, all variables: extract all 4 components from the key
+      [%{iterator: %QuadTrieIterator{} = iter, index: index}] = tagged_iterators
 
-            :exhausted ->
-              bindings
-          end
+      case QuadTrieIterator.current_key(iter) do
+        {:ok, key} ->
+          extract_all_bindings_from_key(key, index, pattern, initial_bindings)
 
-        _ ->
-          bindings
+        :exhausted ->
+          initial_bindings
       end
-    end)
+    else
+      # Extract bindings from each iterator based on its position and index
+      Enum.reduce(tagged_iterators, initial_bindings, fn tagged, bindings ->
+        case tagged do
+          %{iterator: %QuadTrieIterator{} = iter, position: position, variable_name: var_name, index: index} ->
+            case QuadTrieIterator.current_key(iter) do
+              {:ok, key} ->
+                # Decode key based on the iterator's index
+                value = extract_value_from_key(key, position, index)
+                Map.put(bindings, var_name, value)
+
+              :exhausted ->
+                bindings
+            end
+
+          _ ->
+            bindings
+        end
+      end)
+    end
+  end
+
+  # Extract all 4 bindings from a single quad key
+  # Pattern tuple is {:quad, s, p, o, g}, so positions are: 0=s, 1=p, 2=o, 3=g
+  defp extract_all_bindings_from_key(<<g::64-big, s::64-big, p::64-big, o::64-big>>, :gspo, pattern, initial) do
+    initial
+    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
+    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
+    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
+  end
+
+  defp extract_all_bindings_from_key(<<g::64-big, p::64-big, o::64-big, s::64-big>>, :gpos, pattern, initial) do
+    initial
+    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
+    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
+    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
+  end
+
+  defp extract_all_bindings_from_key(<<s::64-big, p::64-big, o::64-big, g::64-big>>, :spog, pattern, initial) do
+    initial
+    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
+    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
+    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
+    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+  end
+
+  defp extract_all_bindings_from_key(<<p::64-big, o::64-big, s::64-big, g::64-big>>, :posg, pattern, initial) do
+    initial
+    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
+    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
+    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
+    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+  end
+
+  defp add_variable_binding(bindings, pattern, position, value, _default_name) do
+    {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
+    component = Enum.at([s_pat, p_pat, o_pat, g_pat], position)
+
+    case component do
+      {:variable, name} when is_binary(name) ->
+        Map.put(bindings, String.to_atom(name), value)
+
+      {:variable, "_"} ->
+        bindings  # Don't bind anonymous variables
+
+      bound_value when is_integer(bound_value) ->
+        # For bound components, add to bindings with the position-based name
+        # This allows tests to verify bound values
+        pos_name = case position do
+          0 -> "s"
+          1 -> "p"
+          2 -> "o"
+          3 -> "g"
+        end
+        Map.put(bindings, String.to_atom(pos_name), bound_value)
+
+      _ ->
+        bindings  # Other cases
+    end
   end
 
   # Extract value from key based on position and index
@@ -1008,6 +1339,54 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Helper for stream: search if not at match, otherwise advance then search
+  # Must put more specific clauses first
+  defp search_or_next(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], advanced: false} = qlf) do
+    # Direct scan case: yield current position first, then advance on next call
+    case QuadTrieIterator.current(single_iter.iterator) do
+      {:ok, _value} ->
+        qlf = extract_bindings(qlf)
+        {:ok, %{qlf | advanced: true}}
+
+      :exhausted ->
+        {:exhausted, %{qlf | bindings: %{}}}
+    end
+  end
+
+  defp search_or_next(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter]} = qlf) do
+    # Direct scan case: advance to next quad by iterating to the next key
+    # We use iterator_next directly instead of next() which does seeks
+    case ErlangAdapter.iterator_next(single_iter.iterator.iter_ref) do
+      {:ok, key, _value} ->
+        # Update the iterator state
+        iter = %{
+          single_iter.iterator |
+          current_key: key,
+          current_value: QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
+          exhausted: false
+        }
+        updated_iter = %{single_iter | iterator: iter}
+        updated_qlf = %{qlf | tagged_iterators: [updated_iter]}
+        updated_qlf = extract_bindings(updated_qlf)
+        {:ok, updated_qlf}
+
+      :iterator_end ->
+        {:exhausted, %{qlf | bindings: %{}}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp search_or_next(%__MODULE__{leapfrog: nil, yielded: false} = qlf) do
+    # Fully-bound pattern: yield once, then exhaust
+    {:ok, %{qlf | yielded: true}}
+  end
+
+  defp search_or_next(%__MODULE__{leapfrog: nil, yielded: true} = qlf) do
+    # Fully-bound pattern: already yielded, now exhausted
+    {:exhausted, qlf}
+  end
+
   defp search_or_next(%__MODULE__{} = qlf) do
     case Leapfrog.current(qlf.leapfrog) do
       {:ok, _value} ->

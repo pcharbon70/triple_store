@@ -162,10 +162,13 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.Index
   alias TripleStore.Index.NumericRange
   alias TripleStore.Index.SubjectCache
+  alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Expression
+  alias TripleStore.SPARQL.Leapfrog.QuadLeapfrog
   alias TripleStore.SPARQL.Optimizer
   alias TripleStore.SPARQL.PropertyPath
+  alias TripleStore.SPARQL.QuadPatternRecognition
   alias TripleStore.SPARQL.Term
   alias TripleStore.SPARQL.Validation
 
@@ -1001,55 +1004,151 @@ defmodule TripleStore.SPARQL.Executor do
     # This function should only be called for quad stores
     {:ok, true} = ErlangAdapter.is_quad_store?(ctx.db)
 
-    %{db: db, dict_manager: dict_manager} = ctx
+    %{db: _db, dict_manager: dict_manager} = ctx
 
-    # Substitute bound variables and encode terms for all 4 positions
+    # Convert SPARQL terms to index patterns for analysis
     with {:ok, s_pattern} <- term_to_index_pattern(s, binding, dict_manager),
          {:ok, p_pattern} <- term_to_index_pattern(p, binding, dict_manager),
          {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
          {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
-      # Check if any bound term was not found in the dictionary
-      if has_not_found?([s_pattern, p_pattern, o_pattern, g_pattern]) do
-        {:ok, empty_stream()}
+      # Build quad pattern for analysis
+      quad_pattern = build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern)
+
+      # Decide whether to use multi-iterator or single-iterator approach
+      if should_use_multi_iterator?(ctx, quad_pattern) do
+        execute_quad_with_multi_iterator(ctx, binding, quad_pattern, s, p, o, g)
       else
-        # Build quad index pattern for QuadOperations
-        # Pattern tuple contains :bound or :var for each position
-        quad_pattern = {
-          pattern_type(s_pattern),
-          pattern_type(p_pattern),
-          pattern_type(o_pattern),
-          pattern_type(g_pattern)
-        }
+        execute_quad_with_single_iterator(ctx, binding, quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern)
+      end
+    end
+  end
 
-        # Extract values map (only for :bound positions)
-        values = %{
-          s: value_from_pattern(s_pattern),
-          p: value_from_pattern(p_pattern),
-          o: value_from_pattern(o_pattern),
-          g: value_from_pattern(g_pattern)
-        }
+  # Build a quad pattern tuple from individual patterns
+  defp build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern) do
+    {:quad,
+      pattern_to_component(s_pattern),
+      pattern_to_component(p_pattern),
+      pattern_to_component(o_pattern),
+      pattern_to_component(g_pattern)}
+  end
 
-        # Use QuadOperations for quad lookup
-        # lookup_quads returns [quad()] (Telemetry.span unwraps the {result, metadata} tuple)
-        quads = QuadOperations.lookup_quads(db, quad_pattern, values)
+  # Convert term pattern to component format for analysis
+  defp pattern_to_component(pattern) do
+    case pattern do
+      {:bound, id} -> {:bound, id}
+      :var -> {:variable, "_"}
+    end
+  end
 
-        case quads do
-          [] ->
-            # No matches
-            {:ok, empty_stream()}
+  # Determine if a quad pattern should use multi-iterator execution
+  defp should_use_multi_iterator?(ctx, quad_pattern) do
+    # Get stats for cost estimation
+    stats = get_statistics(ctx)
 
-          quads when is_list(quads) ->
-            # Convert matching quads to bindings
-            quad_pattern = {s, p, o, g}
+    # Use QuadPatternRecognition to make decision
+    QuadPatternRecognition.should_use_multi_iterator?(quad_pattern, stats)
+  end
 
-            binding_stream =
-              Stream.flat_map(
-                quads,
-                &bindings_from_quad_match(binding, quad_pattern, &1, dict_manager)
-              )
+  # Execute quad pattern using multi-iterator (QuadLeapfrog)
+  defp execute_quad_with_multi_iterator(ctx, binding, _quad_pattern, s, p, o, g) do
+    %{db: db, dict_manager: dict_manager} = ctx
 
-            {:ok, binding_stream}
-        end
+    # Build QuadLeapfrog pattern format
+    lf_pattern = build_leapfrog_pattern(s, p, o, g, binding, dict_manager)
+
+    case QuadLeapfrog.from_pattern(db, lf_pattern) do
+      {:ok, lf} ->
+        # Convert QuadLeapfrog stream to binding stream
+        binding_stream =
+          QuadLeapfrog.stream(lf)
+          |> Stream.map(fn lf_bindings ->
+            Map.merge(binding, convert_leapfrog_bindings(lf_bindings))
+          end)
+
+        {:ok, binding_stream}
+
+      {:error, _reason} ->
+        # Fall back to single iterator on error
+        execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+    end
+  rescue
+    _e ->
+      # On any error, fall back to single iterator
+      execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+  end
+
+  # Build a QuadLeapfrog pattern from SPARQL terms
+  defp build_leapfrog_pattern(s, p, o, g, binding, dict_manager) do
+    s_comp = term_to_leapfrog_component(s, binding, dict_manager)
+    p_comp = term_to_leapfrog_component(p, binding, dict_manager)
+    o_comp = term_to_leapfrog_component(o, binding, dict_manager)
+    g_comp = term_to_leapfrog_component(g, binding, dict_manager)
+
+    {:quad, s_comp, p_comp, o_comp, g_comp}
+  end
+
+  # Convert a SPARQL term to QuadLeapfrog component format
+  defp term_to_leapfrog_component({:variable, var_name}, _binding, _dict_manager) do
+    {:variable, var_name}
+  end
+
+  defp term_to_leapfrog_component(term, _binding, dict_manager) do
+    case Term.encode(term, dict_manager) do
+      {:ok, id} -> {:bound, id}
+      {:error, :not_found} -> {:bound, nil}
+    end
+  end
+
+  # Convert QuadLeapfrog bindings to executor binding format
+  defp convert_leapfrog_bindings(lf_bindings) do
+    Enum.map(lf_bindings, fn
+      {:variable, name} -> {name, nil}
+      {:bound, _id} = bound -> bound
+    end)
+    |> Enum.into(%{})
+  end
+
+  # Execute quad pattern using single iterator (existing logic)
+  defp execute_quad_with_single_iterator(ctx, binding, _quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern) do
+    %{db: db, dict_manager: dict_manager} = ctx
+
+    # Check if any bound term was not found in the dictionary
+    if has_not_found?([s_pattern, p_pattern, o_pattern, g_pattern]) do
+      {:ok, empty_stream()}
+    else
+      # Build quad index pattern for QuadOperations
+      quad_pattern = {
+        pattern_type(s_pattern),
+        pattern_type(p_pattern),
+        pattern_type(o_pattern),
+        pattern_type(g_pattern)
+      }
+
+      # Extract values map (only for :bound positions)
+      values = %{
+        s: value_from_pattern(s_pattern),
+        p: value_from_pattern(p_pattern),
+        o: value_from_pattern(o_pattern),
+        g: value_from_pattern(g_pattern)
+      }
+
+      # Use QuadOperations for quad lookup
+      quads = QuadOperations.lookup_quads(db, quad_pattern, values)
+
+      case quads do
+        [] ->
+          {:ok, empty_stream()}
+
+        quads when is_list(quads) ->
+          quad_pattern = {s, p, o, g}
+
+          binding_stream =
+            Stream.flat_map(
+              quads,
+              &bindings_from_quad_match(binding, quad_pattern, &1, dict_manager)
+            )
+
+          {:ok, binding_stream}
       end
     end
   end
@@ -1061,6 +1160,27 @@ defmodule TripleStore.SPARQL.Executor do
   # Extract value from bound pattern, return nil for var
   defp value_from_pattern({:bound, id}), do: id
   defp value_from_pattern(:var), do: nil
+
+  # Fallback for multi-iterator failures - uses simpler single-iterator approach
+  defp execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g) do
+    %{dict_manager: dict_manager} = ctx
+
+    with {:ok, s_pattern} <- term_to_index_pattern(s, binding, dict_manager),
+         {:ok, p_pattern} <- term_to_index_pattern(p, binding, dict_manager),
+         {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
+         {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
+      quad_pattern = build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern)
+      execute_quad_with_single_iterator(ctx, binding, quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern)
+    end
+  end
+
+  # Get statistics for cost estimation
+  defp get_statistics(ctx) do
+    case Map.get(ctx, :statistics) do
+      nil -> %{}
+      stats when is_map(stats) -> stats
+    end
+  end
 
   # Check if this pattern can use a range index
   # Returns {:use_range_index, predicate_id, var_name, min, max} or :use_regular_index

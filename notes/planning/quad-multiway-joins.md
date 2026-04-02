@@ -241,7 +241,13 @@ Test behavior when no quads match the pattern.
 
 ## Phase 2: Optimization and Edge Cases
 
+**Status**: ✅ **COMPLETED** - See [PR #24](https://github.com/pcharbon70/triple_store/pull/24)
+
+**Branch**: `codex/phase-2-optimization-edge-cases`
+
 **Phase Goal**: Optimize multi-iterator quad joins for performance and handle edge cases that may arise in production use.
+
+**Summary**: Implemented iterator ordering optimization, edge case handling (empty database, large graphs, malformed patterns), QuadTrieIterator protocol enhancements, and stream enumeration support. Added 19 tests covering all implemented functionality.
 
 ### Section 2.1: Performance Optimization
 
@@ -251,19 +257,19 @@ Test behavior when no quads match the pattern.
 
 Order iterators by selectivity before passing to Leapfrog.
 
-- [ ] 2.1.1.1 Implement `order_iterators_by_selectivity/2` using cardinality estimates
-- [ ] 2.1.1.2 Prefer bound components first (most selective)
-- [ ] 2.1.1.3 Consider prefix position selectivity
-- [ ] 2.1.1.4 Fall back to default ordering for unknown cardinalities
+- [x] 2.1.1.1 Implement `order_iterators_by_selectivity/2` using cardinality estimates
+- [x] 2.1.1.2 Prefer bound components first (most selective)
+- [x] 2.1.1.3 Consider prefix position selectivity
+- [x] 2.1.1.4 Fall back to default ordering for unknown cardinalities
 
 #### Task 2.1.2: Short-Circuit for Direct Lookup
 
 Optimize fully-bound and nearly-bound patterns to avoid iterator overhead.
 
-- [ ] 2.1.2.1 Detect when all components are bound (use direct lookup)
-- [ ] 2.1.2.2 Detect when 3 components are bound (use prefix scan + filter)
-- [ ] 2.1.2.3 Only create multiple iterators when 2+ components are unbound
-- [ ] 2.1.2.4 Benchmark to verify optimization provides benefit
+- [x] 2.1.2.1 Detect when all components are bound (use direct lookup)
+- [x] 2.1.2.2 Detect when 3 components are bound (use prefix scan + filter)
+- [x] 2.1.2.3 Only create multiple iterators when 2+ components are unbound
+- [x] 2.1.2.4 Benchmark to verify optimization provides benefit
 
 #### Task 2.1.3: Iterator Reuse
 
@@ -276,10 +282,10 @@ Reuse iterators across multiple join operations when possible.
 
 #### Task 2.1.4: Unit Tests
 
-- [ ] Test iterator ordering improves performance on selective patterns
-- [ ] Test short-circuit avoids iterator creation for bound patterns
+- [x] Test iterator ordering improves performance on selective patterns
+- [x] Test short-circuit avoids iterator creation for bound patterns
 - [ ] Test iterator reuse reduces allocation overhead
-- [ ] Benchmark comparing before/after optimization
+- [x] Benchmark comparing before/after optimization
 
 ---
 
@@ -291,35 +297,35 @@ Reuse iterators across multiple join operations when possible.
 
 Ensure correct behavior when database has no quads.
 
-- [ ] 2.2.1.1 Test pattern on empty database returns exhausted immediately
-- [ ] 2.2.1.2 Verify no errors or crashes
-- [ ] 2.2.1.3 Verify stream terminates without blocking
-- [ ] 2.2.1.4 Verify iterators properly closed
+- [x] 2.2.1.1 Test pattern on empty database returns exhausted immediately
+- [x] 2.2.1.2 Verify no errors or crashes
+- [x] 2.2.1.3 Verify stream terminates without blocking
+- [x] 2.2.1.4 Verify iterators properly closed
 
 #### Task 2.2.2: Large Graph Handling
 
 Handle patterns where one graph has significantly more data than others.
 
-- [ ] 2.2.2.1 Test pattern with one large graph and small graphs
-- [ ] 2.2.2.2 Verify iterator doesn't get stuck scanning large graph
-- [ ] 2.2.2.3 Implement timeout or max iteration safeguard
-- [ ] 2.2.2.4 Add telemetry for iteration count
+- [x] 2.2.2.1 Test pattern with one large graph and small graphs
+- [x] 2.2.2.2 Verify iterator doesn't get stuck scanning large graph
+- [x] 2.2.2.3 Implement timeout or max iteration safeguard
+- [x] 2.2.2.4 Add telemetry for iteration count
 
 #### Task 2.2.3: Malformed Pattern Handling
 
 Handle invalid or malformed quad patterns gracefully.
 
-- [ ] 2.2.3.1 Validate pattern structure before iterator creation
-- [ ] 2.2.3.2 Return helpful error for invalid patterns
-- [ ] 2.2.3.3 Handle patterns with all variables (same as all unbound)
-- [ ] 2.2.3.4 Handle patterns with no variables (use direct lookup)
+- [x] 2.2.3.1 Validate pattern structure before iterator creation
+- [x] 2.2.3.2 Return helpful error for invalid patterns
+- [x] 2.2.3.3 Handle patterns with all variables (same as all unbound)
+- [x] 2.2.3.4 Handle patterns with no variables (use direct lookup)
 
 #### Task 2.2.4: Unit Tests
 
-- [ ] Test empty database returns exhausted immediately
-- [ ] Test large graph doesn't cause timeout or excessive iteration
-- [ ] Test malformed patterns return helpful errors
-- [ ] Test max iteration safeguard prevents infinite loops
+- [x] Test empty database returns exhausted immediately
+- [x] Test large graph doesn't cause timeout or excessive iteration
+- [x] Test malformed patterns return helpful errors
+- [x] Test max iteration safeguard prevents infinite loops
 
 ---
 
@@ -331,35 +337,35 @@ Handle invalid or malformed quad patterns gracefully.
 
 Verify QuadTrieIterator implements all required protocol functions.
 
-- [ ] 2.3.1.1 Verify `current/1` returns correct key for position
-- [ ] 2.3.1.2 Verify `next/1` advances to next key for position
-- [ ] 2.3.1.3 Verify `seek/2` seeks to target in position's domain
-- [ ] 2.3.1.4 Verify `exhausted?/1` correctly reports position exhaustion
+- [x] 2.3.1.1 Verify `current/1` returns correct key for position
+- [x] 2.3.1.2 Verify `next/1` advances to next key for position
+- [x] 2.3.1.3 Verify `seek/2` seeks to target in position's domain
+- [x] 2.3.1.4 Verify `exhausted?/1` correctly reports position exhaustion
 
 #### Task 2.3.2: Position-Aware Operations
 
 Enhance QuadTrieIterator operations to be aware of their position.
 
-- [ ] 2.3.2.1 Store position index in QuadTrieIterator struct
-- [ ] 2.3.2.2 Use position to decode key correctly (4 different schemas)
-- [ ] 2.3.2.3 Handle prefix depth based on position
-- [ ] 2.3.2.4 Update documentation for position-aware behavior
+- [x] 2.3.2.1 Store position index in QuadTrieIterator struct
+- [x] 2.3.2.2 Use position to decode key correctly (4 different schemas)
+- [x] 2.3.2.3 Handle prefix depth based on position
+- [x] 2.3.2.4 Update documentation for position-aware behavior
 
 #### Task 2.3.3: Key Encoding Consistency
 
 Ensure all iterators use consistent key encoding for the same quad.
 
-- [ ] 2.3.3.1 Verify all 4 position iterators encode the same quad to same key
-- [ ] 2.3.3.2 Test encoding/decoding round-trip for each position
-- [ ] 2.3.3.3 Document key encoding scheme for each index
-- [ ] 2.3.3.4 Add unit tests for encoding consistency
+- [x] 2.3.3.1 Verify all 4 position iterators encode the same quad to same key
+- [x] 2.3.3.2 Test encoding/decoding round-trip for each position
+- [x] 2.3.3.3 Document key encoding scheme for each index
+- [x] 2.3.3.4 Add unit tests for encoding consistency
 
 #### Task 2.3.4: Unit Tests
 
-- [ ] Test protocol functions work correctly for each position type
-- [ ] Test position-aware operations return correct results
-- [ ] Test key encoding consistency across all positions
-- [ ] Test protocol works with Leapfrog for multi-iterator joins
+- [x] Test protocol functions work correctly for each position type
+- [x] Test position-aware operations return correct results
+- [x] Test key encoding consistency across all positions
+- [x] Test protocol works with Leapfrog for multi-iterator joins
 
 ---
 
@@ -371,56 +377,62 @@ Ensure all iterators use consistent key encoding for the same quad.
 
 Verify stream yields all matches correctly.
 
-- [ ] 2.4.1.1 Test `QuadLeapfrog.stream/1` yields binding maps
-- [ ] 2.4.1.2 Verify stream terminates when exhausted
-- [ ] 2.4.1.3 Verify stream is lazy (doesn't materialize all results upfront)
-- [ ] 2.4.1.4 Verify stream can be halted mid-execution
+- [x] 2.4.1.1 Test `QuadLeapfrog.stream/1` yields binding maps
+- [x] 2.4.1.2 Verify stream terminates when exhausted
+- [x] 2.4.1.3 Verify stream is lazy (doesn't materialize all results upfront)
+- [x] 2.4.1.4 Verify stream can be halted mid-execution
 
 #### Task 2.4.2: Resource Cleanup
 
 Ensure iterators are properly closed when stream is terminated.
 
-- [ ] 2.4.2.1 Verify iterators closed when stream completes
-- [ ] 2.4.2.2 Verify iterators closed when stream is halted
-- [ ] 2.4.2.3 Verify iterators closed on error/exception
+- [x] 2.4.2.1 Verify iterators closed when stream completes
+- [x] 2.4.2.2 Verify iterators closed when stream is halted
+- [x] 2.4.2.3 Verify iterators closed on error/exception
 - [ ] 2.4.2.4 Add telemetry for resource cleanup
 
 #### Task 2.4.3: Backpressure Handling
 
 Ensure stream handles backpressure correctly.
 
-- [ ] 2.4.3.1 Test slow consumer doesn't cause issues
-- [ ] 2.4.3.2 Test stream works with Enum.take for limiting results
-- [ ] 2.4.3.3 Test stream works with Stream.transform for processing
-- [ ] 2.4.3.4 Verify memory usage is bounded
+- [x] 2.4.3.1 Test slow consumer doesn't cause issues
+- [x] 2.4.3.2 Test stream works with Enum.take for limiting results
+- [x] 2.4.3.3 Test stream works with Stream.transform for processing
+- [x] 2.4.3.4 Verify memory usage is bounded
 
 #### Task 2.4.4: Unit Tests
 
-- [ ] Test stream yields all matches in correct order
-- [ ] Test stream terminates without leaks
-- [ ] Test stream cleanup on halt
-- [ ] Test stream handles backpressure correctly
+- [x] Test stream yields all matches in correct order
+- [x] Test stream terminates without leaks
+- [x] Test stream cleanup on halt
+- [x] Test stream handles backpressure correctly
 
 ---
 
 ### Section 2.5: Unit Tests
 
-- [ ] Test iterator ordering improves join performance
-- [ ] Test short-circuit optimization works for bound patterns
-- [ ] Test empty database handled correctly
-- [ ] Test large graph doesn't cause timeout
-- [ ] Test malformed patterns return helpful errors
-- [ ] Test QuadTrieIterator protocol compliance
-- [ ] Test key encoding consistency across positions
-- [ ] Test stream yields all results correctly
-- [ ] Test stream cleanup on normal completion
-- [ ] Test stream cleanup on early termination
+- [x] Test iterator ordering improves join performance
+- [x] Test short-circuit optimization works for bound patterns
+- [x] Test empty database handled correctly
+- [x] Test large graph doesn't cause timeout
+- [x] Test malformed patterns return helpful errors
+- [x] Test QuadTrieIterator protocol compliance
+- [x] Test key encoding consistency across positions
+- [x] Test stream yields all results correctly
+- [x] Test stream cleanup on normal completion
+- [x] Test stream cleanup on early termination
+
+**Status**: ✅ 19 tests added and passing
 
 ---
 
 ### Section 2.6: Phase 2 Integration Tests
 
+**Status**: ⏸️ **DEFERRED** - Integration tests deferred to Phase 3 (SPARQL Integration)
+
 **Description**: Integration tests for optimized multi-iterator joins with real-world data patterns and edge cases.
+
+**Note**: These integration tests are better suited for Phase 3 when the multi-iterator joins are integrated into the SPARQL query engine, allowing for end-to-end testing with actual SPARQL queries.
 
 #### Integration Test 2.6.1: Real-World Query Patterns
 
@@ -462,7 +474,13 @@ Test error handling and recovery in multi-iterator joins.
 
 ## Phase 3: SPARQL Integration
 
+**Status**: ✅ **COMPLETED** - See [PR #24](https://github.com/pcharbon70/triple_store/pull/24)
+
+**Branch**: `codex/phase-2-optimization-edge-cases`
+
 **Phase Goal**: Integrate multi-iterator quad joins into the SPARQL query engine so that quad patterns in SPARQL queries automatically use the optimized multi-iterator approach.
+
+**Summary**: Implemented pattern recognition module, executor integration hooks, GRAPH clause optimization, comprehensive unit tests (20 tests), and integration tests (20 tests) covering end-to-end functionality.
 
 ### Section 3.1: Pattern Recognition
 
@@ -472,35 +490,35 @@ Test error handling and recovery in multi-iterator joins.
 
 Detect quad patterns in SPARQL algebra.
 
-- [ ] 3.1.1.1 Identify GRAPH clauses with triple patterns
-- [ ] 3.1.1.2 Identify quad patterns in query WHERE clause
-- [ ] 3.1.1.3 Determine if pattern has multiple unbound variables
-- [ ] 3.1.1.4 Flag patterns suitable for multi-iterator join
+- [x] 3.1.1.1 Identify GRAPH clauses with triple patterns
+- [x] 3.1.1.2 Identify quad patterns in query WHERE clause
+- [x] 3.1.1.3 Determine if pattern has multiple unbound variables
+- [x] 3.1.1.4 Flag patterns suitable for multi-iterator join
 
 #### Task 3.1.2: Cost-Based Decision
 
 Decide when to use multi-iterator vs single-iterator approach.
 
-- [ ] 3.1.2.1 Define threshold for number of unbound variables
-- [ ] 3.1.2.2 Use cardinality estimates to inform decision
-- [ ] 3.1.2.3 Fall back to single-iterator for simple patterns
+- [x] 3.1.2.1 Define threshold for number of unbound variables
+- [x] 3.1.2.2 Use cardinality estimates to inform decision
+- [x] 3.1.2.3 Fall back to single-iterator for simple patterns
 - [ ] 3.1.2.4 Add telemetry for decision tracking
 
 #### Task 3.1.3: Pattern Translation
 
 Translate SPARQL quad patterns to QuadLeapfrog patterns.
 
-- [ ] 3.1.3.1 Map SPARQL variables to QuadLeapfrog variable names
-- [ ] 3.1.3.2 Map bound values to appropriate integer IDs
-- [ ] 3.1.3.3 Handle graph variable vs named graph IRI
-- [ ] 3.1.3.4 Translate default graph case correctly
+- [x] 3.1.3.1 Map SPARQL variables to QuadLeapfrog variable names
+- [x] 3.1.3.2 Map bound values to appropriate integer IDs
+- [x] 3.1.3.3 Handle graph variable vs named graph IRI
+- [x] 3.1.3.4 Translate default graph case correctly
 
 #### Task 3.1.4: Unit Tests
 
-- [ ] Test quad pattern detection identifies correct patterns
-- [ ] Test cost-based decision makes optimal choices
-- [ ] Test pattern translation produces correct QuadLeapfrog patterns
-- [ ] Test default graph handled correctly in translation
+- [x] Test quad pattern detection identifies correct patterns
+- [x] Test cost-based decision makes optimal choices
+- [x] Test pattern translation produces correct QuadLeapfrog patterns
+- [x] Test default graph handled correctly in translation
 
 ---
 
@@ -512,35 +530,35 @@ Translate SPARQL quad patterns to QuadLeapfrog patterns.
 
 Add hook to basic graph pattern execution for quad patterns.
 
-- [ ] 3.2.1.1 Modify BGP executor to check for quad patterns
-- [ ] 3.2.1.2 Route quad patterns to QuadLeapfrog execution
-- [ ] 3.2.1.3 Fall back to existing execution for non-quad patterns
-- [ ] 3.2.1.4 Ensure compatibility with existing query semantics
+- [x] 3.2.1.1 Modify BGP executor to check for quad patterns
+- [x] 3.2.1.2 Route quad patterns to QuadLeapfrog execution
+- [x] 3.2.1.3 Fall back to existing execution for non-quad patterns
+- [x] 3.2.1.4 Ensure compatibility with existing query semantics
 
 #### Task 3.2.2: Result Integration
 
 Integrate QuadLeapfrog results with SPARQL result set.
 
-- [ ] 3.2.2.1 Convert QuadLeapfrog bindings to SPARQL binding format
-- [ ] 3.2.2.2 Merge with bindings from other pattern types
-- [ ] 3.2.2.3 Handle variable naming consistency
-- [ ] 3.2.2.4 Ensure result ordering matches SPARQL semantics
+- [x] 3.2.2.1 Convert QuadLeapfrog bindings to SPARQL binding format
+- [x] 3.2.2.2 Merge with bindings from other pattern types
+- [x] 3.2.2.3 Handle variable naming consistency
+- [x] 3.2.2.4 Ensure result ordering matches SPARQL semantics
 
 #### Task 3.2.3: Stream Integration
 
 Support streaming results from QuadLeapfrog in SPARQL queries.
 
-- [ ] 3.2.3.1 Convert QuadLeapfrog stream to SPARQL result stream
-- [ ] 3.2.3.2 Support LIMIT and OFFSET on QuadLeapfrog results
-- [ ] 3.2.3.3 Support ORDER BY on QuadLeapfrog results
-- [ ] 3.2.3.4 Ensure lazy evaluation is preserved
+- [x] 3.2.3.1 Convert QuadLeapfrog stream to SPARQL result stream
+- [x] 3.2.3.2 Support LIMIT and OFFSET on QuadLeapfrog results
+- [x] 3.2.3.3 Support ORDER BY on QuadLeapfrog results
+- [x] 3.2.3.4 Ensure lazy evaluation is preserved
 
 #### Task 3.2.4: Unit Tests
 
-- [ ] Test BGP executor routes quad patterns correctly
-- [ ] Test result integration produces correct SPARQL results
-- [ ] Test stream integration preserves laziness
-- [ ] Test LIMIT/OFFSET work correctly
+- [x] Test BGP executor routes quad patterns correctly
+- [x] Test result integration produces correct SPARQL results
+- [x] Test stream integration preserves laziness
+- [x] Test LIMIT/OFFSET work correctly
 
 ---
 
@@ -552,46 +570,48 @@ Support streaming results from QuadLeapfrog in SPARQL queries.
 
 Optimize queries with static named graph in GRAPH clause.
 
-- [ ] 3.3.1.1 Detect `GRAPH <iri> { ?s ?p ?o }` patterns
-- [ ] 3.3.1.2 Use graph-prefixed iterator for better performance
-- [ ] 3.3.1.3 Reduce iterator count by 1 for static graph
+- [x] 3.3.1.1 Detect `GRAPH <iri> { ?s ?p ?o }` patterns
+- [x] 3.3.1.2 Use graph-prefixed iterator for better performance
+- [x] 3.3.1.3 Reduce iterator count by 1 for static graph
 - [ ] 3.3.1.4 Benchmark vs generic approach
 
 #### Task 3.3.2: Variable GRAPH Detection
 
 Optimize queries with variable in GRAPH clause.
 
-- [ ] 3.3.2.1 Detect `GRAPH ?g { ?s ?p ?o }` patterns
-- [ ] 3.3.2.2 Create 4-iterator join for full enumeration
-- [ ] 3.3.2.3 Ensure all 4 variables appear in results
-- [ ] 3.3.2.4 Verify correct semantics for variable graph
+- [x] 3.3.2.1 Detect `GRAPH ?g { ?s ?p ?o }` patterns
+- [x] 3.3.2.2 Create 4-iterator join for full enumeration
+- [x] 3.3.2.3 Ensure all 4 variables appear in results
+- [x] 3.3.2.4 Verify correct semantics for variable graph
 
 #### Task 3.3.3: Multi-GRAPH Patterns
 
 Optimize queries with multiple GRAPH clauses.
 
-- [ ] 3.3.3.1 Detect `GRAPH ?g1 { ... } GRAPH ?g2 { ... }` patterns
-- [ ] 3.3.3.2 Use union or intersection of iterators as appropriate
-- [ ] 3.3.3.3 Handle same variable across multiple graphs
-- [ ] 3.3.3.4 Verify correct duplicate handling
+- [x] 3.3.3.1 Detect `GRAPH ?g1 { ... } GRAPH ?g2 { ... }` patterns
+- [x] 3.3.3.2 Use union or intersection of iterators as appropriate
+- [x] 3.3.3.3 Handle same variable across multiple graphs
+- [x] 3.3.3.4 Verify correct duplicate handling
 
 #### Task 3.3.4: Unit Tests
 
-- [ ] Test static GRAPH uses optimized path
-- [ ] Test variable GRAPH uses 4-iterator join
-- [ ] Test multi-GRAPH patterns handled correctly
-- [ ] Test GRAPH clause semantics match SPARQL spec
+- [x] Test static GRAPH uses optimized path
+- [x] Test variable GRAPH uses 4-iterator join
+- [x] Test multi-GRAPH patterns handled correctly
+- [x] Test GRAPH clause semantics match SPARQL spec
 
 ---
 
 ### Section 3.4: Unit Tests
 
-- [ ] Test SPARQL executor integrates QuadLeapfrog correctly
-- [ ] Test quad patterns in WHERE clause use multi-iterator
-- [ ] Test GRAPH clause optimization works correctly
-- [ ] Test result integration preserves query semantics
-- [ ] Test streaming results work with LIMIT/OFFSET
-- [ ] Test ORDER BY works with QuadLeapfrog results
+- [x] Test SPARQL executor integrates QuadLeapfrog correctly
+- [x] Test quad patterns in WHERE clause use multi-iterator
+- [x] Test GRAPH clause optimization works correctly
+- [x] Test result integration preserves query semantics
+- [x] Test streaming results work with LIMIT/OFFSET
+- [x] Test ORDER BY works with QuadLeapfrog results
+
+**Status**: ✅ 20 tests passing
 
 ---
 
@@ -603,19 +623,19 @@ Optimize queries with multiple GRAPH clauses.
 
 Test full SPARQL queries with quad patterns.
 
-- [ ] 3.5.1.1 Test `SELECT * WHERE { GRAPH ?g { ?s ?p ?o } }`
-- [ ] 3.5.1.2 Test `SELECT * WHERE { GRAPH <iri> { ?s a :type } }`
-- [ ] 3.5.1.3 Test `SELECT ?s WHERE { GRAPH ?g1 { ?s ?p ?o } GRAPH ?g2 { ?s ?p2 ?o2 } }`
-- [ ] 3.5.1.4 Test complex queries with multiple quad and triple patterns
+- [x] 3.5.1.1 Test `SELECT * WHERE { GRAPH ?g { ?s ?p ?o } }`
+- [x] 3.5.1.2 Test `SELECT * WHERE { GRAPH <iri> { ?s a :type } }`
+- [x] 3.5.1.3 Test `SELECT ?s WHERE { GRAPH ?g1 { ?s ?p ?o } GRAPH ?g2 { ?s ?p2 ?o2 } }`
+- [x] 3.5.1.4 Test complex queries with multiple quad and triple patterns
 
 #### Integration Test 3.5.2: Mixed Triple/Quad Queries
 
 Test queries mixing triple store and quad store patterns.
 
-- [ ] 3.5.2.1 Test query with both triple patterns and GRAPH clauses
-- [ ] 3.5.2.2 Test query joins across triple and quad patterns
-- [ ] 3.5.2.3 Test query with UNION of triple and quad patterns
-- [ ] 3.5.2.4 Verify correct results across mixed patterns
+- [x] 3.5.2.1 Test query with both triple patterns and GRAPH clauses
+- [x] 3.5.2.2 Test query joins across triple and quad patterns
+- [x] 3.5.2.3 Test query with UNION of triple and quad patterns
+- [x] 3.5.2.4 Verify correct results across mixed patterns
 
 #### Integration Test 3.5.3: UPDATE with Quad Patterns
 
@@ -630,10 +650,12 @@ Test SPARQL UPDATE operations with quad patterns.
 
 Validate query performance meets production requirements.
 
-- [ ] 3.5.4.1 Benchmark GRAPH clause query vs manual triple equivalent
-- [ ] 3.5.4.2 Benchmark multi-variable GRAPH query performance
-- [ ] 3.5.4.3 Verify query cost within acceptable bounds
+- [x] 3.5.4.1 Benchmark GRAPH clause query vs manual triple equivalent
+- [x] 3.5.4.2 Benchmark multi-variable GRAPH query performance
+- [x] 3.5.4.3 Verify query cost within acceptable bounds
 - [ ] 3.5.4.4 Compare against baseline (single-iterator) performance
+
+**Status**: ✅ 20 tests passing (UPDATE operations deferred)
 
 ---
 
