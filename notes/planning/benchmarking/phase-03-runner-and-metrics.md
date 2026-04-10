@@ -36,21 +36,21 @@ Description: This section computes the summary statistics and output artifacts n
 
 Description: This task computes the timing and stability metrics used by the benchmark suite at both query and suite levels.
 
-- [ ] 3.2.1.1 Compute min, max, median, quartiles, mean, and adjusted mean for each query
-- [ ] 3.2.1.2 Compute per-suite totals for errors, timeouts, completion rate, and divergence placeholders
-- [ ] 3.2.1.3 Compute per-tier and per-suite throughput summaries where applicable
-- [ ] 3.2.1.4 Compute aggregate views grouped by workload family and query-shape category
-- [ ] 3.2.1.5 Define stable report schemas so later phases can compare results across runs
+- [x] 3.2.1.1 Compute min, max, median, quartiles, mean, and adjusted mean for each query
+- [x] 3.2.1.2 Compute per-suite totals for errors, timeouts, completion rate, and divergence placeholders
+- [x] 3.2.1.3 Compute per-tier and per-suite throughput summaries where applicable
+- [x] 3.2.1.4 Compute aggregate views grouped by workload family and query-shape category
+- [x] 3.2.1.5 Define stable report schemas so later phases can compare results across runs
 
 ### 3.2.2 Report Generation
 
 Description: This task emits the benchmark outputs in formats suitable for local inspection, automated analysis, and checked-in documentation.
 
-- [ ] 3.2.2.1 Generate JSON outputs for machine consumption and baseline comparison
-- [ ] 3.2.2.2 Generate CSV outputs for spreadsheet and notebook analysis
-- [ ] 3.2.2.3 Generate Markdown summaries aligned with existing benchmark docs in this repository
-- [ ] 3.2.2.4 Include report sections for dataset provenance, runtime configuration, and hardware metadata
-- [ ] 3.2.2.5 Add report versioning so regenerated benchmark outputs can coexist with prior baselines
+- [x] 3.2.2.1 Generate JSON outputs for machine consumption and baseline comparison
+- [x] 3.2.2.2 Generate CSV outputs for spreadsheet and notebook analysis
+- [x] 3.2.2.3 Generate Markdown summaries aligned with existing benchmark docs in this repository
+- [x] 3.2.2.4 Include report sections for dataset provenance, runtime configuration, and hardware metadata
+- [x] 3.2.2.5 Add report versioning so regenerated benchmark outputs can coexist with prior baselines
 
 ## 3.3 Integration Tests
 
