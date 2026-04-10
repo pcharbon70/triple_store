@@ -63,7 +63,7 @@ defmodule TripleStore.Benchmark.Wikidata.NormalizerTest do
     sparql = "SELECT ?person WHERE { ?person ?p ?o } ORDER BY ?person LIMIT 100"
 
     assert Normalizer.apply_execution_variant(sparql, :count_only) ==
-             "SELECT (COUNT(*) AS ?count) WHERE { ?person ?p ?o }"
+             "SELECT (COUNT(?person) AS ?count) WHERE { ?person ?p ?o }"
 
     assert Normalizer.apply_execution_variant(
              "SELECT ?person WHERE { ?person ?p ?o }",

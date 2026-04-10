@@ -33,16 +33,21 @@ defmodule TripleStore.Benchmark.Wikidata.Normalizer do
   def apply_execution_variant(sparql, :raw), do: sparql
 
   def apply_execution_variant(sparql, :count_only) when is_binary(sparql) do
-    sparql
-    |> strip_terminal_modifiers()
-    |> then(fn stripped ->
-      Regex.replace(
-        ~r/\bSELECT\b\s+(?:DISTINCT\s+)?(?:REDUCED\s+)?(.+?)\bWHERE\b/si,
-        stripped,
-        "SELECT (COUNT(*) AS ?count) WHERE",
-        global: false
-      )
-    end)
+    stripped = strip_terminal_modifiers(sparql)
+
+    count_target =
+      stripped
+      |> select_projection()
+      |> first_projected_variable()
+
+    replacement = "SELECT (COUNT(#{count_target}) AS ?count) WHERE"
+
+    Regex.replace(
+      ~r/\bSELECT\b\s+(?:DISTINCT\s+)?(?:REDUCED\s+)?(.+?)\bWHERE\b/si,
+      stripped,
+      replacement,
+      global: false
+    )
     |> String.trim()
   end
 
@@ -139,6 +144,24 @@ defmodule TripleStore.Benchmark.Wikidata.Normalizer do
 
   defp strip_terminal_modifiers(sparql) do
     Regex.replace(~r/\n?(ORDER BY|LIMIT|OFFSET)\b.*$/si, sparql, "")
+  end
+
+  defp select_projection(sparql) do
+    case Regex.run(
+           ~r/\bSELECT\b\s+(?:DISTINCT\s+)?(?:REDUCED\s+)?(.+?)\bWHERE\b/si,
+           sparql,
+           capture: :all_but_first
+         ) do
+      [projection] -> projection
+      _ -> ""
+    end
+  end
+
+  defp first_projected_variable(projection) do
+    case Regex.run(~r/\?[A-Za-z_][A-Za-z0-9_]*/, projection) do
+      [variable] -> variable
+      _ -> "*"
+    end
   end
 
   defp compact_blank_lines(sparql) do
