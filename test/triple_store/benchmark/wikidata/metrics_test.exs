@@ -21,18 +21,23 @@ defmodule TripleStore.Benchmark.Wikidata.MetricsTest do
       assert report.overall_summary.total_successes == 3
       assert report.overall_summary.total_failures == 3
       assert report.overall_summary.completion_rate == 0.5
-      assert report.overall_summary.divergence_status == :not_evaluated
+      assert report.overall_summary.divergence_status == :accepted_divergence
 
       first_query = Enum.find(report.query_summaries, &(&1.benchmark_id == "wgpb-1"))
       assert first_query.raw_timing_summary.mean_us == 200.0
       assert first_query.adjusted_timing_summary.median_us == 200.0
       assert first_query.throughput.raw_queries_per_sec == 5_000.0
       assert first_query.error_totals.timeout == 0
+      assert first_query.divergence_status == :match
+      assert first_query.answer_fingerprint == "answer-wgpb-1"
 
       timeout_query = Enum.find(report.query_summaries, &(&1.benchmark_id == "wgpb-2"))
       assert timeout_query.error_totals.timeout == 1
       assert timeout_query.partial_failure_class == :flaky_run
       assert timeout_query.adjusted_timing_summary.mean_us == 700.0
+      assert timeout_query.divergence_status == :accepted_divergence
+      assert timeout_query.divergence_classification == :paths
+      assert timeout_query.accepted_divergence
 
       wgpb_summary = Enum.find(report.suite_summaries, &(&1.group_key == :wgpb))
       assert wgpb_summary.query_count == 2
@@ -40,6 +45,9 @@ defmodule TripleStore.Benchmark.Wikidata.MetricsTest do
       assert wgpb_summary.total_failures == 1
       assert wgpb_summary.completion_rate == 0.75
       assert wgpb_summary.error_totals.timeout == 1
+      assert wgpb_summary.accepted_divergence_count == 1
+      assert wgpb_summary.divergence_count == 2
+      assert wgpb_summary.divergence_breakdown.paths == 1
 
       shape_summary = Enum.find(report.aggregates.by_query_shape, &(&1.group_key == :unknown))
       assert shape_summary.query_count == 1
@@ -121,6 +129,18 @@ defmodule TripleStore.Benchmark.Wikidata.MetricsTest do
           result_count: 1,
           failure_count: 0,
           penalty_count: 0,
+          answer_record: %{fingerprint: "answer-wgpb-1", row_count: 1},
+          correctness: %{
+            status: :match,
+            classification: nil,
+            accepted: false,
+            answer_fingerprint: "answer-wgpb-1",
+            reference_fingerprint: "reference-wgpb-1",
+            actual_row_count: 1,
+            reference_row_count: 1,
+            divergence_count: 0,
+            exemplars: []
+          },
           partial_failure_class: :none,
           failures: [],
           template_metadata: nil
@@ -155,6 +175,18 @@ defmodule TripleStore.Benchmark.Wikidata.MetricsTest do
           result_count: 2,
           failure_count: 1,
           penalty_count: 1,
+          answer_record: %{fingerprint: "answer-wgpb-2", row_count: 2},
+          correctness: %{
+            status: :accepted_divergence,
+            classification: :paths,
+            accepted: true,
+            answer_fingerprint: "answer-wgpb-2",
+            reference_fingerprint: "reference-wgpb-2",
+            actual_row_count: 2,
+            reference_row_count: 1,
+            divergence_count: 2,
+            exemplars: [%{type: :unexpected, row: "row-1"}]
+          },
           partial_failure_class: :flaky_run,
           failures: [%{iteration: 2, class: :timeout}],
           template_metadata: nil
@@ -189,6 +221,8 @@ defmodule TripleStore.Benchmark.Wikidata.MetricsTest do
           result_count: nil,
           failure_count: 2,
           penalty_count: 2,
+          answer_record: nil,
+          correctness: nil,
           partial_failure_class: :hard_incompatibility,
           failures: [%{iteration: 1, class: :parse_error}, %{iteration: 2, class: :parse_error}],
           template_metadata: nil

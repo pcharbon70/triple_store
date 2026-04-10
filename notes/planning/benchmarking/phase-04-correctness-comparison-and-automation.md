@@ -12,21 +12,21 @@ Description: This section adds correctness-aware benchmark analysis so speed mea
 
 Description: This task defines how benchmark answers are normalized so cross-run and cross-engine comparisons are stable and interpretable.
 
-- [ ] 4.1.1.1 Define canonical serialization for bindings, literals, IRIs, and ordering-sensitive result sets
-- [ ] 4.1.1.2 Define normalization rules for count-only and distinct-only variants
-- [ ] 4.1.1.3 Define handling for blank-node-related comparisons on benchmark tiers where they appear
-- [ ] 4.1.1.4 Define allowable non-deterministic variations versus true divergences
-- [ ] 4.1.1.5 Add stable hashing for normalized benchmark answers
+- [x] 4.1.1.1 Define canonical serialization for bindings, literals, IRIs, and ordering-sensitive result sets
+- [x] 4.1.1.2 Define normalization rules for count-only and distinct-only variants
+- [x] 4.1.1.3 Define handling for blank-node-related comparisons on benchmark tiers where they appear
+- [x] 4.1.1.4 Define allowable non-deterministic variations versus true divergences
+- [x] 4.1.1.5 Add stable hashing for normalized benchmark answers
 
 ### 4.1.2 Divergence Classification
 
 Description: This task turns mismatched answers into actionable benchmark signals by classifying them into meaningful categories.
 
-- [ ] 4.1.2.1 Classify divergences by likely cause: parser, optimizer, paths, duplicates, datatype handling, and LIMIT or DISTINCT semantics
-- [ ] 4.1.2.2 Add support for reference-answer baselines on smaller dataset tiers
-- [ ] 4.1.2.3 Produce per-query correctness summaries alongside timing summaries
-- [ ] 4.1.2.4 Record divergence exemplars so failures are diagnosable without rerunning the whole suite
-- [ ] 4.1.2.5 Add a benchmark-facing API for marking accepted divergences when justified
+- [x] 4.1.2.1 Classify divergences by likely cause: parser, optimizer, paths, duplicates, datatype handling, and LIMIT or DISTINCT semantics
+- [x] 4.1.2.2 Add support for reference-answer baselines on smaller dataset tiers
+- [x] 4.1.2.3 Produce per-query correctness summaries alongside timing summaries
+- [x] 4.1.2.4 Record divergence exemplars so failures are diagnosable without rerunning the whole suite
+- [x] 4.1.2.5 Add a benchmark-facing API for marking accepted divergences when justified
 
 ## 4.2 Developer Workflow and Benchmark Operations
 

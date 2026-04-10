@@ -47,6 +47,8 @@ defmodule TripleStore.Benchmark.Wikidata.RunnerTest do
       assert length(query_run.iterations) == 3
       assert length(query_run.raw_timings_us) == 3
       assert Enum.all?(query_run.iterations, &(&1.status == :ok))
+      assert is_binary(query_run.answer_record.fingerprint)
+      assert Enum.all?(query_run.iterations, &is_binary(&1.answer_fingerprint))
     end
 
     test "runs suite and matrix targets through the same interface" do
