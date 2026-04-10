@@ -13,15 +13,14 @@
     PREFIX bd: <http://www.bigdata.com/rdf#>
 
     SELECT ?work ?workLabel WHERE {
-      VALUES ?author { <%entity%> }
-      ?work wdt:P50 ?author .
+      ?work wdt:P50 <%entity%> .
       SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],%language%". }
     }
     LIMIT %limit%
     """,
     params: [:entity, :class, :language, :limit],
     defaults: %{language: "en", limit: "200"},
-    feature_tags: [:template, :label_service, :values, :join],
+    feature_tags: [:template, :label_service, :entity_anchor, :join],
     complexity: :medium,
     stress_points: [:fanout, :label_lookup],
     rewrites: [
@@ -49,8 +48,7 @@
 
     SELECT ?citing ?citingLabel WHERE {
       hint:Query hint:optimizer "None" .
-      VALUES ?work { <%entity%> }
-      ?citing wdt:P2860 ?work .
+      ?citing wdt:P2860 <%entity%> .
       OPTIONAL {
         ?citing rdfs:label ?citingLabel .
         FILTER(LANG(?citingLabel) = "%language%")
@@ -60,7 +58,7 @@
     """,
     params: [:entity, :class, :language, :limit],
     defaults: %{language: "en", limit: "100"},
-    feature_tags: [:template, :citation, :optional, :hint_rewrite],
+    feature_tags: [:template, :citation, :optional, :entity_anchor],
     complexity: :complex,
     stress_points: [:optimizer_sensitivity, :join_selectivity],
     rewrites: [:strip_blazegraph_hints],
@@ -85,9 +83,8 @@
     PREFIX bd: <http://www.bigdata.com/rdf#>
 
     SELECT ?person ?personLabel WHERE {
-      VALUES ?organization { <%entity%> }
       ?person wdt:P31 <%class%> ;
-              wdt:P108 ?organization .
+              wdt:P108 <%entity%> .
       SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],%language%". }
     }
     LIMIT %limit%
@@ -98,7 +95,7 @@
       limit: "150",
       class: "http://www.wikidata.org/entity/Q5"
     },
-    feature_tags: [:template, :label_service, :values, :organization_affiliation],
+    feature_tags: [:template, :label_service, :entity_anchor, :organization_affiliation],
     complexity: :medium,
     stress_points: [:fanout, :star_join],
     rewrites: [
@@ -124,9 +121,8 @@
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
     SELECT ?person ?personLabel WHERE {
-      VALUES ?field { <%entity%> }
       ?person wdt:P31 <%class%> ;
-              wdt:P101 ?field .
+              wdt:P101 <%entity%> .
       OPTIONAL {
         ?person rdfs:label ?personLabel .
         FILTER(LANG(?personLabel) = "%language%")
@@ -140,7 +136,7 @@
       limit: "100",
       class: "http://www.wikidata.org/entity/Q5"
     },
-    feature_tags: [:template, :optional, :values, :field_of_work],
+    feature_tags: [:template, :optional, :entity_anchor, :field_of_work],
     complexity: :medium,
     stress_points: [:optional_join],
     rewrites: [],

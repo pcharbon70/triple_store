@@ -60,20 +60,22 @@ Description: This task defines how Scholia templates are instantiated into a sta
 
 Description: This section verifies that all benchmark corpora parse, normalize, and execute as valid workload packages against prepared benchmark stores.
 
+- [x] **Section 2.3 Complete** (2026-04-10)
+
 ### 2.3.1 Corpus Validation Integration
 
 Description: This task validates the structural integrity of imported and generated query corpora before runtime benchmarking begins.
 
-- [ ] 2.3.1.1 Verify every benchmark query parses successfully after normalization
-- [ ] 2.3.1.2 Verify every parameterized template instantiates into valid SPARQL
-- [ ] 2.3.1.3 Verify every benchmark query belongs to a named suite and category
-- [ ] 2.3.1.4 Verify excluded queries are tracked explicitly rather than being dropped silently
+- [x] 2.3.1.1 Verify every benchmark query parses successfully after normalization
+- [x] 2.3.1.2 Verify every parameterized template instantiates into valid SPARQL
+- [x] 2.3.1.3 Verify every benchmark query belongs to a named suite and category
+- [x] 2.3.1.4 Verify excluded queries are tracked explicitly rather than being dropped silently
 
 ### 2.3.2 Query Execution Smoke Integration
 
 Description: This task validates that representative queries from every workload family execute successfully against benchmark fixtures.
 
-- [ ] 2.3.2.1 Run a smoke sample from `wgpb`, `wdbench`, `wdqs`, and `scholia` against the `smoke` dataset tier
-- [ ] 2.3.2.2 Verify count-only and distinct-only variants compile and execute correctly
-- [ ] 2.3.2.3 Verify query metadata survives from corpus construction to runtime execution
-- [ ] 2.3.2.4 Verify unsupported constructs surface explicit benchmark errors or exclusions
+- [x] 2.3.2.1 Run a smoke sample from `wgpb`, `wdbench`, `wdqs`, and `scholia` against the `smoke` dataset tier
+- [x] 2.3.2.2 Verify count-only and distinct-only variants compile and execute correctly
+- [x] 2.3.2.3 Verify query metadata survives from corpus construction to runtime execution
+- [x] 2.3.2.4 Verify unsupported constructs surface explicit benchmark errors or exclusions
