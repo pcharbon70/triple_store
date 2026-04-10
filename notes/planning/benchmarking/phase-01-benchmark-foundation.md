@@ -34,25 +34,27 @@ Description: This task defines the dataset tiers and initial acceptance criteria
 
 Description: This section creates the dataset acquisition, subset generation, and load-helper infrastructure required to prepare TripleStore for benchmark execution.
 
+- [x] **Section 1.2 Complete** (2026-04-10)
+
 ### 1.2.1 Dump Acquisition and Manifesting
 
 Description: This task creates the reproducible pipeline for acquiring Wikidata RDF sources and turning them into benchmark-ready dataset manifests.
 
-- [ ] 1.2.1.1 Implement dump manifest generation with source URL, date, checksum, and triple count
-- [ ] 1.2.1.2 Implement local fixture registration for prepared benchmark datasets
-- [ ] 1.2.1.3 Implement subset generation for `smoke` and `medium` tiers from larger RDF sources
-- [ ] 1.2.1.4 Store subset-generation metadata so benchmark tiers can be regenerated deterministically
-- [ ] 1.2.1.5 Add validation that fixture manifests match on-disk dataset contents
+- [x] 1.2.1.1 Implement dump manifest generation with source URL, date, checksum, and triple count
+- [x] 1.2.1.2 Implement local fixture registration for prepared benchmark datasets
+- [x] 1.2.1.3 Implement subset generation for `smoke` and `medium` tiers from larger RDF sources
+- [x] 1.2.1.4 Store subset-generation metadata so benchmark tiers can be regenerated deterministically
+- [x] 1.2.1.5 Add validation that fixture manifests match on-disk dataset contents
 
 ### 1.2.2 TripleStore Load Fixtures
 
 Description: This task standardizes how benchmark datasets are loaded into TripleStore so later benchmark phases can reuse one fixture pipeline instead of duplicating setup logic.
 
-- [ ] 1.2.2.1 Define load presets for benchmark ingestion modes, including truthy-oriented and full-RDF-oriented presets
-- [ ] 1.2.2.2 Implement benchmark setup helpers for open, load, warmup, compact, and teardown
-- [ ] 1.2.2.3 Capture load metrics: elapsed time, throughput, warning count, and failure class
-- [ ] 1.2.2.4 Add fixture helpers for reopening previously loaded benchmark stores without reimporting data
-- [ ] 1.2.2.5 Document the expected directory layout for benchmark datasets and generated stores
+- [x] 1.2.2.1 Define load presets for benchmark ingestion modes, including truthy-oriented and full-RDF-oriented presets
+- [x] 1.2.2.2 Implement benchmark setup helpers for open, load, warmup, compact, and teardown
+- [x] 1.2.2.3 Capture load metrics: elapsed time, throughput, warning count, and failure class
+- [x] 1.2.2.4 Add fixture helpers for reopening previously loaded benchmark stores without reimporting data
+- [x] 1.2.2.5 Document the expected directory layout for benchmark datasets and generated stores
 
 ## 1.3 Integration Tests
 
