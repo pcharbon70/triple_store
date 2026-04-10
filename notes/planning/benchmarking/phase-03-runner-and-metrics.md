@@ -60,16 +60,16 @@ Description: This section verifies that the runner and artifact pipeline work to
 
 Description: This task validates the full benchmark execution lifecycle from warmup through measured runs and teardown.
 
-- [ ] 3.3.1.1 Verify warmup runs do not pollute measured timing output
-- [ ] 3.3.1.2 Verify timeout and error cases produce adjusted timings and structured errors
-- [ ] 3.3.1.3 Verify single-query, suite-level, and multi-suite runs all complete through the same runner interface
-- [ ] 3.3.1.4 Verify repeated runner execution leaves benchmark stores and temp artifacts in a clean state
+- [x] 3.3.1.1 Verify warmup runs do not pollute measured timing output
+- [x] 3.3.1.2 Verify timeout and error cases produce adjusted timings and structured errors
+- [x] 3.3.1.3 Verify single-query, suite-level, and multi-suite runs all complete through the same runner interface
+- [x] 3.3.1.4 Verify repeated runner execution leaves benchmark stores and temp artifacts in a clean state
 
 ### 3.3.2 Artifact Integration
 
 Description: This task validates that every benchmark run emits complete and internally consistent result artifacts.
 
-- [ ] 3.3.2.1 Verify JSON, CSV, and Markdown outputs are generated together for benchmark runs
-- [ ] 3.3.2.2 Verify report metadata matches the executed dataset tier and runtime configuration
-- [ ] 3.3.2.3 Verify aggregate statistics match the underlying per-query results
-- [ ] 3.3.2.4 Verify reruns append or version artifacts without clobbering accepted baselines unintentionally
+- [x] 3.3.2.1 Verify JSON, CSV, and Markdown outputs are generated together for benchmark runs
+- [x] 3.3.2.2 Verify report metadata matches the executed dataset tier and runtime configuration
+- [x] 3.3.2.3 Verify aggregate statistics match the underlying per-query results
+- [x] 3.3.2.4 Verify reruns append or version artifacts without clobbering accepted baselines unintentionally
