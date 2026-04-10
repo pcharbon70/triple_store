@@ -8,25 +8,27 @@ Description: Phase 2 builds the benchmark query corpora that will run against Tr
 
 Description: This section imports benchmark workloads inspired by public Wikidata evaluations and converts them into benchmark-ready query suites for TripleStore.
 
+- [x] **Section 2.1 Complete** (2026-04-10)
+
 ### 2.1.1 WGPB and WDQS Import
 
 Description: This task imports simple graph-pattern workloads and user-facing query workloads into a consistent local benchmark representation.
 
-- [ ] 2.1.1.1 Import `WGPB` query sets and preserve original pattern grouping
-- [ ] 2.1.1.2 Import `WDQS` query sets and capture stable benchmark IDs and names
-- [ ] 2.1.1.3 Annotate imported queries with shape metadata, feature tags, and expected answer-size class
-- [ ] 2.1.1.4 Define corpus-level metadata for source origin, license notes, and preprocessing history
-- [ ] 2.1.1.5 Add normalization hooks for LIMIT policy and standards-compliant rewrites where needed
+- [x] 2.1.1.1 Import `WGPB` query sets and preserve original pattern grouping
+- [x] 2.1.1.2 Import `WDQS` query sets and capture stable benchmark IDs and names
+- [x] 2.1.1.3 Annotate imported queries with shape metadata, feature tags, and expected answer-size class
+- [x] 2.1.1.4 Define corpus-level metadata for source origin, license notes, and preprocessing history
+- [x] 2.1.1.5 Add normalization hooks for LIMIT policy and standards-compliant rewrites where needed
 
 ### 2.1.2 WDBench Import and Expansion
 
 Description: This task imports fragment-oriented workloads derived from query logs and expands them into complete benchmark queries that TripleStore can execute directly.
 
-- [ ] 2.1.2.1 Import the five `WDBench` families: single BGP, multiple BGPs, OPTIONAL, property paths, and other
-- [ ] 2.1.2.2 Expand fragments into full SPARQL queries with stable identifiers
-- [ ] 2.1.2.3 Apply configurable LIMIT policies by benchmark tier
-- [ ] 2.1.2.4 Preserve family-level grouping so reports can summarize by workload shape
-- [ ] 2.1.2.5 Record any fragments that cannot be converted cleanly and classify them as exclusions
+- [x] 2.1.2.1 Import the five `WDBench` families: single BGP, multiple BGPs, OPTIONAL, property paths, and other
+- [x] 2.1.2.2 Expand fragments into full SPARQL queries with stable identifiers
+- [x] 2.1.2.3 Apply configurable LIMIT policies by benchmark tier
+- [x] 2.1.2.4 Preserve family-level grouping so reports can summarize by workload shape
+- [x] 2.1.2.5 Record any fragments that cannot be converted cleanly and classify them as exclusions
 
 ## 2.2 Scholia-Derived Workload
 
