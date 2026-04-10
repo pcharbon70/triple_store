@@ -14,6 +14,8 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Benchmark.Wikidata.DatasetManifest
 
+  @type schema :: :triple | :quad
+
   defstruct dataset_manifest: nil,
             fixture_root: nil,
             store: nil,
@@ -35,9 +37,9 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
   @type t :: %__MODULE__{
           dataset_manifest: DatasetManifest.t(),
           fixture_root: String.t(),
-          store: map() | nil,
+          store: TripleStore.store() | nil,
           store_path: String.t(),
-          schema: :triple | :quad,
+          schema: schema(),
           load_metrics: load_metrics() | nil
         }
 
@@ -75,12 +77,11 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
   @spec setup(Path.t(), DatasetManifest.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def setup(fixture_root, %DatasetManifest{} = dataset_manifest, opts \\ [])
       when is_binary(fixture_root) and is_list(opts) do
-    schema = Keyword.get(opts, :schema, :triple)
-    store_id = Keyword.get(opts, :store_id, dataset_manifest.dataset_id)
-    store_path = Path.join([fixture_root, "stores", store_id])
-    load_opts = resolve_load_opts(opts, dataset_manifest)
-
-    with true <- dataset_manifest.local_data_path != nil or {:error, :missing_local_data_path},
+    with :ok <- ensure_local_data_path(dataset_manifest),
+         {:ok, schema} <- resolve_schema(opts),
+         {:ok, store_id} <- resolve_store_id(opts, dataset_manifest),
+         {:ok, load_opts} <- resolve_load_opts(opts, dataset_manifest),
+         store_path = Path.join([fixture_root, "stores", store_id]),
          :ok <- File.mkdir_p(Path.dirname(store_path)),
          {:ok, store} <- TripleStore.open(store_path, schema: schema),
          {:ok, load_result} <-
@@ -105,12 +106,6 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
              warmed?: warmed?
            })
        }}
-    else
-      {:error, _reason} = error ->
-        error
-
-      reason ->
-        {:error, reason}
     end
   end
 
@@ -119,7 +114,9 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
   """
   @spec reopen(t()) :: {:ok, t()} | {:error, term()}
   def reopen(%__MODULE__{store_path: store_path, schema: schema} = fixture_state) do
-    with {:ok, store} <- TripleStore.open(store_path, schema: schema, create_if_missing: false) do
+    with :ok <- ensure_store_path(store_path),
+         :ok <- ensure_schema(schema),
+         {:ok, store} <- TripleStore.open(store_path, schema: schema, create_if_missing: false) do
       {:ok, %{fixture_state | store: store}}
     end
   end
@@ -183,9 +180,12 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
     case warmup_fun.(store) do
       :ok -> {:ok, true}
       {:ok, _} -> {:ok, true}
+      {:error, reason} -> {:error, {:warmup_failed, reason}}
       other -> {:error, {:warmup_failed, other}}
     end
   end
+
+  defp maybe_warm(_store, _warmup), do: {:error, :invalid_warmup}
 
   defp maybe_compact(_store, false), do: :ok
 
@@ -197,28 +197,59 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
     end
   end
 
+  defp maybe_compact(_store, true), do: {:error, :invalid_store}
+  defp maybe_compact(_store, _compact), do: {:error, :invalid_compact_option}
+
   defp classify_failure(:file_not_found), do: :file_not_found
   defp classify_failure({:parse_error, _}), do: :parse_error
   defp classify_failure(:database_closed), do: :database_closed
   defp classify_failure(_), do: :load_failed
 
+  defp ensure_local_data_path(%DatasetManifest{local_data_path: path}) when is_binary(path),
+    do: :ok
+
+  defp ensure_local_data_path(%DatasetManifest{}), do: {:error, :missing_local_data_path}
+
+  defp ensure_store_path(store_path) when is_binary(store_path) and store_path != "", do: :ok
+  defp ensure_store_path(_store_path), do: {:error, :missing_store_path}
+
+  defp ensure_schema(:triple), do: :ok
+  defp ensure_schema(:quad), do: :ok
+  defp ensure_schema(_schema), do: {:error, :invalid_schema}
+
+  defp resolve_schema(opts) do
+    case Keyword.get(opts, :schema, :triple) do
+      :triple -> {:ok, :triple}
+      :quad -> {:ok, :quad}
+      _ -> {:error, :invalid_schema}
+    end
+  end
+
+  defp resolve_store_id(opts, dataset_manifest) do
+    case Keyword.get(opts, :store_id, dataset_manifest.dataset_id) do
+      store_id when is_binary(store_id) and store_id != "" -> {:ok, store_id}
+      _ -> {:error, :invalid_store_id}
+    end
+  end
+
   defp resolve_load_opts(opts, dataset_manifest) do
     explicit_load_opts = Keyword.get(opts, :load_opts, [])
 
-    case Keyword.get(opts, :load_preset) do
-      nil ->
-        Keyword.put_new(explicit_load_opts, :format, dataset_manifest.format)
+    with true <- keyword_list?(explicit_load_opts) or {:error, :invalid_load_opts} do
+      case Keyword.get(opts, :load_preset) do
+        nil ->
+          {:ok, Keyword.put_new(explicit_load_opts, :format, dataset_manifest.format)}
 
-      preset_name ->
-        preset =
-          case load_preset(preset_name) do
-            {:ok, preset} -> preset
-            {:error, :unknown_preset} -> []
+        preset_name ->
+          with {:ok, preset} <- load_preset(preset_name) do
+            {:ok,
+             preset
+             |> Keyword.merge(explicit_load_opts)
+             |> Keyword.put_new(:format, dataset_manifest.format)}
           end
-
-        preset
-        |> Keyword.merge(explicit_load_opts)
-        |> Keyword.put_new(:format, dataset_manifest.format)
+      end
     end
   end
+
+  defp keyword_list?(value), do: is_list(value) and Keyword.keyword?(value)
 end

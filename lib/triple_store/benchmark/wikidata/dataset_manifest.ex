@@ -185,16 +185,20 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec statement_count(Path.t()) :: {:ok, non_neg_integer()} | {:error, term()}
   def statement_count(path) when is_binary(path) do
-    count =
-      path
-      |> File.stream!([], :line)
-      |> Enum.reduce(0, fn line, acc ->
-        if statement_line?(line), do: acc + 1, else: acc
-      end)
+    with {:ok, file} <- File.open(path, [:read]) do
+      count =
+        try do
+          file
+          |> IO.stream(:line)
+          |> Enum.reduce(0, fn line, acc ->
+            if statement_line?(line), do: acc + 1, else: acc
+          end)
+        after
+          File.close(file)
+        end
 
-    {:ok, count}
-  rescue
-    error -> {:error, error}
+      {:ok, count}
+    end
   end
 
   @doc """
@@ -202,18 +206,22 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec checksum(Path.t()) :: {:ok, String.t()} | {:error, term()}
   def checksum(path) when is_binary(path) do
-    digest =
-      path
-      |> File.stream!([], 2048)
-      |> Enum.reduce(:crypto.hash_init(:sha256), fn chunk, acc ->
-        :crypto.hash_update(acc, chunk)
-      end)
-      |> :crypto.hash_final()
-      |> Base.encode16(case: :lower)
+    with {:ok, file} <- File.open(path, [:read]) do
+      digest =
+        try do
+          file
+          |> IO.binstream(2048)
+          |> Enum.reduce(:crypto.hash_init(:sha256), fn chunk, acc ->
+            :crypto.hash_update(acc, chunk)
+          end)
+          |> :crypto.hash_final()
+          |> Base.encode16(case: :lower)
+        after
+          File.close(file)
+        end
 
-    {:ok, "sha256:#{digest}"}
-  rescue
-    error -> {:error, error}
+      {:ok, "sha256:#{digest}"}
+    end
   end
 
   @doc """

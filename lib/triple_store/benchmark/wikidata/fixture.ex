@@ -72,12 +72,9 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
     manifest_path = Path.join([root_dir, "datasets", dataset_id, @manifest_filename])
 
     with {:ok, binary} <- File.read(manifest_path),
-         manifest_map <- :erlang.binary_to_term(binary),
+         {:ok, manifest_map} <- decode_manifest(binary),
          {:ok, manifest} <- DatasetManifest.new(manifest_map) do
       {:ok, manifest}
-    else
-      {:error, _} = error -> error
-      error -> {:error, error}
     end
   end
 
@@ -104,8 +101,8 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
           {:ok, DatasetManifest.t()} | {:error, term()}
   def create_subset(root_dir, %DatasetManifest{} = source_manifest, tier, opts \\ [])
       when is_binary(root_dir) and is_list(opts) do
-    with true <- tier in [:smoke, :medium] or {:error, :unsupported_subset_tier},
-         true <- source_manifest.local_data_path != nil or {:error, :missing_local_data_path},
+    with :ok <- ensure_subset_tier(tier),
+         :ok <- ensure_local_data_path(source_manifest),
          :ok <- ensure_line_oriented_format(source_manifest.format),
          {:ok, _tier_meta} <- Contract.dataset_tier(tier) do
       seed = Keyword.get(opts, :seed, 42)
@@ -120,43 +117,38 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
         Keyword.get(opts, :dataset_id, "#{source_manifest.dataset_id}-#{tier}-seed#{seed}")
 
       layout = layout_paths(root_dir, subset_id, source_manifest.format)
-      :ok = File.mkdir_p(layout.dataset_dir)
-
       plan = selection_plan(source_manifest.triple_count, target, seed)
-      :ok = write_subset(source_manifest.local_data_path, layout.data_path, plan)
 
-      DatasetManifest.from_source(
-        layout.data_path,
-        dataset_id: subset_id,
-        tier: tier,
-        source_url: source_manifest.source_url,
-        source_date: source_manifest.source_date,
-        dump_version: source_manifest.dump_version,
-        format: source_manifest.format,
-        normalization_flags: source_manifest.normalization_flags,
-        subset_seed: seed,
-        subset_strategy: %{
-          type: :deterministic_stride,
-          seed: seed,
-          target_statements: target,
-          stride: plan.stride,
-          offset: plan.offset
-        },
-        generated_from: %{
-          dataset_id: source_manifest.dataset_id,
-          checksum: source_manifest.checksum,
-          triple_count: source_manifest.triple_count
-        },
-        local_data_path: layout.data_path,
-        manifest_path: layout.manifest_path
-      )
-      |> case do
-        {:ok, subset_manifest} ->
-          persist_manifest(subset_manifest)
-          {:ok, subset_manifest}
-
-        {:error, _} = error ->
-          error
+      with :ok <- File.mkdir_p(layout.dataset_dir),
+           :ok <- write_subset(source_manifest.local_data_path, layout.data_path, plan),
+           {:ok, subset_manifest} <-
+             DatasetManifest.from_source(
+               layout.data_path,
+               dataset_id: subset_id,
+               tier: tier,
+               source_url: source_manifest.source_url,
+               source_date: source_manifest.source_date,
+               dump_version: source_manifest.dump_version,
+               format: source_manifest.format,
+               normalization_flags: source_manifest.normalization_flags,
+               subset_seed: seed,
+               subset_strategy: %{
+                 type: :deterministic_stride,
+                 seed: seed,
+                 target_statements: target,
+                 stride: plan.stride,
+                 offset: plan.offset
+               },
+               generated_from: %{
+                 dataset_id: source_manifest.dataset_id,
+                 checksum: source_manifest.checksum,
+                 triple_count: source_manifest.triple_count
+               },
+               local_data_path: layout.data_path,
+               manifest_path: layout.manifest_path
+             ),
+           :ok <- persist_manifest(subset_manifest) do
+        {:ok, subset_manifest}
       end
     end
   end
@@ -229,23 +221,58 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
     end
   end
 
+  defp decode_manifest(binary) when is_binary(binary) do
+    try do
+      case :erlang.binary_to_term(binary) do
+        attrs when is_map(attrs) or is_list(attrs) -> {:ok, attrs}
+        _ -> {:error, :invalid_manifest}
+      end
+    rescue
+      ArgumentError -> {:error, :invalid_manifest}
+    end
+  end
+
+  defp ensure_subset_tier(tier) when tier in [:smoke, :medium], do: :ok
+  defp ensure_subset_tier(_tier), do: {:error, :unsupported_subset_tier}
+
+  defp ensure_local_data_path(%DatasetManifest{local_data_path: path}) when is_binary(path),
+    do: :ok
+
+  defp ensure_local_data_path(%DatasetManifest{}), do: {:error, :missing_local_data_path}
+
   defp ensure_line_oriented_format(format) when format in [:ntriples, :nquads], do: :ok
   defp ensure_line_oriented_format(_format), do: {:error, :unsupported_subset_format}
 
   defp write_subset(source_path, destination_path, plan) do
-    selection =
-      source_path
-      |> File.stream!([], :line)
-      |> Stream.filter(&DatasetManifest.statement_line?/1)
-      |> Stream.with_index()
-      |> Stream.filter(fn {_line, index} ->
-        keep_statement?(index, plan)
-      end)
-      |> Stream.map(fn {line, _index} -> line end)
-      |> Enum.take(plan.target_statements)
+    with {:ok, source_file} <- File.open(source_path, [:read]),
+         {:ok, destination_file} <- File.open(destination_path, [:write]) do
+      try do
+        source_file
+        |> IO.stream(:line)
+        |> Stream.filter(&DatasetManifest.statement_line?/1)
+        |> Stream.with_index()
+        |> Enum.reduce_while(0, fn {line, index}, written ->
+          cond do
+            written >= plan.target_statements ->
+              {:halt, :ok}
 
-    File.write!(destination_path, selection)
-    :ok
+            keep_statement?(index, plan) ->
+              :ok = IO.binwrite(destination_file, line)
+              {:cont, written + 1}
+
+            true ->
+              {:cont, written}
+          end
+        end)
+        |> case do
+          {:error, reason} -> {:error, reason}
+          _ -> :ok
+        end
+      after
+        File.close(destination_file)
+        File.close(source_file)
+      end
+    end
   end
 
   defp keep_statement?(_index, %{target_statements: 0}), do: false

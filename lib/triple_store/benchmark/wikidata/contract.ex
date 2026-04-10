@@ -181,10 +181,8 @@ defmodule TripleStore.Benchmark.Wikidata.Contract do
   def result_artifact?(artifact), do: artifact in required_result_artifacts()
 
   defp hostname do
-    case :inet.gethostname() do
-      {:ok, hostname} -> List.to_string(hostname)
-      _ -> "unknown-host"
-    end
+    {:ok, hostname} = :inet.gethostname()
+    List.to_string(hostname)
   end
 
   defp system_info_or_nil(key) do
