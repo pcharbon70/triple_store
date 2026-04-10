@@ -195,13 +195,15 @@ defmodule TripleStore do
           db: db_ref(),
           dict_manager: manager(),
           transaction: transaction_manager() | nil,
-          path: String.t()
+          path: String.t(),
+          schema: :triple | :quad
         }
 
   @typedoc "Options for opening a store"
   @type open_opts :: [
           create_if_missing: boolean(),
-          dictionary_shards: pos_integer() | nil
+          dictionary_shards: pos_integer() | nil,
+          schema: :triple | :quad
         ]
 
   @typedoc "Options for querying"
