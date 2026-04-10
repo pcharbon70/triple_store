@@ -60,20 +60,22 @@ Description: This task standardizes how benchmark datasets are loaded into Tripl
 
 Description: This section verifies that benchmark datasets, manifests, and load helpers work together end to end and provide stable inputs for later phases.
 
+- [x] **Section 1.3 Complete** (2026-04-10)
+
 ### 1.3.1 Dataset Pipeline Integration
 
 Description: This task validates that benchmark manifests and subset generation produce deterministic, reusable fixtures.
 
-- [ ] 1.3.1.1 Verify fixture manifests round-trip correctly from source metadata to local fixture registration
-- [ ] 1.3.1.2 Verify subset generation is deterministic for a fixed seed and source version
-- [ ] 1.3.1.3 Verify recorded triple counts and checksums match generated benchmark fixtures
-- [ ] 1.3.1.4 Verify invalid or partial fixture metadata fails with explicit benchmark-pipeline errors
+- [x] 1.3.1.1 Verify fixture manifests round-trip correctly from source metadata to local fixture registration
+- [x] 1.3.1.2 Verify subset generation is deterministic for a fixed seed and source version
+- [x] 1.3.1.3 Verify recorded triple counts and checksums match generated benchmark fixtures
+- [x] 1.3.1.4 Verify invalid or partial fixture metadata fails with explicit benchmark-pipeline errors
 
 ### 1.3.2 Load Pipeline Integration
 
 Description: This task validates that prepared benchmark fixtures can be loaded, reopened, and cleaned up reliably through the benchmark helper layer.
 
-- [ ] 1.3.2.1 Verify each dataset tier loads successfully into a fresh TripleStore instance
-- [ ] 1.3.2.2 Verify post-load store stats match the benchmark fixture manifest
-- [ ] 1.3.2.3 Verify repeated setup and teardown leave no leaked state across benchmark runs
-- [ ] 1.3.2.4 Verify benchmark store reopen logic works without requiring a reload
+- [x] 1.3.2.1 Verify each dataset tier loads successfully into a fresh TripleStore instance
+- [x] 1.3.2.2 Verify post-load store stats match the benchmark fixture manifest
+- [x] 1.3.2.3 Verify repeated setup and teardown leave no leaked state across benchmark runs
+- [x] 1.3.2.4 Verify benchmark store reopen logic works without requiring a reload
