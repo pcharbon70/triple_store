@@ -36,21 +36,21 @@ Description: This section integrates the benchmark suite into normal developer w
 
 Description: This task exposes the benchmark suite through standard repository commands and automation-friendly run modes.
 
-- [ ] 4.2.1.1 Add mix tasks or scripts for `smoke`, `medium`, and `full` benchmark runs
-- [ ] 4.2.1.2 Add CI jobs for parser-only validation, query-corpus smoke runs, and benchmark smoke execution
-- [ ] 4.2.1.3 Add scheduled jobs for larger workstation or server benchmark runs
-- [ ] 4.2.1.4 Add threshold gates for runtime regressions, error rate regressions, and divergence regressions
-- [ ] 4.2.1.5 Define failure messages that point directly to the offending suite and query ID
+- [x] 4.2.1.1 Add mix tasks or scripts for `smoke`, `medium`, and `full` benchmark runs
+- [x] 4.2.1.2 Add CI jobs for parser-only validation, query-corpus smoke runs, and benchmark smoke execution
+- [x] 4.2.1.3 Add scheduled jobs for larger workstation or server benchmark runs
+- [x] 4.2.1.4 Add threshold gates for runtime regressions, error rate regressions, and divergence regressions
+- [x] 4.2.1.5 Define failure messages that point directly to the offending suite and query ID
 
 ### 4.2.2 Documentation and Baseline Management
 
 Description: This task documents benchmark usage and creates the baseline-management workflow needed for long-lived regression tracking.
 
-- [ ] 4.2.2.1 Add a benchmark guide covering datasets, workloads, commands, and report interpretation
-- [ ] 4.2.2.2 Add initial accepted baseline reports for TripleStore benchmark runs
-- [ ] 4.2.2.3 Define a process for updating baselines after accepted engine changes
-- [ ] 4.2.2.4 Define an update cadence for new Wikidata dumps and regenerated query corpora
-- [ ] 4.2.2.5 Document which benchmark artifacts belong in version control versus generated output directories
+- [x] 4.2.2.1 Add a benchmark guide covering datasets, workloads, commands, and report interpretation
+- [x] 4.2.2.2 Add initial accepted baseline reports for TripleStore benchmark runs
+- [x] 4.2.2.3 Define a process for updating baselines after accepted engine changes
+- [x] 4.2.2.4 Define an update cadence for new Wikidata dumps and regenerated query corpora
+- [x] 4.2.2.5 Document which benchmark artifacts belong in version control versus generated output directories
 
 ## 4.3 Integration Tests
 

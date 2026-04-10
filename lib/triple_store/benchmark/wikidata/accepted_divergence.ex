@@ -98,6 +98,24 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
   end
 
   @doc """
+  Persists accepted divergence records as pretty JSON.
+  """
+  @spec write_json(Path.t(), [t()]) :: :ok | {:error, term()}
+  def write_json(path, records) when is_binary(path) and is_list(records) do
+    records
+    |> Enum.map(fn record ->
+      record
+      |> Map.from_struct()
+      |> Map.update(:accepted_on, nil, &serialize_date/1)
+      |> Map.update(:expires_at, nil, &serialize_date/1)
+      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+      |> Enum.into(%{})
+    end)
+    |> Jason.encode!(pretty: true)
+    |> then(&File.write(path, &1))
+  end
+
+  @doc """
   Loads accepted divergence records from Erlang term format.
   """
   @spec load(Path.t()) :: {:ok, [t()]} | {:error, term()}
@@ -109,6 +127,21 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
     else
       {:error, _} = error -> error
       _ -> {:error, :invalid_accepted_divergence_file}
+    end
+  end
+
+  @doc """
+  Loads accepted divergence records from JSON.
+  """
+  @spec load_json(Path.t()) :: {:ok, [t()]} | {:error, term()}
+  def load_json(path) when is_binary(path) do
+    with {:ok, json} <- File.read(path),
+         {:ok, records} when is_list(records) <- Jason.decode(json),
+         {:ok, validated} <- validate_many_json(records) do
+      {:ok, validated}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_accepted_divergence_json}
     end
   end
 
@@ -164,6 +197,27 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
 
       _ ->
         attrs
+    end
+  end
+
+  defp validate_many_json(records) do
+    records
+    |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, acc} ->
+      attrs =
+        attrs
+        |> Enum.map(fn {key, value} -> {String.to_existing_atom(key), value} end)
+        |> Enum.into(%{})
+        |> deserialize_date(:accepted_on)
+        |> deserialize_date(:expires_at)
+
+      case new(attrs) do
+        {:ok, record} -> {:cont, {:ok, [record | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, records} -> {:ok, Enum.reverse(records)}
+      {:error, reason} -> {:error, reason}
     end
   end
 end

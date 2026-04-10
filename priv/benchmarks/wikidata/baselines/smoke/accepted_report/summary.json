@@ -1,0 +1,1079 @@
+{
+  "run": {
+    "started_at": "2026-04-10T17:58:04.639294Z",
+    "target": {
+      "suites": [
+        "wgpb",
+        "wdbench",
+        "wdqs",
+        "scholia"
+      ],
+      "query_count": 4,
+      "query_ids": [
+        "wgpb-single-bgp-001",
+        "wdbench-single-bgp-001",
+        "wdqs-people-occupation-001",
+        "scholia-author-works-q42-raw"
+      ],
+      "corpus_names": [
+        "Wikidata Graph Pattern Benchmark",
+        "Wikidata Fragment Benchmark",
+        "Wikidata Query Service Workload",
+        "Scholia Derived Benchmark"
+      ]
+    },
+    "duration_ms": 22,
+    "schema_version": 1,
+    "completed_at": "2026-04-10T17:58:04.661658Z",
+    "git_sha": "87e3be4b760b",
+    "run_kind": "matrix"
+  },
+  "runtime_config": {
+    "optimize": true,
+    "dataset_tier": "smoke",
+    "timeout_ms": 500,
+    "warmup_iterations": 0,
+    "measurement_iterations": 2,
+    "query_ids": [
+      "scholia-author-works-q42-raw",
+      "wgpb-single-bgp-001",
+      "wdbench-single-bgp-001",
+      "wdqs-people-occupation-001"
+    ],
+    "execution_variants": [
+      "raw"
+    ],
+    "blank_node_policy": "anonymous",
+    "capture_answers": true,
+    "long_running_threshold_us": 250000,
+    "penalty_us": 500000
+  },
+  "report_id": "wikidata-smoke-accepted",
+  "dataset_manifest": {
+    "format": "ntriples",
+    "checksum": "sha256:05b94760b7cf4f9d6bd4d42dea4770812fb7aedd7cae94508093b00d48eceeba",
+    "manifest_path": null,
+    "source_url": "repo://priv/benchmarks/wikidata/fixtures/smoke.nt",
+    "dump_version": "2024-10-smoke",
+    "dataset_id": "wikidata-built-in-smoke",
+    "tier": "smoke",
+    "source_date": "2024-10-01",
+    "local_data_path": null,
+    "normalization_flags": [
+      "truthy_only",
+      "repo_smoke_fixture"
+    ],
+    "subset_seed": null,
+    "subset_strategy": null,
+    "generated_from": null,
+    "triple_count": 33
+  },
+  "query_summaries": [
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 198.19641264493112,
+        "raw_queries_per_sec": 198.19641264493112
+      },
+      "group": "single_bgp",
+      "category": "single_bgp",
+      "result_count": 2,
+      "timeout_ms": 500,
+      "warmup_iterations": 0,
+      "measurement_iterations": 2,
+      "benchmark_id": "wgpb-single-bgp-001",
+      "suite": "wgpb",
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 9059.05,
+        "total_us": 10091,
+        "max_us": 9505,
+        "mean_us": 5045.5,
+        "median_us": 5045.5,
+        "min_us": 586,
+        "p99_us": 9415.81,
+        "q1_us": 2815.75,
+        "q3_us": 7275.25
+      },
+      "failure_count": 0,
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "feature_tags": [
+        "bgp",
+        "instance_of"
+      ],
+      "shape": "single_bgp",
+      "answer_size_class": "medium",
+      "source_id": "WGPB-1",
+      "stress_points": [
+        "high_fanout"
+      ],
+      "execution_variant": "raw",
+      "completion_rate": 1.0,
+      "query_name": "Humans by instance",
+      "reference_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+      "answer_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+      "correctness": {
+        "status": "match",
+        "benchmark_id": "wgpb-single-bgp-001",
+        "divergence_count": 0,
+        "execution_variant": "raw",
+        "classification": null,
+        "reference_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "answer_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "accepted": false,
+        "actual_row_count": 2,
+        "exemplars": [],
+        "reference_row_count": 2
+      },
+      "partial_failure_class": "none",
+      "penalty_count": 0,
+      "success_count": 2,
+      "accepted_divergence": false,
+      "divergence_exemplars": [],
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 9059.05,
+        "total_us": 10091,
+        "max_us": 9505,
+        "mean_us": 5045.5,
+        "median_us": 5045.5,
+        "min_us": 586,
+        "p99_us": 9415.81,
+        "q1_us": 2815.75,
+        "q3_us": 7275.25
+      },
+      "divergence_classification": null
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 2691.790040376851,
+        "raw_queries_per_sec": 2691.790040376851
+      },
+      "group": "single_bgp",
+      "category": "single_bgp",
+      "result_count": 2,
+      "timeout_ms": 500,
+      "warmup_iterations": 0,
+      "measurement_iterations": 2,
+      "benchmark_id": "wdbench-single-bgp-001",
+      "suite": "wdbench",
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 380.05,
+        "total_us": 743,
+        "max_us": 381,
+        "mean_us": 371.5,
+        "median_us": 371.5,
+        "min_us": 362,
+        "p99_us": 380.81,
+        "q1_us": 366.75,
+        "q3_us": 376.25
+      },
+      "failure_count": 0,
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "feature_tags": [
+        "fragment_expansion",
+        "bgp"
+      ],
+      "shape": "single_bgp",
+      "answer_size_class": "medium",
+      "source_id": "1",
+      "stress_points": [
+        "high_fanout"
+      ],
+      "execution_variant": "raw",
+      "completion_rate": 1.0,
+      "query_name": "Fragment: humans by instance",
+      "reference_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+      "answer_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+      "correctness": {
+        "status": "match",
+        "benchmark_id": "wdbench-single-bgp-001",
+        "divergence_count": 0,
+        "execution_variant": "raw",
+        "classification": null,
+        "reference_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "answer_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "accepted": false,
+        "actual_row_count": 2,
+        "exemplars": [],
+        "reference_row_count": 2
+      },
+      "partial_failure_class": "none",
+      "penalty_count": 0,
+      "success_count": 2,
+      "accepted_divergence": false,
+      "divergence_exemplars": [],
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 380.05,
+        "total_us": 743,
+        "max_us": 381,
+        "mean_us": 371.5,
+        "median_us": 371.5,
+        "min_us": 362,
+        "p99_us": 380.81,
+        "q1_us": 366.75,
+        "q3_us": 376.25
+      },
+      "divergence_classification": null
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 406.669377795852,
+        "raw_queries_per_sec": 406.669377795852
+      },
+      "group": "people",
+      "category": "people",
+      "result_count": 2,
+      "timeout_ms": 500,
+      "warmup_iterations": 0,
+      "measurement_iterations": 2,
+      "benchmark_id": "wdqs-people-occupation-001",
+      "suite": "wdqs",
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 4051.1,
+        "total_us": 4918,
+        "max_us": 4228,
+        "mean_us": 2459.0,
+        "median_us": 2459.0,
+        "min_us": 690,
+        "p99_us": 4192.62,
+        "q1_us": 1574.5,
+        "q3_us": 3343.5
+      },
+      "failure_count": 0,
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "feature_tags": [
+        "user_query",
+        "bgp",
+        "label_projection"
+      ],
+      "shape": "star_bgp",
+      "answer_size_class": "small",
+      "source_id": "WDQS-1",
+      "stress_points": [
+        "optimizer_sensitivity"
+      ],
+      "execution_variant": "raw",
+      "completion_rate": 1.0,
+      "query_name": "Humans with writer occupation",
+      "reference_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+      "answer_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+      "correctness": {
+        "status": "match",
+        "benchmark_id": "wdqs-people-occupation-001",
+        "divergence_count": 0,
+        "execution_variant": "raw",
+        "classification": null,
+        "reference_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "answer_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "accepted": false,
+        "actual_row_count": 2,
+        "exemplars": [],
+        "reference_row_count": 2
+      },
+      "partial_failure_class": "none",
+      "penalty_count": 0,
+      "success_count": 2,
+      "accepted_divergence": false,
+      "divergence_exemplars": [],
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 4051.1,
+        "total_us": 4918,
+        "max_us": 4228,
+        "mean_us": 2459.0,
+        "median_us": 2459.0,
+        "min_us": 690,
+        "p99_us": 4192.62,
+        "q1_us": 1574.5,
+        "q3_us": 3343.5
+      },
+      "divergence_classification": null
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 1843.3179723502303,
+        "raw_queries_per_sec": 1843.3179723502303
+      },
+      "group": "human",
+      "category": "human",
+      "result_count": 2,
+      "timeout_ms": 500,
+      "warmup_iterations": 0,
+      "measurement_iterations": 2,
+      "benchmark_id": "scholia-author-works-q42-raw",
+      "suite": "scholia",
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 553.75,
+        "total_us": 1085,
+        "max_us": 555,
+        "mean_us": 542.5,
+        "median_us": 542.5,
+        "min_us": 530,
+        "p99_us": 554.75,
+        "q1_us": 536.25,
+        "q3_us": 548.75
+      },
+      "failure_count": 0,
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "feature_tags": [
+        "template",
+        "label_service",
+        "entity_anchor",
+        "join"
+      ],
+      "shape": "path_bgp",
+      "answer_size_class": "small",
+      "source_id": "Q42",
+      "stress_points": [
+        "fanout",
+        "label_lookup"
+      ],
+      "execution_variant": "raw",
+      "completion_rate": 1.0,
+      "query_name": "Author works for Douglas Adams",
+      "reference_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+      "answer_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+      "correctness": {
+        "status": "match",
+        "benchmark_id": "scholia-author-works-q42-raw",
+        "divergence_count": 0,
+        "execution_variant": "raw",
+        "classification": null,
+        "reference_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "answer_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "accepted": false,
+        "actual_row_count": 2,
+        "exemplars": [],
+        "reference_row_count": 2
+      },
+      "partial_failure_class": "none",
+      "penalty_count": 0,
+      "success_count": 2,
+      "accepted_divergence": false,
+      "divergence_exemplars": [],
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 553.75,
+        "total_us": 1085,
+        "max_us": 555,
+        "mean_us": 542.5,
+        "median_us": 542.5,
+        "min_us": 530,
+        "p99_us": 554.75,
+        "q1_us": 536.25,
+        "q3_us": 548.75
+      },
+      "divergence_classification": null
+    }
+  ],
+  "artifacts": {
+    "output_dir": null,
+    "formats": [
+      "json",
+      "csv",
+      "markdown"
+    ],
+    "paths": {
+      "json": "summary.json",
+      "csv": "query_summaries.csv",
+      "markdown": "summary.md"
+    }
+  },
+  "generated_at": "2026-04-10T17:58:04.679829Z",
+  "schema_version": 1,
+  "runtime_metadata": {
+    "schedulers_online": 10,
+    "system_architecture": "aarch64-apple-darwin24.6.0",
+    "otp_release": "28",
+    "schedulers": 10,
+    "hostname": "SDMM660",
+    "elixir_version": "1.19.5",
+    "captured_at": "2026-04-10T17:58:04.639306Z",
+    "word_size": 8,
+    "logical_processors": 10,
+    "logical_processors_available": 10,
+    "dirty_cpu_schedulers": 10,
+    "dirty_io_schedulers": 10
+  },
+  "aggregates": {
+    "by_query_shape": [
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 1843.3179723502303,
+          "raw_queries_per_sec": 1843.3179723502303
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 553.75,
+          "total_us": 1085,
+          "max_us": 555,
+          "mean_us": 542.5,
+          "median_us": 542.5,
+          "min_us": 530,
+          "p99_us": 554.75,
+          "q1_us": 536.25,
+          "q3_us": 548.75
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "path_bgp",
+        "group_type": "shape",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 553.75,
+          "total_us": 1085,
+          "max_us": 555,
+          "mean_us": 542.5,
+          "median_us": 542.5,
+          "min_us": 530,
+          "p99_us": 554.75,
+          "q1_us": 536.25,
+          "q3_us": 548.75
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      },
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 369.20804873546246,
+          "raw_queries_per_sec": 369.20804873546246
+        },
+        "query_count": 2,
+        "adjusted_timing_summary": {
+          "count": 4,
+          "p95_us": 8167.149999999997,
+          "total_us": 10834,
+          "max_us": 9505,
+          "mean_us": 2708.5,
+          "median_us": 483.5,
+          "min_us": 362,
+          "p99_us": 9237.429999999998,
+          "q1_us": 376.25,
+          "q3_us": 2815.75
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 4,
+        "partial_failure_breakdown": {
+          "none": 2
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "single_bgp",
+        "group_type": "shape",
+        "raw_timing_summary": {
+          "count": 4,
+          "p95_us": 8167.149999999997,
+          "total_us": 10834,
+          "max_us": 9505,
+          "mean_us": 2708.5,
+          "median_us": 483.5,
+          "min_us": 362,
+          "p99_us": 9237.429999999998,
+          "q1_us": 376.25,
+          "q3_us": 2815.75
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 4,
+        "total_successes": 4
+      },
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 406.669377795852,
+          "raw_queries_per_sec": 406.669377795852
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 4051.1,
+          "total_us": 4918,
+          "max_us": 4228,
+          "mean_us": 2459.0,
+          "median_us": 2459.0,
+          "min_us": 690,
+          "p99_us": 4192.62,
+          "q1_us": 1574.5,
+          "q3_us": 3343.5
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "star_bgp",
+        "group_type": "shape",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 4051.1,
+          "total_us": 4918,
+          "max_us": 4228,
+          "mean_us": 2459.0,
+          "median_us": 2459.0,
+          "min_us": 690,
+          "p99_us": 4192.62,
+          "q1_us": 1574.5,
+          "q3_us": 3343.5
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      }
+    ],
+    "by_workload_family": [
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 1843.3179723502303,
+          "raw_queries_per_sec": 1843.3179723502303
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 553.75,
+          "total_us": 1085,
+          "max_us": 555,
+          "mean_us": 542.5,
+          "median_us": 542.5,
+          "min_us": 530,
+          "p99_us": 554.75,
+          "q1_us": 536.25,
+          "q3_us": 548.75
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "scholia",
+        "group_type": "suite",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 553.75,
+          "total_us": 1085,
+          "max_us": 555,
+          "mean_us": 542.5,
+          "median_us": 542.5,
+          "min_us": 530,
+          "p99_us": 554.75,
+          "q1_us": 536.25,
+          "q3_us": 548.75
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      },
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 2691.790040376851,
+          "raw_queries_per_sec": 2691.790040376851
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 380.05,
+          "total_us": 743,
+          "max_us": 381,
+          "mean_us": 371.5,
+          "median_us": 371.5,
+          "min_us": 362,
+          "p99_us": 380.81,
+          "q1_us": 366.75,
+          "q3_us": 376.25
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "wdbench",
+        "group_type": "suite",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 380.05,
+          "total_us": 743,
+          "max_us": 381,
+          "mean_us": 371.5,
+          "median_us": 371.5,
+          "min_us": 362,
+          "p99_us": 380.81,
+          "q1_us": 366.75,
+          "q3_us": 376.25
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      },
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 406.669377795852,
+          "raw_queries_per_sec": 406.669377795852
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 4051.1,
+          "total_us": 4918,
+          "max_us": 4228,
+          "mean_us": 2459.0,
+          "median_us": 2459.0,
+          "min_us": 690,
+          "p99_us": 4192.62,
+          "q1_us": 1574.5,
+          "q3_us": 3343.5
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "wdqs",
+        "group_type": "suite",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 4051.1,
+          "total_us": 4918,
+          "max_us": 4228,
+          "mean_us": 2459.0,
+          "median_us": 2459.0,
+          "min_us": 690,
+          "p99_us": 4192.62,
+          "q1_us": 1574.5,
+          "q3_us": 3343.5
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      },
+      {
+        "throughput": {
+          "adjusted_iterations_per_sec": 198.19641264493112,
+          "raw_queries_per_sec": 198.19641264493112
+        },
+        "query_count": 1,
+        "adjusted_timing_summary": {
+          "count": 2,
+          "p95_us": 9059.05,
+          "total_us": 10091,
+          "max_us": 9505,
+          "mean_us": 5045.5,
+          "median_us": 5045.5,
+          "min_us": 586,
+          "p99_us": 9415.81,
+          "q1_us": 2815.75,
+          "q3_us": 7275.25
+        },
+        "divergence_count": 0,
+        "divergence_status": "match",
+        "completion_rate": 1.0,
+        "penalty_count": 0,
+        "divergence_breakdown": {},
+        "known_result_count_total": 2,
+        "partial_failure_breakdown": {
+          "none": 1
+        },
+        "accepted_divergence_count": 0,
+        "error_totals": {
+          "timeout": 0,
+          "out_of_memory": 0,
+          "parse_error": 0,
+          "execution_error": 0,
+          "cancellation": 0
+        },
+        "group_key": "wgpb",
+        "group_type": "suite",
+        "raw_timing_summary": {
+          "count": 2,
+          "p95_us": 9059.05,
+          "total_us": 10091,
+          "max_us": 9505,
+          "mean_us": 5045.5,
+          "median_us": 5045.5,
+          "min_us": 586,
+          "p99_us": 9415.81,
+          "q1_us": 2815.75,
+          "q3_us": 7275.25
+        },
+        "total_failures": 0,
+        "total_measurement_iterations": 2,
+        "total_successes": 2
+      }
+    ]
+  },
+  "overall_summary": {
+    "throughput": {
+      "adjusted_iterations_per_sec": 475.14402803349765,
+      "raw_queries_per_sec": 475.14402803349765
+    },
+    "query_count": 4,
+    "adjusted_timing_summary": {
+      "count": 8,
+      "p95_us": 7658.049999999997,
+      "total_us": 16837,
+      "max_us": 9505,
+      "mean_us": 2104.625,
+      "median_us": 570.5,
+      "min_us": 362,
+      "p99_us": 9135.609999999999,
+      "q1_us": 492.75,
+      "q3_us": 1574.5
+    },
+    "divergence_count": 0,
+    "divergence_status": "match",
+    "completion_rate": 1.0,
+    "penalty_count": 0,
+    "divergence_breakdown": {},
+    "known_result_count_total": 8,
+    "partial_failure_breakdown": {
+      "none": 4
+    },
+    "accepted_divergence_count": 0,
+    "error_totals": {
+      "timeout": 0,
+      "out_of_memory": 0,
+      "parse_error": 0,
+      "execution_error": 0,
+      "cancellation": 0
+    },
+    "group_key": "matrix",
+    "group_type": "overall",
+    "raw_timing_summary": {
+      "count": 8,
+      "p95_us": 7658.049999999997,
+      "total_us": 16837,
+      "max_us": 9505,
+      "mean_us": 2104.625,
+      "median_us": 570.5,
+      "min_us": 362,
+      "p99_us": 9135.609999999999,
+      "q1_us": 492.75,
+      "q3_us": 1574.5
+    },
+    "total_failures": 0,
+    "total_measurement_iterations": 8,
+    "total_successes": 8
+  },
+  "report_version": 2,
+  "suite_summaries": [
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 1843.3179723502303,
+        "raw_queries_per_sec": 1843.3179723502303
+      },
+      "query_count": 1,
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 553.75,
+        "total_us": 1085,
+        "max_us": 555,
+        "mean_us": 542.5,
+        "median_us": 542.5,
+        "min_us": 530,
+        "p99_us": 554.75,
+        "q1_us": 536.25,
+        "q3_us": 548.75
+      },
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "completion_rate": 1.0,
+      "penalty_count": 0,
+      "divergence_breakdown": {},
+      "known_result_count_total": 2,
+      "partial_failure_breakdown": {
+        "none": 1
+      },
+      "accepted_divergence_count": 0,
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "group_key": "scholia",
+      "group_type": "suite",
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 553.75,
+        "total_us": 1085,
+        "max_us": 555,
+        "mean_us": 542.5,
+        "median_us": 542.5,
+        "min_us": 530,
+        "p99_us": 554.75,
+        "q1_us": 536.25,
+        "q3_us": 548.75
+      },
+      "total_failures": 0,
+      "total_measurement_iterations": 2,
+      "total_successes": 2
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 2691.790040376851,
+        "raw_queries_per_sec": 2691.790040376851
+      },
+      "query_count": 1,
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 380.05,
+        "total_us": 743,
+        "max_us": 381,
+        "mean_us": 371.5,
+        "median_us": 371.5,
+        "min_us": 362,
+        "p99_us": 380.81,
+        "q1_us": 366.75,
+        "q3_us": 376.25
+      },
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "completion_rate": 1.0,
+      "penalty_count": 0,
+      "divergence_breakdown": {},
+      "known_result_count_total": 2,
+      "partial_failure_breakdown": {
+        "none": 1
+      },
+      "accepted_divergence_count": 0,
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "group_key": "wdbench",
+      "group_type": "suite",
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 380.05,
+        "total_us": 743,
+        "max_us": 381,
+        "mean_us": 371.5,
+        "median_us": 371.5,
+        "min_us": 362,
+        "p99_us": 380.81,
+        "q1_us": 366.75,
+        "q3_us": 376.25
+      },
+      "total_failures": 0,
+      "total_measurement_iterations": 2,
+      "total_successes": 2
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 406.669377795852,
+        "raw_queries_per_sec": 406.669377795852
+      },
+      "query_count": 1,
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 4051.1,
+        "total_us": 4918,
+        "max_us": 4228,
+        "mean_us": 2459.0,
+        "median_us": 2459.0,
+        "min_us": 690,
+        "p99_us": 4192.62,
+        "q1_us": 1574.5,
+        "q3_us": 3343.5
+      },
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "completion_rate": 1.0,
+      "penalty_count": 0,
+      "divergence_breakdown": {},
+      "known_result_count_total": 2,
+      "partial_failure_breakdown": {
+        "none": 1
+      },
+      "accepted_divergence_count": 0,
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "group_key": "wdqs",
+      "group_type": "suite",
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 4051.1,
+        "total_us": 4918,
+        "max_us": 4228,
+        "mean_us": 2459.0,
+        "median_us": 2459.0,
+        "min_us": 690,
+        "p99_us": 4192.62,
+        "q1_us": 1574.5,
+        "q3_us": 3343.5
+      },
+      "total_failures": 0,
+      "total_measurement_iterations": 2,
+      "total_successes": 2
+    },
+    {
+      "throughput": {
+        "adjusted_iterations_per_sec": 198.19641264493112,
+        "raw_queries_per_sec": 198.19641264493112
+      },
+      "query_count": 1,
+      "adjusted_timing_summary": {
+        "count": 2,
+        "p95_us": 9059.05,
+        "total_us": 10091,
+        "max_us": 9505,
+        "mean_us": 5045.5,
+        "median_us": 5045.5,
+        "min_us": 586,
+        "p99_us": 9415.81,
+        "q1_us": 2815.75,
+        "q3_us": 7275.25
+      },
+      "divergence_count": 0,
+      "divergence_status": "match",
+      "completion_rate": 1.0,
+      "penalty_count": 0,
+      "divergence_breakdown": {},
+      "known_result_count_total": 2,
+      "partial_failure_breakdown": {
+        "none": 1
+      },
+      "accepted_divergence_count": 0,
+      "error_totals": {
+        "timeout": 0,
+        "out_of_memory": 0,
+        "parse_error": 0,
+        "execution_error": 0,
+        "cancellation": 0
+      },
+      "group_key": "wgpb",
+      "group_type": "suite",
+      "raw_timing_summary": {
+        "count": 2,
+        "p95_us": 9059.05,
+        "total_us": 10091,
+        "max_us": 9505,
+        "mean_us": 5045.5,
+        "median_us": 5045.5,
+        "min_us": 586,
+        "p99_us": 9415.81,
+        "q1_us": 2815.75,
+        "q3_us": 7275.25
+      },
+      "total_failures": 0,
+      "total_measurement_iterations": 2,
+      "total_successes": 2
+    }
+  ]
+}

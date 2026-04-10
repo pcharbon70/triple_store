@@ -34,7 +34,7 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
        schema_version: 1,
        baseline_id: baseline_id,
        generated_at: generated_at,
-       dataset_manifest: Map.get(run_result, :dataset_manifest),
+       dataset_manifest: sanitize_dataset_manifest(Map.get(run_result, :dataset_manifest)),
        runtime_config: Map.get(run_result, :runtime_config, %{}),
        entries: entries
      }}
@@ -72,6 +72,17 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
   end
 
   @doc """
+  Persists a baseline document as pretty JSON.
+  """
+  @spec write_json(Path.t(), map()) :: :ok | {:error, term()}
+  def write_json(path, baseline) when is_binary(path) and is_map(baseline) do
+    baseline
+    |> normalize_for_json()
+    |> Jason.encode!(pretty: true)
+    |> then(&File.write(path, &1))
+  end
+
+  @doc """
   Loads a baseline document from Erlang term format.
   """
   @spec load(Path.t()) :: {:ok, map()} | {:error, term()}
@@ -82,6 +93,20 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
     else
       {:error, _} = error -> error
       _ -> {:error, :invalid_baseline_file}
+    end
+  end
+
+  @doc """
+  Loads a baseline document from JSON.
+  """
+  @spec load_json(Path.t()) :: {:ok, map()} | {:error, term()}
+  def load_json(path) when is_binary(path) do
+    with {:ok, json} <- File.read(path),
+         {:ok, baseline} <- Jason.decode(json) do
+      {:ok, denormalize_json(baseline)}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_baseline_json}
     end
   end
 
@@ -105,4 +130,94 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
   end
 
   defp deserialize_datetime(value), do: value
+
+  defp sanitize_dataset_manifest(nil), do: nil
+
+  defp sanitize_dataset_manifest(dataset_manifest) when is_map(dataset_manifest) do
+    dataset_manifest
+    |> Map.put(:local_data_path, nil)
+    |> Map.put(:manifest_path, nil)
+  end
+
+  defp normalize_for_json(%Date{} = date), do: Date.to_iso8601(date)
+  defp normalize_for_json(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+
+  defp normalize_for_json(map) when is_map(map) do
+    map
+    |> Enum.map(fn {key, value} -> {to_string(key), normalize_for_json(value)} end)
+    |> Enum.into(%{})
+  end
+
+  defp normalize_for_json(list) when is_list(list), do: Enum.map(list, &normalize_for_json/1)
+  defp normalize_for_json(value), do: value
+
+  defp denormalize_json(%{"generated_at" => generated_at} = baseline) do
+    %{
+      schema_version: baseline["schema_version"],
+      baseline_id: baseline["baseline_id"],
+      generated_at: deserialize_datetime(generated_at),
+      dataset_manifest: denormalize_json_map(baseline["dataset_manifest"]),
+      runtime_config: denormalize_json_map(baseline["runtime_config"]),
+      entries:
+        Enum.map(baseline["entries"] || [], fn entry ->
+          %{
+            benchmark_id: entry["benchmark_id"],
+            query_name: entry["query_name"],
+            suite: String.to_atom(entry["suite"]),
+            execution_variant: String.to_atom(entry["execution_variant"]),
+            answer_record: denormalize_json_map(entry["answer_record"])
+          }
+        end)
+    }
+  end
+
+  defp denormalize_json_map(nil), do: nil
+
+  defp denormalize_json_map(map) when is_map(map) do
+    map
+    |> Enum.map(fn {key, value} ->
+      normalized_key =
+        case key do
+          "suite" -> :suite
+          "execution_variant" -> :execution_variant
+          "blank_node_policy" -> :blank_node_policy
+          "ordering" -> :ordering
+          "result_kind" -> :result_kind
+          _ -> String.to_atom(key)
+        end
+
+      normalized_value =
+        case {normalized_key, value} do
+          {:suite, suite} when is_binary(suite) ->
+            String.to_atom(suite)
+
+          {:execution_variant, variant} when is_binary(variant) ->
+            String.to_atom(variant)
+
+          {:blank_node_policy, policy} when is_binary(policy) ->
+            String.to_atom(policy)
+
+          {:ordering, ordering} when is_binary(ordering) ->
+            String.to_atom(ordering)
+
+          {:result_kind, result_kind} when is_binary(result_kind) ->
+            String.to_atom(result_kind)
+
+          {_key, nested} when is_map(nested) ->
+            denormalize_json_map(nested)
+
+          {_key, nested} when is_list(nested) ->
+            Enum.map(nested, &denormalize_json_value/1)
+
+          {_key, other} ->
+            other
+        end
+
+      {normalized_key, normalized_value}
+    end)
+    |> Enum.into(%{})
+  end
+
+  defp denormalize_json_value(value) when is_map(value), do: denormalize_json_map(value)
+  defp denormalize_json_value(value), do: value
 end
