@@ -34,25 +34,27 @@ Description: This task imports fragment-oriented workloads derived from query lo
 
 Description: This section builds a Scholia-style benchmark corpus from reusable query templates while keeping the resulting workload standards-compliant and friendly to TripleStore.
 
+- [x] **Section 2.2 Complete** (2026-04-10)
+
 ### 2.2.1 Template Normalization
 
 Description: This task converts Scholia-oriented query templates into standard SPARQL and prepares them for deterministic benchmark instantiation.
 
-- [ ] 2.2.1.1 Extract Scholia template classes and template metadata into local benchmark assets
-- [ ] 2.2.1.2 Replace engine-specific constructs with standards-compliant SPARQL equivalents
-- [ ] 2.2.1.3 Implement label-service and convenience-template rewrites where needed
-- [ ] 2.2.1.4 Add parameter-substitution helpers for entities, classes, and common template variables
-- [ ] 2.2.1.5 Tag templates by complexity, feature usage, and likely execution stress points
+- [x] 2.2.1.1 Extract Scholia template classes and template metadata into local benchmark assets
+- [x] 2.2.1.2 Replace engine-specific constructs with standards-compliant SPARQL equivalents
+- [x] 2.2.1.3 Implement label-service and convenience-template rewrites where needed
+- [x] 2.2.1.4 Add parameter-substitution helpers for entities, classes, and common template variables
+- [x] 2.2.1.5 Tag templates by complexity, feature usage, and likely execution stress points
 
 ### 2.2.2 Template Instantiation Strategy
 
 Description: This task defines how Scholia templates are instantiated into a stable benchmark corpus for each dataset tier.
 
-- [ ] 2.2.2.1 Select representative item sets per class for `smoke`, `medium`, `large`, and `full_dump` tiers
-- [ ] 2.2.2.2 Materialize instantiated queries with stable benchmark IDs and suite membership
-- [ ] 2.2.2.3 Generate query variants for count-only and distinct-only execution where appropriate
-- [ ] 2.2.2.4 Record per-template instantiation metadata so results can be traced back to the original template
-- [ ] 2.2.2.5 Define fallback behavior when a template has no valid instantiations for a smaller dataset tier
+- [x] 2.2.2.1 Select representative item sets per class for `smoke`, `medium`, `large`, and `full_dump` tiers
+- [x] 2.2.2.2 Materialize instantiated queries with stable benchmark IDs and suite membership
+- [x] 2.2.2.3 Generate query variants for count-only and distinct-only execution where appropriate
+- [x] 2.2.2.4 Record per-template instantiation metadata so results can be traced back to the original template
+- [x] 2.2.2.5 Define fallback behavior when a template has no valid instantiations for a smaller dataset tier
 
 ## 2.3 Integration Tests
 
