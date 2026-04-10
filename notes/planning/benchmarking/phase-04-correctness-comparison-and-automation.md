@@ -60,16 +60,16 @@ Description: This section validates the correctness-analysis and automation laye
 
 Description: This task validates the answer-normalization and divergence-detection pipeline on controlled benchmark workloads.
 
-- [ ] 4.3.1.1 Verify known result mismatches are classified into the expected divergence buckets
-- [ ] 4.3.1.2 Verify canonical normalization yields stable comparisons across repeated runs
-- [ ] 4.3.1.3 Verify count-only and distinct-only validation paths work end to end
-- [ ] 4.3.1.4 Verify accepted-divergence metadata is honored without masking unrelated failures
+- [x] 4.3.1.1 Verify known result mismatches are classified into the expected divergence buckets
+- [x] 4.3.1.2 Verify canonical normalization yields stable comparisons across repeated runs
+- [x] 4.3.1.3 Verify count-only and distinct-only validation paths work end to end
+- [x] 4.3.1.4 Verify accepted-divergence metadata is honored without masking unrelated failures
 
 ### 4.3.2 Automation Integration
 
 Description: This task validates that benchmark commands, CI jobs, and baseline workflows operate safely and produce expected outputs.
 
-- [ ] 4.3.2.1 Verify smoke benchmark tasks run successfully from a clean checkout with one command
-- [ ] 4.3.2.2 Verify CI and scheduled jobs publish benchmark artifacts with the correct provenance metadata
-- [ ] 4.3.2.3 Verify regression thresholds fail clearly when suite metrics move past configured limits
-- [ ] 4.3.2.4 Verify accepted baselines can be compared against fresh runs without corrupting stored benchmark history
+- [x] 4.3.2.1 Verify smoke benchmark tasks run successfully from a clean checkout with one command
+- [x] 4.3.2.2 Verify CI and scheduled jobs publish benchmark artifacts with the correct provenance metadata
+- [x] 4.3.2.3 Verify regression thresholds fail clearly when suite metrics move past configured limits
+- [x] 4.3.2.4 Verify accepted baselines can be compared against fresh runs without corrupting stored benchmark history

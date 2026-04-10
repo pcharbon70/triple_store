@@ -102,7 +102,7 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
   @spec load_json(Path.t()) :: {:ok, map()} | {:error, term()}
   def load_json(path) when is_binary(path) do
     with {:ok, json} <- File.read(path),
-         {:ok, baseline} <- Jason.decode(json) do
+         {:ok, baseline} when is_map(baseline) <- Jason.decode(json) do
       {:ok, denormalize_json(baseline)}
     else
       {:error, _} = error -> error
