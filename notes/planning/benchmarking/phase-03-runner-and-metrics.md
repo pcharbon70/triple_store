@@ -12,21 +12,21 @@ Description: This section creates the runtime harness that executes benchmark su
 
 Description: This task defines the control flow for suite execution so every benchmark run follows the same lifecycle regardless of workload family or dataset tier.
 
-- [ ] 3.1.1.1 Implement suite runner with configurable warmup, iterations, and timeout budgets
-- [ ] 3.1.1.2 Support single-query, suite-level, and full-matrix benchmark runs
-- [ ] 3.1.1.3 Support execution variants for raw, count-only, and distinct-only queries
-- [ ] 3.1.1.4 Add per-tier defaults for timeout, warmup, and iteration counts
-- [ ] 3.1.1.5 Add run-level provenance capture for dataset manifest, runtime config, and git SHA
+- [x] 3.1.1.1 Implement suite runner with configurable warmup, iterations, and timeout budgets
+- [x] 3.1.1.2 Support single-query, suite-level, and full-matrix benchmark runs
+- [x] 3.1.1.3 Support execution variants for raw, count-only, and distinct-only queries
+- [x] 3.1.1.4 Add per-tier defaults for timeout, warmup, and iteration counts
+- [x] 3.1.1.5 Add run-level provenance capture for dataset manifest, runtime config, and git SHA
 
 ### 3.1.2 Error and Resource Capture
 
 Description: This task ensures benchmark failures and runtime instability are captured as structured outputs rather than ad hoc logs.
 
-- [ ] 3.1.2.1 Capture parser, execution, timeout, cancellation, and out-of-memory errors separately
-- [ ] 3.1.2.2 Capture result counts, elapsed time, and any available peak-memory metrics
-- [ ] 3.1.2.3 Implement adjusted timing penalties for failures and unbounded long-running queries
-- [ ] 3.1.2.4 Classify partial failures so suite summaries can distinguish flaky runs from hard incompatibilities
-- [ ] 3.1.2.5 Preserve raw query text and normalized query text for failed executions
+- [x] 3.1.2.1 Capture parser, execution, timeout, cancellation, and out-of-memory errors separately
+- [x] 3.1.2.2 Capture result counts, elapsed time, and any available peak-memory metrics
+- [x] 3.1.2.3 Implement adjusted timing penalties for failures and unbounded long-running queries
+- [x] 3.1.2.4 Classify partial failures so suite summaries can distinguish flaky runs from hard incompatibilities
+- [x] 3.1.2.5 Preserve raw query text and normalized query text for failed executions
 
 ## 3.2 Metrics and Result Artifacts
 
