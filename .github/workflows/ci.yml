@@ -5,6 +5,7 @@ on:
     paths:
       - "specs/**"
       - "guides/**"
+      - "priv/**"
       - "lib/**"
       - "test/**"
       - "notes/**"
@@ -21,6 +22,7 @@ on:
     paths:
       - "specs/**"
       - "guides/**"
+      - "priv/**"
       - "lib/**"
       - "test/**"
       - "notes/**"
@@ -199,3 +201,155 @@ jobs:
 
       - name: Run Dialyzer
         run: mix dialyzer --format short
+
+  wikidata_parser_validation:
+    name: Wikidata Parser Validation
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: ./scripts/compile_strict.sh
+
+      - name: Run parser validation
+        run: mix benchmark.wikidata parser
+
+  wikidata_query_corpus_smoke:
+    name: Wikidata Query Corpus Smoke
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: ./scripts/compile_strict.sh
+
+      - name: Run corpus smoke validation
+        run: mix benchmark.wikidata corpus-smoke
+
+  wikidata_benchmark_smoke:
+    name: Wikidata Benchmark Smoke
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: ./scripts/compile_strict.sh
+
+      - name: Run smoke benchmark
+        run: |
+          mix benchmark.wikidata smoke \
+            --answer-baseline priv/benchmarks/wikidata/baselines/smoke/reference_answers.json \
+            --accepted-divergences priv/benchmarks/wikidata/baselines/smoke/accepted_divergences.json \
+            --max-adjusted-p95-us 500000 \
+            --max-failure-rate 0.0 \
+            --max-divergence-rate 0.0 \
+            --output-root tmp/wikidata_ci_runs \
+            --report-id wikidata-ci-smoke
+
+      - name: Upload smoke benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wikidata-ci-smoke
+          path: tmp/wikidata_ci_runs

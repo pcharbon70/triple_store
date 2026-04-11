@@ -1,0 +1,142 @@
+{
+  "baseline_id": "wikidata-smoke-baseline",
+  "dataset_manifest": {
+    "checksum": "sha256:05b94760b7cf4f9d6bd4d42dea4770812fb7aedd7cae94508093b00d48eceeba",
+    "dataset_id": "wikidata-built-in-smoke",
+    "dump_version": "2024-10-smoke",
+    "format": "ntriples",
+    "generated_from": null,
+    "local_data_path": null,
+    "manifest_path": null,
+    "normalization_flags": [
+      "truthy_only",
+      "repo_smoke_fixture"
+    ],
+    "source_date": "2024-10-01",
+    "source_url": "repo://priv/benchmarks/wikidata/fixtures/smoke.nt",
+    "subset_seed": null,
+    "subset_strategy": null,
+    "tier": "smoke",
+    "triple_count": 33
+  },
+  "entries": [
+    {
+      "answer_record": {
+        "anonymous_blank_node_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "blank_node_policy": "anonymous",
+        "datatype_relaxed_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "distinct_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "distinct_row_count": 2,
+        "execution_variant": "raw",
+        "fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "normalized_rows": [
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q42\\\"]\"]]",
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q80\\\"]\"]]"
+        ],
+        "ordering": "unordered",
+        "result_kind": "bindings",
+        "row_count": 2,
+        "schema_version": 1,
+        "unordered_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354"
+      },
+      "benchmark_id": "wgpb-single-bgp-001",
+      "execution_variant": "raw",
+      "query_name": "Humans by instance",
+      "suite": "wgpb"
+    },
+    {
+      "answer_record": {
+        "anonymous_blank_node_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "blank_node_policy": "anonymous",
+        "datatype_relaxed_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "distinct_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "distinct_row_count": 2,
+        "execution_variant": "raw",
+        "fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354",
+        "normalized_rows": [
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q42\\\"]\"]]",
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q80\\\"]\"]]"
+        ],
+        "ordering": "unordered",
+        "result_kind": "bindings",
+        "row_count": 2,
+        "schema_version": 1,
+        "unordered_fingerprint": "819cac003dac6368ee407dd546f97739fee950a92c980d5c7f98d8e64ac33354"
+      },
+      "benchmark_id": "wdbench-single-bgp-001",
+      "execution_variant": "raw",
+      "query_name": "Fragment: humans by instance",
+      "suite": "wdbench"
+    },
+    {
+      "answer_record": {
+        "anonymous_blank_node_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "blank_node_policy": "anonymous",
+        "datatype_relaxed_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "distinct_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "distinct_row_count": 2,
+        "execution_variant": "raw",
+        "fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5",
+        "normalized_rows": [
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q42\\\"]\"],[\"personLabel\",\"[\\\"literal\\\",\\\"lang\\\",\\\"Douglas Adams\\\",\\\"en\\\"]\"]]",
+          "[[\"person\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/Q80\\\"]\"],[\"personLabel\",\"[\\\"literal\\\",\\\"lang\\\",\\\"Tim Berners-Lee\\\",\\\"en\\\"]\"]]"
+        ],
+        "ordering": "unordered",
+        "result_kind": "bindings",
+        "row_count": 2,
+        "schema_version": 1,
+        "unordered_fingerprint": "86e618ef415c6db0dae80f60a7a420ed647d2780e0440d6460990508d8a599b5"
+      },
+      "benchmark_id": "wdqs-people-occupation-001",
+      "execution_variant": "raw",
+      "query_name": "Humans with writer occupation",
+      "suite": "wdqs"
+    },
+    {
+      "answer_record": {
+        "anonymous_blank_node_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "blank_node_policy": "anonymous",
+        "datatype_relaxed_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "distinct_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "distinct_row_count": 2,
+        "execution_variant": "raw",
+        "fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b",
+        "normalized_rows": [
+          "[[\"work\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/QWork1\\\"]\"],[\"workLabel\",\"[\\\"literal\\\",\\\"lang\\\",\\\"The Hitchhiker's Guide\\\",\\\"en\\\"]\"]]",
+          "[[\"work\",\"[\\\"iri\\\",\\\"http://www.wikidata.org/entity/QWork2\\\"]\"],[\"workLabel\",\"[\\\"literal\\\",\\\"lang\\\",\\\"Dirk Gently\\\",\\\"en\\\"]\"]]"
+        ],
+        "ordering": "unordered",
+        "result_kind": "bindings",
+        "row_count": 2,
+        "schema_version": 1,
+        "unordered_fingerprint": "8ba024affba4f6531b86a4bbe4018973268e4841d2a63d007efd201239b39b2b"
+      },
+      "benchmark_id": "scholia-author-works-q42-raw",
+      "execution_variant": "raw",
+      "query_name": "Author works for Douglas Adams",
+      "suite": "scholia"
+    }
+  ],
+  "generated_at": "2026-04-10T17:58:01.082188Z",
+  "runtime_config": {
+    "blank_node_policy": "anonymous",
+    "capture_answers": true,
+    "dataset_tier": "smoke",
+    "execution_variants": [
+      "raw"
+    ],
+    "long_running_threshold_us": 250000,
+    "measurement_iterations": 2,
+    "optimize": true,
+    "penalty_us": 500000,
+    "query_ids": [
+      "wgpb-single-bgp-001",
+      "wdbench-single-bgp-001",
+      "wdqs-people-occupation-001",
+      "scholia-author-works-q42-raw"
+    ],
+    "timeout_ms": 500,
+    "warmup_iterations": 0
+  },
+  "schema_version": 1
+}

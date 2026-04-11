@@ -1,0 +1,33 @@
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P31> <http://www.wikidata.org/entity/Q5> .
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P106> <http://www.wikidata.org/entity/Q36180> .
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P21> <http://www.wikidata.org/entity/Q6581097> .
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P27> <http://www.wikidata.org/entity/Q30> .
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P101> <http://www.wikidata.org/entity/QFOW1> .
+<http://www.wikidata.org/entity/Q42> <http://www.wikidata.org/prop/direct/P108> <http://www.wikidata.org/entity/QOrg1> .
+<http://www.wikidata.org/entity/Q42> <http://www.w3.org/2000/01/rdf-schema#label> "Douglas Adams"@en .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P31> <http://www.wikidata.org/entity/Q5> .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P106> <http://www.wikidata.org/entity/Q36180> .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P21> <http://www.wikidata.org/entity/Q6581097> .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P27> <http://www.wikidata.org/entity/Q30> .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P101> <http://www.wikidata.org/entity/QFOW1> .
+<http://www.wikidata.org/entity/Q80> <http://www.wikidata.org/prop/direct/P108> <http://www.wikidata.org/entity/QOrg1> .
+<http://www.wikidata.org/entity/Q80> <http://www.w3.org/2000/01/rdf-schema#label> "Tim Berners-Lee"@en .
+<http://www.wikidata.org/entity/Q36180> <http://www.wikidata.org/prop/direct/P279> <http://www.wikidata.org/entity/Q12737077> .
+<http://www.wikidata.org/entity/Q36180> <http://www.w3.org/2000/01/rdf-schema#label> "writer"@en .
+<http://www.wikidata.org/entity/Q12737077> <http://www.w3.org/2000/01/rdf-schema#label> "occupation"@en .
+<http://www.wikidata.org/entity/QOrg1> <http://www.wikidata.org/prop/direct/P31> <http://www.wikidata.org/entity/Q43229> .
+<http://www.wikidata.org/entity/QOrg1> <http://www.w3.org/2000/01/rdf-schema#label> "Example Research Org"@en .
+<http://www.wikidata.org/entity/QWork1> <http://www.wikidata.org/prop/direct/P50> <http://www.wikidata.org/entity/Q42> .
+<http://www.wikidata.org/entity/QWork1> <http://www.w3.org/2000/01/rdf-schema#label> "The Hitchhiker's Guide"@en .
+<http://www.wikidata.org/entity/QWork2> <http://www.wikidata.org/prop/direct/P50> <http://www.wikidata.org/entity/Q42> .
+<http://www.wikidata.org/entity/QWork2> <http://www.w3.org/2000/01/rdf-schema#label> "Dirk Gently"@en .
+<http://www.wikidata.org/entity/QPaper1> <http://www.wikidata.org/prop/direct/P31> <http://www.wikidata.org/entity/Q13442814> .
+<http://www.wikidata.org/entity/QPaper1> <http://www.w3.org/2000/01/rdf-schema#label> "Example Article One"@en .
+<http://www.wikidata.org/entity/QCiting1> <http://www.wikidata.org/prop/direct/P2860> <http://www.wikidata.org/entity/QPaper1> .
+<http://www.wikidata.org/entity/QCiting1> <http://www.w3.org/2000/01/rdf-schema#label> "Citing Article One"@en .
+<http://www.wikidata.org/entity/QNovel> <http://www.wikidata.org/prop/direct/P279> <http://www.wikidata.org/entity/Q17537576> .
+<http://www.wikidata.org/entity/QNovel> <http://www.w3.org/2000/01/rdf-schema#label> "Novel"@en .
+<http://www.wikidata.org/entity/QEssay> <http://www.wikidata.org/prop/direct/P279> <http://www.wikidata.org/entity/Q17537576> .
+<http://www.wikidata.org/entity/QEssay> <http://www.w3.org/2000/01/rdf-schema#label> "Essay"@en .
+<http://www.wikidata.org/entity/Q17537576> <http://www.w3.org/2000/01/rdf-schema#label> "creative work"@en .
+<http://www.wikidata.org/entity/QFOW1> <http://www.w3.org/2000/01/rdf-schema#label> "Astrophysics"@en .

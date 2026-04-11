@@ -13,6 +13,7 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
   """
 
   alias TripleStore.Benchmark.Wikidata.{
+    AnswerNormalizer,
     Contract,
     Corpus,
     DatasetManifest,
@@ -65,6 +66,7 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
           adjusted_elapsed_us: non_neg_integer(),
           penalty_reason: :failure | :long_running | nil,
           result_count: non_neg_integer() | nil,
+          answer_fingerprint: String.t() | nil,
           memory_before_bytes: non_neg_integer(),
           memory_after_bytes: non_neg_integer(),
           peak_memory_bytes: non_neg_integer(),
@@ -103,6 +105,8 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
           result_count: non_neg_integer() | nil,
           failure_count: non_neg_integer(),
           penalty_count: non_neg_integer(),
+          answer_record: map() | nil,
+          correctness: map() | nil,
           partial_failure_class: partial_failure_class(),
           failures: [map()],
           template_metadata: map() | nil
@@ -133,6 +137,8 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
           penalty_us: pos_integer(),
           long_running_threshold_us: pos_integer(),
           optimize: boolean(),
+          capture_answers: boolean(),
+          blank_node_policy: AnswerNormalizer.blank_node_policy(),
           executor: executor_fun()
         ]
 
@@ -333,7 +339,10 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
            Keyword.get(opts, :long_running_threshold_us, defaults.long_running_threshold_us),
          execution_variants: Keyword.get(opts, :execution_variants, [:raw]),
          query_ids: Keyword.get(opts, :query_ids, []),
-         optimize: Keyword.get(opts, :optimize, true)
+         optimize: Keyword.get(opts, :optimize, true),
+         capture_answers: Keyword.get(opts, :capture_answers, capture_answers_by_default(tier)),
+         blank_node_policy:
+           Keyword.get(opts, :blank_node_policy, blank_node_policy_for_tier(tier))
        }}
     end
   end
@@ -348,9 +357,16 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
   defp run_query_iterations(store, %Query{} = query, runtime_config, executor) do
     run_warmup(store, query, runtime_config, executor)
 
-    iterations =
-      Enum.map(1..runtime_config.measurement_iterations, fn iteration ->
-        execute_iteration(store, query, runtime_config, iteration, executor)
+    {iterations, answer_record} =
+      Enum.map_reduce(1..runtime_config.measurement_iterations, nil, fn iteration,
+                                                                        captured_answer ->
+        iteration_result = execute_iteration(store, query, runtime_config, iteration, executor)
+        next_answer = captured_answer || Map.get(iteration_result, :answer_record)
+
+        {
+          Map.drop(iteration_result, [:answer_record]),
+          next_answer
+        }
       end)
 
     raw_timings_us =
@@ -398,6 +414,8 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
       result_count: last_result_count(iterations),
       failure_count: failure_count,
       penalty_count: Enum.count(iterations, &(not is_nil(&1.penalty_reason))),
+      answer_record: answer_record,
+      correctness: nil,
       partial_failure_class:
         classify_partial_failure(
           runtime_config.measurement_iterations,
@@ -446,6 +464,8 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
 
     case outcome do
       {:ok, result} ->
+        answer_record = build_answer_record(query, runtime_config, result)
+
         adjusted_elapsed_us =
           adjusted_elapsed_us(
             elapsed_us,
@@ -461,12 +481,14 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
           adjusted_elapsed_us: adjusted_elapsed_us,
           penalty_reason: if(adjusted_elapsed_us > elapsed_us, do: :long_running, else: nil),
           result_count: result_count(result),
+          answer_fingerprint: answer_record && answer_record.fingerprint,
           memory_before_bytes: memory_before,
           memory_after_bytes: memory_after,
           peak_memory_bytes: peak_memory_bytes,
           error_class: nil,
           error_message: nil,
-          error_detail: nil
+          error_detail: nil,
+          answer_record: answer_record
         }
 
       {:error, reason} ->
@@ -485,12 +507,14 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
             ),
           penalty_reason: :failure,
           result_count: nil,
+          answer_fingerprint: nil,
           memory_before_bytes: memory_before,
           memory_after_bytes: memory_after,
           peak_memory_bytes: peak_memory_bytes,
           error_class: error_class,
           error_message: format_error(reason),
-          error_detail: inspect(reason)
+          error_detail: inspect(reason),
+          answer_record: nil
         }
     end
   end
@@ -573,6 +597,16 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
   defp adjusted_elapsed_us(elapsed_us, _error_class, _threshold_us, penalty_us),
     do: max(elapsed_us, penalty_us)
 
+  defp capture_answers_by_default(:smoke), do: true
+  defp capture_answers_by_default(:medium), do: true
+  defp capture_answers_by_default(:large), do: false
+  defp capture_answers_by_default(:full_dump), do: false
+
+  defp blank_node_policy_for_tier(:smoke), do: :anonymous
+  defp blank_node_policy_for_tier(:medium), do: :anonymous
+  defp blank_node_policy_for_tier(:large), do: :preserve
+  defp blank_node_policy_for_tier(:full_dump), do: :preserve
+
   defp classify_partial_failure(
          measurement_iterations,
          parser_error_count,
@@ -619,6 +653,27 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
 
   defp current_memory_bytes do
     :erlang.memory(:total)
+  end
+
+  defp build_answer_record(query, runtime_config, result) do
+    if runtime_config.capture_answers do
+      {:ok, answer_record} =
+        AnswerNormalizer.normalize(
+          result,
+          execution_variant: query.manifest.execution_variant,
+          ordering: ordering_for_query(query),
+          blank_node_policy: runtime_config.blank_node_policy
+        )
+
+      answer_record
+    end
+  end
+
+  defp ordering_for_query(%Query{manifest: %{execution_variant: :count_only}}), do: :unordered
+  defp ordering_for_query(%Query{manifest: %{execution_variant: :distinct_only}}), do: :unordered
+
+  defp ordering_for_query(%Query{sparql: sparql}) do
+    if String.contains?(String.upcase(sparql), "ORDER BY"), do: :ordered, else: :unordered
   end
 
   defp current_git_sha do

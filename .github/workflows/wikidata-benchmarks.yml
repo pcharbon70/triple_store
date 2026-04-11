@@ -1,0 +1,98 @@
+name: Wikidata Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_path:
+        description: Path to the Wikidata fixture on the benchmark runner
+        required: true
+        type: string
+      source_url:
+        description: Source URL for the provided fixture
+        required: true
+        type: string
+      dump_version:
+        description: Dump version label
+        required: false
+        default: "2024-10"
+        type: string
+  schedule:
+    - cron: "0 9 * * 1"
+
+jobs:
+  medium_and_full:
+    name: Medium and Full Wikidata Benchmarks
+    runs-on: [self-hosted, benchmark]
+    env:
+      MIX_ENV: test
+      ERLANG_ROCKSDB_OPTS: -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      WIKIDATA_SOURCE_PATH: ${{ inputs.source_path || vars.WIKIDATA_BENCHMARK_SOURCE_PATH }}
+      WIKIDATA_SOURCE_URL: ${{ inputs.source_url || vars.WIKIDATA_BENCHMARK_SOURCE_URL }}
+      WIKIDATA_DUMP_VERSION: ${{ inputs.dump_version || vars.WIKIDATA_BENCHMARK_DUMP_VERSION || '2024-10' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3"
+          elixir-version: "1.19.5"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.93.1"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            pkg-config \
+            librocksdb-dev \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        run: ./scripts/compile_strict.sh
+
+      - name: Validate benchmark source configuration
+        run: |
+          if [ -z "${WIKIDATA_SOURCE_PATH}" ] || [ -z "${WIKIDATA_SOURCE_URL}" ]; then
+            echo "Set workflow-dispatch inputs or repository variables WIKIDATA_BENCHMARK_SOURCE_PATH and WIKIDATA_BENCHMARK_SOURCE_URL."
+            exit 1
+          fi
+
+      - name: Run medium benchmark
+        run: |
+          mix benchmark.wikidata medium \
+            --source "${WIKIDATA_SOURCE_PATH}" \
+            --source-url "${WIKIDATA_SOURCE_URL}" \
+            --dump-version "${WIKIDATA_DUMP_VERSION}" \
+            --output-root tmp/wikidata_scheduled_runs \
+            --report-id wikidata-medium-scheduled
+
+      - name: Run full benchmark
+        run: |
+          mix benchmark.wikidata full \
+            --source "${WIKIDATA_SOURCE_PATH}" \
+            --source-url "${WIKIDATA_SOURCE_URL}" \
+            --dump-version "${WIKIDATA_DUMP_VERSION}" \
+            --output-root tmp/wikidata_scheduled_runs \
+            --report-id wikidata-full-scheduled
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wikidata-scheduled-benchmarks
+          path: tmp/wikidata_scheduled_runs

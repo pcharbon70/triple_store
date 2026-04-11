@@ -64,6 +64,12 @@ defmodule TripleStore.Benchmark.Wikidata.Metrics do
           raw_timing_summary: timing_summary(),
           adjusted_timing_summary: timing_summary(),
           throughput: throughput_summary(),
+          answer_fingerprint: String.t() | nil,
+          reference_fingerprint: String.t() | nil,
+          divergence_classification: atom() | nil,
+          divergence_exemplars: [map()],
+          accepted_divergence: boolean(),
+          correctness: map(),
           divergence_count: non_neg_integer(),
           divergence_status: atom()
         }
@@ -83,6 +89,8 @@ defmodule TripleStore.Benchmark.Wikidata.Metrics do
           raw_timing_summary: timing_summary(),
           adjusted_timing_summary: timing_summary(),
           throughput: throughput_summary(),
+          accepted_divergence_count: non_neg_integer(),
+          divergence_breakdown: map(),
           divergence_count: non_neg_integer(),
           divergence_status: atom()
         }
@@ -231,14 +239,17 @@ defmodule TripleStore.Benchmark.Wikidata.Metrics do
         adjusted_iterations_per_sec:
           queries_per_sec(total_measurement_iterations, adjusted_timing_summary.total_us)
       },
-      divergence_count: 0,
-      divergence_status: :not_evaluated
+      accepted_divergence_count: Enum.count(query_runs, &accepted_divergence?/1),
+      divergence_breakdown: divergence_breakdown(query_runs),
+      divergence_count: Enum.sum(Enum.map(query_runs, &divergence_count_for(&1))),
+      divergence_status: divergence_status_for(query_runs)
     }
   end
 
   defp summarize_query_run(query_run) do
     raw_timing_summary = timing_summary(query_run.raw_timings_us)
     adjusted_timing_summary = timing_summary(query_run.adjusted_timings_us)
+    correctness = correctness_summary(query_run)
 
     %{
       benchmark_id: query_run.benchmark_id,
@@ -276,8 +287,14 @@ defmodule TripleStore.Benchmark.Wikidata.Metrics do
         adjusted_iterations_per_sec:
           queries_per_sec(query_run.measurement_iterations, adjusted_timing_summary.total_us)
       },
-      divergence_count: 0,
-      divergence_status: :not_evaluated
+      answer_fingerprint: correctness.answer_fingerprint,
+      reference_fingerprint: correctness.reference_fingerprint,
+      divergence_classification: correctness.classification,
+      divergence_exemplars: correctness.exemplars,
+      accepted_divergence: correctness.accepted,
+      correctness: correctness,
+      divergence_count: correctness.divergence_count,
+      divergence_status: correctness.status
     }
   end
 
@@ -349,6 +366,104 @@ defmodule TripleStore.Benchmark.Wikidata.Metrics do
 
   defp normalize_shape(nil), do: :unknown
   defp normalize_shape(shape), do: shape
+
+  defp correctness_summary(query_run) do
+    correctness = Map.get(query_run, :correctness)
+
+    %{
+      benchmark_id: query_run.benchmark_id,
+      execution_variant: query_run.execution_variant,
+      status: correctness_status(correctness),
+      classification: Map.get(correctness || %{}, :classification),
+      accepted: Map.get(correctness || %{}, :accepted, false),
+      answer_fingerprint: answer_fingerprint_for(query_run, correctness),
+      reference_fingerprint: Map.get(correctness || %{}, :reference_fingerprint),
+      actual_row_count:
+        Map.get(correctness || %{}, :actual_row_count) ||
+          answer_row_count(Map.get(query_run, :answer_record)),
+      reference_row_count: Map.get(correctness || %{}, :reference_row_count),
+      divergence_count: divergence_count_for(query_run),
+      exemplars: Map.get(correctness || %{}, :exemplars, [])
+    }
+  end
+
+  defp divergence_count_for(query_run) do
+    case Map.get(query_run, :correctness) do
+      %{divergence_count: divergence_count} -> divergence_count
+      _ -> 0
+    end
+  end
+
+  defp accepted_divergence?(query_run) do
+    case Map.get(query_run, :correctness) do
+      %{accepted: true} -> true
+      _ -> false
+    end
+  end
+
+  defp divergence_breakdown(query_runs) do
+    Enum.reduce(query_runs, %{}, fn query_run, acc ->
+      classification =
+        query_run
+        |> Map.get(:correctness)
+        |> case do
+          %{classification: classification} when not is_nil(classification) -> classification
+          _ -> nil
+        end
+
+      if is_nil(classification) do
+        acc
+      else
+        Map.update(acc, classification, 1, &(&1 + 1))
+      end
+    end)
+  end
+
+  defp divergence_status_for(query_runs) do
+    statuses =
+      query_runs
+      |> Enum.map(fn query_run -> correctness_status(Map.get(query_run, :correctness)) end)
+      |> Enum.uniq()
+
+    cond do
+      statuses == [:not_evaluated] ->
+        :not_evaluated
+
+      Enum.any?(statuses, &(&1 == :divergent)) ->
+        :divergent
+
+      Enum.any?(statuses, &(&1 == :accepted_divergence)) ->
+        :accepted_divergence
+
+      Enum.any?(statuses, &(&1 == :missing_reference)) ->
+        :missing_reference
+
+      Enum.any?(statuses, &(&1 == :not_comparable)) ->
+        :not_comparable
+
+      true ->
+        :match
+    end
+  end
+
+  defp correctness_status(%{status: status}), do: status
+  defp correctness_status(_), do: :not_evaluated
+
+  defp answer_fingerprint_for(_query_run, %{answer_fingerprint: fingerprint})
+       when is_binary(fingerprint),
+       do: fingerprint
+
+  defp answer_fingerprint_for(query_run, _correctness) do
+    query_run
+    |> Map.get(:answer_record)
+    |> case do
+      %{fingerprint: fingerprint} -> fingerprint
+      _ -> nil
+    end
+  end
+
+  defp answer_row_count(%{row_count: row_count}), do: row_count
+  defp answer_row_count(_answer_record), do: nil
 
   defp default_report_id(run_result, generated_at) do
     tier =

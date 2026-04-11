@@ -21,9 +21,12 @@ defmodule TripleStore.Benchmark.Wikidata.ReportTest do
       assert decoded["overall_summary"]["group_key"] == "suite"
       assert String.contains?(csv, "benchmark_id,query_name,suite")
       assert String.contains?(csv, "wgpb-1")
+      assert String.contains?(csv, "divergence_classification")
+      assert String.contains?(csv, "accepted_divergence")
       assert String.contains?(markdown, "# Wikidata Benchmark Report")
       assert String.contains?(markdown, "## Dataset Provenance")
       assert String.contains?(markdown, "## Hardware Metadata")
+      assert String.contains?(markdown, "Correctness")
     end
 
     test "writes versioned report bundles without clobbering prior artifacts" do
@@ -117,6 +120,18 @@ defmodule TripleStore.Benchmark.Wikidata.ReportTest do
           result_count: 1,
           failure_count: 0,
           penalty_count: 0,
+          answer_record: %{fingerprint: "answer-wgpb-1", row_count: 1},
+          correctness: %{
+            status: :match,
+            classification: nil,
+            accepted: false,
+            answer_fingerprint: "answer-wgpb-1",
+            reference_fingerprint: "reference-wgpb-1",
+            actual_row_count: 1,
+            reference_row_count: 1,
+            divergence_count: 0,
+            exemplars: []
+          },
           partial_failure_class: :none,
           failures: [],
           template_metadata: nil
@@ -151,6 +166,18 @@ defmodule TripleStore.Benchmark.Wikidata.ReportTest do
           result_count: 2,
           failure_count: 1,
           penalty_count: 1,
+          answer_record: %{fingerprint: "answer-wgpb-2", row_count: 2},
+          correctness: %{
+            status: :accepted_divergence,
+            classification: :paths,
+            accepted: true,
+            answer_fingerprint: "answer-wgpb-2",
+            reference_fingerprint: "reference-wgpb-2",
+            actual_row_count: 2,
+            reference_row_count: 1,
+            divergence_count: 2,
+            exemplars: [%{type: :unexpected, row: "row-1"}]
+          },
           partial_failure_class: :flaky_run,
           failures: [%{iteration: 2, class: :timeout}],
           template_metadata: nil

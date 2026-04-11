@@ -69,6 +69,10 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
         "adjusted_mean_us",
         "raw_queries_per_sec",
         "adjusted_iterations_per_sec",
+        "answer_fingerprint",
+        "reference_fingerprint",
+        "divergence_classification",
+        "accepted_divergence",
         "partial_failure_class",
         "divergence_status"
       ]
@@ -107,6 +111,10 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
           format_float(query_summary.adjusted_timing_summary.mean_us, 2),
           format_float(query_summary.throughput.raw_queries_per_sec, 2),
           format_float(query_summary.throughput.adjusted_iterations_per_sec, 2),
+          query_summary.answer_fingerprint || "",
+          query_summary.reference_fingerprint || "",
+          query_summary.divergence_classification || "",
+          query_summary.accepted_divergence,
           query_summary.partial_failure_class,
           query_summary.divergence_status
         ]
@@ -271,6 +279,8 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
       "Adjusted Mean",
       "Raw QPS",
       "Adjusted Iter/s",
+      "Accepted",
+      "Divergences",
       "Timeouts",
       "Errors"
     ]
@@ -290,6 +300,8 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
           format_duration(summary.adjusted_timing_summary.mean_us),
           format_float(summary.throughput.raw_queries_per_sec, 2),
           format_float(summary.throughput.adjusted_iterations_per_sec, 2),
+          summary.accepted_divergence_count,
+          summary.divergence_count,
           summary.error_totals.timeout,
           total_errors
         ]
@@ -307,6 +319,8 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
       "Completion",
       "Raw Median",
       "Adjusted Mean",
+      "Correctness",
+      "Classification",
       "Raw QPS",
       "Failures"
     ]
@@ -321,6 +335,8 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
           format_percentage(query_summary.completion_rate),
           format_duration(query_summary.raw_timing_summary.median_us),
           format_duration(query_summary.adjusted_timing_summary.mean_us),
+          query_summary.divergence_status,
+          query_summary.divergence_classification || "n/a",
           format_float(query_summary.throughput.raw_queries_per_sec, 2),
           query_summary.failure_count
         ]
