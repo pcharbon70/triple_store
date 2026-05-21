@@ -312,9 +312,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "user:#{user_id}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "user:#{user_id}", permission)
     end
   end
 
@@ -339,9 +338,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- remove_acl_entry(db, graph_id, "user:#{user_id}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      remove_acl_entry(db, graph_id, "user:#{user_id}", permission)
     end
   end
 
@@ -366,9 +364,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "role:#{role}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "role:#{role}", permission)
     end
   end
 
@@ -391,9 +388,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "__public__", :read) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "__public__", :read)
     end
   end
 
@@ -416,9 +412,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- remove_acl_entry(db, graph_id, "__public__", :read) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      remove_acl_entry(db, graph_id, "__public__", :read)
     end
   end
 
@@ -510,9 +505,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "owner:#{user_id}", :owner) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "owner:#{user_id}", :owner)
     end
   end
 

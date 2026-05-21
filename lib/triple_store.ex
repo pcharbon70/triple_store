@@ -166,8 +166,8 @@ defmodule TripleStore do
   alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.GraphReasoningConfig
-  alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningConfig
+  alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningStatus
   alias TripleStore.Reasoner.SemiNaive
   alias TripleStore.SPARQL.Query
@@ -2041,10 +2041,8 @@ defmodule TripleStore do
   end
 
   defp build_reasoning_config(opts, scope) when scope in [:local, :global, :hybrid] do
-    with {:ok, graph_configs} <- normalize_graph_configs(Keyword.get(opts, :graph_configs)),
-         {:ok, config} <-
-           ReasoningConfig.new(build_reasoning_config_opts(opts, scope, graph_configs)) do
-      {:ok, config}
+    with {:ok, graph_configs} <- normalize_graph_configs(Keyword.get(opts, :graph_configs)) do
+      ReasoningConfig.new(build_reasoning_config_opts(opts, scope, graph_configs))
     end
   end
 

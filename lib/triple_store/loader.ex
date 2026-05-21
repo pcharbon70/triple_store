@@ -1964,7 +1964,9 @@ defmodule TripleStore.Loader do
   # Write encoded quad batch with progress reporting
   @spec write_encoded_quad_batch_with_progress(
           pid(),
-          {:ok, [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]} | {:error, term()} | {:halted, list()},
+          {:ok, [{non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}]}
+          | {:error, term()}
+          | {:halted, list()},
           number(),
           pid(),
           :atomics.atomics_ref(),
