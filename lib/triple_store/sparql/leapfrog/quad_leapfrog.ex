@@ -741,7 +741,11 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec close(t()) :: :ok
-  def close(%__MODULE__{leapfrog: nil}), do: :ok
+  def close(%__MODULE__{leapfrog: nil, tagged_iterators: iterators}) do
+    Enum.each(iterators, fn tagged -> QuadTrieIterator.close(tagged.iterator) end)
+    :ok
+  end
+
   def close(%__MODULE__{leapfrog: lf}) do
     Leapfrog.close(lf)
   end
@@ -751,6 +755,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   Each yielded item is a map with variable names as keys and their
   corresponding values from the current quad.
+
+  Enumeration owns the supplied iterators and closes them on completion,
+  early halt, or an exception. The stream is single-use; if it is never
+  enumerated, the caller must close the supplied struct explicitly.
 
   ## Arguments
 
@@ -769,18 +777,25 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   """
   @spec stream(t()) :: Enumerable.t()
   def stream(%__MODULE__{} = qlf) do
-    Stream.unfold(qlf, fn qlf ->
-      case search_or_next(qlf) do
-        {:ok, searched_lf} ->
-          unfold_quad_bindings(searched_lf)
+    Stream.resource(
+      fn -> qlf end,
+      fn current ->
+        case search_or_next(current) do
+          {:ok, searched_lf} ->
+            case unfold_quad_bindings(searched_lf) do
+              {bindings, next} -> {[bindings], next}
+              nil -> {:halt, searched_lf}
+            end
 
-        {:exhausted, _} ->
-          nil
+          {:exhausted, exhausted} ->
+            {:halt, exhausted}
 
-        {:error, reason} ->
-          raise "QuadLeapfrog stream error: #{inspect(reason)}"
-      end
-    end)
+          {:error, reason} ->
+            raise "QuadLeapfrog stream error: #{inspect(reason)}"
+        end
+      end,
+      &close/1
+    )
   end
 
   @doc """
