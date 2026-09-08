@@ -1067,6 +1067,13 @@ defmodule TripleStore.SPARQL.Executor do
 
         {:ok, binding_stream}
 
+      {:exhausted, lf} ->
+        # Construction may open iterators before the multi-iterator strategy
+        # reports exhaustion. Preserve the existing single-iterator fallback,
+        # but release the abandoned strategy's resources first.
+        QuadLeapfrog.close(lf)
+        execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+
       {:error, _reason} ->
         # Fall back to single iterator on error
         execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)

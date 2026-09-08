@@ -85,6 +85,9 @@ jobs:
       - name: Validate specs governance
         run: ./scripts/validate_specs_governance.sh
 
+      - name: Query iterator resource regression
+        run: mix test test/triple_store/sparql/leapfrog/quad_iterator_cleanup_test.exs
+
       - name: Check stale planning path references
         run: |
           if rg -n "planning/modes" specs guides notes; then

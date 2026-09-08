@@ -109,13 +109,13 @@ defmodule TripleStore.Index.TestHelper do
     pos_key = Index.pos_key(p, o, s)
     osp_key = Index.osp_key(o, s, p)
 
-    assert {:ok, nil} = ErlangAdapter.get(db, :spo, spo_key),
+    assert :not_found = ErlangAdapter.get(db, :spo, spo_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in SPO index"
 
-    assert {:ok, nil} = ErlangAdapter.get(db, :pos, pos_key),
+    assert :not_found = ErlangAdapter.get(db, :pos, pos_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in POS index"
 
-    assert {:ok, nil} = ErlangAdapter.get(db, :osp, osp_key),
+    assert :not_found = ErlangAdapter.get(db, :osp, osp_key),
            "Triple {#{s}, #{p}, #{o}} unexpectedly found in OSP index"
 
     :ok
