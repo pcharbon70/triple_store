@@ -38,10 +38,10 @@ defmodule TripleStore.RdfIntegrationTestHelper do
   @doc """
   Sets up a temporary test database with manager.
 
-  Returns a map with `:db`, `:manager`, and `:path` keys.
+  Returns `{:ok, context}` with `:db`, `:manager`, and `:path` keyword entries.
   Registers cleanup to run on test exit.
   """
-  @spec setup_test_db() :: {:ok, map()}
+  @spec setup_test_db() :: {:ok, keyword()}
   def setup_test_db do
     test_path = "/tmp/triple_store_rdf_test_#{:erlang.unique_integer([:positive])}"
     {:ok, db} = ErlangAdapter.open(test_path)
@@ -72,7 +72,7 @@ defmodule TripleStore.RdfIntegrationTestHelper do
 
   `:ok` on success
   """
-  @spec load_test_triples(reference(), pid(), [RDF.Triple.t()]) :: :ok
+  @spec load_test_triples(ErlangAdapter.db_ref(), pid(), [RDF.Triple.t()]) :: :ok
   def load_test_triples(db, manager, triples) do
     graph = RDF.Graph.new(triples)
     {:ok, _} = Loader.load_graph(db, manager, graph)

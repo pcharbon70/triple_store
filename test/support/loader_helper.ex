@@ -23,7 +23,7 @@ defmodule TripleStore.Test.LoaderHelper do
 
       {db, manager, path} = LoaderHelper.setup_test_db("/tmp/loader_test", "parallel")
   """
-  @spec setup_test_db(String.t(), String.t()) :: {reference(), pid(), String.t()}
+  @spec setup_test_db(String.t(), String.t()) :: {ErlangAdapter.db_ref(), pid(), String.t()}
   def setup_test_db(test_base, suffix) do
     test_path = "#{test_base}_#{suffix}_#{:erlang.unique_integer([:positive])}"
     {:ok, db} = ErlangAdapter.open(test_path)
@@ -42,7 +42,7 @@ defmodule TripleStore.Test.LoaderHelper do
   - `db` - Database reference
   - `test_path` - Path to test database directory
   """
-  @spec cleanup_test_db(pid(), reference(), String.t()) :: :ok
+  @spec cleanup_test_db(pid(), ErlangAdapter.db_ref(), String.t()) :: :ok
   def cleanup_test_db(manager, db, test_path) do
     if Process.alive?(manager), do: Manager.stop(manager)
     ErlangAdapter.close(db)

@@ -126,7 +126,7 @@ defmodule TripleStore.Test.ReasonerHelpers do
       # => [ex_iri("Person"), ex_iri("Student"), ...]
   """
   def select_types(facts, subject) do
-    query(facts, {subject, rdf_type(), {:var, :type}})
+    query(facts, {subject, rdf_type(), {:var, "type"}})
     |> Enum.map(fn {_, _, type} -> type end)
   end
 
@@ -139,7 +139,7 @@ defmodule TripleStore.Test.ReasonerHelpers do
       # => [ex_iri("bob"), ex_iri("charlie"), ...]
   """
   def select_objects(facts, subject, predicate) do
-    query(facts, {subject, predicate, {:var, :object}})
+    query(facts, {subject, predicate, {:var, "object"}})
     |> Enum.map(fn {_, _, obj} -> obj end)
   end
 
@@ -152,7 +152,7 @@ defmodule TripleStore.Test.ReasonerHelpers do
       # => [ex_iri("alice"), ex_iri("bob"), ...]
   """
   def select_subjects(facts, predicate, object) do
-    query(facts, {{:var, :subject}, predicate, object})
+    query(facts, {{:var, "subject"}, predicate, object})
     |> Enum.map(fn {subj, _, _} -> subj end)
   end
 

@@ -64,7 +64,7 @@ defmodule TripleStore.MixProject do
 
   defp dialyzer do
     [
-      plt_add_apps: [:mix]
+      plt_add_apps: [:mix, :ex_unit]
     ]
   end
 
