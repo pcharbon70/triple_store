@@ -46,7 +46,7 @@ Primary ownership: **Reasoning Plane**.
 ## Current Codebase Notes
 
 - The current subsystem includes status tracking, schema-aware helpers, tracing, provenance, and rederivation in addition to the main materialization loop.
-- `TripleStore.materialize/2` still defaults to a legacy triple-materialization path for local scope, while explicit graph APIs drive the newer graph-scoped quad reasoner.
+- Default local `TripleStore.materialize/2` computes over explicit triples in memory and returns statistics without persisting inferred facts; explicit graph APIs drive the graph-scoped quad reasoner and its storage callbacks.
 - `DerivedStore` is a distinct persisted surface with separate triple-mode and quad-mode usage patterns.
 - Graph reasoning configuration and status are first-class runtime artifacts in the quad store path.
 

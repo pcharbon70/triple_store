@@ -4,7 +4,7 @@
 
 This document defines the architectural baseline for `TripleStore`.
 
-If another architectural document conflicts with this overview, this overview wins until the conflict is resolved through a contract or ADR update.
+This overview summarizes the architecture without overriding normative contracts. For control-plane ownership conflicts, the ownership matrix takes precedence, followed by ADR-0001, then baseline and area docs. Resolve discrepancies through the corresponding contract or ADR update.
 
 ## System Shape
 
@@ -84,7 +84,7 @@ flowchart LR
 | Schema is chosen at `open/2` time | Triple and quad stores have incompatible key layouts and column-family sets | A store cannot be migrated in place; export and import is required |
 | `TripleStore` remains the primary facade but not the only expert surface | Keeps common workflows simple while allowing narrower expert APIs for graph backup, authorization, and direct update contexts | Callers can bypass the facade, so specs must document those expert boundaries explicitly |
 | Global OTP runtime stays minimal | Only plan-cache and snapshot services are reusable without a store-specific DB reference | Many helpers remain opt-in and are not guaranteed to exist unless callers wire them |
-| Direct insert/delete/load paths use schema-aware batch writes, while SPARQL UPDATE uses `Transaction` | Matches the current implementation split between explicit batch storage helpers and parsed update coordination | Public mutation semantics are not uniform; transaction snapshot behavior applies to `Transaction` flows, not all public calls |
+| Direct insert/delete/load paths use schema-aware batch writes, while SPARQL UPDATE uses `Transaction` | Matches the current implementation split between explicit batch storage helpers and parsed update coordination | Serialization is per coordinator; neither independent temporary coordinators nor direct writes share that queue. Current transaction queries do not consume update snapshots |
 | Query and reasoning semantics stay in Elixir | Preserves control over graph semantics, authorization hooks, cost planning, and rule execution | Native speedups are bounded to parsing and storage adapters |
 | Derived facts, provenance, numeric ranges, and ACLs are explicit persistence surfaces | Keeps graph-aware reasoning and authorization observable and debuggable | The on-disk layout is richer than the original triple-only design sketch |
 
@@ -114,10 +114,10 @@ flowchart LR
 
 ## Current Codebase Notes
 
-- The `@type store()` and `@type open_opts()` declarations in `lib/triple_store.ex` lag the runtime shape; `schema` is supported and stored at runtime.
+- The `@type store()` and `@type open_opts()` declarations in `lib/triple_store.ex` include `schema`, matching the runtime schema selection and handle.
 - `TripleStore.insert/2` and `TripleStore.delete/2` bypass `Transaction` and rely on schema-appropriate batch writes through `Loader`, `Index`, and `QuadOperations`.
-- `Transaction.query/3` provides snapshot-aware reads when used directly, but the public `TripleStore.query/3` path does not route through that coordinator.
-- `TripleStore.materialize/2` still defaults to the legacy triple-materialization code path for `scope: :local`; graph-local quad reasoning is exposed through explicit graph APIs instead.
+- `Transaction.query/3` queues behind synchronous updates on the same coordinator and executes without a snapshot in its query context. Update execution creates and releases a snapshot but does not pass it to readers. `TripleStore.query/3` bypasses the coordinator entirely. See the [transaction contract implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status) for remaining isolation and rollback gaps.
+- `TripleStore.materialize/2` defaults to the legacy triple-only, in-memory path for `scope: :local`. It returns statistics and discards the computed fact set without persisting it. Graph-local quad reasoning is exposed through explicit graph APIs instead.
 - Two result-cache implementations exist. `TripleStore.Query.Cache` is the cache integrated into `SPARQL.Query`; `TripleStore.SPARQL.QueryCache` remains present and tested as a separate ETS-based cache.
 - `Statistics.Cache` is deprecated but still application-integrated; `Statistics.Server` is the intended successor.
 

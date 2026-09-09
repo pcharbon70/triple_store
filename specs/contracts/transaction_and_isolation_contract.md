@@ -15,3 +15,13 @@ This contract defines the normative write-coordination behavior for `TripleStore
 - `REQ-TXN-009`: Transaction timeouts MUST be explicit and separately configurable for reads and writes when the coordinator owns those flows.
 - `REQ-TXN-010`: `Transaction.query/3` MAY provide snapshot-aware reads, but `TripleStore.query/3` MUST NOT be specified as implicitly using that coordinator.
 - `REQ-TXN-011`: Transaction coordination semantics MUST remain Elixir-owned even when underlying storage mutation is delegated to RocksDB through the adapter layer.
+
+## Current Implementation Status
+
+The requirements above remain normative targets; this section describes observed implementation limits, not exceptions to those requirements.
+
+- `lib/triple_store/transaction.ex` handles queries and updates synchronously in one GenServer. Calls to the same coordinator are serialized; queries wait behind updates rather than reading a pre-update snapshot concurrently.
+- Update execution creates a RocksDB snapshot and releases it in `after`, but does not pass it to the query context or publish it in coordinator state. `Transaction.query/3` prepares and executes against `%{db: db, dict_manager: dict_manager}`. Snapshot lifecycle support is therefore not evidence of snapshot-aware transaction queries (`REQ-TXN-003`, `REQ-TXN-008`, `REQ-TXN-010`).
+- `TripleStore.update/2` creates an independent temporary coordinator when the handle has `transaction: nil`. Separate temporary coordinators and direct loader writes do not share a writer queue. Per-coordinator serialization does not establish store-wide single-writer equivalence (`REQ-TXN-001`, `REQ-TXN-004`).
+- `lib/triple_store/sparql/update_executor.ex` executes a request's operations sequentially and stops at the first error. Previously committed operations are not rolled back. Atomic storage fanout applies to each batch, not an entire multi-operation request; whole-request failure atomicity remains a gap against `REQ-TXN-005`.
+- `SCN-008` must be assessed with these boundaries explicit. Documentation validation and individual batch tests do not establish request-wide isolation or rollback.

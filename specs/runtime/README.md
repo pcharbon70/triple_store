@@ -48,7 +48,7 @@ Primary control-plane ownership: **Public API Plane** and **Coordination Plane**
 | Acceptance ID | Criterion | Related Requirements | Related Scenarios |
 |---|---|---|---|
 | `AC-RT-01` | `TripleStore.open/2` validates the path, opens RocksDB with an explicit schema, and returns a store handle with the required runtime references. | `REQ-CP-*`, `REQ-STO-*` | `SCN-002` |
-| `AC-RT-02` | `TripleStore.update/2` preserves SPARQL update coordination semantics by using a managed or temporary transaction coordinator. | `REQ-TXN-*` | `SCN-008` |
+| `AC-RT-02` | `TripleStore.update/2` uses a managed or temporary coordinator; conformance assessment includes the documented gaps in store-wide writer coordination, snapshot reads, and request rollback. | `REQ-TXN-*` | `SCN-008` |
 | `AC-RT-03` | Direct load, insert, and delete flows remain explicit batch-mutation paths and MUST NOT be misdocumented as transaction-query snapshot flows. | `REQ-STO-*`, `REQ-TXN-*` | `SCN-004`, `SCN-008`, `SCN-016` |
 | `AC-RT-04` | Store-local manager processes are created and released through the public lifecycle without leaking semantic ownership into callers. | `REQ-CP-*`, `REQ-TXN-*` | `SCN-001`, `SCN-002` |
 | `AC-RT-05` | Runtime surfaces return tagged results and preserve explicit optional-helper behavior rather than assuming caches, metrics, or stats helpers always exist. | `REQ-OBS-*`, `REQ-CP-*` | `SCN-007`, `SCN-013` |

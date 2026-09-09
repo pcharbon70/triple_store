@@ -15,7 +15,7 @@ Goal: understand which parts of TripleStore own semantics, coordination, native 
 
 ## 2. Lock Ownership In ADR-0001
 
-Use [adr/ADR-0001-control-plane-authority.md](adr/ADR-0001-control-plane-authority.md) as the tie-breaker for control-plane conflicts.
+Resolve control-plane conflicts using the [ownership matrix](contracts/control_plane_ownership_matrix.md) first, then [ADR-0001](adr/ADR-0001-control-plane-authority.md), then baseline and area docs.
 
 When control-plane ownership changes, update ADR-0001 and the ownership matrix in the same change set.
 
@@ -58,7 +58,7 @@ Implementation sequencing remains in:
 
 ## 7. Manual Review Checklist
 
-Until automated validators exist, reviewers should check:
+Run `mix conformance` (or `./scripts/run_conformance.sh` for the combined governance checks) to validate documentation structure and traceability. These validators do not execute scenario-specific behavior tests. Reviewers must still check:
 
 1. Does the implementation still match the architecture overview and topology?
 2. Did control-plane ownership change without updating the matrix or ADR?
