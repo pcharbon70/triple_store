@@ -76,8 +76,13 @@ defmodule TripleStore.SPARQL.Query do
   # Task 2.5.1: Query Execution
   # ===========================================================================
 
-  @typedoc "Query execution context with db and dict_manager"
-  @type context :: %{db: reference(), dict_manager: GenServer.server()}
+  @typedoc "Query context using the public adapter and dictionary handle types"
+  @type context :: %{
+          required(:db) => TripleStore.db_ref(),
+          required(:dict_manager) => TripleStore.manager(),
+          optional(:user) => map() | nil,
+          optional(:permit_all) => boolean()
+        }
 
   @typedoc "SELECT query result - list of variable bindings"
   @type select_result :: [%{String.t() => term()}]

@@ -64,7 +64,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # ===========================================================================
 
   @typedoc "Execution context"
-  @type context :: %{db: reference(), dict_manager: GenServer.server()}
+  @type context :: %{db: TripleStore.db_ref(), dict_manager: TripleStore.manager()}
 
   @typedoc "Variable binding map"
   @type binding :: %{String.t() => term()}
@@ -1264,7 +1264,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
   end
 
   # Get all nodes (subjects and objects) in the graph with limit protection
-  @spec get_all_nodes(context(), reference()) :: MapSet.t()
+  @spec get_all_nodes(context(), TripleStore.db_ref()) :: MapSet.t()
   defp get_all_nodes(ctx, db) do
     max_nodes = max_all_nodes(ctx)
 
