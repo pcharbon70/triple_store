@@ -765,22 +765,52 @@ defmodule TripleStore.Adapter do
   def to_rdf_quads(_db, []), do: {:ok, []}
 
   def to_rdf_quads(db, quads) when is_list(quads) do
-    # Process each quad individually since graph ID 0 (default graph) needs special handling
-    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
-      case to_rdf_quad(db, quad) do
-        {:ok, rdf_quad} ->
-          {:cont, {:ok, [rdf_quad | acc]}}
+    # Repeated subjects, predicates and graph names dominate dataset exports.
+    # Reuse decoded terms only within 256 quads (at most 1024 IDs), never
+    # across calls or stores. Preserve left-to-right lookup/error semantics.
+    Enum.reduce_while(quads, {:ok, [], %{}, 0}, fn quad, {:ok, acc, cache, count} ->
+      cache = if rem(count, 256) == 0, do: %{}, else: cache
 
-        :not_found ->
-          {:cont, {:ok, [:not_found | acc]}}
+      case cached_rdf_quad(db, quad, cache) do
+        {:ok, rdf_quad, cache} ->
+          {:cont, {:ok, [rdf_quad | acc], cache, count + 1}}
+
+        {:not_found, cache} ->
+          {:cont, {:ok, [:not_found | acc], cache, count + 1}}
 
         {:error, _} = error ->
           {:halt, error}
       end
     end)
     |> case do
-      {:ok, quads_reversed} -> {:ok, Enum.reverse(quads_reversed)}
+      {:ok, quads_reversed, _cache, _count} -> {:ok, Enum.reverse(quads_reversed)}
       error -> error
+    end
+  end
+
+  defp cached_rdf_quad(db, {s_id, p_id, o_id, g_id}, cache) do
+    with {:ok, s, cache} <- cached_rdf_term(db, s_id, cache),
+         {:ok, p, cache} <- cached_rdf_term(db, p_id, cache),
+         {:ok, o, cache} <- cached_rdf_term(db, o_id, cache),
+         {:ok, g, cache} <- cached_rdf_graph(db, g_id, cache) do
+      {:ok, {s, p, o, g}, cache}
+    end
+  end
+
+  defp cached_rdf_graph(_db, 0, cache), do: {:ok, nil, cache}
+  defp cached_rdf_graph(db, id, cache), do: cached_rdf_term(db, id, cache)
+
+  defp cached_rdf_term(db, id, cache) do
+    case Map.fetch(cache, id) do
+      {:ok, term} ->
+        {:ok, term, cache}
+
+      :error ->
+        case id_to_term(db, id) do
+          {:ok, term} -> {:ok, term, Map.put(cache, id, term)}
+          :not_found -> {:not_found, cache}
+          {:error, _} = error -> error
+        end
     end
   end
 

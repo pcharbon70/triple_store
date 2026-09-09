@@ -88,6 +88,9 @@ jobs:
       - name: Query context and iterator resource regressions
         run: mix test test/triple_store/sparql/context_types_test.exs test/triple_store/sparql/query_test.exs test/triple_store/sparql/property_path_test.exs test/triple_store/sparql/leapfrog/quad_iterator_cleanup_test.exs
 
+      - name: RDF decoding and export regressions
+        run: mix test test/triple_store/adapter test/triple_store/exporter_test.exs test/triple_store/exporter_refactoring_test.exs
+
       - name: Check stale planning path references
         run: |
           if rg -n "planning/modes" specs guides notes; then
