@@ -50,6 +50,7 @@ graph TD
 - Dedicated `Loader.load_nquads_file/4`, `load_nquads_string/4`, `load_trig_file/4`, and `load_trig_string/4` parse full datasets and load their quads. `Loader.load_graph/4` with an `RDF.Dataset` also preserves dataset graph identities through quad loading. Use these quad-store surfaces when named graphs must survive ingestion; selecting `schema: :quad` alone does not make every loader dataset-preserving.
 - The generic `TripleStore.export/3` facade remains graph-oriented. `Exporter` additionally provides quad-aware N-Quads/TriG, dataset, default-graph, and selected named-graph exports; `GraphBackup` provides graph-scoped recovery. Graph-oriented and dataset-oriented APIs are not interchangeable.
 - The config surface is split across general config plus RocksDB-specific modules (`column_family`, `compression`, `compaction`, `runtime`).
+- Quad batch decoding reuses successful term decodes for at most 256 quads (1024 IDs) within one call. It preserves input order, duplicate quads, missing-term positions, first-error behavior, and default graph ID `0`; it does not retain decoded terms across calls or stores or cache authorization decisions.
 
 ## Acceptance Criteria
 

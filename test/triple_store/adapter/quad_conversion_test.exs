@@ -315,6 +315,64 @@ defmodule TripleStore.Adapter.QuadConversionTest do
   # ===========================================================================
 
   describe "to_rdf_quads/2" do
+    test "decodes shared IDs once per bounded chunk and does not reuse them across calls", %{
+      db: db,
+      manager: manager
+    } do
+      s = RDF.iri("http://example.org/shared")
+      quad = {s, RDF.iri("http://example.org/p"), RDF.literal(42), s}
+      {:ok, internal} = Adapter.from_rdf_quad(manager, quad)
+      mfa = {Adapter, :id_to_term, 2}
+      :erlang.trace_pattern(mfa, true, [:local, :call_count])
+
+      try do
+        assert {:ok, quads} = Adapter.to_rdf_quads(db, List.duplicate(internal, 600))
+        assert quads == List.duplicate(quad, 600)
+        assert {:call_count, 9} = :erlang.trace_info(mfa, :call_count)
+        assert {:ok, [^quad]} = Adapter.to_rdf_quads(db, [internal])
+        assert {:call_count, 12} = :erlang.trace_info(mfa, :call_count)
+      after
+        :erlang.trace_pattern(mfa, false, [:local, :call_count])
+      end
+    end
+
+    test "bounded term reuse preserves order, duplicate quads and mixed graph identities", %{
+      db: db,
+      manager: manager
+    } do
+      s = RDF.iri("http://example.org/shared")
+      p = RDF.iri("http://example.org/p")
+
+      quads =
+        for i <- 0..599 do
+          graph = Enum.at([nil, s, RDF.bnode("graph")], rem(i, 3))
+          {s, p, RDF.literal(rem(i, 7)), graph}
+        end
+
+      {:ok, internal} = Adapter.from_rdf_quads(manager, quads)
+      assert {:ok, ^quads} = Adapter.to_rdf_quads(db, internal)
+    end
+
+    test "missing terms retain their position without suppressing later valid quads", %{
+      db: db,
+      manager: manager
+    } do
+      quad =
+        {RDF.iri("http://example.org/s"), RDF.iri("http://example.org/p"), RDF.literal(42), nil}
+
+      {:ok, {s, p, o, g} = internal} = Adapter.from_rdf_quad(manager, quad)
+
+      missing = [
+        {9_999_999, p, o, g},
+        {s, 9_999_999, o, g},
+        {s, p, 9_999_999, g},
+        {s, p, o, 9_999_999}
+      ]
+
+      assert {:ok, [^quad, :not_found, :not_found, :not_found, :not_found, ^quad]} =
+               Adapter.to_rdf_quads(db, [internal] ++ missing ++ [internal])
+    end
+
     test "converts empty list of internal quads", %{db: db} do
       assert {:ok, []} = Adapter.to_rdf_quads(db, [])
     end
