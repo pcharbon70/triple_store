@@ -142,8 +142,8 @@ flowchart LR
   D --> G["GraphReasoningConfig / RuleCompiler / SemiNaive"]
   E --> H["BackwardTrace / ForwardRederive / Provenance"]
 
-  F --> I["DerivedStore"]
-  G --> I
+  F --> L["Return statistics; computed facts are not persisted"]
+  G --> I["Derived storage callbacks / DerivedStore APIs"]
   H --> I
   I --> J["ReasoningStatus / GraphReasoningStatus / DerivationProvenance"]
   I --> K["RocksDB ErlangAdapter"]
@@ -156,7 +156,8 @@ flowchart LR
 - Public mutation semantics MUST distinguish between direct batch-mutation helpers and SPARQL update coordination through `Transaction`.
 - Public `TripleStore.query/3` MUST NOT be described as implicitly using transaction-query snapshots, because the current code does not route it that way.
 - Graph clauses, graph management, ACL checks, and graph-scoped reasoning MUST be documented as quad-schema behavior.
-- `TripleStore.materialize/2` local mode MUST be treated as the legacy triple-materialization path; graph-aware reasoning lives in the explicit graph APIs.
+- `TripleStore.materialize/2` local mode MUST be described as an in-memory triple computation returning statistics without persisting inferred facts; graph-aware reasoning lives in the explicit graph APIs.
+- Transaction queries queue behind updates on the same coordinator; the current query context does not consume the update snapshot. Independent temporary coordinators do not share a writer queue. See the [transaction implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status).
 - Operational modules MUST observe the same canonical runtime and data topology used by query, update, and reasoning code.
 
 ## Current Codebase Notes

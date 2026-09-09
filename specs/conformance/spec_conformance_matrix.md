@@ -17,8 +17,12 @@ Every `AC-*` entry in an area spec SHOULD map to at least one `REQ-*` family and
 
 ## Review Gate Policy
 
-Until automated validators exist, reviewers SHOULD enforce:
+`mix conformance` validates documentation structure and traceability, not implementation behavior. In addition to running it, reviewers SHOULD enforce:
 
 1. area-spec changes update the conformance matrix when they introduce or remove `AC-*` behavior
 2. contract changes update the relevant area docs in the same change set
 3. control-plane changes update ADR-0001 and the ownership matrix together
+
+## Current Evidence Limits
+
+Matrix coverage means a requirement is mapped, not that it is implemented or verified. In particular, `SCN-008` retains open transaction coordination, snapshot-read, and multi-operation rollback gaps described in the [transaction contract](../contracts/transaction_and_isolation_contract.md#current-implementation-status). `SCN-009` and `SCN-010` must distinguish the local facade's in-memory result from persisted graph-aware reasoning, as described in the [reasoning contract](../contracts/reasoning_contract.md#current-implementation-status). For `SCN-016`, evaluate generic graph-oriented and dedicated dataset-preserving I/O separately.

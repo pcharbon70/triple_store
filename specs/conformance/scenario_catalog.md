@@ -2,6 +2,8 @@
 
 Canonical validation scenarios for the TripleStore contract layer.
 
+These are validation targets, not a list of passing implementation checks. `mix conformance` checks their documentation mappings only; known implementation gaps are recorded in the owning contracts and the conformance matrix.
+
 | Scenario ID | Name | Summary |
 |---|---|---|
 | `SCN-001` | Control-plane consistency | Baseline and area docs resolve to one canonical plane assignment. |

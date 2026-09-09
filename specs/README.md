@@ -9,7 +9,7 @@
 - The default OTP runtime is intentionally small. `TripleStore.Application` supervises only `TripleStore.SPARQL.PlanCache` and `TripleStore.Snapshot`; store-local managers and most helper services are caller-managed or started dynamically.
 - Storage is schema-explicit. Triple stores persist `id2str`, `str2id`, `spo`, `pos`, `osp`, `derived`, and `numeric_range`. Quad stores persist `id2str`, `str2id`, `gspo`, `gpos`, `spog`, `posg`, `derived`, `derivation_provenance`, `numeric_range`, and `acl`.
 - Query processing is graph-aware in quad schema and default-graph-only in triple schema. Graph ACL checks exist in lower-level query and update contexts when a `:user` is supplied.
-- Reasoning is dual-mode. A legacy triple-materialization path coexists with graph-scoped quad reasoning, per-graph configuration and status, incremental quad maintenance, and derivation provenance.
+- Reasoning is dual-mode. The legacy local triple facade computes in memory and returns statistics without persisting inferred facts; graph-scoped quad reasoning has storage callbacks, per-graph configuration and status, incremental quad maintenance, and derivation provenance.
 - Operational surfaces include telemetry, health, statistics, full-store backup and restore, per-graph backup and restore, scheduled backup, metrics, and Prometheus export, with several helpers remaining opt-in.
 
 This directory is the canonical architecture and governance specification set for `TripleStore`.

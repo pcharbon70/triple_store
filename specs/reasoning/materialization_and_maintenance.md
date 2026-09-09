@@ -54,10 +54,12 @@ graph TD
 ## Current Codebase Notes
 
 - The reasoning subsystem is broader than a single materializer: it includes configuration, graph-scoped status, provenance/backward tracing, incremental maintenance, and rederivation workflows.
-- `TripleStore.materialize/2` still routes `scope: :local` through the legacy triple-centric materialization path, while `materialize_graph/3`, `materialize_graphs/3`, and `materialize_all/2` route through `GraphScopedReasoner`.
-- `DerivedStore` is the concrete persistence boundary for inferred facts and is already used to enforce explicit-versus-derived separation.
+- `TripleStore.materialize/2` routes `scope: :local` through a legacy triple-only path: it reads `Index.lookup_all/2`, calls `SemiNaive.materialize_in_memory`, and returns statistics while discarding the resulting fact set. This path does not write `derived`, does not reload previously persisted derived facts, and does not forward its `parallel` option to the evaluator.
+- `materialize_graph/3`, `materialize_graphs/3`, and `materialize_all/2` route through `GraphScopedReasoner`, whose storage callbacks write inferred facts to `derived`. `DerivedStore` provides separate persistence and lookup APIs used by other reasoning workflows; the local facade path does not call it.
 - `DerivationProvenance` and `GraphReasoningStatus` make graph-aware reasoning operationally inspectable rather than opaque.
 - `TBoxCache`, `SchemaInfo`, and graph helpers give the current reasoner a schema-aware support layer, not just a flat rule executor.
+
+The dependency diagram above describes the subsystem, not a persistence guarantee for every entry point. See the [reasoning contract implementation status](../contracts/reasoning_contract.md#current-implementation-status) before treating a successful facade call as persisted materialization.
 
 ## Acceptance Criteria
 
