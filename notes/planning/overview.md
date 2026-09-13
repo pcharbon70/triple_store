@@ -6,6 +6,10 @@ This plan outlines the implementation of a high-performance RDF triple store in 
 
 ## Phase Overview
 
+Current companion plans:
+
+- [Correctness and Authorization Remediation](phase-05-correctness-remediation.md) — remediation of the six findings from the 2026-09-09 code review, organized by implementation dependencies, with numbered sections, tasks, sub-tasks, and validation gates.
+
 | Phase | Focus | Key Deliverables |
 |-------|-------|------------------|
 | 1 | Storage Foundation | RocksDB NIFs, dictionary encoding, triple indices |
