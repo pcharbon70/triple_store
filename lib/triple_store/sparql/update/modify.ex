@@ -35,7 +35,7 @@ defmodule TripleStore.SPARQL.Update.Modify do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Index
-  alias TripleStore.QuadOperations
+  alias TripleStore.QuadIndex
   alias TripleStore.SPARQL.Executor
   alias TripleStore.SPARQL.Update.Helpers
 
@@ -293,46 +293,32 @@ defmodule TripleStore.SPARQL.Update.Modify do
   defp quads_to_internal(_ctx, [], _mode), do: {:ok, []}
 
   defp quads_to_internal(ctx, quads, :lookup) do
-    results =
-      Enum.map(quads, fn
-        {s, p, o} ->
-          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
-               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
-               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
-            {:ok, {s_id, p_id, o_id, 0}}
-          else
-            _ -> {:error, :not_found}
-          end
+    Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
+      result =
+        case quad do
+          {s, p, o} ->
+            lookup_quad(ctx.db, s, p, o, 0)
 
-        {s, p, o, :default} ->
-          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
-               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
-               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
-            {:ok, {s_id, p_id, o_id, 0}}
-          else
-            _ -> {:error, :not_found}
-          end
+          {s, p, o, :default} ->
+            lookup_quad(ctx.db, s, p, o, 0)
 
-        {s, p, o, %RDF.IRI{} = g} ->
-          with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
-               {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
-               {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o),
-               {:ok, g_id} <- lookup_term_id_no_create(ctx.db, g) do
-            {:ok, {s_id, p_id, o_id, g_id}}
-          else
-            _ -> {:error, :not_found}
-          end
+          {s, p, o, %RDF.IRI{} = g} ->
+            lookup_quad(ctx.db, s, p, o, g)
 
-        _ ->
-          {:error, :invalid_quad}
-      end)
+          _ ->
+            {:error, :invalid_quad}
+        end
 
-    successes =
-      results
-      |> Enum.filter(&match?({:ok, _}, &1))
-      |> Enum.map(fn {:ok, quad} -> quad end)
-
-    {:ok, successes}
+      case result do
+        {:ok, internal} -> {:cont, {:ok, [internal | acc]}}
+        :not_found -> {:cont, {:ok, acc}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, internal_quads} -> {:ok, Enum.reverse(internal_quads)}
+      {:error, _} = error -> error
+    end
   end
 
   defp quads_to_internal(ctx, quads, :create) do
@@ -380,6 +366,18 @@ defmodule TripleStore.SPARQL.Update.Modify do
         error
     end
   end
+
+  defp lookup_quad(db, s, p, o, graph) do
+    with {:ok, s_id} <- lookup_term_id_no_create(db, s),
+         {:ok, p_id} <- lookup_term_id_no_create(db, p),
+         {:ok, o_id} <- lookup_term_id_no_create(db, o),
+         {:ok, g_id} <- lookup_graph_id_no_create(db, graph) do
+      {:ok, {s_id, p_id, o_id, g_id}}
+    end
+  end
+
+  defp lookup_graph_id_no_create(_db, 0), do: {:ok, 0}
+  defp lookup_graph_id_no_create(db, graph), do: lookup_term_id_no_create(db, graph)
 
   # Look up term ID without creating it
   defp lookup_term_id_no_create(db, %RDF.Literal{} = literal) do
@@ -438,7 +436,10 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
     case execute_batch(db, all_ops) do
       :ok ->
-        {:ok, length(valid_deletes) + length(valid_inserts)}
+        Helpers.invalidate_result_caches_after(
+          db,
+          {:ok, length(valid_deletes) + length(valid_inserts)}
+        )
 
       {:error, _} = error ->
         error
@@ -447,14 +448,37 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
   # Performs atomic delete + insert operation for quad stores
   defp execute_atomic_modify_quads(ctx, delete_quads, insert_quads) do
-    # Filter to ensure we only have valid quads
-    valid_deletes = Enum.filter(delete_quads, &valid_quad?/1)
-    valid_inserts = Enum.filter(insert_quads, &valid_quad?/1)
+    with :ok <- validate_internal_quads(delete_quads),
+         :ok <- validate_internal_quads(insert_quads) do
+      delete_ops = Enum.flat_map(delete_quads, &quad_operations(&1, :delete))
+      insert_ops = Enum.flat_map(insert_quads, &quad_operations(&1, :put))
 
-    delete_count = delete_valid_quads(ctx, valid_deletes)
-    insert_count = insert_valid_quads(ctx, valid_inserts)
+      case execute_batch(ctx.db, delete_ops ++ insert_ops) do
+        :ok ->
+          Helpers.invalidate_result_caches_after(
+            ctx.db,
+            {:ok, length(delete_quads) + length(insert_quads)}
+          )
 
-    {:ok, delete_count + insert_count}
+        {:error, _} = error ->
+          error
+      end
+    end
+  end
+
+  defp validate_internal_quads(quads) do
+    if Enum.all?(quads, &valid_quad?/1), do: :ok, else: {:error, :invalid_quad}
+  end
+
+  defp quad_operations({s, p, o, g}, operation) do
+    s
+    |> QuadIndex.encode_quad_keys(p, o, g)
+    |> Enum.map(fn {cf, key} ->
+      case operation do
+        :delete -> {:delete, cf, key}
+        :put -> {:put, cf, key, <<>>}
+      end
+    end)
   end
 
   # Check if a quad is valid (4-element tuple with integers)
@@ -475,47 +499,13 @@ defmodule TripleStore.SPARQL.Update.Modify do
     end
   end
 
-  defp delete_valid_quads(_ctx, []), do: 0
-
-  defp delete_valid_quads(ctx, valid_deletes) do
-    case QuadOperations.delete_quads(ctx.db, valid_deletes, []) do
-      :ok -> length(valid_deletes)
-      {:error, _} -> 0
-    end
-  end
-
-  defp insert_valid_quads(_ctx, []), do: 0
-
-  defp insert_valid_quads(ctx, valid_inserts) do
-    Enum.reduce(valid_inserts, 0, fn {s_id, p_id, o_id, g_id}, count ->
-      case QuadOperations.insert_quad(ctx.db, {s_id, p_id, o_id, g_id}) do
-        :ok -> count + 1
-        {:error, _} -> count
-      end
-    end)
-  end
-
   # Executes a batch of operations
   defp execute_batch(_db, []), do: :ok
 
   defp execute_batch(db, operations) do
     alias TripleStore.Backend.RocksDB.ErlangAdapter
 
-    # Convert to NIF format
-    {puts, deletes} =
-      Enum.reduce(operations, {[], []}, fn
-        {:put, cf, key, value}, {puts, deletes} ->
-          {[{cf, key, value} | puts], deletes}
-
-        {:delete, cf, key}, {puts, deletes} ->
-          {puts, [{cf, key} | deletes]}
-      end)
-
-    # Execute deletes first, then puts
-    # SPARQL updates use sync: true for data integrity
-    with :ok <- if(deletes == [], do: :ok, else: ErlangAdapter.delete_batch(db, deletes, true)) do
-      if(puts == [], do: :ok, else: ErlangAdapter.write_batch(db, puts, true))
-    end
+    ErlangAdapter.mixed_batch(db, operations, true)
   end
 
   # ===========================================================================
@@ -541,4 +531,5 @@ defmodule TripleStore.SPARQL.Update.Modify do
   defp ast_graph_to_rdf({:named_graph, iri}), do: RDF.iri(iri)
   defp ast_graph_to_rdf({:iri, iri}), do: RDF.iri(iri)
   defp ast_graph_to_rdf(graph_iri) when is_binary(graph_iri), do: RDF.iri(graph_iri)
+  defp ast_graph_to_rdf(other), do: {:invalid_graph, other}
 end

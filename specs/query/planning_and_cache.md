@@ -35,6 +35,24 @@ Primary ownership: **Query Plane** with supporting **Coordination Plane** proces
   user, role, owner, and public-access changes.
 - Cache persistence format version 2 excludes legacy unscoped entries. Warming a
   version 1 file returns `{:error, {:unsupported_version, 1}}`.
+- Every active named `Query.Cache` registers with the application registry.
+  Successful supported mutations synchronously invalidate entries for the open
+  store identity in all of those caches. Per-store generations prevent a query
+  that began before a commit from publishing a stale entry after invalidation.
+
+## Mutation Invalidation Matrix
+
+| Mutation surface | Plan cache | Result cache | Statistics cache |
+| --- | --- | --- | --- |
+| `TripleStore.load/3`, `load_graph/3`, `load_string/4` | Caller/update coordination remains explicit | Full invalidation for the mutated open-store identity after a positive committed count | Loader-owned behavior |
+| `TripleStore.insert/2`, `delete/2` | Caller/update coordination remains explicit | Full invalidation for the mutated open-store identity after a positive committed count | Existing direct-path behavior |
+| SPARQL INSERT DATA / DELETE DATA / MODIFY | `Transaction` invalidates the supervised plan cache after update execution | Full open-store invalidation after each committed operation, including before a later operation fails | Quad insert/delete retain their graph-scoped statistics invalidation |
+| CREATE / DROP / CLEAR / COPY / MOVE / ADD | `Transaction` invalidates the supervised plan cache after update execution | Full open-store invalidation after each successful graph mutation | Graph-operation-owned behavior |
+| Lower-level `Index`, `QuadOperations`, adapter, and ACL calls | None | None; callers using these expert surfaces own invalidation | Operation-specific |
+
+The result cache uses full store-scoped invalidation because variable predicates,
+graph-wide changes, and unknown dependencies cannot always be narrowed safely.
+Cache absence or a concurrent cache stop does not change a committed write result.
 
 ## Acceptance Criteria
 
@@ -46,3 +64,4 @@ Primary ownership: **Query Plane** with supporting **Coordination Plane** proces
 | `AC-QRY-13` | Leapfrog and join-enumeration support remain optimizer-selected execution families rather than separate public APIs. | `test/triple_store/sparql/leapfrog/leapfrog_test.exs`, `test/triple_store/sparql/leapfrog/leapfrog_integration_test.exs`, `test/triple_store/sparql/leapfrog/quad_leapfrog_test.exs`, `test/triple_store/sparql/cost_optimizer_integration_test.exs` |
 | `AC-QRY-14` | Materialized results are isolated by open store instance; legacy unscoped persisted entries are rejected, and ACL-governed quad queries bypass result caching until authorization has a stable revision identity. | `test/triple_store/query/cache_test.exs`, `test/triple_store/sparql/query_test.exs`, `test/triple_store/backend/rocksdb/lifecycle_test.exs` |
 | `AC-QRY-15` | Every graph produced by variable substitution in a quad MODIFY template is write-authorized before any explicit index mutation. | `test/triple_store/sparql/update_authorization_test.exs` |
+| `AC-QRY-16` | Supported mutations invalidate every active named materialized-result cache for the affected open store, preserve unrelated-store entries, and reject stale in-flight fills by generation. | `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/sparql/phase_2_correctness_test.exs` |

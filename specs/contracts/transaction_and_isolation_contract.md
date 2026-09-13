@@ -24,4 +24,11 @@ The requirements above remain normative targets; this section describes observed
 - Update execution creates a RocksDB snapshot and releases it in `after`, but does not pass it to the query context or publish it in coordinator state. `Transaction.query/3` prepares and executes against `%{db: db, dict_manager: dict_manager}`. Snapshot lifecycle support is therefore not evidence of snapshot-aware transaction queries (`REQ-TXN-003`, `REQ-TXN-008`, `REQ-TXN-010`).
 - `TripleStore.update/2` creates an independent temporary coordinator when the handle has `transaction: nil`. Separate temporary coordinators and direct loader writes do not share a writer queue. Per-coordinator serialization does not establish store-wide single-writer equivalence (`REQ-TXN-001`, `REQ-TXN-004`).
 - `lib/triple_store/sparql/update_executor.ex` executes a request's operations sequentially and stops at the first error. Previously committed operations are not rolled back. Atomic storage fanout applies to each batch, not an entire multi-operation request; whole-request failure atomicity remains a gap against `REQ-TXN-005`.
+- One triple or quad MODIFY submits its DELETE-before-INSERT explicit-index work
+  as one RocksDB mixed batch. Its affected count preserves template-application
+  behavior: duplicate applications are counted, deletes whose terms have never
+  been allocated are omitted, and an encoded delete for an absent statement is
+  counted as submitted. Dictionary allocation for inserted terms occurs before
+  the explicit-index batch, so a failed batch can leave unused dictionary IDs
+  while all explicit indices remain unchanged.
 - `SCN-008` must be assessed with these boundaries explicit. Documentation validation and individual batch tests do not establish request-wide isolation or rollback.

@@ -12,6 +12,7 @@ defmodule TripleStore.SPARQL.Update.Helpers do
 
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.StringToId
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Authorization
 
@@ -266,6 +267,31 @@ defmodule TripleStore.SPARQL.Update.Helpers do
       :ok
     end
   end
+
+  @doc """
+  Invalidates this store's entries in every active query result cache.
+
+  A missing or concurrently stopped cache never changes the mutation result.
+  """
+  @spec invalidate_result_caches(pid()) :: :ok
+  def invalidate_result_caches(db) do
+    case ErlangAdapter.instance_id(db) do
+      {:ok, store_id} -> QueryCache.invalidate_store(store_id)
+      _ -> :ok
+    end
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc false
+  @spec invalidate_result_caches_after(pid(), {:ok, non_neg_integer()} | {:error, term()}) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def invalidate_result_caches_after(db, {:ok, count} = result) when count > 0 do
+    invalidate_result_caches(db)
+    result
+  end
+
+  def invalidate_result_caches_after(_db, result), do: result
 
   @doc """
   Checks if the query cache is running.

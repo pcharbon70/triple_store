@@ -38,6 +38,7 @@ defmodule TripleStore.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Registry, keys: :duplicate, name: TripleStore.Query.Cache.Registry},
       # Plan cache for SPARQL query optimization (no db dependency)
       {TripleStore.SPARQL.PlanCache, name: TripleStore.SPARQL.PlanCache},
       # Snapshot lifecycle management with TTL

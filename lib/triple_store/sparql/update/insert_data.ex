@@ -63,7 +63,7 @@ defmodule TripleStore.SPARQL.Update.InsertData do
          :ok <- QuadOperations.insert_quads(ctx.db, internal_quads, sync: true) do
       # Invalidate statistics cache for affected graphs
       invalidate_graphs_cache(ctx.db, internal_quads)
-      {:ok, length(internal_quads)}
+      Helpers.invalidate_result_caches_after(ctx.db, {:ok, length(internal_quads)})
     else
       {:error, _} = error -> error
     end
@@ -163,7 +163,7 @@ defmodule TripleStore.SPARQL.Update.InsertData do
     with {:ok, rdf_triples} <- quads_to_rdf_triples(quads),
          {:ok, internal_triples} <- Adapter.from_rdf_triples(ctx.dict_manager, rdf_triples) do
       case Index.insert_triples(ctx.db, internal_triples) do
-        :ok -> {:ok, length(internal_triples)}
+        :ok -> Helpers.invalidate_result_caches_after(ctx.db, {:ok, length(internal_triples)})
         {:error, _} = error -> error
       end
     end
