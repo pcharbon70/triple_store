@@ -242,6 +242,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     - `:schema` - Schema type: `:triple` (default) or `:quad`
       - `:triple` - Triple store with 24-byte keys, 3 indices (spo, pos, osp)
       - `:quad` - Quad store with 32-byte keys, 4 indices (gspo, gpos, spog, posg)
+    - `:mixed_batch_failure` - Deterministic mixed-batch failure reason for fault-injection tests
 
   ## Returns
 
@@ -1218,7 +1219,8 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
            cf_handles: cf_map,
            path: path,
            schema_type: schema_type,
-           instance_id: make_ref()
+           instance_id: make_ref(),
+           mixed_batch_failure: Keyword.get(opts, :mixed_batch_failure)
          }}
 
       {:error, _reason} = error ->
@@ -1295,6 +1297,16 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
       {:error, _reason} = error ->
         {:reply, error, state}
     end
+  end
+
+  @impl true
+  def handle_call(
+        {:mixed_batch, _operations, _sync},
+        _from,
+        %{mixed_batch_failure: reason} = state
+      )
+      when not is_nil(reason) do
+    {:reply, {:error, reason}, state}
   end
 
   @impl true

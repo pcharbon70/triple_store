@@ -57,7 +57,7 @@ fixture cleanup reliable on failures. Update affected specs with each fix.
 | Phase | Focus | Depends On | Exit Result | Status |
 | --- | --- | --- | --- | --- |
 | 1 | Reproduction baseline, cache isolation, graph authorization | None | Context-safe cached reads and authorized resolved write targets | Complete |
-| 2 | Atomic quad MODIFY and mutation-driven cache invalidation | Phase 1 cache identity and authorization | Failed MODIFY leaves explicit indices unchanged; committed writes invalidate affected results | Planned |
+| 2 | Atomic quad MODIFY and mutation-driven cache invalidation | Phase 1 cache identity and authorization | Failed MODIFY leaves explicit indices unchanged; committed writes invalidate affected results | Complete |
 | 3 | Ground-premise verification and canonical derived storage | Section 1.1 test environment | Sound negative-premise handling and GSPO-derived round trips | Planned |
 | 4 | Integration, compatibility, and conformance evidence | Phases 1–3 | All six findings verified through real runtime tests and documented evidence | Planned |
 
@@ -209,7 +209,7 @@ mutations to the context-scoped result caches introduced in Phase 1.
 
 ### Section 2.1: Atomic Quad MODIFY (F-03)
 
-- [ ] **Section 2.1 Status**
+- [x] **Section 2.1 Status**
 
 Primary files: `lib/triple_store/sparql/update/modify.ex`,
 `lib/triple_store/quad_index.ex`, `lib/triple_store/quad_operations.ex`,
@@ -219,34 +219,34 @@ Tests: `test/triple_store/sparql/modify_quad_test.exs`,
 
 #### Task 2.1.1: Build one explicit-index mutation batch
 
-- [ ] **Task 2.1.1 Status**
-- [ ] 2.1.1.1 Validate and authorize all instantiated data, then encode deletes
+- [x] **Task 2.1.1 Status**
+- [x] 2.1.1.1 Validate and authorize all instantiated data, then encode deletes
   and inserts for `gspo`, `gpos`, `spog`, and `posg` using canonical helpers.
-- [ ] 2.1.1.2 Commit the complete operation through one supported mixed batch;
+- [x] 2.1.1.2 Commit the complete operation through one supported mixed batch;
   preserve DELETE-before-INSERT semantics when the same quad appears in both.
-- [ ] 2.1.1.3 Remove error-to-zero conversions and propagate conversion/storage
+- [x] 2.1.1.3 Remove error-to-zero conversions and propagate conversion/storage
   failures. Distinguish a missing delete target from an actual lookup failure.
-- [ ] 2.1.1.4 Specify affected-count behavior for duplicate templates, missing
+- [x] 2.1.1.4 Specify affected-count behavior for duplicate templates, missing
   deletes, and no-op changes, then retain compatible behavior where possible.
-- [ ] 2.1.1.5 Document the atomicity boundary: dictionary allocations may precede
+- [x] 2.1.1.5 Document the atomicity boundary: dictionary allocations may precede
   the batch; this fix does not provide whole-request rollback or store-wide
   isolation for WHERE evaluation across independent writers.
 
 #### Task 2.1.2: Verify failure and success across all indices
 
-- [ ] **Task 2.1.2 Status**
-- [ ] 2.1.2.1 Inject failure at batch submission and assert a tagged error with
+- [x] **Task 2.1.2 Status**
+- [x] 2.1.2.1 Inject failure at batch submission and assert a tagged error with
   byte-for-byte unchanged explicit index contents.
-- [ ] 2.1.2.2 Test multi-graph deletes/inserts, overlapping quads, empty operations,
+- [x] 2.1.2.2 Test multi-graph deletes/inserts, overlapping quads, empty operations,
   duplicate bindings, and conversion errors before commit.
-- [ ] 2.1.2.3 Verify successful changes across all four indices and after reopen;
+- [x] 2.1.2.3 Verify successful changes across all four indices and after reopen;
   rerun triple MODIFY tests to preserve its existing mixed-batch behavior.
-- [ ] 2.1.2.4 Assert invalidation and success telemetry do not report a failed
+- [x] 2.1.2.4 Assert invalidation and success telemetry do not report a failed
   mutation as a successful commit.
 
 ### Section 2.2: Mutation-Driven Result Invalidation (F-04)
 
-- [ ] **Section 2.2 Status**
+- [x] **Section 2.2 Status**
 
 Primary files: `lib/triple_store/sparql/update_executor.ex`,
 `lib/triple_store/sparql/update/`, `lib/triple_store/transaction.ex`,
@@ -256,53 +256,63 @@ Tests: `test/triple_store/sparql/update_cache_invalidation_test.exs`,
 
 #### Task 2.2.1: Establish mutation and cache ownership coverage
 
-- [ ] **Task 2.2.1 Status**
-- [ ] 2.2.1.1 Inventory public and expert insert/delete/MODIFY, graph operations,
+- [x] **Task 2.2.1 Status**
+- [x] 2.2.1.1 Inventory public and expert insert/delete/MODIFY, graph operations,
   loader, and ACL mutation paths; record where plan, result, and statistics
   caches are actually invalidated. Do not conflate those caches.
-- [ ] 2.2.1.2 Establish a shared invalidation mechanism that reaches every affected
+- [x] 2.2.1.2 Establish a shared invalidation mechanism that reaches every affected
   active named result cache using the Phase 1 store identity; retain explicit
   plan/statistics invalidation requirements.
-- [ ] 2.2.1.3 Record the supported mutation-to-cache invalidation matrix in the query
+- [x] 2.2.1.3 Record the supported mutation-to-cache invalidation matrix in the query
   planning spec; use it to identify concrete call sites and regression cases.
 
 #### Task 2.2.2: Invalidate on committed data changes
 
-- [ ] **Task 2.2.2 Status**
-- [ ] 2.2.2.1 Warm a query, mutate matching data, and repeat the identical query;
+- [x] **Task 2.2.2 Status**
+- [x] 2.2.2.1 Warm a query, mutate matching data, and repeat the identical query;
   cover insert, delete, MODIFY, graph operations, both schemas, and named caches.
-- [ ] 2.2.2.2 Invalidate after each committed operation, including earlier commits
+- [x] 2.2.2.2 Invalidate after each committed operation, including earlier commits
   in a multi-operation request whose later operation fails. Avoid invalidation
   that depends solely on an overall `{:ok, count}` result.
-- [ ] 2.2.2.3 Handle variable predicates, graph-wide operations, and unknown
+- [x] 2.2.2.3 Handle variable predicates, graph-wide operations, and unknown
   dependencies conservatively; prefer full store-scoped invalidation over stale
   answers when precise predicate tracking is insufficient.
-- [ ] 2.2.2.4 Test variable-predicate queries, zero-result caches, unrelated stores,
+- [x] 2.2.2.4 Test variable-predicate queries, zero-result caches, unrelated stores,
   no-cache execution, and the supported direct mutation paths from the inventory.
-- [ ] 2.2.2.5 Verify a failed batch preserves data and a later failed operation
+- [x] 2.2.2.5 Verify a failed batch preserves data and a later failed operation
   does not leave stale results from earlier committed operations.
 
 #### Task 2.2.3: Reject stale cache fills across mutations
 
-- [ ] **Task 2.2.3 Status**
-- [ ] 2.2.3.1 Use explicit process barriers to reproduce invalidation racing a
+- [x] **Task 2.2.3 Status**
+- [x] 2.2.3.1 Use explicit process barriers to reproduce invalidation racing a
   pending cache fill; assert the next post-commit query sees current data.
-- [ ] 2.2.3.2 Prevent an in-flight pre-mutation computation from repopulating a
+- [x] 2.2.3.2 Prevent an in-flight pre-mutation computation from repopulating a
   valid cache entry after invalidation, for example by checking a generation at
   insertion. Define post-commit visibility without claiming snapshot isolation.
 
 #### Task 2.2.4: Keep cache availability separate from write outcomes
 
-- [ ] **Task 2.2.4 Status**
-- [ ] 2.2.4.1 Preserve operation success when the optional cache is absent; avoid
+- [x] **Task 2.2.4 Status**
+- [x] 2.2.4.1 Preserve operation success when the optional cache is absent; avoid
   turning a committed write into an ambiguous retryable failure due to cache work.
-- [ ] 2.2.4.2 Test absent and stopped cache processes around a successful write; assert
+- [x] 2.2.4.2 Test absent and stopped cache processes around a successful write; assert
   the result still accurately describes the committed mutation and future cache
   use cannot revive entries from before it.
 
 **Phase 2 exit gate:** F-03/F-04 regressions pass. Failed quad MODIFY leaves all
 explicit indices unchanged; committed mutations and ACL changes cannot leave
 reusable stale results in the supported cache scopes.
+
+Phase 2 evidence: one ordered RocksDB mixed batch now covers every explicit
+quad index for DELETE/INSERT MODIFY. Deterministic submission failure leaves
+all four indices unchanged and returns the injected tagged error. Active named
+result caches register centrally, invalidate by open-store identity after each
+supported committed mutation, and use per-store generations to reject stale
+in-flight fills. Focused validation includes the quad MODIFY, graph operation,
+direct mutation, cache, query, reopen, and race regressions. ACL-governed quad
+queries continue to bypass materialized-result caching because ACL storage has
+no stable authorization revision.
 
 ---
 
@@ -460,7 +470,7 @@ reviewable, and remaining unrelated implementation gaps remain explicit.
 | --- | --- | --- | --- | --- |
 | F-01 | Pending | Pending | Not run | Open |
 | F-02 | Pending | Pending | Not run | Open |
-| F-03 | Pending | Pending | Not run | Open |
-| F-04 | Pending | Pending | Not run | Open |
+| F-03 | Phase 2 PR | `test/triple_store/sparql/phase_2_correctness_test.exs`, `test/triple_store/sparql/modify_quad_test.exs` | Focused suite passed | Closed |
+| F-04 | Phase 2 PR | `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/sparql/phase_2_correctness_test.exs` | Focused suite passed | Closed |
 | F-05 | Pending | Pending | Not run | Open |
 | F-06 | Pending | Pending | Not run | Open |

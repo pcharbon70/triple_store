@@ -84,7 +84,8 @@ defmodule TripleStore.Query.Cache do
           result_size: non_neg_integer(),
           access_time: integer(),
           created_at: integer(),
-          predicates: MapSet.t()
+          predicates: MapSet.t(),
+          store_id: reference() | nil
         }
 
   @typedoc "Cache statistics"
@@ -114,6 +115,7 @@ defmodule TripleStore.Query.Cache do
 
   @typedoc "Persistable cache entry (for disk storage)"
   @type persistable_entry :: %{
+          optional(:store_id) => reference() | nil,
           key: cache_key(),
           result: term(),
           result_size: non_neg_integer(),
@@ -129,6 +131,8 @@ defmodule TripleStore.Query.Cache do
   @default_max_memory_bytes nil
   @default_ttl_ms nil
   @default_name __MODULE__
+  @registry TripleStore.Query.Cache.Registry
+  @registry_key :active_query_cache
 
   # ETS table names (atoms derived from process name)
   @results_table_suffix :_results
@@ -192,31 +196,32 @@ defmodule TripleStore.Query.Cache do
   def get_or_execute(query, execute_fn, opts \\ []) do
     name = Keyword.get(opts, :name, @default_name)
     predicates = Keyword.get(opts, :predicates, MapSet.new())
+    store_id = Keyword.get(opts, :store_id)
     key = compute_key(query)
 
-    case GenServer.call(name, {:get, key}) do
+    case GenServer.call(name, {:get, key, store_id}) do
       {:hit, result} ->
         emit_cache_hit()
         {:ok, result}
 
-      :miss ->
+      {:miss, generation} ->
         emit_cache_miss()
 
         case execute_fn.() do
           {:ok, result} = success ->
-            GenServer.cast(name, {:put, key, result, predicates})
+            GenServer.cast(name, {:put, key, result, predicates, store_id, generation})
             success
 
           {:error, _} = error ->
             error
         end
 
-      :expired ->
+      {:expired, generation} ->
         emit_cache_expired()
 
         case execute_fn.() do
           {:ok, result} = success ->
-            GenServer.cast(name, {:put, key, result, predicates})
+            GenServer.cast(name, {:put, key, result, predicates, store_id, generation})
             success
 
           {:error, _} = error ->
@@ -243,12 +248,13 @@ defmodule TripleStore.Query.Cache do
   @spec get(term(), keyword()) :: {:ok, term()} | :miss | :expired
   def get(query, opts \\ []) do
     name = Keyword.get(opts, :name, @default_name)
+    store_id = Keyword.get(opts, :store_id)
     key = compute_key(query)
 
-    case GenServer.call(name, {:get, key}) do
+    case GenServer.call(name, {:get, key, store_id}) do
       {:hit, result} -> {:ok, result}
-      :miss -> :miss
-      :expired -> :expired
+      {:miss, _generation} -> :miss
+      {:expired, _generation} -> :expired
     end
   end
 
@@ -275,8 +281,27 @@ defmodule TripleStore.Query.Cache do
   def put(query, result, opts \\ []) do
     name = Keyword.get(opts, :name, @default_name)
     predicates = Keyword.get(opts, :predicates, MapSet.new())
+    store_id = Keyword.get(opts, :store_id)
     key = compute_key(query)
-    GenServer.call(name, {:put_sync, key, result, predicates})
+    GenServer.call(name, {:put_sync, key, result, predicates, store_id})
+  end
+
+  @doc """
+  Invalidates entries for one open store in every active result cache.
+
+  The operation is synchronous for each live cache. It also advances that
+  store's generation so a query that began before invalidation cannot publish
+  a stale result after the mutation commits.
+  """
+  @spec invalidate_store(reference()) :: :ok
+  def invalidate_store(store_id) when is_reference(store_id) do
+    if Process.whereis(@registry) do
+      Registry.dispatch(@registry, @registry_key, fn entries ->
+        Enum.each(entries, fn {pid, _value} -> safe_invalidate_store(pid, store_id) end)
+      end)
+    end
+
+    :ok
   end
 
   @doc """
@@ -690,6 +715,10 @@ defmodule TripleStore.Query.Cache do
     warm_on_start = Keyword.get(opts, :warm_on_start, false)
     allowed_persistence_dir = Keyword.get(opts, :allowed_persistence_dir)
 
+    if Process.whereis(@registry) do
+      {:ok, _} = Registry.register(@registry, @registry_key, nil)
+    end
+
     # Create ETS tables
     results_table = table_name(name, @results_table_suffix)
     lru_table = table_name(name, @lru_table_suffix)
@@ -716,7 +745,9 @@ defmodule TripleStore.Query.Cache do
       evictions: 0,
       skipped_large: 0,
       skipped_memory: 0,
-      expired: 0
+      expired: 0,
+      global_generation: 0,
+      store_generations: %{}
     }
 
     # Warm cache from disk if enabled and file exists
@@ -731,13 +762,15 @@ defmodule TripleStore.Query.Cache do
   end
 
   @impl true
-  def handle_call({:get, key}, _from, state) do
+  def handle_call({:get, key, store_id}, _from, state) do
+    generation = generation_token(state, store_id)
+
     case :ets.lookup(state.results_table, key) do
       [{^key, entry}] ->
         if expired?(entry, state.ttl_ms) do
           # Remove expired entry
           remove_entry(state, key, entry)
-          {:reply, :expired, %{state | expired: state.expired + 1}}
+          {:reply, {:expired, generation}, %{state | expired: state.expired + 1}}
         else
           # Update access time
           now = System.monotonic_time(:millisecond)
@@ -753,18 +786,18 @@ defmodule TripleStore.Query.Cache do
         end
 
       [] ->
-        {:reply, :miss, %{state | misses: state.misses + 1}}
+        {:reply, {:miss, generation}, %{state | misses: state.misses + 1}}
     end
   end
 
   @impl true
-  def handle_call({:put_sync, key, result, predicates}, _from, state) do
+  def handle_call({:put_sync, key, result, predicates, store_id}, _from, state) do
     result_size = compute_result_size(result)
 
     if result_size > state.max_result_size do
       {:reply, :skipped, %{state | skipped_large: state.skipped_large + 1}}
     else
-      state = do_put(state, key, result, result_size, predicates)
+      state = do_put(state, key, result, result_size, predicates, store_id)
       {:reply, :ok, state}
     end
   end
@@ -773,7 +806,17 @@ defmodule TripleStore.Query.Cache do
   def handle_call(:invalidate, _from, state) do
     :ets.delete_all_objects(state.results_table)
     :ets.delete_all_objects(state.lru_table)
-    {:reply, :ok, state}
+    :ets.delete_all_objects(state.predicate_index_table)
+
+    {:reply, :ok,
+     %{state | current_memory_bytes: 0, global_generation: state.global_generation + 1}}
+  end
+
+  @impl true
+  def handle_call({:invalidate_store, store_id}, _from, state) do
+    state = remove_store_entries(state, store_id)
+    generations = Map.update(state.store_generations, store_id, 1, &(&1 + 1))
+    {:reply, :ok, %{state | store_generations: generations}}
   end
 
   @impl true
@@ -896,7 +939,8 @@ defmodule TripleStore.Query.Cache do
               key: key,
               result: entry.result,
               result_size: entry.result_size,
-              predicates: MapSet.to_list(entry.predicates)
+              predicates: MapSet.to_list(entry.predicates),
+              store_id: Map.get(entry, :store_id)
             }
             | acc
           ]
@@ -909,14 +953,19 @@ defmodule TripleStore.Query.Cache do
   end
 
   @impl true
-  def handle_cast({:put, key, result, predicates}, state) do
+  def handle_cast({:put, key, result, predicates, store_id, generation}, state) do
     result_size = compute_result_size(result)
 
-    if result_size > state.max_result_size do
-      {:noreply, %{state | skipped_large: state.skipped_large + 1}}
-    else
-      state = do_put(state, key, result, result_size, predicates)
-      {:noreply, state}
+    cond do
+      generation != generation_token(state, store_id) ->
+        {:noreply, state}
+
+      result_size > state.max_result_size ->
+        {:noreply, %{state | skipped_large: state.skipped_large + 1}}
+
+      true ->
+        state = do_put(state, key, result, result_size, predicates, store_id)
+        {:noreply, state}
     end
   end
 
@@ -953,7 +1002,7 @@ defmodule TripleStore.Query.Cache do
     String.to_atom("#{process_name}#{suffix}")
   end
 
-  defp do_put(state, key, result, result_size, predicates) do
+  defp do_put(state, key, result, result_size, predicates, store_id) do
     now = System.monotonic_time(:millisecond)
     predicate_set = MapSet.new(predicates)
 
@@ -979,7 +1028,8 @@ defmodule TripleStore.Query.Cache do
       memory_bytes: entry_memory,
       access_time: now,
       created_at: now,
-      predicates: predicate_set
+      predicates: predicate_set,
+      store_id: store_id
     }
 
     # Check if key already exists and clean up old entry
@@ -1055,6 +1105,26 @@ defmodule TripleStore.Query.Cache do
     # Update memory tracking
     entry_memory = Map.get(entry, :memory_bytes, 0)
     %{state | current_memory_bytes: max(0, state.current_memory_bytes - entry_memory)}
+  end
+
+  defp generation_token(state, store_id) do
+    {state.global_generation, Map.get(state.store_generations, store_id, 0)}
+  end
+
+  defp remove_store_entries(state, store_id) do
+    :ets.foldl(
+      fn {key, entry}, acc ->
+        if Map.get(entry, :store_id) == store_id, do: remove_entry(acc, key, entry), else: acc
+      end,
+      state,
+      state.results_table
+    )
+  end
+
+  defp safe_invalidate_store(pid, store_id) do
+    GenServer.call(pid, {:invalidate_store, store_id})
+  catch
+    :exit, _ -> :ok
   end
 
   defp expired?(_entry, nil), do: false
@@ -1192,7 +1262,8 @@ defmodule TripleStore.Query.Cache do
                   key: key,
                   result: entry.result,
                   result_size: entry.result_size,
-                  predicates: MapSet.to_list(entry.predicates)
+                  predicates: MapSet.to_list(entry.predicates),
+                  store_id: Map.get(entry, :store_id)
                 }
                 | acc
               ]
@@ -1337,7 +1408,8 @@ defmodule TripleStore.Query.Cache do
           memory_bytes: entry_memory,
           access_time: now,
           created_at: now,
-          predicates: predicate_set
+          predicates: predicate_set,
+          store_id: Map.get(entry, :store_id)
         }
 
         :ets.insert(state.results_table, {entry.key, cache_entry})

@@ -138,22 +138,25 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     case Helpers.check_admin_authorization(ctx, rdf_graph) do
       :ok ->
         QuadOperations.create_graph(ctx.db, ctx.dict_manager, rdf_graph)
-        |> create_graph_result(silent)
+        |> create_graph_result(silent, ctx.db)
 
       {:error, :unauthorized} ->
         {:error, :unauthorized}
     end
   end
 
-  defp create_graph_result({:ok, :created}, _silent) do
-    Helpers.invalidate_cache_if_running()
+  defp create_graph_result({:ok, :created}, _silent, db) do
+    Helpers.invalidate_result_caches(db)
     {:ok, 0}
   end
 
-  defp create_graph_result({:ok, :already_exists}, true), do: {:ok, 0}
-  defp create_graph_result({:ok, :already_exists}, false), do: {:error, :graph_already_exists}
-  defp create_graph_result({:error, _reason}, true), do: {:ok, 0}
-  defp create_graph_result({:error, reason}, false), do: {:error, reason}
+  defp create_graph_result({:ok, :already_exists}, true, _db), do: {:ok, 0}
+
+  defp create_graph_result({:ok, :already_exists}, false, _db),
+    do: {:error, :graph_already_exists}
+
+  defp create_graph_result({:error, _reason}, true, _db), do: {:ok, 0}
+  defp create_graph_result({:error, reason}, false, _db), do: {:error, reason}
 
   defp drop_graph_request(nil, _silent), do: {:error, :missing_graph_iri}
 
@@ -170,22 +173,22 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     case Helpers.check_admin_authorization(ctx, rdf_graph) do
       :ok ->
         QuadOperations.delete_graph(ctx.db, ctx.dict_manager, rdf_graph)
-        |> drop_graph_result(silent)
+        |> drop_graph_result(silent, ctx.db)
 
       {:error, :unauthorized} ->
         {:error, :unauthorized}
     end
   end
 
-  defp drop_graph_result({:ok, count}, _silent) do
-    Helpers.invalidate_cache_if_running()
+  defp drop_graph_result({:ok, count}, _silent, db) do
+    Helpers.invalidate_result_caches(db)
     {:ok, count}
   end
 
-  defp drop_graph_result({:error, :not_found}, true), do: {:ok, 0}
-  defp drop_graph_result({:error, :not_found}, false), do: {:error, :graph_not_found}
-  defp drop_graph_result({:error, _reason}, true), do: {:ok, 0}
-  defp drop_graph_result({:error, reason}, false), do: {:error, reason}
+  defp drop_graph_result({:error, :not_found}, true, _db), do: {:ok, 0}
+  defp drop_graph_result({:error, :not_found}, false, _db), do: {:error, :graph_not_found}
+  defp drop_graph_result({:error, _reason}, true, _db), do: {:ok, 0}
+  defp drop_graph_result({:error, reason}, false, _db), do: {:error, reason}
 
   defp maybe_execute_distinct_graph_transfer(ctx, source_graph, target_graph, silent, operation) do
     source_rdf = Helpers.normalize_graph_term(source_graph)
@@ -247,7 +250,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
   defp perform_graph_transfer(ctx, source_rdf, target_rdf, silent, operation) do
     case execute_transfer_operation(ctx, source_rdf, target_rdf, operation) do
       {:ok, count} ->
-        Helpers.invalidate_cache_if_running()
+        Helpers.invalidate_result_caches(ctx.db)
         {:ok, count}
 
       {:error, reason} ->
@@ -379,7 +382,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     case Helpers.check_write_authorization(ctx, rdf_graph) do
       :ok ->
         QuadOperations.clear_graph(ctx.db, ctx.dict_manager, rdf_graph)
-        |> clear_named_graph_result(silent)
+        |> clear_named_graph_result(silent, ctx.db)
 
       {:error, :unauthorized} ->
         {:error, :unauthorized}
@@ -417,7 +420,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     |> Enum.reduce_while({:ok, 0}, fn graph_term, {:ok, total} ->
       clear_graph_step(ctx, graph_term, total, on_error)
     end)
-    |> invalidate_cache_on_success()
+    |> invalidate_cache_on_success(ctx.db)
   end
 
   defp clear_graph_step(ctx, graph_term, total, on_error) do
@@ -429,7 +432,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
 
   defp clear_quad_graph(ctx, graph_term) do
     QuadOperations.clear_graph(ctx.db, ctx.dict_manager, graph_term)
-    |> invalidate_cache_on_success()
+    |> invalidate_cache_on_success(ctx.db)
   end
 
   defp clear_default_triples(ctx) do
@@ -440,7 +443,7 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, count} ->
       delete_triple_chunk(ctx, chunk, count)
     end)
-    |> invalidate_cache_when_counted()
+    |> invalidate_cache_when_counted(ctx.db)
   end
 
   defp delete_triple_chunk(ctx, chunk, count) do
@@ -450,29 +453,29 @@ defmodule TripleStore.SPARQL.Update.GraphOperations do
     end
   end
 
-  defp invalidate_cache_on_success({:ok, count} = result) when count > 0 do
-    Helpers.invalidate_cache_if_running()
+  defp invalidate_cache_on_success({:ok, count} = result, db) when count > 0 do
+    Helpers.invalidate_result_caches(db)
     result
   end
 
-  defp invalidate_cache_on_success(result), do: result
+  defp invalidate_cache_on_success(result, _db), do: result
 
-  defp invalidate_cache_when_counted({:ok, count} = result) when count > 0 do
-    Helpers.invalidate_cache_if_running()
+  defp invalidate_cache_when_counted({:ok, count} = result, db) when count > 0 do
+    Helpers.invalidate_result_caches(db)
     result
   end
 
-  defp invalidate_cache_when_counted(result), do: result
+  defp invalidate_cache_when_counted(result, _db), do: result
 
-  defp clear_named_graph_result({:ok, count}, _silent) do
-    Helpers.invalidate_cache_if_running()
+  defp clear_named_graph_result({:ok, count}, _silent, db) do
+    Helpers.invalidate_result_caches(db)
     {:ok, count}
   end
 
-  defp clear_named_graph_result({:error, :not_found}, true), do: {:ok, 0}
-  defp clear_named_graph_result({:error, :not_found}, false), do: {:error, :graph_not_found}
-  defp clear_named_graph_result({:error, _reason}, true), do: {:ok, 0}
-  defp clear_named_graph_result({:error, reason}, false), do: {:error, reason}
+  defp clear_named_graph_result({:error, :not_found}, true, _db), do: {:ok, 0}
+  defp clear_named_graph_result({:error, :not_found}, false, _db), do: {:error, :graph_not_found}
+  defp clear_named_graph_result({:error, _reason}, true, _db), do: {:ok, 0}
+  defp clear_named_graph_result({:error, reason}, false, _db), do: {:error, reason}
 
   defp clear_named_graph_failure_result(total, true), do: {:ok, total}
   defp clear_named_graph_failure_result(_total, false), do: {:error, :clear_failed}

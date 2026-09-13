@@ -509,7 +509,8 @@ defmodule TripleStore do
   @spec load(store(), Path.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load(%{db: db, dict_manager: dict_manager}, path, opts \\ []) do
-    Loader.load_file(db, dict_manager, path, opts)
+    result = Loader.load_file(db, dict_manager, path, opts)
+    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -538,7 +539,8 @@ defmodule TripleStore do
   @spec load_graph(store(), RDF.Graph.t(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_graph(%{db: db, dict_manager: dict_manager}, graph, opts \\ []) do
-    Loader.load_graph(db, dict_manager, graph, opts)
+    result = Loader.load_graph(db, dict_manager, graph, opts)
+    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -572,7 +574,8 @@ defmodule TripleStore do
   @spec load_string(store(), String.t(), atom(), load_opts()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def load_string(%{db: db, dict_manager: dict_manager}, content, format, opts \\ []) do
-    Loader.load_string(db, dict_manager, content, format, opts)
+    result = Loader.load_string(db, dict_manager, content, format, opts)
+    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
   end
 
   # ===========================================================================
@@ -627,7 +630,8 @@ defmodule TripleStore do
   @spec insert(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def insert(%{db: db, dict_manager: dict_manager}, triples) do
-    Loader.insert(db, dict_manager, triples)
+    result = Loader.insert(db, dict_manager, triples)
+    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -663,7 +667,8 @@ defmodule TripleStore do
   @spec delete(store(), RDF.Triple.t() | [RDF.Triple.t()] | RDF.Graph.t() | RDF.Description.t()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def delete(%{db: db, dict_manager: dict_manager}, triples) do
-    Loader.delete(db, dict_manager, triples)
+    result = Loader.delete(db, dict_manager, triples)
+    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
   end
 
   # ===========================================================================

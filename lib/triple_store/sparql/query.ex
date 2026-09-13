@@ -863,14 +863,15 @@ defmodule TripleStore.SPARQL.Query do
 
         use_cache? and cacheable_query?(sparql, query_type) ->
           case result_cache_key(ctx, sparql) do
-            {:ok, cache_key} ->
+            {:ok, cache_key, store_id} ->
               execute_with_cache(
                 ctx,
                 cache_key,
                 query_type,
                 optimized,
                 metadata,
-                cache_name
+                cache_name,
+                store_id
               )
 
             :bypass ->
@@ -899,22 +900,28 @@ defmodule TripleStore.SPARQL.Query do
     with {:ok, instance_id} <- ErlangAdapter.instance_id(ctx.db),
          {:ok, quad_store?} <- ErlangAdapter.is_quad_store?(ctx.db) do
       case {quad_store?, Map.get(ctx, :permit_all, false)} do
-        {false, _} -> {:ok, {:query_result, 2, instance_id, :triple, sparql}}
-        {true, true} -> {:ok, {:query_result, 2, instance_id, :quad, :permit_all, sparql}}
-        {true, false} -> :bypass
+        {false, _} ->
+          {:ok, {:query_result, 2, instance_id, :triple, sparql}, instance_id}
+
+        {true, true} ->
+          {:ok, {:query_result, 2, instance_id, :quad, :permit_all, sparql}, instance_id}
+
+        {true, false} ->
+          :bypass
       end
     else
       _ -> :bypass
     end
   end
 
-  defp execute_with_cache(ctx, cache_key, query_type, optimized, metadata, cache_name) do
+  defp execute_with_cache(ctx, cache_key, query_type, optimized, metadata, cache_name, store_id) do
     # Extract predicates from the pattern for cache invalidation
     predicates = extract_predicates(optimized)
 
     cache_opts = [
       name: cache_name,
-      predicates: predicates
+      predicates: predicates,
+      store_id: store_id
     ]
 
     QueryCache.get_or_execute(
