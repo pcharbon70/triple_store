@@ -141,41 +141,49 @@ defmodule TripleStore.Reasoner.DeltaComputation do
           delta_opts()
         ) :: apply_result()
   def apply_rule_delta(lookup_fn, rule, delta, existing, opts \\ []) do
-    max_derivations = Keyword.get(opts, :max_derivations, @default_max_derivations)
+    try do
+      max_derivations = Keyword.get(opts, :max_derivations, @default_max_derivations)
 
-    # Get delta positions from rule metadata (or all pattern positions)
-    delta_positions = Rule.delta_positions(rule)
-    patterns = Rule.body_patterns(rule)
+      # Get delta positions from rule metadata (or all pattern positions)
+      delta_positions = Rule.delta_positions(rule)
+      patterns = Rule.body_patterns(rule)
 
-    if Enum.empty?(patterns) do
-      # No patterns means rule cannot match anything
-      {:ok, MapSet.new()}
-    else
-      # Index delta facts by predicate for efficient lookup
-      delta_index = index_by_predicate(delta)
+      if Enum.empty?(patterns) do
+        # No patterns means rule cannot match anything
+        {:ok, MapSet.new()}
+      else
+        # Index delta facts by predicate for efficient lookup
+        delta_index = index_by_predicate(delta)
 
-      # Apply rule for each delta position using Stream for lazy evaluation
-      # This avoids building large intermediate lists before taking max_derivations
-      new_facts =
-        delta_positions
-        |> Stream.flat_map(fn delta_pos ->
-          apply_with_delta_at_position(
-            lookup_fn,
-            rule,
-            patterns,
-            delta,
-            delta_index,
-            delta_pos,
-            existing
-          )
-        end)
-        |> Stream.take(max_derivations)
-        |> MapSet.new()
+        # Apply rule for each delta position using Stream for lazy evaluation
+        # This avoids building large intermediate lists before taking max_derivations
+        result =
+          Enum.reduce_while(delta_positions, {:ok, []}, fn delta_pos, {:ok, acc} ->
+            {:ok, facts} =
+              apply_with_delta_at_position(
+                lookup_fn,
+                rule,
+                patterns,
+                delta,
+                delta_index,
+                delta_pos,
+                existing
+              )
 
-      # Filter out existing facts
-      truly_new = MapSet.difference(new_facts, existing)
+            {:cont, {:ok, facts ++ acc}}
+          end)
 
-      {:ok, truly_new}
+        case result do
+          {:ok, facts} ->
+            new_facts = facts |> Enum.take(max_derivations) |> MapSet.new()
+            {:ok, MapSet.difference(new_facts, existing)}
+
+          {:error, _} = error ->
+            error
+        end
+      end
+    catch
+      {:lookup_failed, reason} -> {:error, {:lookup_failed, reason}}
     end
   end
 
@@ -398,14 +406,17 @@ defmodule TripleStore.Reasoner.DeltaComputation do
       )
 
     # Instantiate head for each binding
-    bindings
-    |> Enum.flat_map(fn binding ->
-      case instantiate_head(rule.head, binding) do
-        nil -> []
-        triple -> [triple]
-      end
-    end)
-    |> Enum.reject(fn triple -> MapSet.member?(existing, triple) end)
+    facts =
+      bindings
+      |> Enum.flat_map(fn binding ->
+        case instantiate_head(rule.head, binding) do
+          nil -> []
+          triple -> [triple]
+        end
+      end)
+      |> Enum.reject(fn triple -> MapSet.member?(existing, triple) end)
+
+    {:ok, facts}
   end
 
   defp get_matching_facts(lookup_fn, pattern, delta, delta_index, use_delta) do
@@ -444,8 +455,10 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
   defp lookup_matching_facts(lookup_fn, pattern) do
     case pattern_to_lookup(pattern) do
-      {:ground, triple} ->
-        [triple]
+      {:ground, fact, lookup_pattern} ->
+        lookup_fn
+        |> fetch_lookup_facts(lookup_pattern)
+        |> Enum.filter(&(&1 == fact))
 
       {:lookup, lookup_pattern} ->
         fetch_lookup_facts(lookup_fn, lookup_pattern)
@@ -459,7 +472,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
       {:error, reason} ->
         Logger.warning("Lookup failed during delta computation: #{inspect(reason)}")
-        []
+        throw({:lookup_failed, reason})
     end
   end
 
@@ -515,7 +528,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
     if s_bound != :var and p_bound != :var and o_bound != :var do
       # All ground - exact triple check
-      {:ground, {s, p, o}}
+      {:ground, {s, p, o}, {:pattern, [s, p, o]}}
     else
       # Need to look up
       {:lookup, {:pattern, [s, p, o]}}
@@ -530,7 +543,7 @@ defmodule TripleStore.Reasoner.DeltaComputation do
 
     if g_bound != :var and s_bound != :var and p_bound != :var and o_bound != :var do
       # All ground - exact quad check
-      {:ground, {g, s, p, o}}
+      {:ground, {g, s, p, o}, {:quad_pattern, [g, s, p, o]}}
     else
       # Need to look up
       {:lookup, {:quad_pattern, [g, s, p, o]}}

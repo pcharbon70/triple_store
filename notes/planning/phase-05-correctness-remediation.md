@@ -58,7 +58,7 @@ fixture cleanup reliable on failures. Update affected specs with each fix.
 | --- | --- | --- | --- | --- |
 | 1 | Reproduction baseline, cache isolation, graph authorization | None | Context-safe cached reads and authorized resolved write targets | Complete |
 | 2 | Atomic quad MODIFY and mutation-driven cache invalidation | Phase 1 cache identity and authorization | Failed MODIFY leaves explicit indices unchanged; committed writes invalidate affected results | Complete |
-| 3 | Ground-premise verification and canonical derived storage | Section 1.1 test environment | Sound negative-premise handling and GSPO-derived round trips | Planned |
+| 3 | Ground-premise verification and canonical derived storage | Section 1.1 test environment | Sound negative-premise handling and GSPO-derived round trips | Complete |
 | 4 | Integration, compatibility, and conformance evidence | Phases 1–3 | All six findings verified through real runtime tests and documented evidence | Planned |
 
 The phase boundaries reflect different delivery gates: prevent unauthorized
@@ -323,7 +323,7 @@ compatible with its readers without reinterpreting ambiguous existing data.
 
 ### Section 3.1: Ground Premise Existence (F-05)
 
-- [ ] **Section 3.1 Status**
+- [x] **Section 3.1 Status**
 
 Primary files: `lib/triple_store/reasoner/delta_computation.ex`,
 `lib/triple_store/reasoner/semi_naive.ex`, and their lookup providers.
@@ -333,32 +333,32 @@ Tests: `test/triple_store/reasoner/delta_computation_test.exs`,
 
 #### Task 3.1.1: Verify ground facts through the lookup contract
 
-- [ ] **Task 3.1.1 Status**
-- [ ] 3.1.1.1 Replace unconditional acceptance of fully bound non-delta premises
+- [x] **Task 3.1.1 Status**
+- [x] 3.1.1.1 Replace unconditional acceptance of fully bound non-delta premises
   with an exact existence check against the supplied fact lookup.
-- [ ] 3.1.1.2 Cover triple and quad pattern shapes, preserving graph bindings,
+- [x] 3.1.1.2 Cover triple and quad pattern shapes, preserving graph bindings,
   repeated variables, and term representation used by the rule compiler.
-- [ ] 3.1.1.3 Confirm lookup providers include the appropriate explicit and derived
+- [x] 3.1.1.3 Confirm lookup providers include the appropriate explicit and derived
   facts for later iterations; do not invent facts or lose derivations by changing
   the ground lookup contract alone.
-- [ ] 3.1.1.4 Preserve typed failure behavior for backend lookup errors; distinguish
+- [x] 3.1.1.4 Preserve typed failure behavior for backend lookup errors; distinguish
   unavailable storage from a valid empty match rather than claiming convergence.
 
 #### Task 3.1.2: Exercise negative premises and multi-iteration closure
 
-- [ ] **Task 3.1.2 Status**
-- [ ] 3.1.2.1 Test `p(x,y) AND q(x,y) -> r(x,y)` with only `p(a,b)` present:
+- [x] **Task 3.1.2 Status**
+- [x] 3.1.2.1 Test `p(x,y) AND q(x,y) -> r(x,y)` with only `p(a,b)` present:
   no `r(a,b)` may be derived. Add `q(a,b)` and assert the positive case.
-- [ ] 3.1.2.2 Repeat with already-ground rule terms, reversed body order, repeated
+- [x] 3.1.2.2 Repeat with already-ground rule terms, reversed body order, repeated
   variables, and quad premises whose matching fact exists only in another graph.
-- [ ] 3.1.2.3 Verify a premise derived in an earlier iteration can satisfy a later
+- [x] 3.1.2.3 Verify a premise derived in an earlier iteration can satisfy a later
   rule, and sequential/parallel evaluation reaches the same final fact set.
-- [ ] 3.1.2.4 Inject lookup failure and verify it cannot be reported as a successful
+- [x] 3.1.2.4 Inject lookup failure and verify it cannot be reported as a successful
   complete fixpoint. Exercise existing rule profiles as well as synthetic rules.
 
 ### Section 3.2: Canonical Derived-Quad Encoding (F-06)
 
-- [ ] **Section 3.2 Status**
+- [x] **Section 3.2 Status**
 
 Primary files: `lib/triple_store/reasoner/graph_scoped_reasoner.ex`,
 `lib/triple_store/reasoner/derived_store.ex`,
@@ -369,40 +369,50 @@ Tests: `test/triple_store/reasoner/derived_store_test.exs`,
 
 #### Task 3.2.1: Align writer encoding and error handling
 
-- [ ] **Task 3.2.1 Status**
-- [ ] 3.2.1.1 Use distinct nonzero subject/predicate/object IDs and graph IDs so
+- [x] **Task 3.2.1 Status**
+- [x] 3.2.1.1 Use distinct nonzero subject/predicate/object IDs and graph IDs so
   swapped fields cannot accidentally pass. Check raw keys and decoded results.
-- [ ] 3.2.1.2 Route `:per_graph_cf` writes through the canonical GSPO derived
+- [x] 3.2.1.2 Route `:per_graph_cf` writes through the canonical GSPO derived
   writer; explicitly convert `{s,p,o,g}` to `{g,s,p,o}` where required.
-- [ ] 3.2.1.3 Define and document the existing strategy's target graph behavior;
+- [x] 3.2.1.3 Define and document the existing strategy's target graph behavior;
   fix byte ordering without silently changing graph-selection semantics.
-- [ ] 3.2.1.4 Batch related derived writes and propagate storage failures instead
+- [x] 3.2.1.4 Batch related derived writes and propagate storage failures instead
   of discarding `put` errors and unconditionally returning `:ok`.
-- [ ] 3.2.1.5 Verify other supported strategies and derived readers agree on the
+- [x] 3.2.1.5 Verify other supported strategies and derived readers agree on the
   same key layout; preserve separation from explicit quad indices.
 
 #### Task 3.2.2: Verify persisted lookup and maintenance
 
-- [ ] **Task 3.2.2 Status**
-- [ ] 3.2.2.1 Materialize with `:per_graph_cf`, close/reopen, and verify derived
+- [x] **Task 3.2.2 Status**
+- [x] 3.2.2.1 Materialize with `:per_graph_cf`, close/reopen, and verify derived
   lookup and deletion through the public DerivedStore APIs.
-- [ ] 3.2.2.2 Test storage failure, multiple batches, and explicit facts remaining
+- [x] 3.2.2.2 Test storage failure, multiple batches, and explicit facts remaining
   unchanged; distinguish persistence from normal SPARQL inferred-result visibility.
 
 #### Task 3.2.3: Define recovery for previously malformed derived data
 
-- [ ] **Task 3.2.3 Status**
-- [ ] 3.2.3.1 Assess previously written SPOG-derived keys: both layouts are 32 bytes,
+- [x] **Task 3.2.3 Status**
+- [x] 3.2.3.1 Assess previously written SPOG-derived keys: both layouts are 32 bytes,
   so do not infer their format from key length or blindly rewrite mixed contents.
-- [ ] 3.2.3.2 Document a backup-first, explicitly scoped rebuild from authoritative
+- [x] 3.2.3.2 Document a backup-first, explicitly scoped rebuild from authoritative
   explicit facts for affected stores, including provenance/status refresh and
   verification. Do not automatically delete derived data on open or deploy.
-- [ ] 3.2.3.3 Exercise the documented recovery procedure on a disposable affected-store
+- [x] 3.2.3.3 Exercise the documented recovery procedure on a disposable affected-store
   fixture, preserving explicit data and confirming the rebuilt derived contents.
 
 **Phase 3 exit gate:** F-05/F-06 regressions pass, absent premises never generate
 facts, later derived premises remain usable, and persisted derived quads survive
 reopen and maintenance with the correct field ordering.
+
+Phase 3 evidence: exact triple and quad ground premises now pass through the
+configured lookup provider, and lookup failures return a tagged error through
+sequential and parallel rule evaluation. Canonical derived tests use distinct
+nonzero IDs, inspect raw GSPO bytes, reopen, query, delete, inject batch failure,
+exercise multi-iteration global lookup, and rebuild a deliberately malformed
+disposable store while preserving explicit data. Correcting the writer exposed
+and fixed three graph-reasoner readers that treated canonical `{s,p,o,g}` values
+from `QuadIndex.key_to_quad/2` as graph-first tuples. The complete reasoning
+suite passed 1,327 tests with 40 skipped.
 
 ---
 
@@ -472,5 +482,5 @@ reviewable, and remaining unrelated implementation gaps remain explicit.
 | F-02 | Pending | Pending | Not run | Open |
 | F-03 | Phase 2 PR | `test/triple_store/sparql/phase_2_correctness_test.exs`, `test/triple_store/sparql/modify_quad_test.exs` | Focused suite passed | Closed |
 | F-04 | Phase 2 PR | `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/sparql/phase_2_correctness_test.exs` | Focused suite passed | Closed |
-| F-05 | Pending | Pending | Not run | Open |
-| F-06 | Pending | Pending | Not run | Open |
+| F-05 | Phase 3 PR | `test/triple_store/reasoner/ground_premise_regression_test.exs`, `test/triple_store/reasoner/semi_naive_test.exs` | Focused suite passed | Closed |
+| F-06 | Phase 3 PR | `test/triple_store/reasoner/derived_quad_canonical_test.exs`, `test/triple_store/reasoner/section_7_8_5_derived_store_quad_test.exs` | Focused suite passed | Closed |

@@ -597,19 +597,26 @@ defmodule TripleStore.Reasoner.SemiNaive do
 
   # Sequential rule application (original implementation)
   defp apply_stratum_sequential(lookup_fn, rules, state, all_existing) do
-    {derivations, rules_applied} =
-      Enum.reduce(rules, {MapSet.new(), 0}, fn rule, {acc, rule_count} ->
-        {:ok, new_facts} =
-          DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing)
+    result =
+      Enum.reduce_while(rules, {:ok, MapSet.new(), 0}, fn rule, {:ok, acc, rule_count} ->
+        case DeltaComputation.apply_rule_delta(lookup_fn, rule, state.delta, all_existing) do
+          {:ok, new_facts} ->
+            truly_new = MapSet.difference(new_facts, acc)
+            {:cont, {:ok, MapSet.union(acc, truly_new), rule_count + 1}}
 
-        # Filter out facts we've already derived in this iteration
-        truly_new = MapSet.difference(new_facts, acc)
-        {MapSet.union(acc, truly_new), rule_count + 1}
+          {:error, _} = error ->
+            {:halt, error}
+        end
       end)
 
-    # Filter out facts already in database
-    filtered = MapSet.difference(derivations, state.all_facts)
-    {:ok, filtered, rules_applied}
+    case result do
+      {:ok, derivations, rules_applied} ->
+        filtered = MapSet.difference(derivations, state.all_facts)
+        {:ok, filtered, rules_applied}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   # Parallel rule application using Task.async_stream

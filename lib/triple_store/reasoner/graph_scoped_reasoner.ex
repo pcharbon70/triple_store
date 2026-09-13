@@ -39,9 +39,11 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
   ## Storage Strategy
 
-  Derived quads can be stored in two ways:
-  - `:self` - Store in same graph as explicit facts (default)
-  - `:separate` - Store in a separate inference graph
+  Global derived quads support `:separate_graph` and `:per_graph_cf` storage.
+  The `:per_graph_cf` strategy writes canonical GSPO keys to the dedicated
+  `derived` column family and uses graph ID `0`, because global evaluation has
+  discarded individual premise graph ownership. `:same_as_premises` currently
+  falls back to `:separate_graph` with a warning.
 
   ## TBox Sharing
 
@@ -74,6 +76,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   alias TripleStore.QuadIndex
 
   alias TripleStore.Reasoner.{
+    DerivedStore,
     GraphReasoningConfig,
     GraphReasoningStatus,
     ReasoningConfig,
@@ -456,7 +459,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     initial_facts = MapSet.union(tbox_facts, explicit_facts)
 
     # Get rules to apply
-    rules = ReasoningConfig.materialization_rules(config)
+    rules = Keyword.get(opts, :rules, ReasoningConfig.materialization_rules(config))
 
     # Get storage strategy
     storage_strategy = ReasoningConfig.storage_strategy(config)
@@ -594,7 +597,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     try do
       facts =
         ErlangAdapter.fold(db, :gspo, prefix, MapSet.new(), fn {key, _value}, acc ->
-          {_g, _s, _p, _o} = quad = QuadIndex.key_to_quad(:gspo, key)
+          {_s, _p, _o, _g} = quad = QuadIndex.key_to_quad(:gspo, key)
           MapSet.put(acc, quad_to_triple(quad))
         end)
 
@@ -604,8 +607,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
     end
   end
 
-  # Convert quad {g, s, p, o} to triple {s, p, o} for reasoning
-  defp quad_to_triple({_g, s, p, o}), do: {s, p, o}
+  # Convert canonical quad {s, p, o, g} to triple {s, p, o} for reasoning
+  defp quad_to_triple({s, p, o, _g}), do: {s, p, o}
 
   # ============================================================================
   # Private Functions - TBox-Aware Lookup
@@ -767,9 +770,9 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
         {{:ok, tbox_results}, {:ok, graph_results}} ->
           {:ok, merge_triple_sets(tbox_results, graph_results)}
 
-        {{:ok, _tbox_results}, {:error, _reason}} ->
+        {{:ok, _tbox_results}, {:error, reason}} ->
           # If graph lookup fails, the error is fatal since it's the primary source
-          :error
+          {:error, reason}
       end
     end
   end
@@ -852,7 +855,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
        ) do
     results =
       ErlangAdapter.fold(db, index, prefix, [], fn {key, _value}, acc ->
-        {_g, s, p, o} = QuadIndex.key_to_quad(index, key)
+        {s, p, o, _g} = QuadIndex.key_to_quad(index, key)
 
         maybe_collect_index_result(
           acc,
@@ -871,7 +874,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   #
   # The store function handles three strategies:
   # - `:separate_graph` - Store in designated inference graph (recommended)
-  # - `:per_graph_cf` - Store only in derived CF (no graph context)
+  # - `:per_graph_cf` - Store GSPO quads in the derived CF under graph 0
   # - `:same_as_premises` - **DEPRECATED**: Falls back to `:separate_graph`
   #
   # ## Deprecation Notice
@@ -924,18 +927,8 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
 
   defp make_global_store_fn(db, _config, :per_graph_cf, _inferred_graph) do
     fn fact_set ->
-      # Store in derived CF only, without graph context
-      # Convert triples to quads with default graph 0
-      quads = Enum.map(fact_set, fn {s, p, o} -> {s, p, o, 0} end)
-
-      # Store in derived CF
-      Enum.each(quads, fn {s, p, o, _g} ->
-        # Use spog_key for derived storage (subject-predicate-object-graph order)
-        key = QuadIndex.spog_key(s, p, o, 0)
-        ErlangAdapter.put(db, :derived, key, <<>>)
-      end)
-
-      :ok
+      quads = Enum.map(fact_set, fn {s, p, o} -> {0, s, p, o} end)
+      DerivedStore.insert_derived_quads(db, quads)
     end
   end
 
@@ -1196,7 +1189,7 @@ defmodule TripleStore.Reasoner.GraphScopedReasoner do
   end
 
   defp maybe_add_explicit_quad(key, acc) do
-    {_g, _s, _p, _o} = quad = QuadIndex.key_to_quad(:gspo, key)
+    {_s, _p, _o, _g} = quad = QuadIndex.key_to_quad(:gspo, key)
     MapSet.put(acc, quad_to_triple(quad))
   end
 
