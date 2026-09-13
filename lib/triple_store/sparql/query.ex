@@ -67,6 +67,7 @@ defmodule TripleStore.SPARQL.Query do
 
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.{Executor, Expression, Optimizer, Parser, PropertyPath}
   require Logger
@@ -861,7 +862,20 @@ defmodule TripleStore.SPARQL.Query do
           build_explanation(query_type, pattern, optimized, metadata)
 
         use_cache? and cacheable_query?(sparql, query_type) ->
-          execute_with_cache(ctx, sparql, query_type, optimized, metadata, cache_name)
+          case result_cache_key(ctx, sparql) do
+            {:ok, cache_key} ->
+              execute_with_cache(
+                ctx,
+                cache_key,
+                query_type,
+                optimized,
+                metadata,
+                cache_name
+              )
+
+            :bypass ->
+              execute_and_serialize(ctx, query_type, optimized, metadata)
+          end
 
         true ->
           execute_and_serialize(ctx, query_type, optimized, metadata)
@@ -877,7 +891,24 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   # Execute a query using the cache
-  defp execute_with_cache(ctx, sparql, query_type, optimized, metadata, cache_name) do
+  # ACL-backed quad contexts have no revision token that proves their effective
+  # authorization is unchanged. Caching those results could survive a grant,
+  # revoke, role change, or public-access change, so they bypass result caching.
+  # Explicit permit-all mode has a stable authorization scope and can be cached.
+  defp result_cache_key(ctx, sparql) do
+    with {:ok, instance_id} <- ErlangAdapter.instance_id(ctx.db),
+         {:ok, quad_store?} <- ErlangAdapter.is_quad_store?(ctx.db) do
+      case {quad_store?, Map.get(ctx, :permit_all, false)} do
+        {false, _} -> {:ok, {:query_result, 2, instance_id, :triple, sparql}}
+        {true, true} -> {:ok, {:query_result, 2, instance_id, :quad, :permit_all, sparql}}
+        {true, false} -> :bypass
+      end
+    else
+      _ -> :bypass
+    end
+  end
+
+  defp execute_with_cache(ctx, cache_key, query_type, optimized, metadata, cache_name) do
     # Extract predicates from the pattern for cache invalidation
     predicates = extract_predicates(optimized)
 
@@ -887,7 +918,7 @@ defmodule TripleStore.SPARQL.Query do
     ]
 
     QueryCache.get_or_execute(
-      sparql,
+      cache_key,
       fn ->
         execute_and_serialize(ctx, query_type, optimized, metadata)
       end,

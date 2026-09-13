@@ -144,7 +144,11 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
         # Always use quad operations for quad stores
         # (3-tuples from triple templates are converted to default graph quads)
-        with {:ok, delete_internal} <- quads_to_internal(ctx, delete_patterns, :lookup),
+        resolved_graphs =
+          Helpers.extract_graphs_from_quads(delete_patterns ++ insert_patterns)
+
+        with :ok <- Helpers.check_multi_graph_authorization(ctx, resolved_graphs, :write),
+             {:ok, delete_internal} <- quads_to_internal(ctx, delete_patterns, :lookup),
              {:ok, insert_internal} <- quads_to_internal(ctx, insert_patterns, :create) do
           execute_atomic_modify_quads(ctx, delete_internal, insert_internal)
         end

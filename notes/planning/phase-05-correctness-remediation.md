@@ -7,7 +7,7 @@ Description: Remediate the six findings from the 2026-09-09 code review of
 Production Hardening and follows the existing phase, section, task, and
 sub-task hierarchy. Creating this plan does not implement or close a finding.
 
-**Status:** Planned. All implementation and validation work below is pending.
+**Status:** In progress. Phase 1 is complete; Phases 2–4 are pending.
 
 The review was primarily source-based. A standalone reproduction using the real
 result-cache module and a telemetry stub demonstrated reuse across execution
@@ -56,7 +56,7 @@ fixture cleanup reliable on failures. Update affected specs with each fix.
 
 | Phase | Focus | Depends On | Exit Result | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Reproduction baseline, cache isolation, graph authorization | None | Context-safe cached reads and authorized resolved write targets | Planned |
+| 1 | Reproduction baseline, cache isolation, graph authorization | None | Context-safe cached reads and authorized resolved write targets | Complete |
 | 2 | Atomic quad MODIFY and mutation-driven cache invalidation | Phase 1 cache identity and authorization | Failed MODIFY leaves explicit indices unchanged; committed writes invalidate affected results | Planned |
 | 3 | Ground-premise verification and canonical derived storage | Section 1.1 test environment | Sound negative-premise handling and GSPO-derived round trips | Planned |
 | 4 | Integration, compatibility, and conformance evidence | Phases 1–3 | All six findings verified through real runtime tests and documented evidence | Planned |
@@ -100,23 +100,23 @@ and unauthorized graph writes before changing mutation internals.
 
 ### Section 1.1: Reproduction Baseline
 
-- [ ] **Section 1.1 Status**
+- [x] **Section 1.1 Status**
 
 #### Task 1.1.1: Establish a usable runtime baseline
 
-- [ ] **Task 1.1.1 Status**
-- [ ] 1.1.1.1 Record the starting commit, working-tree changes, installed toolchains,
+- [x] **Task 1.1.1 Status**
+- [x] 1.1.1.1 Record the starting commit, working-tree changes, installed toolchains,
   and dependency/NIF availability; preserve unrelated edits.
-- [ ] 1.1.1.2 Resolve the supported local toolchain and fetch/build dependencies;
+- [x] 1.1.1.2 Resolve the supported local toolchain and fetch/build dependencies;
   record temporary overrides without silently changing project pins or locks.
-- [ ] 1.1.1.3 Run strict compilation and the affected existing test suites; record
+- [x] 1.1.1.3 Run strict compilation and the affected existing test suites; record
   baseline failures separately from failures introduced by remediation.
-- [ ] 1.1.1.4 Establish isolated DB fixtures and deterministic failure injection
+- [x] 1.1.1.4 Establish isolated DB fixtures and deterministic failure injection
   at the storage boundary; avoid sleeps and global test-state collisions.
 
 ### Section 1.2: Result-Cache Context Isolation (F-01)
 
-- [ ] **Section 1.2 Status**
+- [x] **Section 1.2 Status**
 
 Primary files: `lib/triple_store/sparql/query.ex`,
 `lib/triple_store/query/cache.ex`, `lib/triple_store/sparql/authorization.ex`.
@@ -126,43 +126,43 @@ Tests: `test/triple_store/query/cache_test.exs`,
 
 #### Task 1.2.1: Separate cache entries by store instance
 
-- [ ] **Task 1.2.1 Status**
-- [ ] 1.2.1.1 Run identical query text against two stores sharing one cache and
+- [x] **Task 1.2.1 Status**
+- [x] 1.2.1.1 Run identical query text against two stores sharing one cache and
   assert each returns only its own data, including differing schema contexts.
-- [ ] 1.2.1.2 Include store-instance and query identity plus result-affecting execution
+- [x] 1.2.1.2 Include store-instance and query identity plus result-affecting execution
   options in production cache keys; ensure closing and reopening a store does
   not make an earlier instance's entries reusable.
-- [ ] 1.2.1.3 Verify same-store repeated queries still hit the cache and match uncached
+- [x] 1.2.1.3 Verify same-store repeated queries still hit the cache and match uncached
   answers; test both shared and explicitly named caches.
 
 #### Task 1.2.2: Bind cache reuse to effective authorization
 
-- [ ] **Task 1.2.2 Status**
-- [ ] 1.2.2.1 Warm a protected graph query as an authorized actor; repeat as an
+- [x] **Task 1.2.2 Status**
+- [x] 1.2.2.1 Warm a protected graph query as an authorized actor; repeat as an
   unauthorized actor and assert no protected result is returned.
-- [ ] 1.2.2.2 Extend context identity to cover the effective user, roles, and privileged
+- [x] 1.2.2.2 Extend context identity to cover the effective user, roles, and privileged
   or bypass flags; a user ID alone is insufficient.
-- [ ] 1.2.2.3 Define behavior for contexts lacking a reliable authorization identity:
+- [x] 1.2.2.3 Define behavior for contexts lacking a reliable authorization identity:
   bypass caching rather than share an entry with a privileged context.
-- [ ] 1.2.2.4 Prevent stale authorization after ACL grant/revoke or role changes,
+- [x] 1.2.2.4 Prevent stale authorization after ACL grant/revoke or role changes,
   using a validated revision/invalidation policy or bypassing affected caching.
-- [ ] 1.2.2.5 Test public and privileged contexts, role changes, and ACL revocation
+- [x] 1.2.2.5 Test public and privileged contexts, role changes, and ACL revocation
   after a cache fill; assert denied contexts never receive protected results.
 
 #### Task 1.2.3: Handle persisted cache compatibility
 
-- [ ] **Task 1.2.3 Status**
-- [ ] 1.2.3.1 Update cache persistence/restore and reopen behavior so legacy unscoped
+- [x] **Task 1.2.3 Status**
+- [x] 1.2.3.1 Update cache persistence/restore and reopen behavior so legacy unscoped
   keys and entries from an earlier store instance cannot be reused accidentally.
-- [ ] 1.2.3.2 Preserve explicit named-cache support and optional-cache behavior;
+- [x] 1.2.3.2 Preserve explicit named-cache support and optional-cache behavior;
   keep the separate `SPARQL.QueryCache` implementation outside this change unless
   a verified caller requires it.
-- [ ] 1.2.3.3 Restore a cache containing legacy unscoped entries and verify they are
+- [x] 1.2.3.3 Restore a cache containing legacy unscoped entries and verify they are
   discarded or inaccessible; verify entries cannot cross store reopen boundaries.
 
 ### Section 1.3: Resolved Graph Write Authorization (F-02)
 
-- [ ] **Section 1.3 Status**
+- [x] **Section 1.3 Status**
 
 Primary files: `lib/triple_store/sparql/update/modify.ex`,
 `lib/triple_store/sparql/update/helpers.ex`.
@@ -171,24 +171,34 @@ Tests: `test/triple_store/sparql/update_authorization_test.exs`,
 
 #### Task 1.3.1: Authorize resolved targets before any explicit write
 
-- [ ] **Task 1.3.1 Status**
-- [ ] 1.3.1.1 Demonstrate a read-only actor cannot write through `GRAPH ?g`.
-- [ ] 1.3.1.2 Retain useful static checks, then collect all resolved delete and
+- [x] **Task 1.3.1 Status**
+- [x] 1.3.1.1 Demonstrate a read-only actor cannot write through `GRAPH ?g`.
+- [x] 1.3.1.2 Retain useful static checks, then collect all resolved delete and
   insert graph targets after WHERE evaluation and template substitution.
-- [ ] 1.3.1.3 Require write authorization on every resolved target before the
+- [x] 1.3.1.3 Require write authorization on every resolved target before the
   first explicit mutation; WHERE read permission must not imply write permission.
-- [ ] 1.3.1.4 Preserve default-graph rules, supported graph-term representations,
+- [x] 1.3.1.4 Preserve default-graph rules, supported graph-term representations,
   existing privileged behavior, and SPARQL treatment of unbound template terms.
-- [ ] 1.3.1.5 Return the existing tagged authorization error if any target is
+- [x] 1.3.1.5 Return the existing tagged authorization error if any target is
   denied, without deleting or inserting data in permitted graphs first.
-- [ ] 1.3.1.6 Test constant plus variable templates, multiple bindings spanning
+- [x] 1.3.1.6 Test constant plus variable templates, multiple bindings spanning
   allowed and denied graphs, and different delete/insert target graphs.
-- [ ] 1.3.1.7 Assert every explicit index is unchanged after rejection; verify
+- [x] 1.3.1.7 Assert every explicit index is unchanged after rejection; verify
   fully authorized writes and existing constant-graph tests still pass.
 
 **Phase 1 exit gate:** Reproductions for F-01/F-02 pass through actual query and
 update APIs; no cache hit crosses store/authorization boundaries and no denied
 resolved target receives a write. Other findings remain open until their phases.
+
+Phase 1 evidence: strict compilation passed with temporary
+`ASDF_ELIXIR_VERSION=1.19.5-otp-28` and `ASDF_ERLANG_VERSION=28.3.1`
+overrides. The final focused lifecycle, cache, query, and quad MODIFY suites
+passed 226 tests, including three targeted constant/resolved-target authorization
+cases. The full update-authorization file retains a baseline failure in its
+ADD test: an existing fully variable quad scan reaches
+`Executor.convert_leapfrog_bindings/1` with a map instead of the tuple list that
+function expects. That separate executor defect does not occur in the bounded
+F-02 regression and is not caused by this phase.
 
 ---
 

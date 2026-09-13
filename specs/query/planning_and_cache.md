@@ -27,6 +27,14 @@ Primary ownership: **Query Plane** with supporting **Coordination Plane** proces
 - Query planning is therefore split into two layers:
   - structural plan reuse through `PlanCache`
   - optional materialized-result reuse through `Query.Cache`
+- Production result-cache keys include the identity of the currently open store.
+  Reopening a path produces a new identity, so entries cannot cross store
+  lifetimes. Triple-store queries and quad-store contexts with explicit
+  `permit_all: true` can use the result cache. ACL-governed quad contexts bypass
+  it because the current ACL storage does not expose a stable revision covering
+  user, role, owner, and public-access changes.
+- Cache persistence format version 2 excludes legacy unscoped entries. Warming a
+  version 1 file returns `{:error, {:unsupported_version, 1}}`.
 
 ## Acceptance Criteria
 
@@ -36,3 +44,5 @@ Primary ownership: **Query Plane** with supporting **Coordination Plane** proces
 | `AC-QRY-11` | `PlanCache` remains the default supervised cache for optimized query plans. | `test/triple_store/sparql/plan_cache_test.exs` |
 | `AC-QRY-12` | `Query.Cache` remains an optional runtime feature with explicit persistence, warming, predicate invalidation, and size limits, while `SPARQL.QueryCache` remains a separate tested cache surface. | `test/triple_store/query/cache_test.exs`, `test/triple_store/sparql/query_test.exs`, `test/triple_store/sparql/query_cache_test.exs`, `test/triple_store/sparql/cache_metrics_test.exs` |
 | `AC-QRY-13` | Leapfrog and join-enumeration support remain optimizer-selected execution families rather than separate public APIs. | `test/triple_store/sparql/leapfrog/leapfrog_test.exs`, `test/triple_store/sparql/leapfrog/leapfrog_integration_test.exs`, `test/triple_store/sparql/leapfrog/quad_leapfrog_test.exs`, `test/triple_store/sparql/cost_optimizer_integration_test.exs` |
+| `AC-QRY-14` | Materialized results are isolated by open store instance; legacy unscoped persisted entries are rejected, and ACL-governed quad queries bypass result caching until authorization has a stable revision identity. | `test/triple_store/query/cache_test.exs`, `test/triple_store/sparql/query_test.exs`, `test/triple_store/backend/rocksdb/lifecycle_test.exs` |
+| `AC-QRY-15` | Every graph produced by variable substitution in a quad MODIFY template is write-authorized before any explicit index mutation. | `test/triple_store/sparql/update_authorization_test.exs` |

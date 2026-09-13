@@ -413,6 +413,18 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @doc """
+  Returns the identity of this open database instance.
+
+  The identity is unique for the lifetime of the adapter process. Reopening the
+  same path produces a new identity, which lets runtime caches distinguish
+  values computed by different database instances.
+  """
+  @spec instance_id(adapter()) :: {:ok, reference()}
+  def instance_id(adapter) when is_pid(adapter) do
+    GenServer.call(adapter, :instance_id)
+  end
+
+  @doc """
   Lists all column families in an existing database.
 
   ## Parameters
@@ -1200,7 +1212,14 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
         # Map column family names to atoms
         cf_map = map_cf_handles(cf_handles, schema_type)
 
-        {:ok, %{db: db, cf_handles: cf_map, path: path, schema_type: schema_type}}
+        {:ok,
+         %{
+           db: db,
+           cf_handles: cf_map,
+           path: path,
+           schema_type: schema_type,
+           instance_id: make_ref()
+         }}
 
       {:error, _reason} = error ->
         # Return error to prevent the GenServer from starting
@@ -1226,6 +1245,11 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   @impl true
   def handle_call(:get_path, _from, %{path: path} = state) do
     {:reply, {:ok, path}, state}
+  end
+
+  @impl true
+  def handle_call(:instance_id, _from, %{instance_id: instance_id} = state) do
+    {:reply, {:ok, instance_id}, state}
   end
 
   @impl true

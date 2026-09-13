@@ -72,6 +72,21 @@ defmodule TripleStore.Backend.RocksDB.LifecycleTest do
     end
   end
 
+  describe "instance_id/1" do
+    test "is stable while open and changes when the same path is reopened", %{path: path} do
+      {:ok, db1} = ErlangAdapter.open(path)
+      assert {:ok, instance_id} = ErlangAdapter.instance_id(db1)
+      assert is_reference(instance_id)
+      assert {:ok, ^instance_id} = ErlangAdapter.instance_id(db1)
+      ErlangAdapter.close(db1)
+
+      {:ok, db2} = ErlangAdapter.open(path)
+      assert {:ok, reopened_instance_id} = ErlangAdapter.instance_id(db2)
+      refute reopened_instance_id == instance_id
+      ErlangAdapter.close(db2)
+    end
+  end
+
   describe "is_open/1" do
     test "returns true for open database", %{path: path} do
       {:ok, db} = ErlangAdapter.open(path)
