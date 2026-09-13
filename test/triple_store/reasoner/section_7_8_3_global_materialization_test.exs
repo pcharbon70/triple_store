@@ -269,7 +269,7 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
       end
     end
 
-    test "per_graph_cf stores derived quads per graph" do
+    test "per_graph_cf stores global derived quads in graph 0" do
       {db, path} = create_test_db()
 
       try do
@@ -287,12 +287,9 @@ defmodule TripleStore.Reasoner.Section783GlobalMaterializationTest do
 
         {:ok, _stats} = GraphScopedReasoner.materialize_all(db, config: config)
 
-        # Each graph should have its own derived quads
-        derived_1 = count_derived_in_graph(db, 1)
-        derived_2 = count_derived_in_graph(db, 2)
-
-        assert derived_1 > 0
-        assert derived_2 > 0
+        assert count_derived_in_graph(db, 0) > 0
+        assert count_derived_in_graph(db, 1) == 0
+        assert count_derived_in_graph(db, 2) == 0
       after
         cleanup_db(db, path)
       end

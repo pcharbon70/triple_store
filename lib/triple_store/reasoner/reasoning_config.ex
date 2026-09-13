@@ -120,7 +120,9 @@ defmodule TripleStore.Reasoner.ReasoningConfig do
   - `:graph_configs` - Map of graph_id to GraphReasoningConfig for per-graph configuration
   - `:tbox_graph` - Graph ID containing shared TBox (nil = each graph has own TBox)
   - `:inferred_graph` - Graph ID for global inferences (nil = same as premises, `:separate` = dedicated graph)
-  - `:storage_strategy` - Derived quad storage: `:same_as_premises` (default), `:separate_graph`, or `:per_graph_cf`
+  - `:storage_strategy` - Derived quad storage: `:same_as_premises` (default),
+    `:separate_graph`, or `:per_graph_cf`. Global `:per_graph_cf` stores GSPO
+    keys in the dedicated `derived` column family under graph ID `0`.
 
   ## Examples
 

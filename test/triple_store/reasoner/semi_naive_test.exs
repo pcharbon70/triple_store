@@ -386,7 +386,7 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
       Agent.stop(lookup_calls)
     end
 
-    test "handles lookup_fn errors gracefully" do
+    test "propagates lookup_fn errors without reporting a fixpoint" do
       initial = MapSet.new([{iri("a"), iri("p"), iri("b")}])
 
       # Lookup that always fails
@@ -395,10 +395,8 @@ defmodule TripleStore.Reasoner.SemiNaiveTest do
 
       rules = [Rules.cax_sco()]
 
-      # Should still work because no rules match (rule requires rdf:type pattern)
-      {:ok, stats} = SemiNaive.materialize(lookup_fn, store_fn, rules, initial)
-      # First iteration processes initial delta but finds no matches
-      assert stats.total_derived == 0
+      assert {:error, {:lookup_failed, :database_error}} =
+               SemiNaive.materialize(lookup_fn, store_fn, rules, initial)
     end
   end
 
