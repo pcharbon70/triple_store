@@ -1053,7 +1053,7 @@ defmodule TripleStore.Query.CacheTest do
 
       # Mix of valid and invalid entries
       cache_data = %{
-        version: 1,
+        version: 2,
         timestamp: System.os_time(:second),
         entry_count: 3,
         entries: [
@@ -1068,6 +1068,38 @@ defmodule TripleStore.Query.CacheTest do
 
       assert {:ok, 2} = Cache.warm_from_file(cache_file, name: name)
       assert Cache.size(name: name) == 2
+    end
+
+    test "rejects legacy unscoped cache entries" do
+      name = unique_name()
+      temp_dir = System.tmp_dir!()
+      cache_file = Path.join(temp_dir, "legacy_cache_#{:erlang.unique_integer([:positive])}.bin")
+
+      {:ok, pid} = Cache.start_link(name: name, max_entries: 100)
+
+      on_exit(fn ->
+        safe_stop(pid)
+        File.rm(cache_file)
+      end)
+
+      cache_data = %{
+        version: 1,
+        timestamp: System.os_time(:second),
+        entry_count: 1,
+        entries: [
+          %{
+            key: Cache.compute_key("SELECT ?s WHERE { ?s ?p ?o }"),
+            result: [%{"s" => {:named_node, "http://example.org/legacy"}}],
+            result_size: 1,
+            predicates: []
+          }
+        ]
+      }
+
+      File.write!(cache_file, :erlang.term_to_binary(cache_data, [:compressed]))
+
+      assert {:error, {:unsupported_version, 1}} = Cache.warm_from_file(cache_file, name: name)
+      assert Cache.size(name: name) == 0
     end
   end
 

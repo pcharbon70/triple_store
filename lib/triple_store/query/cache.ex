@@ -1179,7 +1179,7 @@ defmodule TripleStore.Query.Cache do
   # ===========================================================================
 
   # File format version for backwards compatibility
-  @cache_file_version 1
+  @cache_file_version 2
 
   defp do_persist_to_file(state, path) do
     case validate_persistence_path(state, path) do
@@ -1318,7 +1318,7 @@ defmodule TripleStore.Query.Cache do
 
   defp valid_cache_entry?(_entry), do: false
 
-  defp load_entries_from_data(state, %{version: 1, entries: entries}) when is_list(entries) do
+  defp load_entries_from_data(state, %{version: 2, entries: entries}) when is_list(entries) do
     now = System.monotonic_time(:millisecond)
     loaded_count = length(entries)
 

@@ -14,7 +14,9 @@ defmodule TripleStore.SPARQL.QueryTest do
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager
   alias TripleStore.Index
+  alias TripleStore.QuadOperations
   alias TripleStore.Query.Cache
+  alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Query
 
   @moduletag :tmp_dir
@@ -3177,6 +3179,162 @@ defmodule TripleStore.SPARQL.QueryTest do
       # All should return the same results
       assert cached1 == uncached
       assert cached2 == uncached
+    end
+
+    test "separates identical query text for different store instances", %{
+      ctx: first_ctx,
+      cache_name: cache_name,
+      tmp_dir: tmp_dir
+    } do
+      second_path = Path.join(tmp_dir, "second_cache_store")
+      {:ok, second_db} = ErlangAdapter.open(second_path, schema: :quad)
+      {:ok, second_manager} = Manager.start_link(db: second_db)
+      second_ctx = %{db: second_db, dict_manager: second_manager, permit_all: true}
+
+      on_exit(fn ->
+        if Process.alive?(second_manager), do: Manager.stop(second_manager)
+        ErlangAdapter.close(second_db)
+      end)
+
+      {:ok, second_s_id} =
+        Manager.get_or_create_id(second_manager, RDF.iri("http://ex.org/Carol"))
+
+      {:ok, second_p_id} =
+        Manager.get_or_create_id(second_manager, RDF.iri("http://ex.org/name"))
+
+      {:ok, second_o_id} = Manager.get_or_create_id(second_manager, RDF.literal("Carol"))
+      :ok = QuadOperations.insert_quad(second_db, {second_s_id, second_p_id, second_o_id, 0})
+
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name } ORDER BY ?name"
+
+      assert {:ok, first_results} =
+               Query.query(first_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Enum.map(first_results, & &1["name"]) ==
+               [{:literal, :simple, "Alice"}, {:literal, :simple, "Bob"}]
+
+      assert {:ok, second_results} =
+               Query.query(second_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Enum.map(second_results, & &1["name"]) == [{:literal, :simple, "Carol"}]
+      assert Cache.size(name: cache_name) == 2
+    end
+
+    test "does not reuse results after reopening the same path", %{
+      cache_name: cache_name,
+      tmp_dir: tmp_dir
+    } do
+      path = Path.join(tmp_dir, "reopened_cache_store")
+      query = "SELECT ?name WHERE { ?s <http://ex.org/name> ?name }"
+
+      {:ok, first_db} = ErlangAdapter.open(path)
+      {:ok, first_manager} = Manager.start_link(db: first_db)
+      first_ctx = %{db: first_db, dict_manager: first_manager}
+
+      add_triple(first_db, first_manager, {
+        iri("http://ex.org/old"),
+        iri("http://ex.org/name"),
+        literal("old")
+      })
+
+      assert {:ok, [%{"name" => {:literal, :simple, "old"}}]} =
+               Query.query(first_ctx, query, use_cache: true, cache_name: cache_name)
+
+      Manager.stop(first_manager)
+      ErlangAdapter.close(first_db)
+      File.rm_rf!(path)
+
+      {:ok, reopened_db} = ErlangAdapter.open(path)
+      {:ok, reopened_manager} = Manager.start_link(db: reopened_db)
+      reopened_ctx = %{db: reopened_db, dict_manager: reopened_manager}
+
+      on_exit(fn ->
+        if Process.alive?(reopened_manager), do: Manager.stop(reopened_manager)
+        ErlangAdapter.close(reopened_db)
+      end)
+
+      add_triple(reopened_db, reopened_manager, {
+        iri("http://ex.org/new"),
+        iri("http://ex.org/name"),
+        literal("new")
+      })
+
+      assert {:ok, [%{"name" => {:literal, :simple, "new"}}]} =
+               Query.query(reopened_ctx, query, use_cache: true, cache_name: cache_name)
+    end
+
+    test "bypasses result caching when quad authorization can change", %{
+      cache_name: cache_name,
+      tmp_dir: tmp_dir
+    } do
+      quad_path = Path.join(tmp_dir, "authorized_cache_store")
+      {:ok, quad_db} = ErlangAdapter.open(quad_path, schema: :quad)
+      {:ok, quad_manager} = Manager.start_link(db: quad_db)
+      graph_iri = "http://ex.org/private"
+      user = %{id: "reader", roles: [:viewer]}
+      public_ctx = %{db: quad_db, dict_manager: quad_manager}
+      user_ctx = Map.put(public_ctx, :user, user)
+
+      on_exit(fn ->
+        if Process.alive?(quad_manager), do: Manager.stop(quad_manager)
+        ErlangAdapter.close(quad_db)
+      end)
+
+      {:ok, s_id} = Manager.get_or_create_id(quad_manager, RDF.iri("http://ex.org/s"))
+      {:ok, p_id} = Manager.get_or_create_id(quad_manager, RDF.iri("http://ex.org/p"))
+      {:ok, o_id} = Manager.get_or_create_id(quad_manager, RDF.literal("secret"))
+      {:ok, g_id} = Manager.get_or_create_id(quad_manager, RDF.iri(graph_iri))
+      :ok = QuadOperations.insert_quad(quad_db, {s_id, p_id, o_id, g_id})
+      :ok = Authorization.grant(public_ctx, graph_iri, user.id, :read)
+
+      query = "SELECT ?o WHERE { GRAPH <#{graph_iri}> { ?s <http://ex.org/p> ?o } }"
+
+      assert {:ok, [%{"o" => {:literal, :simple, "secret"}}]} =
+               Query.query(user_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Cache.size(name: cache_name) == 0
+      :ok = Authorization.revoke(public_ctx, graph_iri, user.id, :read)
+
+      assert {:error, :unauthorized} =
+               Query.query(user_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Cache.size(name: cache_name) == 0
+
+      :ok = Authorization.grant_role(public_ctx, graph_iri, :auditor, :read)
+      role_ctx = Map.put(public_ctx, :user, %{id: "role-reader", roles: [:auditor]})
+
+      assert {:ok, [%{"o" => {:literal, :simple, "secret"}}]} =
+               Query.query(role_ctx, query, use_cache: true, cache_name: cache_name)
+
+      changed_role_ctx = %{role_ctx | user: %{id: "role-reader", roles: []}}
+
+      assert {:error, :unauthorized} =
+               Query.query(changed_role_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Cache.size(name: cache_name) == 0
+
+      :ok = Authorization.set_public(public_ctx, graph_iri)
+
+      assert {:ok, [%{"o" => {:literal, :simple, "secret"}}]} =
+               Query.query(public_ctx, query, use_cache: true, cache_name: cache_name)
+
+      :ok = Authorization.remove_public(public_ctx, graph_iri)
+
+      assert {:error, :unauthorized} =
+               Query.query(public_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Cache.size(name: cache_name) == 0
+
+      permit_all_ctx = Map.put(public_ctx, :permit_all, true)
+
+      assert {:ok, [%{"o" => {:literal, :simple, "secret"}}]} =
+               Query.query(permit_all_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert {:ok, [%{"o" => {:literal, :simple, "secret"}}]} =
+               Query.query(permit_all_ctx, query, use_cache: true, cache_name: cache_name)
+
+      assert Cache.size(name: cache_name) == 1
+      assert Cache.stats(name: cache_name).hits >= 1
     end
 
     test "explain option bypasses cache", %{ctx: ctx, cache_name: cache_name} do

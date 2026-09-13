@@ -11,7 +11,7 @@ This contract defines the normative query behavior for `TripleStore`.
 - `REQ-QRY-005`: Query results SHOULD be produced lazily or streamed where the current API supports it so large result sets do not require eager full materialization.
 - `REQ-QRY-006`: Graph clauses, property-path execution, validation, and authorization hooks MUST remain explicit typed execution paths rather than undocumented side behavior.
 - `REQ-QRY-007`: Query timeout policy MUST be enforceable from the API boundary for eager execution paths; streaming setup MUST remain explicit about the narrower timeout scope.
-- `REQ-QRY-008`: Plan caching MUST be invalidated or refreshed when writes invalidate cached assumptions, and result-cache invalidation MUST remain explicit rather than incidental.
+- `REQ-QRY-008`: Plan caching MUST be invalidated or refreshed when writes invalidate cached assumptions. Materialized result entries MUST be scoped to the open store instance and effective authorization context, MUST reject legacy unscoped persistence formats, and MUST be bypassed when a stable authorization identity or revision is unavailable. Result-cache invalidation MUST remain explicit rather than incidental.
 - `REQ-QRY-009`: Query and update paths MUST return tagged errors for parse, execution, timeout, authorization, and validation failures.
 - `REQ-QRY-010`: Advanced join strategies such as Leapfrog Triejoin and parallel execution MUST remain optimizer-selected execution choices, not caller-visible API modes.
-- `REQ-QRY-011`: Lower-level query and update contexts MAY support actor-aware graph authorization, but facade-level APIs MUST document when that actor context is not surfaced.
+- `REQ-QRY-011`: Lower-level query and update contexts MAY support actor-aware graph authorization, but facade-level APIs MUST document when that actor context is not surfaced. Update templates with variable graph terms MUST authorize every resolved target before the first explicit write.

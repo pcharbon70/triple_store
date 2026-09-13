@@ -94,6 +94,16 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
     {:ok, _} = UpdateExecutor.execute(ctx, ast)
   end
 
+  defp explicit_index_snapshot(db) do
+    Map.new([:gspo, :gpos, :spog, :posg], fn index ->
+      entries =
+        ErlangAdapter.fold(db, index, <<>>, [], fn entry, acc -> [entry | acc] end)
+        |> Enum.sort()
+
+      {index, entries}
+    end)
+  end
+
   # ===========================================================================
   # INSERT DATA Authorization Tests
   # ===========================================================================
@@ -525,6 +535,80 @@ defmodule TripleStore.SPARQL.UpdateAuthorizationTest do
 
       # Viewer without write permission is denied
       assert {:error, :unauthorized} = UpdateExecutor.execute(viewer_ctx, ast)
+    end
+
+    test "checks resolved GRAPH variable targets before changing any index", %{
+      admin_ctx: admin_ctx,
+      viewer_ctx: viewer_ctx,
+      db: db
+    } do
+      allowed_graph = "http://example.org/modify_allowed"
+      denied_graph = "http://example.org/modify_denied"
+
+      setup_graph_with_acl(admin_ctx, allowed_graph, :write, admin_ctx.user)
+      setup_graph_with_acl(admin_ctx, denied_graph, :write, admin_ctx.user)
+      insert_test_data(admin_ctx, allowed_graph)
+      insert_test_data(admin_ctx, denied_graph)
+
+      :ok = Authorization.grant(admin_ctx, allowed_graph, viewer_ctx.user.id, :read)
+      :ok = Authorization.grant(admin_ctx, allowed_graph, viewer_ctx.user.id, :write)
+      :ok = Authorization.grant(admin_ctx, denied_graph, viewer_ctx.user.id, :read)
+
+      modify_sparql = """
+      DELETE {
+        GRAPH <#{allowed_graph}> {
+          <http://example.org/subject> <http://example.org/predicate> "object" .
+        }
+      }
+      INSERT {
+        GRAPH ?g {
+          <http://example.org/subject> <http://example.org/predicate> "modified" .
+        }
+      }
+      WHERE {
+        GRAPH ?g {
+          <http://example.org/subject> <http://example.org/predicate> "object" .
+        }
+      }
+      """
+
+      {:ok, ast} = Parser.parse_update(modify_sparql)
+      before = explicit_index_snapshot(db)
+
+      assert {:error, :unauthorized} = UpdateExecutor.execute(viewer_ctx, ast)
+      assert explicit_index_snapshot(db) == before
+    end
+
+    test "allows GRAPH variable targets when every resolved graph is writable", %{
+      admin_ctx: admin_ctx,
+      editor_ctx: editor_ctx
+    } do
+      graph_iri = "http://example.org/modify_variable"
+      setup_graph_with_acl(admin_ctx, graph_iri, :write, admin_ctx.user)
+      insert_test_data(admin_ctx, graph_iri)
+      :ok = Authorization.grant(admin_ctx, graph_iri, editor_ctx.user.id, :read)
+      :ok = Authorization.grant(admin_ctx, graph_iri, editor_ctx.user.id, :write)
+
+      modify_sparql = """
+      DELETE {
+        GRAPH ?g {
+          <http://example.org/subject> <http://example.org/predicate> "object" .
+        }
+      }
+      INSERT {
+        GRAPH ?g {
+          <http://example.org/subject> <http://example.org/predicate> "modified" .
+        }
+      }
+      WHERE {
+        GRAPH ?g {
+          <http://example.org/subject> <http://example.org/predicate> "object" .
+        }
+      }
+      """
+
+      {:ok, ast} = Parser.parse_update(modify_sparql)
+      assert {:ok, 2} = UpdateExecutor.execute(editor_ctx, ast)
     end
   end
 
