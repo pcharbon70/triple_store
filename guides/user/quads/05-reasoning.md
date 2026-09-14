@@ -380,6 +380,14 @@ Global reasoning requires merging all graphs first:
 config = ReasoningConfig.new(profile: :owl2rl, scope: :global)
 ```
 
+For global `storage_strategy: :per_graph_cf`, inferred triples are written as
+canonical GSPO keys in the dedicated `derived` column family under graph ID `0`.
+Global evaluation does not retain one source graph for each derivation, so it
+cannot place those facts back into premise graphs. Stores materialized with an
+older release may contain ambiguous SPOG-ordered bytes; use the
+[derived quad recovery runbook](../../../docs/production/derived-quad-recovery.md)
+to perform a backup-first clear and rebuild from explicit facts.
+
 ### 4. Monitor Performance
 
 ```elixir

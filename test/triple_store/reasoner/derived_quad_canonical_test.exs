@@ -83,6 +83,7 @@ defmodule TripleStore.Reasoner.DerivedQuadCanonicalTest do
     :ok = ErlangAdapter.close(db)
 
     {:ok, reopened} = ErlangAdapter.open(path, schema: :quad)
+    explicit_key = QuadIndex.gspo_key(graph, subject, premise_predicate, object)
 
     try do
       assert {:ok, true} = DerivedStore.derived_quad_exists?(reopened, expected)
@@ -90,6 +91,10 @@ defmodule TripleStore.Reasoner.DerivedQuadCanonicalTest do
 
       assert {:ok, derived} = DerivedStore.lookup_derived_quads_in_graph(reopened, 0)
       assert Enum.sort(derived) == Enum.sort([expected, final])
+
+      assert :ok = DerivedStore.delete_derived_quads(reopened, [expected, final])
+      assert {:ok, []} = DerivedStore.lookup_derived_quads_in_graph(reopened, 0)
+      assert {:ok, <<>>} = ErlangAdapter.get(reopened, :gspo, explicit_key)
     after
       ErlangAdapter.close(reopened)
       File.rm_rf(path)

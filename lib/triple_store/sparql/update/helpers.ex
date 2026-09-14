@@ -10,9 +10,9 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   - Term ID lookups
   """
 
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary
   alias TripleStore.Dictionary.StringToId
-  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Authorization
 
@@ -275,10 +275,8 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   """
   @spec invalidate_result_caches(pid()) :: :ok
   def invalidate_result_caches(db) do
-    case ErlangAdapter.instance_id(db) do
-      {:ok, store_id} -> QueryCache.invalidate_store(store_id)
-      _ -> :ok
-    end
+    {:ok, store_id} = ErlangAdapter.instance_id(db)
+    QueryCache.invalidate_store(store_id)
   catch
     :exit, _ -> :ok
   end
