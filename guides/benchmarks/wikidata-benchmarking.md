@@ -4,7 +4,7 @@ This guide describes the repository-supported Wikidata benchmark workflow for Tr
 
 ## Datasets
 
-The benchmark supports four dataset tiers:
+The benchmark supports three dataset tiers:
 
 | Tier | Purpose | Data Source |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ mix benchmark.wikidata full --source /path/to/wikidata-full.nt --source-url http
 
 Useful options:
 
-```bash
+```text
 --fixture-root PATH
 --output-root PATH
 --report-id ID

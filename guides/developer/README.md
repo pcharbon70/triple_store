@@ -1,96 +1,37 @@
 # Developer Guides
 
-Technical documentation for TripleStore internals and implementation details.
+These guides explain the implementation that backs the public API. Read the
+relevant specification or contract alongside them when changing semantics.
 
-## Guides
+## Reading order
 
-| Guide | Description |
-|-------|-------------|
-| [00-architecture-overview.md](00-architecture-overview.md) | High-level system architecture, component overview, data flow |
-| [01-storage-layer.md](01-storage-layer.md) | RocksDB integration, dictionary encoding, triple indexing |
-| [02-sparql-engine.md](02-sparql-engine.md) | SPARQL parsing, algebra, optimization, execution |
-| [03-reasoning-engine.md](03-reasoning-engine.md) | OWL 2 RL rules, semi-naive evaluation, TBox caching |
-| [04-query-optimization.md](04-query-optimization.md) | Cost model, cardinality estimation, join enumeration |
-| [05-telemetry-monitoring.md](05-telemetry-monitoring.md) | Telemetry events, metrics collection, Prometheus |
-| [06-quad-store-architecture.md](06-quad-store-architecture.md) | Quad store indices, named graphs, graph-scoped reasoning |
-| [07-otp-concurrency.md](07-otp-concurrency.md) | GenServers, supervision trees, process architecture |
-| [08-data-flow.md](08-data-flow.md) | End-to-end request flows and data pipelines |
+1. [Architecture overview](00-architecture-overview.md)
+2. [Storage layer](01-storage-layer.md)
+3. [SPARQL engine](02-sparql-engine.md)
+4. [Reasoning engine](03-reasoning-engine.md)
+5. [Query optimization](04-query-optimization.md)
+6. [Telemetry and monitoring](05-telemetry-monitoring.md)
+7. [Quad-store architecture](06-quad-store-architecture.md)
+8. [OTP and concurrency](07-otp-concurrency.md)
+9. [Data flow](08-data-flow.md)
 
-## Reading Order
+The [specification index](https://github.com/pcharbon70/triple_store/blob/main/specs/README.md), [architecture
+specification](../../specs/architecture-overview.md), [boundaries
+specification](../../specs/boundaries.md), and [control-plane ownership
+matrix](../../specs/contracts/control_plane_ownership_matrix.md) define the
+expected boundaries. The code and adjacent tests establish current behavior.
 
-For new developers:
+## Local validation
 
-0. Start with the canonical specs system in [`specs/README.md`](../../specs/README.md)
-1. Start with **Architecture Overview** to understand the overall system design
-2. Read **Storage Layer** to understand how data is persisted
-3. Continue with **SPARQL Engine** for query processing
-4. Explore **Reasoning Engine** for OWL 2 RL inference
-5. Review **Query Optimization** for performance considerations
-6. Read **Quad Store Architecture** for named graph support
-7. Study **OTP & Concurrency** for process architecture
-8. Finish with **Telemetry & Monitoring** for observability
+Use the toolchain pinned in `.tool-versions`. The main documentation checks are:
 
-## Local Governance Workflow
+~~~sh
+./scripts/validate_guides_governance.sh
+./scripts/validate_specs_governance.sh
+./scripts/validate_code_docs.sh
+./scripts/run_conformance.sh
+~~~
 
-Enable the tracked Git hook for this repository:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-The local governance and conformance entry points are:
-
-- `./scripts/validate_specs_governance.sh`
-- `./scripts/validate_guides_governance.sh`
-- `./scripts/validate_code_docs.sh`
-- `./scripts/run_conformance.sh`
-- `mix dialyzer`
-
-The tracked pre-commit hook runs Dialyzer locally, and the GitHub `CI`
-workflow now gates pull requests on the same `mix dialyzer --format short`
-baseline.
-
-## Key Concepts
-
-### Dictionary Encoding
-
-All RDF terms are encoded as 64-bit integers with type tags:
-
-```
-Type 1 (URI):      0x1xxx_xxxx_xxxx_xxxx
-Type 2 (BNode):    0x2xxx_xxxx_xxxx_xxxx
-Type 3 (Literal):  0x3xxx_xxxx_xxxx_xxxx
-Type 4 (Integer):  0x4xxx_xxxx_xxxx_xxxx (inline)
-Type 5 (Decimal):  0x5xxx_xxxx_xxxx_xxxx (inline)
-Type 6 (DateTime): 0x6xxx_xxxx_xxxx_xxxx (inline)
-```
-
-### Triple Indices
-
-Three indices provide O(log n) access for all query patterns:
-
-| Pattern | Index |
-|---------|-------|
-| `(S, P, O)`, `(S, P, ?)`, `(S, ?, ?)` | SPO |
-| `(?, P, O)`, `(?, P, ?)` | POS |
-| `(?, ?, O)`, `(S, ?, O)` | OSP |
-
-### Query Execution
-
-Iterator-based lazy evaluation with streaming:
-
-```
-BGP Scan → Filter → Join → Project → LIMIT
-```
-
-### Reasoning
-
-Forward-chaining materialization with semi-naive evaluation:
-
-```
-delta = explicit_facts
-while delta ≠ ∅:
-    new_facts = apply_rules(delta)
-    store(new_facts)
-    delta = new_facts
-```
+`mix conformance` checks structure and traceability. It does not execute SPARQL
+conformance scenarios. Run focused tests for the behavior being changed, then
+the broader checks required by `AGENTS.md` and CI.
