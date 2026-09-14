@@ -133,7 +133,7 @@ defmodule TripleStore.SPARQL.Executor do
   3. Reconstructs the stream after peeking to preserve laziness
   4. Uses explicit graph variable lists instead of string-based heuristics
 
-  This approach avoids the fragile `String.contains?(k, "g") heuristic that incorrectly
+  This approach avoids the fragile `String.contains?(k, "g")` heuristic that incorrectly
   matched variables like "age".
 
   ### Quad Pattern Execution

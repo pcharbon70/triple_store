@@ -1,254 +1,106 @@
 # Getting Started
 
-This guide will help you get up and running with TripleStore quickly.
+TripleStore is an embedded Elixir/OTP library. `TripleStore.open/2` creates or
+opens a RocksDB database and starts a dictionary manager owned by the caller.
+The returned handle contains `:db`, `:dict_manager`, `:transaction`, `:path`,
+and `:schema`.
 
-## Triple Store vs Quad Store
+## Choose a persisted schema
 
-TripleStore supports two storage schemas:
+| Schema | Indices | Key width | Graph behavior |
+| --- | --- | --- | --- |
+| `:triple` (default, v1) | `spo`, `pos`, `osp` | 24 bytes | One implicit graph |
+| `:quad` (v2) | `gspo`, `gpos`, `spog`, `posg` | 32 bytes | Default graph ID 0 plus named graphs |
 
-| Feature | Triple Store (v1) | Quad Store (v2) |
-|---------|-------------------|-----------------|
-| **Data Model** | `{subject, predicate, object}` | `{graph, subject, predicate, object}` |
-| **Named Graphs** | No (implicit default) | Yes (explicit graphs) |
-| **Indices** | 3 (SPO, POS, OSP) | 4 (GSPO, GPOS, SPOG, POSG) |
-| **Write Speed** | Faster (~33% faster writes) | Slower (more indices) |
-| **Use Case** | Simple datasets | Multi-tenancy, provenance, data isolation |
+The schema is persisted. Opening an existing database with the other schema is
+rejected. Moving data between schemas requires export and import into a new
+store. Choose `:quad` when graph identity is part of the data model. No
+repository benchmark establishes a fixed percentage performance difference.
 
-## Which Should You Choose?
+## Build requirements
 
-### Choose Triple Store when:
-- You have a simple, single-context dataset
-- Maximum write performance is critical
-- You don't need named graphs
-- You're migrating from an existing triple store system
-
-### Choose Quad Store when:
-- You need data isolation (multi-tenancy)
-- You want to track data provenance
-- You have multiple data sources to merge
-- You need graph-scoped reasoning
-- You're starting a new project
-
-**Recommendation**: Use quad store (`schema: :quad`) for new projects. It supports everything triple store does plus named graphs for data isolation and provenance tracking.
-
-## Installation
-
-Add `triple_store` to your dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:triple_store, "~> 0.1.0"}
-  ]
-end
-```
-
-Then fetch dependencies:
+The project requires Elixir, Erlang/OTP, Rust, C/C++ build tools, CMake, and
+RocksDB development libraries. Check `.tool-versions` and
+`.github/workflows/ci.yml` for repository versions and Ubuntu packages.
 
 ```bash
 mix deps.get
+ERLANG_ROCKSDB_OPTS=-DCMAKE_POLICY_VERSION_MINIMUM=3.5 mix compile
 ```
 
-The first compilation will build the native dependencies:
-
-```bash
-mix compile
-```
-
-> **Note**: You need librocksdb-dev installed:
-> - Ubuntu/Debian: `sudo apt-get install librocksdb-dev`
-> - macOS: `brew install rocksdb`
->
-> You also need a Rust toolchain because `mix compile` builds the SPARQL parser
-> NIF from `native/sparql_parser_nif` into `priv/native/`. That binary is a
-> local build artifact and should remain untracked. If it becomes stale after a
-> branch or toolchain change, remove `priv/native/sparql_parser_nif.so` and rerun
-> `mix compile --force`.
-
-## Quick Start
-
-### Triple Store Quick Start
+## Triple-store example
 
 ```elixir
-# Open a triple store
-{:ok, store} = TripleStore.open("./my_database", schema: :triple)
+path = Path.join(System.tmp_dir!(), "triple_store_example")
+{:ok, store} = TripleStore.open(path)
 
-# Insert some triples
-TripleStore.update(store, """
-  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+triple = {
+  RDF.iri("http://example.org/alice"),
+  RDF.iri("http://example.org/name"),
+  RDF.literal("Alice")
+}
 
-  INSERT DATA {
-    <http://example.org/alice> a foaf:Person ;
-                              foaf:name "Alice" .
+{:ok, 1} = TripleStore.insert(store, triple)
+
+{:ok, results} =
+  TripleStore.query(store, """
+  SELECT ?name WHERE {
+    <http://example.org/alice> <http://example.org/name> ?name
   }
-""")
+  """)
 
-# Query
-{:ok, results} = TripleStore.query(store, """
-  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-
-  SELECT ?name
-  WHERE {
-    ?person foaf:name ?name
-  }
-""")
-
-# Close when done
-TripleStore.close(store)
+:ok = TripleStore.close(store)
 ```
 
-### Quad Store Quick Start
+`SELECT` returns a list of binding maps. Bound values use the tagged term
+representation returned by the query layer.
+
+## Quad-store example
 
 ```elixir
-# Open a quad store
-{:ok, store} = TripleStore.open("./my_database", schema: :quad)
+{:ok, store} = TripleStore.open("./quad_data", schema: :quad)
 
-# Insert into a named graph
-TripleStore.update(store, """
-  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-
+{:ok, 1} =
+  TripleStore.update(store, """
   INSERT DATA {
     GRAPH <http://example.org/people> {
-      <http://example.org/alice> a foaf:Person ;
-                                foaf:name "Alice" .
+      <http://example.org/alice> <http://example.org/name> "Alice"
     }
   }
-""")
+  """)
 
-# Query a specific graph
-{:ok, results} = TripleStore.query(store, """
-  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+ctx = %{db: store.db, dict_manager: store.dict_manager}
+:ok = TripleStore.SPARQL.Authorization.set_public(ctx, "http://example.org/people")
 
-  SELECT ?name
-  WHERE {
+{:ok, results} =
+  TripleStore.query(store, """
+  SELECT ?name WHERE {
     GRAPH <http://example.org/people> {
-      ?person foaf:name ?name
+      <http://example.org/alice> <http://example.org/name> ?name
     }
   }
-""")
+  """)
 
-# Close when done
-TripleStore.close(store)
+:ok = TripleStore.close(store)
 ```
 
-## Continue Your Journey
+Named-graph reads are authorization-aware. The example marks the graph public;
+without that ACL entry, the facade query returns `{:error, :unauthorized}` for
+an existing named graph.
 
-### Triple Store Path
+## RDF loading and export
 
-If you chose **triple store**, continue to the triple-specific guides:
+The facade provides `load/3`, `load_graph/3`, `load_string/4`, and `export/3`.
+Generic file/string loading and facade export are graph-oriented. In a quad
+store, use `TripleStore.Loader` or `TripleStore.Exporter` dataset functions when
+named-graph identities must survive a round trip.
 
-1. [Data Management](triples/02-data-management.md) - Loading, exporting, and backing up triples
-2. [SPARQL Queries](triples/03-sparql-queries.md) - Querying your data
-3. [SPARQL Updates](triples/04-sparql-updates.md) - Modifying data with SPARQL
-4. [Reasoning](triples/05-reasoning.md) - OWL 2 RL inference
-5. [Configuration & Performance](triples/06-configuration.md) - Tuning your triple store
+## Errors and cleanup
 
-### Quad Store Path
+Facade operations return tagged results. Exported bang variants raise
+`TripleStore.Error` on failure. Always call `TripleStore.close/1`. Separately
+started caches, metrics, statistics servers, and scheduled backups remain
+caller-owned.
 
-If you chose **quad store**, continue to the quad-specific guides:
-
-1. [Data Management](quads/02-data-management.md) - Loading, exporting, and backing up quads with named graphs
-2. [SPARQL Queries](quads/03-sparql-queries.md) - Querying with GRAPH clauses
-3. [SPARQL Updates](quads/04-sparql-updates.md) - Modifying data in named graphs
-4. [Reasoning](quads/05-reasoning.md) - Graph-scoped OWL 2 RL inference
-5. [Configuration & Performance](quads/06-configuration.md) - Quad-specific tuning
-6. [Named Graphs](quads/07-named-graphs.md) - Advanced named graph patterns
-
-## Supported RDF Formats
-
-TripleStore supports these formats for loading and exporting:
-
-| Format | Extension | Triple Store | Quad Store |
-|--------|-----------|--------------|------------|
-| **N-Triples** | `.nt` | Yes | Default graph only |
-| **Turtle** | `.ttl` | Yes | Default graph only |
-| **N-Quads** | `.nq` | Loads to default | Full quad support |
-| **TriG** | `.trig` | Loads to default | Full quad support |
-| **RDF/XML** | `.rdf` | Yes | Default graph only |
-
-## Using RDF.ex Terms
-
-TripleStore uses [RDF.ex](https://hex.pm/packages/rdf) for RDF data structures:
-
-```elixir
-import RDF.Sigils
-
-# IRIs
-~I<http://example.org/resource>
-RDF.iri("http://example.org/resource")
-
-# Literals
-~L"Hello, World!"
-RDF.literal(42)           # xsd:integer
-RDF.literal(3.14)         # xsd:double
-RDF.literal("Bonjour", language: "fr")
-
-# Blank Nodes
-~B<b1>
-RDF.bnode()
-```
-
-## Error Handling
-
-All functions return tagged tuples:
-
-```elixir
-case TripleStore.query(store, sparql) do
-  {:ok, results} ->
-    # Handle success
-    process_results(results)
-
-  {:error, {:parse_error, message}} ->
-    # Invalid SPARQL syntax
-    IO.puts("Parse error: #{message}")
-
-  {:error, :timeout} ->
-    # Query took too long
-    IO.puts("Query timed out")
-
-  {:error, reason} ->
-    # Other errors
-    IO.puts("Error: #{inspect(reason)}")
-end
-```
-
-### Bang Variants
-
-For scripts or when you want exceptions on error:
-
-```elixir
-# Raises TripleStore.Error on failure
-store = TripleStore.open!("./my_database", schema: :quad)
-count = TripleStore.load!(store, "data.nq")
-results = TripleStore.query!(store, "SELECT * WHERE { ?s ?p ?o }")
-```
-
-## Tips
-
-### Use Prefixes in SPARQL
-
-```elixir
-TripleStore.query(store, """
-  PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-  PREFIX ex: <http://example.org/>
-
-  SELECT ?name
-  WHERE {
-    ?person foaf:name ?name
-  }
-""")
-```
-
-### Check Your Schema
-
-```elixir
-{:ok, schema} = TripleStore.schema(store)
-IO.puts("Schema: #{schema}")  # => :triple or :quad
-```
-
-### Batch Loading for Performance
-
-```elixir
-# Larger batches = fewer commits, faster loading
-{:ok, count} = TripleStore.load(store, "large_file.nt", batch_size: 10_000)
-```
+The schema is available as `store.schema`; the facade has no separate schema
+accessor.

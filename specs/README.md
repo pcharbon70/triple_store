@@ -39,24 +39,24 @@ Normative language in this directory uses RFC-2119 terms: **MUST**, **MUST NOT**
 
 ## Conformance
 
-- [conformance/README.md](conformance/README.md)
+- [conformance/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/conformance/README.md)
 - [conformance/scenario_catalog.md](conformance/scenario_catalog.md)
 - [conformance/spec_conformance_matrix.md](conformance/spec_conformance_matrix.md)
 
 ## Planning
 
-- [planning/README.md](planning/README.md)
+- [planning/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/planning/README.md)
 
 ## Operations
 
-- [operations/README.md](operations/README.md)
+- [operations/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/operations/README.md)
 
 ## Component Indexes
 
-- [runtime/README.md](runtime/README.md)
-- [storage/README.md](storage/README.md)
-- [query/README.md](query/README.md)
-- [reasoning/README.md](reasoning/README.md)
+- [runtime/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/runtime/README.md)
+- [storage/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/storage/README.md)
+- [query/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/query/README.md)
+- [reasoning/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/reasoning/README.md)
 
 ## Current Governance Status
 

@@ -2,7 +2,7 @@ defmodule TripleStore.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/your-org/triple_store"
+  @source_url "https://github.com/pcharbon70/triple_store"
 
   def project do
     [
@@ -71,16 +71,40 @@ defmodule TripleStore.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: [
-        "README.md",
-        "guides/user/README.md",
-        "guides/developer/README.md"
+      extras: documentation_extras(),
+      # These specification indexes link to historical delivery records. The
+      # records remain in the repository but are intentionally not published as
+      # normative ExDoc pages.
+      skip_undefined_reference_warnings_on: [
+        "specs/getting-started.md",
+        "specs/operations/README.md",
+        "specs/planning/README.md"
       ],
       groups_for_extras: [
-        "User Guides": Path.wildcard("guides/user/*.md") -- ["guides/user/README.md"],
-        "Developer Guides":
-          Path.wildcard("guides/developer/*.md") -- ["guides/developer/README.md"]
+        "User Guides": ~r{^guides/user/},
+        "Developer Guides": ~r{^guides/developer/},
+        "Benchmark Guides": ~r{^guides/benchmarks/},
+        "Ontology Guides": ~r{^guides/ontology/},
+        Specifications: ~r{^specs/},
+        "Production Operations": ~r{^docs/production/}
       ]
     ]
+  end
+
+  defp documentation_extras do
+    ["README.md", "LICENSE.md"]
+    |> Kernel.++(Path.wildcard("guides/**/*.md"))
+    |> Kernel.++(Path.wildcard("specs/**/*.md"))
+    |> Kernel.++(Path.wildcard("docs/production/**/*.md"))
+    |> Enum.map(fn path ->
+      filename =
+        path
+        |> Path.rootname()
+        |> String.replace(~r{[^a-zA-Z0-9]+}, "-")
+        |> String.trim("-")
+        |> String.downcase()
+
+      {path, filename: filename}
+    end)
   end
 end

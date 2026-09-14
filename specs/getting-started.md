@@ -21,7 +21,7 @@ When control-plane ownership changes, update ADR-0001 and the ownership matrix i
 
 ## 3. Update Contracts Before Area Specs Drift
 
-Contracts in [contracts/README.md](contracts/README.md) define requirement families (`REQ-*`).
+Contracts in [contracts/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/contracts/README.md) define requirement families (`REQ-*`).
 
 If storage, query, transaction, reasoning, or observability semantics change, update the appropriate contract first or alongside the implementation.
 
@@ -29,10 +29,10 @@ If storage, query, transaction, reasoning, or observability semantics change, up
 
 Area indexes define `AC-*` acceptance criteria for:
 
-- [runtime/README.md](runtime/README.md)
-- [storage/README.md](storage/README.md)
-- [query/README.md](query/README.md)
-- [reasoning/README.md](reasoning/README.md)
+- [runtime/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/runtime/README.md)
+- [storage/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/storage/README.md)
+- [query/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/query/README.md)
+- [reasoning/README.md](https://github.com/pcharbon70/triple_store/blob/main/specs/reasoning/README.md)
 
 Each `AC-*` should map back to at least one `REQ-*` family and one `SCN-*` scenario.
 

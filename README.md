@@ -30,7 +30,7 @@ A high-performance RDF store implementation in Elixir with RocksDB storage, full
 
 ## Specifications
 
-Canonical architecture and governance specs now live under [`specs/`](specs/README.md).
+Canonical architecture and governance specs now live under [`specs/`](https://github.com/pcharbon70/triple_store/blob/main/specs/README.md).
 
 Key entry points:
 
