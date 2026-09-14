@@ -216,6 +216,14 @@ graph LR
 | `Metrics` | Telemetry aggregation | Counters, histograms |
 | `Prometheus` | Metrics export | Metric registrations |
 
+`Query.Cache` is optional and is not started by the application supervisor.
+Production query keys include the identity of the current open store, and each
+successful supported mutation invalidates that store in every active named
+result cache. Persisted cache format version 2 rejects legacy unscoped entries.
+Quad queries using ACL-governed actor contexts bypass result caching because the
+ACL store does not yet expose a stable authorization revision; explicitly
+privileged `permit_all: true` contexts can be cached.
+
 ## Column Families
 
 RocksDB column families organize data for optimal access patterns:

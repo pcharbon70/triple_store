@@ -622,6 +622,18 @@ case TripleStore.update(store, update_sparql) do
 end
 ```
 
+Actor-aware authorization is available through the lower-level
+`TripleStore.SPARQL.UpdateExecutor` context. For `DELETE/INSERT ... WHERE`, every
+graph produced by template substitution is checked for write access before the
+first explicit-index write. A denied target returns `{:error, :unauthorized}`.
+
+A single quad MODIFY submits all deletes before inserts in one RocksDB batch and
+leaves all four explicit indices unchanged when that batch fails. A request with
+multiple SPARQL operations still commits each operation separately, so an error
+in a later operation does not roll back earlier operations. Successful mutations
+invalidate entries for the affected open store in all active named result caches;
+denied and failed writes do not invalidate valid entries.
+
 ## Reasoning Considerations
 
 After significant updates, you may need to rematerialize inferences:

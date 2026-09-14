@@ -7,7 +7,7 @@ Description: Remediate the six findings from the 2026-09-09 code review of
 Production Hardening and follows the existing phase, section, task, and
 sub-task hierarchy. Creating this plan does not implement or close a finding.
 
-**Status:** In progress. Phase 1 is complete; Phases 2–4 are pending.
+**Status:** Complete. Phases 1–4 are complete.
 
 The review was primarily source-based. A standalone reproduction using the real
 result-cache module and a telemetry stub demonstrated reuse across execution
@@ -59,7 +59,7 @@ fixture cleanup reliable on failures. Update affected specs with each fix.
 | 1 | Reproduction baseline, cache isolation, graph authorization | None | Context-safe cached reads and authorized resolved write targets | Complete |
 | 2 | Atomic quad MODIFY and mutation-driven cache invalidation | Phase 1 cache identity and authorization | Failed MODIFY leaves explicit indices unchanged; committed writes invalidate affected results | Complete |
 | 3 | Ground-premise verification and canonical derived storage | Section 1.1 test environment | Sound negative-premise handling and GSPO-derived round trips | Complete |
-| 4 | Integration, compatibility, and conformance evidence | Phases 1–3 | All six findings verified through real runtime tests and documented evidence | Planned |
+| 4 | Integration, compatibility, and conformance evidence | Phases 1–3 | All six findings verified through real runtime tests and documented evidence | Complete |
 
 The phase boundaries reflect different delivery gates: prevent unauthorized
 access, establish committed-write/cache consistency, restore reasoning
@@ -423,7 +423,7 @@ to executed behavior rather than documentation validation alone.
 
 ### Section 4.1: Release Readiness
 
-- [ ] **Section 4.1 Status**
+- [x] **Section 4.1 Status**
 
 Documentation and regression evidence are updated with each fix. This section
 checks their completeness and the interactions between fixes; it does not defer
@@ -431,56 +431,79 @@ per-task tests or specification updates until the end.
 
 #### Task 4.1.1: Verify interactions between the fixes
 
-- [ ] **Task 4.1.1 Status**
-- [ ] 4.1.1.1 Warm caches for two stores and multiple actors; perform authorized
+- [x] **Task 4.1.1 Status**
+- [x] 4.1.1.1 Warm caches for two stores and multiple actors; perform authorized
   variable-graph MODIFY and verify atomic results, cache freshness, and isolation.
-- [ ] 4.1.1.2 Repeat with authorization denial and injected write failure; verify
+- [x] 4.1.1.2 Repeat with authorization denial and injected write failure; verify
   no partial explicit data changes or protected result disclosure.
-- [ ] 4.1.1.3 Combine multi-iteration reasoning, canonical derived persistence,
+- [x] 4.1.1.3 Combine multi-iteration reasoning, canonical derived persistence,
   reopen, and incremental deletion; compare expected explicit/derived sets.
-- [ ] 4.1.1.4 Verify fixture cleanup, iterator lifetime, and named-service isolation;
+- [x] 4.1.1.4 Verify fixture cleanup, iterator lifetime, and named-service isolation;
   use the existing quad iterator cleanup regression alongside changed query paths.
 
 #### Task 4.1.2: Complete repository quality gates
 
-- [ ] **Task 4.1.2 Status**
-- [ ] 4.1.2.1 Run `./scripts/compile_strict.sh`, `mix format --check-formatted`,
+- [x] **Task 4.1.2 Status**
+- [x] 4.1.2.1 Run `./scripts/compile_strict.sh`, `mix format --check-formatted`,
   focused tests, `mix test`, `mix credo --strict`, and `mix dialyzer --format short`.
-- [ ] 4.1.2.2 Run relevant excluded tests deliberately; record that default ExUnit
+- [x] 4.1.2.2 Run relevant excluded tests deliberately; record that default ExUnit
   excludes benchmark, large_dataset, slow, and lifetime_safety tags.
-- [ ] 4.1.2.3 Run specs, guides, RFC, and code-doc validators plus
+- [x] 4.1.2.3 Run specs, guides, RFC, and code-doc validators plus
   `./scripts/run_conformance.sh`; record intentional skips and blockers precisely.
-- [ ] 4.1.2.4 Run bounded Wikidata parser/corpus/smoke checks when query behavior
+- [x] 4.1.2.4 Run bounded Wikidata parser/corpus/smoke checks when query behavior
   changes; compare answer correctness before interpreting performance differences.
 
 #### Task 4.1.3: Review evidence and close verified findings
 
-- [ ] **Task 4.1.3 Status**
-- [ ] 4.1.3.1 Confirm the query/authorization, transaction batch-boundary, and reasoning
+- [x] **Task 4.1.3 Status**
+- [x] 4.1.3.1 Confirm the query/authorization, transaction batch-boundary, and reasoning
   specs reflect the fixes, with actual regression paths in AC/SCN evidence mappings.
-- [ ] 4.1.3.2 Check that guides cover cache compatibility, ACL invalidation, derived-data
+- [x] 4.1.3.2 Check that guides cover cache compatibility, ACL invalidation, derived-data
   recovery, and any caller-visible error/count changes.
-- [ ] 4.1.3.3 Update `AGENTS.md` caveats only where fixes are verified. Retain the
+- [x] 4.1.3.3 Update `AGENTS.md` caveats only where fixes are verified. Retain the
   separate documented gaps listed in Scope; do not claim full transaction or
   reasoning conformance from these six fixes.
-- [ ] 4.1.3.4 For each F-ID, record the fix commit/PR, exact regression test path,
+- [x] 4.1.3.4 For each F-ID, record the fix commit/PR, exact regression test path,
   failing-before/passing-after evidence, validation environment, and remaining limits.
-- [ ] 4.1.3.5 Check completed sub-tasks first, then their tasks and sections; mark
+- [x] 4.1.3.5 Check completed sub-tasks first, then their tasks and sections; mark
   a phase complete only when its exit gate and required checks pass.
-- [ ] 4.1.3.6 Keep unresolved findings open if runtime validation is blocked;
+- [x] 4.1.3.6 Keep unresolved findings open if runtime validation is blocked;
   document the blocker without treating source inspection as a passing test.
 
 **Phase 4 exit gate:** All six findings have executed regression evidence and
 passing applicable quality gates. Compatibility/recovery instructions are
 reviewable, and remaining unrelated implementation gaps remain explicit.
 
+Phase 4 evidence: the cross-finding integration regression exercises two stores,
+two actors, two named caches, an authorized variable-graph MODIFY, authorization
+denial, deterministic mixed-batch failure, and all four explicit quad indices.
+The derived persistence regression now verifies multi-iteration materialization,
+reopen, deletion, and preservation of explicit GSPO data. The focused integration,
+cache, premise, and derived suites passed 9 tests; the broader cross-phase suite
+passed 145 tests; and the excluded iterator lifetime suite passed 5 tests.
+Strict compilation, Dialyzer (zero findings), all governance/conformance scripts,
+and the Wikidata parser (15 queries), corpus smoke (4 queries), and end-to-end
+smoke workflows passed. The RFC validator intentionally skipped because the
+repository has no `rfcs/` directory.
+
+Repository-wide formatting and Credo remain blocked by pre-existing findings in
+unmodified files, including `sparql/executor.ex`, `loader.ex`, and
+`sparql/quad_leapfrog.ex`; every Elixir file changed by this phase is formatted.
+The complete default suite ran with `/tmp` RocksDB fixtures and finished with
+25 doctests, 10 properties, and 6,725 tests: 36 failures and 53 skips, with 345
+excluded. The failures reproduce the existing quad Leapfrog binding/iterator
+defects, including `Executor.convert_leapfrog_bindings/1` receiving maps where it
+expects tuple lists. They do not occur in the bounded remediation regressions and
+remain outside the six-finding scope. Default ExUnit continues to exclude
+`benchmark`, `large_dataset`, `slow`, and `lifetime_safety` tags.
+
 ## Completion Evidence
 
 | Finding | Fix Commit / PR | Regression Evidence | Validation Result | Status |
 | --- | --- | --- | --- | --- |
-| F-01 | Pending | Pending | Not run | Open |
-| F-02 | Pending | Pending | Not run | Open |
-| F-03 | Phase 2 PR | `test/triple_store/sparql/phase_2_correctness_test.exs`, `test/triple_store/sparql/modify_quad_test.exs` | Focused suite passed | Closed |
-| F-04 | Phase 2 PR | `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/sparql/phase_2_correctness_test.exs` | Focused suite passed | Closed |
-| F-05 | Phase 3 PR | `test/triple_store/reasoner/ground_premise_regression_test.exs`, `test/triple_store/reasoner/semi_naive_test.exs` | Focused suite passed | Closed |
-| F-06 | Phase 3 PR | `test/triple_store/reasoner/derived_quad_canonical_test.exs`, `test/triple_store/reasoner/section_7_8_5_derived_store_quad_test.exs` | Focused suite passed | Closed |
+| F-01 | `4167879`, PR #34 | `test/triple_store/sparql/query_test.exs`, `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/remediation_integration_test.exs` | Failing cross-store/context reproduction now passes; cross-phase suite passed | Closed |
+| F-02 | `4167879`, PR #34 | `test/triple_store/sparql/update_authorization_test.exs`, `test/triple_store/remediation_integration_test.exs` | Failing resolved-target authorization reproduction now passes | Closed |
+| F-03 | `402c93e`, PR #35 | `test/triple_store/sparql/phase_2_correctness_test.exs`, `test/triple_store/sparql/modify_quad_test.exs`, `test/triple_store/remediation_integration_test.exs` | Injected batch failure preserves every explicit index; focused suite passed | Closed |
+| F-04 | `402c93e`, PR #35 | `test/triple_store/query/cache_store_invalidation_test.exs`, `test/triple_store/sparql/phase_2_correctness_test.exs`, `test/triple_store/remediation_integration_test.exs` | Mutation and in-flight-fill regressions passed across named caches | Closed |
+| F-05 | `1dbcf59`, PR #36 | `test/triple_store/reasoner/ground_premise_regression_test.exs`, `test/triple_store/reasoner/semi_naive_test.exs` | Negative-premise and lookup-error regressions passed | Closed |
+| F-06 | `1dbcf59`, PR #36 | `test/triple_store/reasoner/derived_quad_canonical_test.exs`, `test/triple_store/reasoner/section_7_8_5_derived_store_quad_test.exs` | Raw GSPO, reopen, deletion, failure, and recovery regressions passed | Closed |

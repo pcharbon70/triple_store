@@ -75,5 +75,7 @@ defmodule TripleStore.Query.CacheStoreInvalidationTest do
 
   defp stop_if_alive(pid) do
     if Process.alive?(pid), do: GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 end

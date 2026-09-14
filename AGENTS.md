@@ -76,7 +76,8 @@ Elixir-owned and preemptible.
   migration is export/import into a new store, not an in-place schema switch.
 - **Quad tuple order differs across APIs.** `QuadOperations` accepts/returns
   `{s, p, o, g}`; `Reasoner.DerivedStore` quad APIs use `{g, s, p, o}`.
-  GSPO key decoding is graph-first. Check the actual callee before converting.
+  `QuadIndex.key_to_quad/2` returns canonical `{s, p, o, g}`, while raw
+  `decode_gspo_key/1` is graph-first. Check the actual callee before converting.
 - Derived facts have their own `derived` persistence surface. Preserve explicit
   versus inferred distinctions, provenance, and graph scope during deletion,
   incremental reasoning, backup, and export. Quad ACL/provenance column families
@@ -100,8 +101,11 @@ Elixir-owned and preemptible.
   prove concurrent snapshot reads or whole-request rollback across batches.
 - `SPARQL.PlanCache` is automatically supervised. `TripleStore.Query.Cache`
   is the optional result cache used by `SPARQL.Query`. `SPARQL.QueryCache` is a
-  separate tested implementation. Check invalidation for the actual mutation
-  path and cache in use; do not treat these three modules as interchangeable.
+  separate tested implementation. Production result keys include the open-store
+  identity, and successful supported mutations invalidate that store in every
+  active named result cache. ACL-governed quad queries bypass result caching
+  until authorization has a stable revision identity. Do not treat these three
+  cache modules as interchangeable.
 - Eager queries use timeout isolation. Lazy query streaming does not provide
   a timeout over subsequent stream consumption; preserve this distinction.
 - The facade does not expose actor-aware query options. Named-graph ACL hooks
@@ -113,6 +117,9 @@ Elixir-owned and preemptible.
   `SemiNaive.materialize_in_memory`, and returns statistics while discarding
   the returned fact set. Do not describe this path as persisting inferences or
   as schema-neutral. Graph-scoped APIs route through `GraphScopedReasoner`.
+  Fully ground premises are checked through the configured lookup provider;
+  lookup failures abort materialization with a tagged error. Global
+  `:per_graph_cf` materialization stores canonical GSPO derived keys in graph 0.
 - `Statistics.Cache` remains a legacy integration; `Statistics.Server` is its
   intended successor. Metrics and Prometheus are opt-in services.
 

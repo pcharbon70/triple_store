@@ -141,50 +141,46 @@ defmodule TripleStore.Reasoner.DeltaComputation do
           delta_opts()
         ) :: apply_result()
   def apply_rule_delta(lookup_fn, rule, delta, existing, opts \\ []) do
-    try do
-      max_derivations = Keyword.get(opts, :max_derivations, @default_max_derivations)
+    max_derivations = Keyword.get(opts, :max_derivations, @default_max_derivations)
 
-      # Get delta positions from rule metadata (or all pattern positions)
-      delta_positions = Rule.delta_positions(rule)
-      patterns = Rule.body_patterns(rule)
+    # Get delta positions from rule metadata (or all pattern positions)
+    delta_positions = Rule.delta_positions(rule)
+    patterns = Rule.body_patterns(rule)
 
-      if Enum.empty?(patterns) do
-        # No patterns means rule cannot match anything
-        {:ok, MapSet.new()}
-      else
-        # Index delta facts by predicate for efficient lookup
-        delta_index = index_by_predicate(delta)
+    if Enum.empty?(patterns) do
+      # No patterns means rule cannot match anything
+      {:ok, MapSet.new()}
+    else
+      # Index delta facts by predicate for efficient lookup
+      delta_index = index_by_predicate(delta)
 
-        # Apply rule for each delta position using Stream for lazy evaluation
-        # This avoids building large intermediate lists before taking max_derivations
-        result =
-          Enum.reduce_while(delta_positions, {:ok, []}, fn delta_pos, {:ok, acc} ->
-            {:ok, facts} =
-              apply_with_delta_at_position(
-                lookup_fn,
-                rule,
-                patterns,
-                delta,
-                delta_index,
-                delta_pos,
-                existing
-              )
+      result =
+        Enum.reduce_while(delta_positions, {:ok, []}, fn delta_pos, {:ok, acc} ->
+          {:ok, facts} =
+            apply_with_delta_at_position(
+              lookup_fn,
+              rule,
+              patterns,
+              delta,
+              delta_index,
+              delta_pos,
+              existing
+            )
 
-            {:cont, {:ok, facts ++ acc}}
-          end)
+          {:cont, {:ok, facts ++ acc}}
+        end)
 
-        case result do
-          {:ok, facts} ->
-            new_facts = facts |> Enum.take(max_derivations) |> MapSet.new()
-            {:ok, MapSet.difference(new_facts, existing)}
+      case result do
+        {:ok, facts} ->
+          new_facts = facts |> Enum.take(max_derivations) |> MapSet.new()
+          {:ok, MapSet.difference(new_facts, existing)}
 
-          {:error, _} = error ->
-            error
-        end
+        {:error, _} = error ->
+          error
       end
-    catch
-      {:lookup_failed, reason} -> {:error, {:lookup_failed, reason}}
     end
+  catch
+    {:lookup_failed, reason} -> {:error, {:lookup_failed, reason}}
   end
 
   @doc """
