@@ -10,6 +10,7 @@ defmodule TripleStore.SPARQL.Update.InsertData do
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
+  alias TripleStore.SPARQL.UpdateSession
   alias TripleStore.Statistics
 
   @max_data_triples 10_000
@@ -71,10 +72,12 @@ defmodule TripleStore.SPARQL.Update.InsertData do
 
   # Invalidate statistics cache for graphs affected by the operation
   defp invalidate_graphs_cache(db, quads) do
-    quads
-    |> Enum.map(fn {_s, _p, _o, g_id} -> g_id end)
-    |> Enum.uniq()
-    |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
+    unless UpdateSession.staging?(db) do
+      quads
+      |> Enum.map(fn {_s, _p, _o, g_id} -> g_id end)
+      |> Enum.uniq()
+      |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
+    end
   end
 
   # Converts RDF quads to internal quad representation with IDs

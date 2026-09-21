@@ -348,15 +348,15 @@ Description: Represent pending explicit mutations and a read overlay for one
 parsed SPARQL Update request, including the metadata needed for authorization,
 counts, cache invalidation, and telemetry.
 
-- [ ] 2.2.1.1 Define an update-session type containing the base read view, pending
+- [x] 2.2.1.1 Define an update-session type containing the base read view, pending
   triple/quad puts and deletes, affected graphs, and operation results.
-- [ ] 2.2.1.2 Normalize mutations into canonical per-column-family keys using
+- [x] 2.2.1.2 Normalize mutations into canonical per-column-family keys using
   existing Index, QuadIndex, and adapter helpers.
-- [ ] 2.2.1.3 Implement overlay reads so a later operation observes earlier staged
+- [x] 2.2.1.3 Implement overlay reads so a later operation observes earlier staged
   inserts/deletes as required by SPARQL Update sequencing.
-- [ ] 2.2.1.4 Detect contradictory or duplicate staged mutations and preserve
+- [x] 2.2.1.4 Detect contradictory or duplicate staged mutations and preserve
   DELETE-before-INSERT semantics and documented affected counts.
-- [ ] 2.2.1.5 Keep dictionary allocation outside the explicit-index atomicity claim;
+- [x] 2.2.1.5 Keep dictionary allocation outside the explicit-index atomicity claim;
   document that a failed request may leave unused dictionary IDs.
 
 #### Task 2.2.2: Plan supported update operations without early commits
@@ -364,15 +364,15 @@ counts, cache invalidation, and telemetry.
 Description: Change data, MODIFY, and graph-management executors to append
 validated intents to the session rather than submitting independent batches.
 
-- [ ] 2.2.2.1 Convert INSERT DATA, DELETE DATA, and triple/quad MODIFY paths to
+- [x] 2.2.2.1 Convert INSERT DATA, DELETE DATA, and triple/quad MODIFY paths to
   staged intents.
-- [ ] 2.2.2.2 Convert COPY, MOVE, ADD, CLEAR, CREATE, DROP, LOAD, and supported
+- [x] 2.2.2.2 Convert COPY, MOVE, ADD, CLEAR, CREATE, DROP, LOAD, and supported
   graph operations while preserving sequential visibility and SILENT behavior.
-- [ ] 2.2.2.3 Resolve and authorize every graph target before adding its first
+- [x] 2.2.2.3 Resolve and authorize every graph target before adding its first
   mutation to the session.
-- [ ] 2.2.2.4 Propagate parse, lookup, conversion, authorization, and storage-plan
+- [x] 2.2.2.4 Propagate parse, lookup, conversion, authorization, and storage-plan
   failures as tagged errors that discard the entire session.
-- [ ] 2.2.2.5 Define explicit handling for any operation that cannot participate in
+- [x] 2.2.2.5 Define explicit handling for any operation that cannot participate in
   the staged model; reject unsupported combinations before mutation rather than
   silently weakening atomicity.
 
@@ -382,15 +382,22 @@ Description: Submit the accumulated mutations through one adapter batch and
 perform cache, statistics, and telemetry side effects only after that batch
 succeeds.
 
-- [ ] 2.2.3.1 Extend the adapter's supported mixed batch format only as needed to
+- [x] 2.2.3.1 Extend the adapter's supported mixed batch format only as needed to
   cover every touched explicit index and graph metadata column family.
-- [ ] 2.2.3.2 Submit one batch after all operations have planned successfully.
-- [ ] 2.2.3.3 On batch failure, return a tagged storage error and retain unchanged
+- [x] 2.2.3.2 Submit one batch after all operations have planned successfully.
+- [x] 2.2.3.3 On batch failure, return a tagged storage error and retain unchanged
   explicit indices, caches, statistics, and success telemetry.
-- [ ] 2.2.3.4 On success, invalidate plan/result caches and refresh statistics once
+- [x] 2.2.3.4 On success, invalidate plan/result caches and refresh statistics once
   using the accumulated affected-store/graph metadata.
-- [ ] 2.2.3.5 Replace the inaccurate “rollback is automatic” comment with the exact
+- [x] 2.2.3.5 Replace the inaccurate “rollback is automatic” comment with the exact
   request-level commit boundary.
+
+Section 2.2 evidence: `UpdateSession` exposes a private adapter-compatible
+overlay for point reads, folds, and iterators and canonicalizes the final state
+by column-family/key. `update_request_atomicity_test.exs` covers discarded
+triple and quad plans, injected final-batch failure, INSERT/DELETE ordering,
+staged MODIFY reads, and graph COPY visibility. The affected update suite passed
+170 tests with four existing exclusions.
 
 ### Section 2.3: Serialized Read Semantics and Snapshot Cleanup
 

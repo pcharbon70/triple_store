@@ -10,6 +10,7 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
   alias TripleStore.Index
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
+  alias TripleStore.SPARQL.UpdateSession
   alias TripleStore.Statistics
 
   @max_data_triples 10_000
@@ -81,13 +82,15 @@ defmodule TripleStore.SPARQL.Update.DeleteData do
 
   # Invalidate statistics cache for graphs affected by the operation
   defp invalidate_graphs_cache(db, quads) do
-    quads
-    |> Enum.map(fn
-      {s, _p, _o, g} when is_integer(s) -> g
-      {_s, _p, _o, g} -> g
-    end)
-    |> Enum.uniq()
-    |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
+    unless UpdateSession.staging?(db) do
+      quads
+      |> Enum.map(fn
+        {s, _p, _o, g} when is_integer(s) -> g
+        {_s, _p, _o, g} -> g
+      end)
+      |> Enum.uniq()
+      |> Enum.each(fn graph_id -> Statistics.invalidate_quad_cache(db, graph_id) end)
+    end
   end
 
   # ===========================================================================

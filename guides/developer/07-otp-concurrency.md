@@ -23,11 +23,10 @@ processes must be started and stopped by the caller or its supervisor.
 store-owned coordinator and every facade update for that handle uses it. Direct
 loader writes and direct insert/delete calls do not share that queue.
 
-Update execution is synchronous, but its created snapshot is not injected into
-the query context. A request containing several update operations can commit
-multiple storage batches; a later failure does not imply rollback of every
-earlier batch. Treat these as current isolation boundaries when designing
-concurrent callers.
+Update execution is synchronous. A parsed request stages explicit-index
+mutations behind the coordinator, reads through that overlay for later
+operations, and publishes one mixed batch after all operations validate.
+Dictionary allocation remains outside that explicit-index atomic boundary.
 
 ## Resource ownership
 

@@ -15,6 +15,7 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   alias TripleStore.Dictionary.StringToId
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Authorization
+  alias TripleStore.SPARQL.UpdateSession
 
   # ===========================================================================
   # Authorization Helpers
@@ -275,8 +276,12 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   """
   @spec invalidate_result_caches(pid()) :: :ok
   def invalidate_result_caches(db) do
-    {:ok, store_id} = ErlangAdapter.instance_id(db)
-    QueryCache.invalidate_store(store_id)
+    if UpdateSession.staging?(db) do
+      :ok
+    else
+      {:ok, store_id} = ErlangAdapter.instance_id(db)
+      QueryCache.invalidate_store(store_id)
+    end
   catch
     :exit, _ -> :ok
   end
