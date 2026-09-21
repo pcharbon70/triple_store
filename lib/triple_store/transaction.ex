@@ -4,14 +4,13 @@ defmodule TripleStore.Transaction do
 
   This GenServer provides serialized write access to the triple store,
   ensuring that concurrent updates don't interfere with each other.
-  It also provides snapshot-based read isolation during updates.
+  Queries submitted to the same coordinator share its serialized queue.
 
   ## Architecture
 
-  All write operations (INSERT, DELETE, UPDATE) are serialized through
-  this coordinator. Reads can happen concurrently with writes, but
-  readers during an update see a consistent snapshot from before the
-  update started.
+  All operations submitted to one coordinator are serialized. A transaction
+  query waits for an in-progress update and then reads the committed store.
+  Facade queries and direct load/insert/delete calls do not use this queue.
 
   ```
   ┌─────────────────────────────────────────────────────┐
@@ -23,7 +22,7 @@ defmodule TripleStore.Transaction do
                 ▼                         ▼
   ┌─────────────────────┐   ┌─────────────────────────────┐
   │ Transaction Manager │   │      Direct DB Access       │
-  │    (GenServer)      │   │  (snapshot during updates)  │
+  │    (GenServer)      │   │ (outside coordinator queue) │
   └─────────────────────┘   └─────────────────────────────┘
                 │
                 ▼
@@ -36,8 +35,8 @@ defmodule TripleStore.Transaction do
   ## Isolation Levels
 
   - **Writers**: Serialized through GenServer, one at a time
-  - **Readers during update**: See snapshot from before update started
-  - **Readers outside update**: Direct database access
+  - **Coordinator queries**: Serialized before or after updates
+  - **Facade/direct reads**: Direct database access outside this queue
 
   ## Plan Cache Integration
 
@@ -57,8 +56,9 @@ defmodule TripleStore.Transaction do
 
   ## Error Handling
 
-  If an update fails partway through, changes are not applied (rollback).
-  RocksDB's WriteBatch ensures atomicity at the storage level.
+  Request-level atomicity is provided by the update executor's staged mutation
+  session. Dictionary allocation may precede the explicit-index commit and can
+  leave unused IDs after a failed request.
   """
 
   use GenServer
@@ -166,8 +166,26 @@ defmodule TripleStore.Transaction do
   """
   @spec stop(manager()) :: :ok
   def stop(manager) do
-    GenServer.stop(manager)
+    case resolve_manager(manager) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          try do
+            GenServer.stop(pid)
+          catch
+            :exit, _reason -> :ok
+          end
+        else
+          :ok
+        end
+
+      nil ->
+        :ok
+    end
   end
+
+  defp resolve_manager(manager) when is_pid(manager), do: manager
+  defp resolve_manager(manager) when is_atom(manager), do: Process.whereis(manager)
+  defp resolve_manager(_manager), do: nil
 
   @doc """
   Executes a SPARQL UPDATE operation.
@@ -197,7 +215,7 @@ defmodule TripleStore.Transaction do
   @spec update(manager(), String.t(), keyword()) :: update_result()
   def update(manager, sparql, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:update, sparql}, timeout)
+    call_manager(manager, {:update, sparql}, timeout)
   end
 
   @doc """
@@ -220,7 +238,7 @@ defmodule TripleStore.Transaction do
   @spec execute_update(manager(), term(), keyword()) :: update_result()
   def execute_update(manager, ast, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:execute_update, ast}, timeout)
+    call_manager(manager, {:execute_update, ast}, timeout)
   end
 
   @doc """
@@ -245,7 +263,7 @@ defmodule TripleStore.Transaction do
   @spec query(manager(), String.t(), keyword()) :: query_result()
   def query(manager, sparql, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @query_timeout)
-    GenServer.call(manager, {:query, sparql}, timeout)
+    call_manager(manager, {:query, sparql}, timeout)
   end
 
   @doc """
@@ -266,7 +284,7 @@ defmodule TripleStore.Transaction do
   @spec insert(manager(), [{term(), term(), term()}], keyword()) :: update_result()
   def insert(manager, triples, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:insert, triples}, timeout)
+    call_manager(manager, {:insert, triples}, timeout)
   end
 
   @doc """
@@ -287,7 +305,13 @@ defmodule TripleStore.Transaction do
   @spec delete(manager(), [{term(), term(), term()}], keyword()) :: update_result()
   def delete(manager, triples, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:delete, triples}, timeout)
+    call_manager(manager, {:delete, triples}, timeout)
+  end
+
+  defp call_manager(manager, message, timeout) do
+    GenServer.call(manager, message, timeout)
+  catch
+    :exit, reason -> {:error, {:transaction_unavailable, reason}}
   end
 
   @doc """

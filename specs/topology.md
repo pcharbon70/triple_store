@@ -157,7 +157,7 @@ flowchart LR
 - Public `TripleStore.query/3` MUST NOT be described as implicitly using transaction-query snapshots, because the current code does not route it that way.
 - Graph clauses, graph management, ACL checks, and graph-scoped reasoning MUST be documented as quad-schema behavior.
 - `TripleStore.materialize/2` local mode MUST be described as an in-memory triple computation returning statistics without persisting inferred facts; graph-aware reasoning lives in the explicit graph APIs.
-- Transaction queries queue behind updates on the same coordinator; the current query context does not consume the update snapshot. Independent temporary coordinators do not share a writer queue. See the [transaction implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status).
+- Transaction queries queue behind updates on the same store-owned coordinator. Facade queries and direct storage writes remain outside that queue. See the [transaction implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status).
 - Operational modules MUST observe the same canonical runtime and data topology used by query, update, and reasoning code.
 
 ## Current Codebase Notes

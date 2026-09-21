@@ -19,10 +19,9 @@ processes must be started and stopped by the caller or its supervisor.
 
 ## Coordination boundaries
 
-`Transaction` serializes requests sent to one coordinator. A facade update uses
-the coordinator in the handle or starts a temporary one for that call. Separate
-temporary coordinators, direct loader writes, and direct insert/delete calls do
-not share a global lock.
+`Transaction` serializes requests sent to one coordinator. `open/2` creates one
+store-owned coordinator and every facade update for that handle uses it. Direct
+loader writes and direct insert/delete calls do not share that queue.
 
 Update execution is synchronous, but its created snapshot is not injected into
 the query context. A request containing several update operations can commit

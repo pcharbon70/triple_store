@@ -310,15 +310,15 @@ coordinator shared by every copy of one open store handle.
 Description: Specify how `open/2`, `close/1`, process links, caller exits, and
 multiple handle copies manage one transaction coordinator.
 
-- [ ] 2.1.1.1 Document coordinator ownership in the runtime lifecycle spec and
+- [x] 2.1.1.1 Document coordinator ownership in the runtime lifecycle spec and
   distinguish SPARQL update serialization from direct load/insert/delete paths.
-- [ ] 2.1.1.2 Decide whether the coordinator is linked directly to the opener or
+- [x] 2.1.1.2 Decide whether the coordinator is linked directly to the opener or
   owned by a small store supervisor; preserve the dictionary manager's lifecycle.
-- [ ] 2.1.1.3 Define open rollback when the coordinator fails after RocksDB or the
+- [x] 2.1.1.3 Define open rollback when the coordinator fails after RocksDB or the
   dictionary manager has started.
-- [ ] 2.1.1.4 Define close ordering, repeated-close behavior, and coordinator death
+- [x] 2.1.1.4 Define close ordering, repeated-close behavior, and coordinator death
   behavior before or during an update.
-- [ ] 2.1.1.5 Preserve explicit expert callers that supply their own transaction
+- [x] 2.1.1.5 Preserve explicit expert callers that supply their own transaction
   manager, with one documented precedence rule.
 
 #### Task 2.1.2: Start and stop one coordinator with the store
@@ -326,14 +326,14 @@ multiple handle copies manage one transaction coordinator.
 Description: Make the normal store handle carry a live coordinator and remove
 the per-call temporary-manager branch from public SPARQL updates.
 
-- [ ] 2.1.2.1 Start the coordinator during `open/2` after storage and dictionary
+- [x] 2.1.2.1 Start the coordinator during `open/2` after storage and dictionary
   initialization; include it in the returned store handle.
-- [ ] 2.1.2.2 Roll back already-started resources in reverse order when any open
+- [x] 2.1.2.2 Roll back already-started resources in reverse order when any open
   step fails.
-- [ ] 2.1.2.3 Route `TripleStore.update/2` through the store-owned coordinator.
-- [ ] 2.1.2.4 Stop the coordinator before closing dictionary/storage resources and
+- [x] 2.1.2.3 Route `TripleStore.update/2` through the store-owned coordinator.
+- [x] 2.1.2.4 Stop the coordinator before closing dictionary/storage resources and
   ensure in-flight calls receive a deterministic tagged failure.
-- [ ] 2.1.2.5 If temporary coordinators remain for compatibility, guard their
+- [x] 2.1.2.5 If temporary coordinators remain for compatibility, guard their
   cleanup with `try/after` and mark the path as expert-only.
 
 ### Section 2.2: Request-Level Mutation Session

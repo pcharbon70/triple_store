@@ -35,9 +35,9 @@ Primary control-plane ownership: **Public API Plane** and **Coordination Plane**
 
 ## Current Codebase Notes
 
-- Store handles default `transaction` to `nil` and also carry `schema` at runtime.
-- `TripleStore.open/2` chooses triple schema or quad schema and starts dictionary coordination for that store only.
-- `TripleStore.update/2` creates a temporary transaction coordinator when the handle does not already include one.
+- Store handles carry a live `transaction`, its ownership marker, and `schema` at runtime.
+- `TripleStore.open/2` chooses triple or quad schema and starts dictionary and transaction coordination for that store.
+- `TripleStore.update/2` uses the store-owned coordinator; it does not create per-call coordinators.
 - `TripleStore.insert/2`, `delete/2`, and load paths are direct storage-batch flows and do not route through `Transaction`.
 - `TripleStore.query/3` builds a direct SPARQL execution context and does not currently surface actor context or transaction-query snapshots.
 - `TripleStore.load_graph/3` delegates to `Loader.load_graph/4`, whose implementation accepts both `RDF.Graph` and `RDF.Dataset`; some public type docs still lag this runtime behavior.
@@ -48,7 +48,7 @@ Primary control-plane ownership: **Public API Plane** and **Coordination Plane**
 | Acceptance ID | Criterion | Related Requirements | Related Scenarios |
 |---|---|---|---|
 | `AC-RT-01` | `TripleStore.open/2` validates the path, opens RocksDB with an explicit schema, and returns a store handle with the required runtime references. | `REQ-CP-*`, `REQ-STO-*` | `SCN-002` |
-| `AC-RT-02` | `TripleStore.update/2` uses a managed or temporary coordinator; conformance assessment includes the documented gaps in store-wide writer coordination, snapshot reads, and request rollback. | `REQ-TXN-*` | `SCN-008` |
+| `AC-RT-02` | `TripleStore.update/2` uses the live coordinator created by `open/2`; transaction queries and updates on that coordinator form one serialized queue. | `REQ-TXN-*` | `SCN-008` |
 | `AC-RT-03` | Direct load, insert, and delete flows remain explicit batch-mutation paths and MUST NOT be misdocumented as transaction-query snapshot flows. | `REQ-STO-*`, `REQ-TXN-*` | `SCN-004`, `SCN-008`, `SCN-016` |
 | `AC-RT-04` | Store-local manager processes are created and released through the public lifecycle without leaking semantic ownership into callers. | `REQ-CP-*`, `REQ-TXN-*` | `SCN-001`, `SCN-002` |
 | `AC-RT-05` | Runtime surfaces return tagged results and preserve explicit optional-helper behavior rather than assuming caches, metrics, or stats helpers always exist. | `REQ-OBS-*`, `REQ-CP-*` | `SCN-007`, `SCN-013` |

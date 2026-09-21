@@ -108,14 +108,16 @@ defmodule TripleStore do
   - `:db` - Database handle for RocksDB operations (the current Erlang adapter
     returns a PID-backed handle)
   - `:dict_manager` - Dictionary manager PID for term encoding/decoding
-  - `:transaction` - Transaction manager (if active)
+  - `:transaction` - Store-owned transaction manager used by public SPARQL updates
   - `:path` - Path to the database directory
 
   ## Thread Safety
 
   - **Reads** can be executed concurrently from multiple processes
-  - **Writes** are serialized through the Transaction manager
-  - **Snapshot isolation** ensures consistent reads during writes
+  - **SPARQL updates** are serialized through the store-owned Transaction manager
+  - **Transaction queries** share that serialized queue when callers use the
+    expert `TripleStore.Transaction` API
+  - Direct load, insert, delete, and facade query calls bypass that queue
   - The store handle can be safely shared between processes
 
   ## Error Handling
@@ -194,7 +196,8 @@ defmodule TripleStore do
   @type store :: %{
           db: db_ref(),
           dict_manager: manager(),
-          transaction: transaction_manager() | nil,
+          transaction: transaction_manager(),
+          transaction_owner: :store | :external,
           path: String.t(),
           schema: :triple | :quad
         }
@@ -203,7 +206,8 @@ defmodule TripleStore do
   @type open_opts :: [
           create_if_missing: boolean(),
           dictionary_shards: pos_integer() | nil,
-          schema: :triple | :quad
+          schema: :triple | :quad,
+          transaction: :managed | {:external, transaction_manager()}
         ]
 
   @typedoc "Options for querying"
@@ -260,8 +264,9 @@ defmodule TripleStore do
   @doc """
   Opens a triple store at the given path.
 
-  Creates the database and required column families if they don't exist.
-  Also starts the dictionary manager for term encoding.
+  Creates the database and required column families if they don't exist, then
+  starts the dictionary manager and one transaction coordinator owned by the
+  returned store handle.
 
   ## Arguments
 
@@ -274,6 +279,9 @@ defmodule TripleStore do
     term encoding. When set to a value > 1, uses `ShardedManager` instead of
     the single `Manager` GenServer. Recommended for bulk loading workloads.
     Default: nil (uses single Manager)
+  - `:transaction` - `:managed` (default) starts a store-owned coordinator.
+    `{:external, manager}` uses an already-running expert coordinator, which
+    takes precedence and remains owned by its caller.
 
   ## Returns
 
@@ -296,6 +304,7 @@ defmodule TripleStore do
     create_if_missing = Keyword.get(opts, :create_if_missing, true)
     dictionary_shards = Keyword.get(opts, :dictionary_shards)
     schema = Keyword.get(opts, :schema, :triple)
+    transaction_option = Keyword.get(opts, :transaction, :managed)
 
     with :ok <- validate_path(path) do
       Telemetry.span(:store, :open, %{path: Path.basename(path)}, fn ->
@@ -303,22 +312,79 @@ defmodule TripleStore do
         if not create_if_missing and not File.exists?(path) do
           {{:error, :database_not_found}, %{}}
         else
-          with {:ok, db} <- ErlangAdapter.open(path, schema: schema),
-               {:ok, dict_manager} <- start_dict_manager(db, dictionary_shards) do
-            store = %{
-              db: db,
-              dict_manager: dict_manager,
-              transaction: nil,
-              path: path,
-              schema: schema
-            }
-
-            {{:ok, store}, %{}}
-          end
+          open_store_resources(path, schema, dictionary_shards, transaction_option)
         end
       end)
     end
   end
+
+  defp open_store_resources(path, schema, dictionary_shards, transaction_option) do
+    case ErlangAdapter.open(path, schema: schema) do
+      {:ok, db} -> open_dictionary(db, path, schema, dictionary_shards, transaction_option)
+      {:error, _} = error -> {error, %{}}
+    end
+  end
+
+  defp open_dictionary(db, path, schema, dictionary_shards, transaction_option) do
+    case start_dict_manager(db, dictionary_shards) do
+      {:ok, dict_manager} ->
+        open_transaction(db, dict_manager, path, schema, transaction_option)
+
+      {:error, _} = error ->
+        ErlangAdapter.close(db)
+        {error, %{}}
+    end
+  end
+
+  defp open_transaction(db, dict_manager, path, schema, transaction_option) do
+    case start_store_transaction(db, dict_manager, transaction_option) do
+      {:ok, transaction, owner} ->
+        store = %{
+          db: db,
+          dict_manager: dict_manager,
+          transaction: transaction,
+          transaction_owner: owner,
+          path: path,
+          schema: schema
+        }
+
+        {{:ok, store}, %{}}
+
+      {:error, _} = error ->
+        stop_dict_manager(dict_manager)
+        ErlangAdapter.close(db)
+        {error, %{}}
+    end
+  end
+
+  defp start_store_transaction(db, dict_manager, :managed) do
+    case Transaction.start_link(db: db, dict_manager: dict_manager) do
+      {:ok, transaction} -> {:ok, transaction, :store}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp start_store_transaction(_db, _dict_manager, {:external, transaction}) do
+    if transaction_alive?(transaction) do
+      {:ok, transaction, :external}
+    else
+      {:error, :transaction_unavailable}
+    end
+  end
+
+  defp start_store_transaction(_db, _dict_manager, _option),
+    do: {:error, :invalid_transaction_option}
+
+  defp transaction_alive?(transaction) when is_pid(transaction), do: Process.alive?(transaction)
+
+  defp transaction_alive?(transaction) when is_atom(transaction) do
+    case Process.whereis(transaction) do
+      pid when is_pid(pid) -> Process.alive?(pid)
+      nil -> false
+    end
+  end
+
+  defp transaction_alive?(_transaction), do: false
 
   # Starts either ShardedManager or regular Manager based on shard count
   defp start_dict_manager(db, nil), do: DictManager.start_link(db: db)
@@ -348,10 +414,19 @@ defmodule TripleStore do
 
   """
   @spec close(store()) :: :ok | {:error, term()}
-  def close(%{db: db, dict_manager: dict_manager} = _store) do
+  def close(%{db: db, dict_manager: dict_manager} = store) do
+    stop_store_transaction(store)
     stop_dict_manager(dict_manager)
     ErlangAdapter.close(db)
   end
+
+  defp stop_store_transaction(%{transaction_owner: :external}), do: :ok
+
+  defp stop_store_transaction(%{transaction: transaction}) do
+    Transaction.stop(transaction)
+  end
+
+  defp stop_store_transaction(_store), do: :ok
 
   @spec stop_dict_manager(pid() | term()) :: :ok | nil
   defp stop_dict_manager(dict_manager) when is_pid(dict_manager) do
@@ -1608,22 +1683,11 @@ defmodule TripleStore do
 
   """
   @spec update(store(), String.t()) :: {:ok, non_neg_integer()} | {:error, term()}
-  def update(%{db: db, dict_manager: dict_manager, transaction: txn}, sparql) do
-    if txn do
-      Transaction.update(txn, sparql)
-    else
-      # Create a temporary transaction for this update
-      case Transaction.start_link(db: db, dict_manager: dict_manager) do
-        {:ok, temp_txn} ->
-          result = Transaction.update(temp_txn, sparql)
-          GenServer.stop(temp_txn, :normal)
-          result
-
-        {:error, _} = error ->
-          error
-      end
-    end
+  def update(%{transaction: transaction}, sparql) when not is_nil(transaction) do
+    Transaction.update(transaction, sparql)
   end
+
+  def update(%{transaction: nil}, _sparql), do: {:error, :transaction_unavailable}
 
   # ===========================================================================
   # Backup & Restore
