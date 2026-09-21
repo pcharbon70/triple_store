@@ -44,37 +44,35 @@ defmodule TripleStore.Reasoner.FactLoader do
   end
 
   defp collect_owned_iterator(iterator) do
-    try do
-      collect_facts(iterator, MapSet.new())
-    rescue
-      exception ->
-        {:error, {:fact_storage_failed, {exception.__struct__, Exception.message(exception)}}}
-    catch
-      :exit, reason -> {:error, {:fact_storage_failed, reason}}
-    after
-      close_iterator(iterator)
-    end
+    collect_facts(iterator, [])
+  rescue
+    exception ->
+      {:error, {:fact_storage_failed, {exception.__struct__, Exception.message(exception)}}}
+  catch
+    :exit, reason -> {:error, {:fact_storage_failed, reason}}
+  after
+    close_iterator(iterator)
   end
 
+  @spec collect_facts(ErlangAdapter.iterator_ref(), [fact()]) ::
+          {:ok, MapSet.t(fact())} | {:error, load_error()}
   defp collect_facts(iterator, facts) do
     case ErlangAdapter.iterator_next(iterator) do
       {:ok, key, _value} ->
         case decode_spo_key(key) do
-          {:ok, fact} -> collect_facts(iterator, MapSet.put(facts, fact))
+          {:ok, fact} -> collect_facts(iterator, [fact | facts])
           {:error, reason} -> {:error, {:fact_decode_failed, reason}}
         end
 
       :iterator_end ->
-        {:ok, facts}
+        {:ok, MapSet.new(facts)}
 
       {:error, reason} ->
         {:error, {:fact_scan_failed, reason}}
-
-      other ->
-        {:error, {:fact_scan_failed, {:invalid_iterator_result, other}}}
     end
   end
 
+  @spec decode_spo_key(binary()) :: {:ok, fact()} | {:error, term()}
   defp decode_spo_key(<<subject::64-big, predicate::64-big, object::64-big>>) do
     {:ok, {subject, predicate, object}}
   end
@@ -82,8 +80,6 @@ defmodule TripleStore.Reasoner.FactLoader do
   defp decode_spo_key(key) when is_binary(key) do
     {:error, {:invalid_spo_key_size, byte_size(key)}}
   end
-
-  defp decode_spo_key(_key), do: {:error, :invalid_spo_key}
 
   defp close_iterator(iterator) do
     ErlangAdapter.iterator_close(iterator)

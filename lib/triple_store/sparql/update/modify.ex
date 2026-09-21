@@ -410,15 +410,15 @@ defmodule TripleStore.SPARQL.Update.Modify do
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}}) do
-    {:ok, Dictionary.encode_integer(value)}
+    Dictionary.encode_integer(value)
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Decimal{value: %Decimal{} = value}}) do
-    {:ok, Dictionary.encode_decimal(value)}
+    Dictionary.encode_decimal(value)
   end
 
   defp encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.DateTime{value: %DateTime{} = value}}) do
-    {:ok, Dictionary.encode_datetime(value)}
+    Dictionary.encode_datetime(value)
   end
 
   defp encode_inline_literal(_literal) do

@@ -82,7 +82,8 @@ defmodule TripleStore.SPARQL.Algebra do
   Aggregate function types.
   """
   @type aggregate ::
-          {:count, expression() | :star, boolean()}
+          {:count_solutions, boolean()}
+          | {:count, expression() | :star, boolean()}
           | {:sum, expression(), boolean()}
           | {:avg, expression(), boolean()}
           | {:min, expression(), boolean()}

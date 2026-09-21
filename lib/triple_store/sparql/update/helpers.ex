@@ -7,12 +7,9 @@ defmodule TripleStore.SPARQL.Update.Helpers do
   - AST term conversion to RDF
   - Graph term normalization
   - Cache invalidation
-  - Term ID lookups
   """
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Dictionary
-  alias TripleStore.Dictionary.StringToId
   alias TripleStore.Query.Cache, as: QueryCache
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.UpdateSession
@@ -305,50 +302,6 @@ defmodule TripleStore.SPARQL.Update.Helpers do
       nil -> false
       pid when is_pid(pid) -> Process.alive?(pid)
     end
-  end
-
-  # ===========================================================================
-  # Term ID Lookups
-  # ===========================================================================
-
-  @doc """
-  Looks up term ID - uses inline encoding for numeric types, dictionary for others.
-  """
-  @spec lookup_term_id(reference(), RDF.Literal.t()) ::
-          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
-  def lookup_term_id(db, %RDF.Literal{} = literal) do
-    if Dictionary.inline_encodable?(literal) do
-      encode_inline_literal(literal)
-    else
-      StringToId.lookup_id(db, literal)
-    end
-  end
-
-  @spec lookup_term_id(reference(), term()) ::
-          {:ok, Dictionary.term_id()} | :not_found | {:error, term()}
-  def lookup_term_id(db, term) do
-    StringToId.lookup_id(db, term)
-  end
-
-  @doc """
-  Encodes inline-encodable literals directly.
-  """
-  @spec encode_inline_literal(RDF.Literal.t()) :: {:ok, Dictionary.term_id()} | {:error, term()}
-  def encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Integer{value: value}})
-      when is_integer(value) do
-    {:ok, Dictionary.encode_integer(value)}
-  end
-
-  def encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.Decimal{value: %Decimal{} = value}}) do
-    {:ok, Dictionary.encode_decimal(value)}
-  end
-
-  def encode_inline_literal(%RDF.Literal{literal: %RDF.XSD.DateTime{value: %DateTime{} = value}}) do
-    {:ok, Dictionary.encode_datetime(value)}
-  end
-
-  def encode_inline_literal(_literal) do
-    {:error, :not_inline_encodable}
   end
 
   @doc """
