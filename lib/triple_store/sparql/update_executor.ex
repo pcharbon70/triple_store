@@ -26,10 +26,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   ## Execution Model
 
-  All update operations are executed atomically using RocksDB's WriteBatch.
-  Operations that involve WHERE clauses first query the database to find
-  matching bindings, then apply those bindings to templates to generate
-  the actual triples/quads to insert or delete.
+  A parsed request is planned against a request-local mutation overlay. Later
+  operations read the overlay, including earlier staged inserts and deletes.
+  After every operation validates, all explicit-index mutations are committed
+  in one RocksDB mixed batch. Operations that involve WHERE clauses query the
+  merged view before applying bindings to their templates.
 
   ## Cache Invalidation
 
@@ -99,8 +100,11 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.Update.DeleteData
   alias TripleStore.SPARQL.Update.GraphOperations
+  alias TripleStore.SPARQL.Update.Helpers
   alias TripleStore.SPARQL.Update.InsertData
   alias TripleStore.SPARQL.Update.Modify
+  alias TripleStore.SPARQL.UpdateSession
+  alias TripleStore.Statistics
 
   # Suppress MapSet opaque type warnings in predicate extraction functions
   @dialyzer {:nowarn_function, extract_predicates_from_operations: 1}
@@ -155,9 +159,10 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   @doc """
   Executes a parsed SPARQL UPDATE AST.
 
-  Takes a parsed UPDATE AST (from `Parser.parse_update/1`) and executes
-  all operations it contains sequentially. Returns the total number of
-  triples affected.
+  Takes a parsed UPDATE AST (from `Parser.parse_update/1`) and plans all
+  operations sequentially against a request-local overlay. If every operation
+  succeeds, the final explicit-index state is submitted as one RocksDB mixed
+  batch. Returns the total number of triples affected.
 
   ## Arguments
 
@@ -188,13 +193,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       %{operation_count: operation_count}
     )
 
-    result =
-      Enum.reduce_while(operations, {:ok, 0}, fn op, {:ok, total} ->
-        case execute_operation(ctx, op) do
-          {:ok, count} -> {:cont, {:ok, total + count}}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
+    result = execute_request(ctx, operations)
 
     duration = System.monotonic_time() - start_time
     {status, triple_count} = telemetry_result(result)
@@ -210,6 +209,78 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
 
   def execute(_ctx, _ast) do
     {:error, :invalid_update_ast}
+  end
+
+  defp execute_request(ctx, operations) do
+    case UpdateSession.start_link(ctx) do
+      {:ok, session} ->
+        try do
+          staged_ctx = UpdateSession.context(session, ctx)
+
+          case execute_operations(staged_ctx, operations) do
+            {:ok, count} -> commit_request(session, ctx.db, count)
+            {:error, _} = error -> error
+          end
+        after
+          UpdateSession.stop(session)
+        end
+
+      {:error, reason} ->
+        {:error, {:update_session, reason}}
+    end
+  end
+
+  defp execute_operations(ctx, operations) do
+    Enum.reduce_while(operations, {:ok, 0}, fn operation, {:ok, total} ->
+      case execute_operation(ctx, operation) do
+        {:ok, count} -> {:cont, {:ok, total + count}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp commit_request(session, base_db, count) do
+    summary = UpdateSession.summary(session)
+    start_time = System.monotonic_time()
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :commit, :start],
+      %{system_time: System.system_time(), mutation_count: summary.mutation_count},
+      %{db: base_db}
+    )
+
+    result = UpdateSession.commit(session)
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :commit, :stop],
+      %{duration: System.monotonic_time() - start_time, mutation_count: summary.mutation_count},
+      %{db: base_db, status: commit_status(result)}
+    )
+
+    case result do
+      {:ok, %{mutation_count: 0}} ->
+        {:ok, count}
+
+      {:ok, committed_summary} ->
+        publish_commit_side_effects(base_db, committed_summary)
+        {:ok, count}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp commit_status({:ok, _summary}), do: :ok
+  defp commit_status({:error, _reason}), do: :error
+
+  defp publish_commit_side_effects(base_db, summary) do
+    Helpers.invalidate_result_caches(base_db)
+
+    Enum.each(summary.affected_graphs, fn graph_id ->
+      Statistics.invalidate_quad_cache(base_db, graph_id)
+    end)
+
+    :ok
   end
 
   defp telemetry_result({:ok, count}), do: {:ok, count}

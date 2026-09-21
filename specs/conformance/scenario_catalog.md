@@ -13,7 +13,7 @@ These are validation targets, not a list of passing implementation checks. `mix 
 | `SCN-005` | Triple and quad pattern coverage | Supported triple-pattern and quad-pattern shapes resolve through canonical index-selection rules. |
 | `SCN-006` | Query parse and execution determinism | Equivalent SPARQL queries produce stable AST-to-execution behavior and typed errors across triple and quad paths. |
 | `SCN-007` | Plan cache invalidation after mutation | Query-plan assumptions are not reused incorrectly after writes. |
-| `SCN-008` | Update isolation and explicit snapshot consistency | Reads concurrent with writes do not observe partial multi-index mutation when the transaction coordinator owns the flow. |
+| `SCN-008` | Serialized update isolation and request atomicity | Coordinator-owned updates execute in queue order, publish one explicit-index commit per request, and expose no staged or partial fanout to concurrent reads. |
 | `SCN-009` | Reasoning fixpoint determinism | Materialization reaches a stable fixpoint with deterministic derived-fact results. |
 | `SCN-010` | Explicit versus derived separation | Derived facts, provenance, and graph-scoped reasoning state remain operationally and logically distinct from explicit facts. |
 | `SCN-011` | Incremental and graph-scoped reasoning maintenance | Changes to explicit facts propagate through incremental and graph-scoped reasoning paths without corrupting derived state. |

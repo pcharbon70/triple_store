@@ -24,10 +24,12 @@ and DELETE/INSERT WHERE.
   """)
 ~~~
 
-For one quad MODIFY, all resolved delete and insert targets are validated and
-authorized before the explicit write. Deletes and inserts for all four indices
-are submitted in one ordered RocksDB batch; a batch failure leaves those
-indices unchanged. Dictionary allocation can happen before the batch.
+All operations in one parsed request execute sequentially against a staged
+view. Later MODIFY or graph-management operations can read earlier staged
+changes. After every operation validates, deletes and inserts for all four
+indices are submitted in one ordered RocksDB batch; a planning, authorization,
+or batch failure leaves those indices unchanged. Dictionary allocation can
+happen before the batch and may leave unused IDs after failure.
 
 ## Actor-aware authorization
 
@@ -44,10 +46,11 @@ than exposing the facade update directly.
 
 ## Commit and cache boundaries
 
-A multi-operation SPARQL request commits each operation separately. A later
-error does not roll back an earlier operation. Every successful supported graph
-mutation invalidates the affected open store in active named result caches;
-failed and denied writes do not.
+A multi-operation SPARQL request publishes one explicit-index commit after all
+operations succeed. Every successful request with mutations invalidates the
+affected open store in active named result caches; failed and denied requests
+leave both valid entries and their store generation unchanged. `LOAD` remains
+unsupported and rejects the complete request before commit.
 
 Direct `QuadOperations` calls have different coordination and invalidation
 responsibilities. Consult the

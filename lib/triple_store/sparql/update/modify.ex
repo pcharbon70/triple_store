@@ -272,13 +272,19 @@ defmodule TripleStore.SPARQL.Update.Modify do
 
   defp triples_to_internal(ctx, triples, :lookup) do
     results =
-      Enum.map(triples, fn {s, p, o} ->
-        with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
-             {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
-             {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
-          {s_id, p_id, o_id}
-        else
-          _ -> nil
+      Enum.map(triples, fn triple ->
+        case normalize_triple(triple) do
+          {:ok, {s, p, o}} ->
+            with {:ok, s_id} <- lookup_term_id_no_create(ctx.db, s),
+                 {:ok, p_id} <- lookup_term_id_no_create(ctx.db, p),
+                 {:ok, o_id} <- lookup_term_id_no_create(ctx.db, o) do
+              {s_id, p_id, o_id}
+            else
+              _ -> nil
+            end
+
+          :error ->
+            nil
         end
       end)
 
@@ -286,30 +292,33 @@ defmodule TripleStore.SPARQL.Update.Modify do
   end
 
   defp triples_to_internal(ctx, triples, :create) do
-    Adapter.from_rdf_triples(ctx.dict_manager, triples)
+    normalized =
+      Enum.reduce_while(triples, {:ok, []}, fn triple, {:ok, acc} ->
+        case normalize_triple(triple) do
+          {:ok, value} -> {:cont, {:ok, [value | acc]}}
+          :error -> {:halt, {:error, :invalid_triple}}
+        end
+      end)
+
+    case normalized do
+      {:ok, values} -> Adapter.from_rdf_triples(ctx.dict_manager, Enum.reverse(values))
+      {:error, _} = error -> error
+    end
   end
+
+  defp normalize_triple({s, p, o}), do: {:ok, {s, p, o}}
+
+  defp normalize_triple({s, p, o, graph}) when graph in [:default, :default_graph],
+    do: {:ok, {s, p, o}}
+
+  defp normalize_triple(_triple), do: :error
 
   # Converts quads to internal representation with mode
   defp quads_to_internal(_ctx, [], _mode), do: {:ok, []}
 
   defp quads_to_internal(ctx, quads, :lookup) do
     Enum.reduce_while(quads, {:ok, []}, fn quad, {:ok, acc} ->
-      result =
-        case quad do
-          {s, p, o} ->
-            lookup_quad(ctx.db, s, p, o, 0)
-
-          {s, p, o, :default} ->
-            lookup_quad(ctx.db, s, p, o, 0)
-
-          {s, p, o, %RDF.IRI{} = g} ->
-            lookup_quad(ctx.db, s, p, o, g)
-
-          _ ->
-            {:error, :invalid_quad}
-        end
-
-      case result do
+      case lookup_internal_quad(ctx.db, quad) do
         {:ok, internal} -> {:cont, {:ok, [internal | acc]}}
         :not_found -> {:cont, {:ok, acc}}
         {:error, _} = error -> {:halt, error}
@@ -366,6 +375,14 @@ defmodule TripleStore.SPARQL.Update.Modify do
         error
     end
   end
+
+  defp lookup_internal_quad(db, {s, p, o}), do: lookup_quad(db, s, p, o, 0)
+  defp lookup_internal_quad(db, {s, p, o, :default}), do: lookup_quad(db, s, p, o, 0)
+
+  defp lookup_internal_quad(db, {s, p, o, %RDF.IRI{} = graph}),
+    do: lookup_quad(db, s, p, o, graph)
+
+  defp lookup_internal_quad(_db, _quad), do: {:error, :invalid_quad}
 
   defp lookup_quad(db, s, p, o, graph) do
     with {:ok, s_id} <- lookup_term_id_no_create(db, s),

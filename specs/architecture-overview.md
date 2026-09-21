@@ -84,7 +84,7 @@ flowchart LR
 | Schema is chosen at `open/2` time | Triple and quad stores have incompatible key layouts and column-family sets | A store cannot be migrated in place; export and import is required |
 | `TripleStore` remains the primary facade but not the only expert surface | Keeps common workflows simple while allowing narrower expert APIs for graph backup, authorization, and direct update contexts | Callers can bypass the facade, so specs must document those expert boundaries explicitly |
 | Global OTP runtime stays minimal | Only plan-cache and snapshot services are reusable without a store-specific DB reference | Many helpers remain opt-in and are not guaranteed to exist unless callers wire them |
-| Direct insert/delete/load paths use schema-aware batch writes, while SPARQL UPDATE uses `Transaction` | Matches the current implementation split between explicit batch storage helpers and parsed update coordination | Serialization is per coordinator; neither independent temporary coordinators nor direct writes share that queue. Current transaction queries do not consume update snapshots |
+| Direct insert/delete/load paths use schema-aware batch writes, while SPARQL UPDATE uses the store-owned `Transaction` | Keeps public SPARQL updates in one serialized store queue while preserving expert direct mutation APIs | Direct writes and facade queries remain outside the coordinator queue |
 | Query and reasoning semantics stay in Elixir | Preserves control over graph semantics, authorization hooks, cost planning, and rule execution | Native speedups are bounded to parsing and storage adapters |
 | Derived facts, provenance, numeric ranges, and ACLs are explicit persistence surfaces | Keeps graph-aware reasoning and authorization observable and debuggable | The on-disk layout is richer than the original triple-only design sketch |
 
@@ -93,10 +93,10 @@ flowchart LR
 1. The embedding application starts or depends on `TripleStore.Application`.
 2. `TripleStore.Application` supervises `TripleStore.SPARQL.PlanCache` and `TripleStore.Snapshot`.
 3. `TripleStore.open/2` validates the path, selects schema, opens RocksDB through `TripleStore.Backend.RocksDB.ErlangAdapter`, and starts either `Dictionary.Manager` or `Dictionary.ShardedManager`.
-4. The returned store handle includes the DB reference, dictionary manager, `transaction: nil` by default, path, and schema.
+4. The returned store handle includes the DB reference, dictionary manager, a live store-owned transaction coordinator, its ownership marker, path, and schema.
 5. `load`, `load_graph`, `load_string`, `insert`, and `delete` route through `TripleStore.Loader` and the storage layer, using direct atomic batch writes rather than a long-lived transaction server.
 6. `query` routes through `TripleStore.SPARQL.Query` into parser, algebra, optimizer, and executor modules. Lower-level query contexts MAY include `:user` for graph ACL checks, but the `TripleStore.query/3` facade does not surface actor context today.
-7. `update` routes through `TripleStore.Transaction`; `TripleStore.update/2` starts a temporary transaction coordinator when `store.transaction` is `nil`.
+7. `update` routes through the store-owned `TripleStore.Transaction`; public updates never create independent per-call coordinators.
 8. `materialize/2` remains a legacy triple-materialization entry point for its default local path, while graph-aware materialization is exposed through `materialize_graph/3`, `materialize_graphs/3`, `materialize_all/2`, and quad incremental reasoning APIs.
 9. Backup, graph backup, restore, health, snapshot, statistics, metrics, and Prometheus all observe the same canonical runtime and data model.
 
@@ -116,7 +116,7 @@ flowchart LR
 
 - The `@type store()` and `@type open_opts()` declarations in `lib/triple_store.ex` include `schema`, matching the runtime schema selection and handle.
 - `TripleStore.insert/2` and `TripleStore.delete/2` bypass `Transaction` and rely on schema-appropriate batch writes through `Loader`, `Index`, and `QuadOperations`.
-- `Transaction.query/3` queues behind synchronous updates on the same coordinator and executes without a snapshot in its query context. Update execution creates and releases a snapshot but does not pass it to readers. `TripleStore.query/3` bypasses the coordinator entirely. See the [transaction contract implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status) for remaining isolation and rollback gaps.
+- `Transaction.query/3` queues behind synchronous updates on the same coordinator and executes after the request commits or fails. Transaction updates no longer allocate unused snapshots. `TripleStore.query/3` bypasses the coordinator entirely. See the [transaction contract implementation status](contracts/transaction_and_isolation_contract.md#current-implementation-status) for the remaining direct-read boundary.
 - `TripleStore.materialize/2` defaults to the legacy triple-only, in-memory path for `scope: :local`. It returns statistics and discards the computed fact set without persisting it. Graph-local quad reasoning is exposed through explicit graph APIs instead.
 - Two result-cache implementations exist. `TripleStore.Query.Cache` is the cache integrated into `SPARQL.Query`; `TripleStore.SPARQL.QueryCache` remains present and tested as a separate ETS-based cache.
 - `Statistics.Cache` is deprecated but still application-integrated; `Statistics.Server` is the intended successor.

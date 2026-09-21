@@ -4,14 +4,13 @@ defmodule TripleStore.Transaction do
 
   This GenServer provides serialized write access to the triple store,
   ensuring that concurrent updates don't interfere with each other.
-  It also provides snapshot-based read isolation during updates.
+  Queries submitted to the same coordinator share its serialized queue.
 
   ## Architecture
 
-  All write operations (INSERT, DELETE, UPDATE) are serialized through
-  this coordinator. Reads can happen concurrently with writes, but
-  readers during an update see a consistent snapshot from before the
-  update started.
+  All operations submitted to one coordinator are serialized. A transaction
+  query waits for an in-progress update and then reads the committed store.
+  Facade queries and direct load/insert/delete calls do not use this queue.
 
   ```
   ┌─────────────────────────────────────────────────────┐
@@ -23,7 +22,7 @@ defmodule TripleStore.Transaction do
                 ▼                         ▼
   ┌─────────────────────┐   ┌─────────────────────────────┐
   │ Transaction Manager │   │      Direct DB Access       │
-  │    (GenServer)      │   │  (snapshot during updates)  │
+  │    (GenServer)      │   │ (outside coordinator queue) │
   └─────────────────────┘   └─────────────────────────────┘
                 │
                 ▼
@@ -36,13 +35,15 @@ defmodule TripleStore.Transaction do
   ## Isolation Levels
 
   - **Writers**: Serialized through GenServer, one at a time
-  - **Readers during update**: See snapshot from before update started
-  - **Readers outside update**: Direct database access
+  - **Coordinator queries**: Serialized before or after updates
+  - **Facade/direct reads**: Direct database access outside this queue
 
   ## Plan Cache Integration
 
-  After successful writes, the plan cache is automatically invalidated
-  to ensure query plans reflect the updated statistics.
+  After successful writes, the configured plan cache is invalidated to ensure
+  query plans reflect the updated statistics. The store-owned coordinator uses
+  the application-supervised plan cache; expert coordinators may omit or
+  replace it.
 
   ## Usage
 
@@ -52,18 +53,18 @@ defmodule TripleStore.Transaction do
       # Execute an update (serialized)
       {:ok, count} = Transaction.update(txn, "INSERT DATA { <s> <p> <o> }")
 
-      # Execute a query (may use snapshot during concurrent update)
+      # Execute a query through the same serialized queue
       {:ok, results} = Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
 
   ## Error Handling
 
-  If an update fails partway through, changes are not applied (rollback).
-  RocksDB's WriteBatch ensures atomicity at the storage level.
+  Request-level atomicity is provided by the update executor's staged mutation
+  session. Dictionary allocation may precede the explicit-index commit and can
+  leave unused IDs after a failed request.
   """
 
   use GenServer
 
-  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.Query
@@ -98,8 +99,6 @@ defmodule TripleStore.Transaction do
   @type state :: %{
           db: db_ref(),
           dict_manager: dict_manager(),
-          update_in_progress: boolean(),
-          current_snapshot: reference() | nil,
           plan_cache: GenServer.server() | nil,
           stats_callback: (-> :ok) | nil
         }
@@ -166,15 +165,33 @@ defmodule TripleStore.Transaction do
   """
   @spec stop(manager()) :: :ok
   def stop(manager) do
-    GenServer.stop(manager)
+    case resolve_manager(manager) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid) do
+          try do
+            GenServer.stop(pid)
+          catch
+            :exit, _reason -> :ok
+          end
+        else
+          :ok
+        end
+
+      nil ->
+        :ok
+    end
   end
+
+  defp resolve_manager(manager) when is_pid(manager), do: manager
+  defp resolve_manager(manager) when is_atom(manager), do: Process.whereis(manager)
+  defp resolve_manager(_manager), do: nil
 
   @doc """
   Executes a SPARQL UPDATE operation.
 
   The operation is serialized through the transaction manager, ensuring
-  no concurrent updates. After successful completion, the plan cache
-  is invalidated.
+  no concurrent updates. After successful completion, the configured plan
+  cache is invalidated.
 
   ## Arguments
 
@@ -197,7 +214,7 @@ defmodule TripleStore.Transaction do
   @spec update(manager(), String.t(), keyword()) :: update_result()
   def update(manager, sparql, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:update, sparql}, timeout)
+    call_manager(manager, {:update, sparql}, timeout)
   end
 
   @doc """
@@ -220,14 +237,15 @@ defmodule TripleStore.Transaction do
   @spec execute_update(manager(), term(), keyword()) :: update_result()
   def execute_update(manager, ast, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:execute_update, ast}, timeout)
+    call_manager(manager, {:execute_update, ast}, timeout)
   end
 
   @doc """
   Executes a SPARQL query.
 
-  If an update is in progress, the query uses a snapshot for consistent reads.
-  Otherwise, reads directly from the database.
+  Queries use the same GenServer queue as updates. A query submitted while an
+  update is running waits for that request to commit or fail, then reads the
+  resulting committed store state.
 
   ## Arguments
 
@@ -245,7 +263,7 @@ defmodule TripleStore.Transaction do
   @spec query(manager(), String.t(), keyword()) :: query_result()
   def query(manager, sparql, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @query_timeout)
-    GenServer.call(manager, {:query, sparql}, timeout)
+    call_manager(manager, {:query, sparql}, timeout)
   end
 
   @doc """
@@ -266,7 +284,7 @@ defmodule TripleStore.Transaction do
   @spec insert(manager(), [{term(), term(), term()}], keyword()) :: update_result()
   def insert(manager, triples, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:insert, triples}, timeout)
+    call_manager(manager, {:insert, triples}, timeout)
   end
 
   @doc """
@@ -287,13 +305,21 @@ defmodule TripleStore.Transaction do
   @spec delete(manager(), [{term(), term(), term()}], keyword()) :: update_result()
   def delete(manager, triples, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @update_timeout)
-    GenServer.call(manager, {:delete, triples}, timeout)
+    call_manager(manager, {:delete, triples}, timeout)
+  end
+
+  defp call_manager(manager, message, timeout) do
+    GenServer.call(manager, message, timeout)
+  catch
+    :exit, reason -> {:error, {:transaction_unavailable, reason}}
   end
 
   @doc """
-  Returns whether an update is currently in progress.
+  Compatibility status function for the former in-progress flag.
 
-  Useful for debugging and monitoring.
+  Synchronous GenServer callbacks cannot answer this call while another request
+  is executing, so the historical state field was never observably `true`.
+  The function now returns `false` after reaching the coordinator queue.
   """
   @spec update_in_progress?(manager()) :: boolean()
   def update_in_progress?(manager) do
@@ -301,10 +327,12 @@ defmodule TripleStore.Transaction do
   end
 
   @doc """
-  Returns the current snapshot reference, if any.
+  Returns `nil` for compatibility with the former unused snapshot API.
 
-  Returns `nil` if no update is in progress.
+  Transaction updates no longer allocate a RocksDB snapshot. Coordinator reads
+  are serialized and the facade query API remains outside this queue.
   """
+  @deprecated "Transaction updates no longer allocate snapshots; this function always returns nil"
   @spec current_snapshot(manager()) :: reference() | nil
   def current_snapshot(manager) do
     GenServer.call(manager, :current_snapshot)
@@ -334,8 +362,6 @@ defmodule TripleStore.Transaction do
     state = %{
       db: db,
       dict_manager: dict_manager,
-      update_in_progress: false,
-      current_snapshot: nil,
       plan_cache: plan_cache,
       stats_callback: stats_callback
     }
@@ -383,12 +409,12 @@ defmodule TripleStore.Transaction do
 
   @impl true
   def handle_call(:update_in_progress?, _from, state) do
-    {:reply, state.update_in_progress, state}
+    {:reply, false, state}
   end
 
   @impl true
   def handle_call(:current_snapshot, _from, state) do
-    {:reply, state.current_snapshot, state}
+    {:reply, nil, state}
   end
 
   @impl true
@@ -398,14 +424,7 @@ defmodule TripleStore.Transaction do
   end
 
   @impl true
-  def terminate(_reason, state) do
-    # Release any active snapshot
-    if state.current_snapshot do
-      ErlangAdapter.release_snapshot(state.db, state.current_snapshot)
-    end
-
-    :ok
-  end
+  def terminate(_reason, _state), do: :ok
 
   @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
@@ -421,47 +440,27 @@ defmodule TripleStore.Transaction do
   # Internal Implementation
   # ===========================================================================
 
-  # Execute an update with proper isolation and cache invalidation
+  # Execute an update through the coordinator's serialized queue.
   defp execute_update_internal(ast, state) do
-    # Create snapshot for concurrent readers
-    snapshot_result = create_snapshot(state.db)
+    ctx = %{db: state.db, dict_manager: state.dict_manager}
 
-    case snapshot_result do
-      {:ok, snapshot} ->
-        try do
-          # Mark update in progress (not actually used here since we're synchronous,
-          # but could be exposed for monitoring)
-          ctx = %{db: state.db, dict_manager: state.dict_manager}
+    case UpdateExecutor.execute(ctx, ast) do
+      {:ok, count} when count > 0 ->
+        invalidate_cache(state.plan_cache)
+        call_stats_callback(state.stats_callback)
+        {:ok, count}
 
-          # Execute the update
-          result = UpdateExecutor.execute(ctx, ast)
-
-          # On success, invalidate cache and refresh stats
-          case result do
-            {:ok, count} when count > 0 ->
-              invalidate_cache(state.plan_cache)
-              call_stats_callback(state.stats_callback)
-              {:ok, count}
-
-            {:ok, 0} ->
-              # No changes, no need to invalidate
-              {:ok, 0}
-
-            {:error, _} = error ->
-              # Rollback is automatic - WriteBatch wasn't applied
-              error
-          end
-        after
-          # Always release snapshot
-          release_snapshot(state.db, snapshot)
-        end
+      {:ok, 0} ->
+        {:ok, 0}
 
       {:error, _} = error ->
+        # The update executor discards its staged session before commit or
+        # returns a tagged storage failure from the single commit boundary.
         error
     end
   end
 
-  # Execute a query, potentially using snapshot for isolation
+  # Execute a query after all earlier coordinator calls have completed.
   defp execute_query_internal(sparql, state) do
     ctx = %{db: state.db, dict_manager: state.dict_manager}
 
@@ -518,18 +517,6 @@ defmodule TripleStore.Transaction do
       other ->
         other
     end
-  end
-
-  # ===========================================================================
-  # Snapshot Management
-  # ===========================================================================
-
-  defp create_snapshot(db) do
-    ErlangAdapter.snapshot(db)
-  end
-
-  defp release_snapshot(db, snapshot) do
-    ErlangAdapter.release_snapshot(db, snapshot)
   end
 
   # ===========================================================================

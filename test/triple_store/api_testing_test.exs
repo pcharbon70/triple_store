@@ -542,8 +542,11 @@ defmodule TripleStore.APITestingTest do
         # Verify store structure matches documentation
         assert valid_db_handle?(store.db)
         assert is_pid(store.dict_manager)
-        assert store.transaction == nil
+        assert is_pid(store.transaction)
+        assert Process.alive?(store.transaction)
+        assert store.transaction_owner == :store
         assert store.path == path
+        assert store.schema == :triple
 
         :ok = TripleStore.close(store)
       after

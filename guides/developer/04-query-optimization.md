@@ -36,9 +36,10 @@ stats = PlanCache.stats()
 
 The cache normalizes query structure, has a configurable size and TTL, and
 evicts entries. A transaction invalidates a named plan cache when that
-coordinator has a `:plan_cache` configured. The facade's temporary update
-coordinator does not configure one, and direct loader/index mutations do not
-invalidate this cache. It stores plans, not query results.
+coordinator has a `:plan_cache` configured. The facade's store-owned
+coordinator is configured with the supervised `SPARQL.PlanCache`; external
+coordinators use their caller-supplied configuration. Direct loader/index
+mutations do not invalidate this cache. It stores plans, not query results.
 
 ## Result cache and correctness
 

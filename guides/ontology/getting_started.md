@@ -54,8 +54,8 @@ triple = {
 ~~~
 
 `insert/2`, `delete/2`, and loads are direct storage writes. SPARQL UPDATE uses
-`TripleStore.update/2` and a configured or temporary transaction coordinator.
-These paths do not share a single global lock.
+`TripleStore.update/2` and the coordinator created with the store. These paths
+do not share a single global lock.
 
 ## Reasoning
 

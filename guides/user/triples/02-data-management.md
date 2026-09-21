@@ -45,7 +45,8 @@ triple = {
 These direct facade mutations write storage batches without using
 `TripleStore.Transaction`. Successful changes invalidate materialized result
 caches for the open store, but direct writers do not share a store-wide lock
-with independently created transaction coordinators.
+with the store-owned transaction coordinator or independently created
+coordinators.
 
 ## Export
 

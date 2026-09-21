@@ -1490,9 +1490,9 @@ defmodule TripleStore.SPARQL.UpdateIntegrationTest do
       # Stop the transaction
       Transaction.stop(txn)
 
-      # Attempting to use it should fail gracefully
-      result = catch_exit(Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }"))
-      assert result != nil
+      # Attempting to use it returns a stable tagged error instead of exiting the caller.
+      assert {:error, {:transaction_unavailable, _reason}} =
+               Transaction.query(txn, "SELECT * WHERE { ?s ?p ?o }")
     end
 
     test "verify data integrity after interrupted operation", %{db: db, manager: manager} do

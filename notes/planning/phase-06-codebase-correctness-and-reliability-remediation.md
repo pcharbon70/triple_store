@@ -310,15 +310,15 @@ coordinator shared by every copy of one open store handle.
 Description: Specify how `open/2`, `close/1`, process links, caller exits, and
 multiple handle copies manage one transaction coordinator.
 
-- [ ] 2.1.1.1 Document coordinator ownership in the runtime lifecycle spec and
+- [x] 2.1.1.1 Document coordinator ownership in the runtime lifecycle spec and
   distinguish SPARQL update serialization from direct load/insert/delete paths.
-- [ ] 2.1.1.2 Decide whether the coordinator is linked directly to the opener or
+- [x] 2.1.1.2 Decide whether the coordinator is linked directly to the opener or
   owned by a small store supervisor; preserve the dictionary manager's lifecycle.
-- [ ] 2.1.1.3 Define open rollback when the coordinator fails after RocksDB or the
+- [x] 2.1.1.3 Define open rollback when the coordinator fails after RocksDB or the
   dictionary manager has started.
-- [ ] 2.1.1.4 Define close ordering, repeated-close behavior, and coordinator death
+- [x] 2.1.1.4 Define close ordering, repeated-close behavior, and coordinator death
   behavior before or during an update.
-- [ ] 2.1.1.5 Preserve explicit expert callers that supply their own transaction
+- [x] 2.1.1.5 Preserve explicit expert callers that supply their own transaction
   manager, with one documented precedence rule.
 
 #### Task 2.1.2: Start and stop one coordinator with the store
@@ -326,14 +326,14 @@ multiple handle copies manage one transaction coordinator.
 Description: Make the normal store handle carry a live coordinator and remove
 the per-call temporary-manager branch from public SPARQL updates.
 
-- [ ] 2.1.2.1 Start the coordinator during `open/2` after storage and dictionary
+- [x] 2.1.2.1 Start the coordinator during `open/2` after storage and dictionary
   initialization; include it in the returned store handle.
-- [ ] 2.1.2.2 Roll back already-started resources in reverse order when any open
+- [x] 2.1.2.2 Roll back already-started resources in reverse order when any open
   step fails.
-- [ ] 2.1.2.3 Route `TripleStore.update/2` through the store-owned coordinator.
-- [ ] 2.1.2.4 Stop the coordinator before closing dictionary/storage resources and
+- [x] 2.1.2.3 Route `TripleStore.update/2` through the store-owned coordinator.
+- [x] 2.1.2.4 Stop the coordinator before closing dictionary/storage resources and
   ensure in-flight calls receive a deterministic tagged failure.
-- [ ] 2.1.2.5 If temporary coordinators remain for compatibility, guard their
+- [x] 2.1.2.5 If temporary coordinators remain for compatibility, guard their
   cleanup with `try/after` and mark the path as expert-only.
 
 ### Section 2.2: Request-Level Mutation Session
@@ -348,15 +348,15 @@ Description: Represent pending explicit mutations and a read overlay for one
 parsed SPARQL Update request, including the metadata needed for authorization,
 counts, cache invalidation, and telemetry.
 
-- [ ] 2.2.1.1 Define an update-session type containing the base read view, pending
+- [x] 2.2.1.1 Define an update-session type containing the base read view, pending
   triple/quad puts and deletes, affected graphs, and operation results.
-- [ ] 2.2.1.2 Normalize mutations into canonical per-column-family keys using
+- [x] 2.2.1.2 Normalize mutations into canonical per-column-family keys using
   existing Index, QuadIndex, and adapter helpers.
-- [ ] 2.2.1.3 Implement overlay reads so a later operation observes earlier staged
+- [x] 2.2.1.3 Implement overlay reads so a later operation observes earlier staged
   inserts/deletes as required by SPARQL Update sequencing.
-- [ ] 2.2.1.4 Detect contradictory or duplicate staged mutations and preserve
+- [x] 2.2.1.4 Detect contradictory or duplicate staged mutations and preserve
   DELETE-before-INSERT semantics and documented affected counts.
-- [ ] 2.2.1.5 Keep dictionary allocation outside the explicit-index atomicity claim;
+- [x] 2.2.1.5 Keep dictionary allocation outside the explicit-index atomicity claim;
   document that a failed request may leave unused dictionary IDs.
 
 #### Task 2.2.2: Plan supported update operations without early commits
@@ -364,15 +364,15 @@ counts, cache invalidation, and telemetry.
 Description: Change data, MODIFY, and graph-management executors to append
 validated intents to the session rather than submitting independent batches.
 
-- [ ] 2.2.2.1 Convert INSERT DATA, DELETE DATA, and triple/quad MODIFY paths to
+- [x] 2.2.2.1 Convert INSERT DATA, DELETE DATA, and triple/quad MODIFY paths to
   staged intents.
-- [ ] 2.2.2.2 Convert COPY, MOVE, ADD, CLEAR, CREATE, DROP, LOAD, and supported
+- [x] 2.2.2.2 Convert COPY, MOVE, ADD, CLEAR, CREATE, DROP, LOAD, and supported
   graph operations while preserving sequential visibility and SILENT behavior.
-- [ ] 2.2.2.3 Resolve and authorize every graph target before adding its first
+- [x] 2.2.2.3 Resolve and authorize every graph target before adding its first
   mutation to the session.
-- [ ] 2.2.2.4 Propagate parse, lookup, conversion, authorization, and storage-plan
+- [x] 2.2.2.4 Propagate parse, lookup, conversion, authorization, and storage-plan
   failures as tagged errors that discard the entire session.
-- [ ] 2.2.2.5 Define explicit handling for any operation that cannot participate in
+- [x] 2.2.2.5 Define explicit handling for any operation that cannot participate in
   the staged model; reject unsupported combinations before mutation rather than
   silently weakening atomicity.
 
@@ -382,15 +382,22 @@ Description: Submit the accumulated mutations through one adapter batch and
 perform cache, statistics, and telemetry side effects only after that batch
 succeeds.
 
-- [ ] 2.2.3.1 Extend the adapter's supported mixed batch format only as needed to
+- [x] 2.2.3.1 Extend the adapter's supported mixed batch format only as needed to
   cover every touched explicit index and graph metadata column family.
-- [ ] 2.2.3.2 Submit one batch after all operations have planned successfully.
-- [ ] 2.2.3.3 On batch failure, return a tagged storage error and retain unchanged
+- [x] 2.2.3.2 Submit one batch after all operations have planned successfully.
+- [x] 2.2.3.3 On batch failure, return a tagged storage error and retain unchanged
   explicit indices, caches, statistics, and success telemetry.
-- [ ] 2.2.3.4 On success, invalidate plan/result caches and refresh statistics once
+- [x] 2.2.3.4 On success, invalidate plan/result caches and refresh statistics once
   using the accumulated affected-store/graph metadata.
-- [ ] 2.2.3.5 Replace the inaccurate “rollback is automatic” comment with the exact
+- [x] 2.2.3.5 Replace the inaccurate “rollback is automatic” comment with the exact
   request-level commit boundary.
+
+Section 2.2 evidence: `UpdateSession` exposes a private adapter-compatible
+overlay for point reads, folds, and iterators and canonicalizes the final state
+by column-family/key. `update_request_atomicity_test.exs` covers discarded
+triple and quad plans, injected final-batch failure, INSERT/DELETE ordering,
+staged MODIFY reads, and graph COPY visibility. The affected update suite passed
+170 tests with four existing exclusions.
 
 ### Section 2.3: Serialized Read Semantics and Snapshot Cleanup
 
@@ -404,16 +411,22 @@ Description: Retain the consistent serialized queue while eliminating the dead
 `current_snapshot` mechanism or deprecating it without claiming concurrent
 snapshot reads.
 
-- [ ] 2.3.1.1 Add a deterministic test proving a query through the same
+- [x] 2.3.1.1 Add a deterministic test proving a query through the same
   coordinator waits for an in-progress staged update and sees only the committed
   pre- or post-request state.
-- [ ] 2.3.1.2 Remove snapshot creation/release from synchronous update execution.
-- [ ] 2.3.1.3 Deprecate `current_snapshot/1` with a documented compatibility period,
+- [x] 2.3.1.2 Remove snapshot creation/release from synchronous update execution.
+- [x] 2.3.1.3 Deprecate `current_snapshot/1` with a documented compatibility period,
   or redefine it only if a real snapshot-aware read API is implemented.
-- [ ] 2.3.1.4 Remove unused `update_in_progress` state if it remains permanently
+- [x] 2.3.1.4 Remove unused `update_in_progress` state if it remains permanently
   false, or update state transitions if monitoring callers require it.
-- [ ] 2.3.1.5 Update module docs, public lifecycle specs, and the transaction
+- [x] 2.3.1.5 Update module docs, public lifecycle specs, and the transaction
   contract to describe serialized reads and the remaining direct-write boundary.
+
+Section 2.3 evidence: `Transaction` no longer creates update snapshots or stores
+unobservable progress/snapshot fields. `current_snapshot/1` is deprecated and
+returns `nil` after reaching the serialized queue. A commit-start telemetry
+barrier deterministically holds an update while a transaction query is queued;
+the query completes only after release and observes the committed request.
 
 ### Section 2.4: Integration Tests
 
@@ -425,17 +438,17 @@ failure atomicity, and serialized visibility through public and expert APIs.
 Description: Test successful and failed multi-operation requests against every
 explicit index and under controlled concurrent access without timing sleeps.
 
-- [ ] 2.4.1.1 Execute a successful first operation followed by a deterministic
+- [x] 2.4.1.1 Execute a successful first operation followed by a deterministic
   planning failure; assert all explicit indices remain byte-for-byte unchanged.
-- [ ] 2.4.1.2 Inject final batch failure and assert the same unchanged state,
+- [x] 2.4.1.2 Inject final batch failure and assert the same unchanged state,
   unchanged cache generation, and failure telemetry.
-- [ ] 2.4.1.3 Verify a later operation reads an earlier staged insert/delete and the
+- [x] 2.4.1.3 Verify a later operation reads an earlier staged insert/delete and the
   final result matches sequential SPARQL Update semantics.
-- [ ] 2.4.1.4 Run concurrent public updates against one store and assert they pass
+- [x] 2.4.1.4 Run concurrent public updates against one store and assert they pass
   through one coordinator in deterministic order.
-- [ ] 2.4.1.5 Run transaction queries during an update using barriers; assert no
+- [x] 2.4.1.5 Run transaction queries during an update using barriers; assert no
   partial multi-index or intermediate multi-operation state is observable.
-- [ ] 2.4.1.6 Reopen the store and verify triple and quad indices, graph metadata,
+- [x] 2.4.1.6 Reopen the store and verify triple and quad indices, graph metadata,
   and result-cache invalidation remain coherent.
 
 #### Task 2.4.2: Pass the Phase 2 quality gate
@@ -443,14 +456,28 @@ explicit index and under controlled concurrent access without timing sleeps.
 Description: Establish traceable evidence for the transaction requirements
 before security and persisted-data changes build on the new error behavior.
 
-- [ ] 2.4.2.1 Run transaction, update executor, MODIFY, graph management,
+- [x] 2.4.2.1 Run transaction, update executor, MODIFY, graph management,
   COPY/MOVE/ADD, cache invalidation, and concurrency suites.
-- [ ] 2.4.2.2 Run `SCN-008` conformance coverage for triple and quad schemas.
-- [ ] 2.4.2.3 Run strict compilation, formatting, and affected Credo checks.
-- [ ] 2.4.2.4 Update `REQ-TXN-*`, `AC-RT-07`, scenario evidence, user/developer
+- [x] 2.4.2.2 Run `SCN-008` conformance coverage for triple and quad schemas.
+- [x] 2.4.2.3 Run strict compilation, formatting, and affected Credo checks.
+- [x] 2.4.2.4 Update `REQ-TXN-*`, `AC-RT-07`, scenario evidence, user/developer
   guides, and facade examples to match the implemented coordinator model.
-- [ ] 2.4.2.5 Record remaining isolation limits for direct loader/insert/delete
+- [x] 2.4.2.5 Record remaining isolation limits for direct loader/insert/delete
   paths without representing them as transaction-backed operations.
+
+Section 2.4 evidence: the dedicated `SCN-008` module covers failed final
+commit telemetry and cache generation, deterministic public-update ordering,
+staged-state invisibility, supervised plan-cache invalidation, result-cache
+invalidation, reopen consistency, every explicit triple/quad index, and named
+graph discovery. The complete affected gate passed 297 tests with zero failures
+and four existing exclusions. The default suite completed 25 doctests, 10
+properties, and 6,717 tests with zero failures, 53 skips, and 345 excluded tests.
+Strict compilation, changed-file formatting, strict Credo for the four core
+transaction/update modules, specs governance, guides governance, code-doc
+validation, conformance validation, and Dialyzer passed. Repository-wide
+formatting remains blocked by the same seven pre-existing files recorded in
+Phase 1. Direct loader, insert, delete, and facade-query paths remain outside
+the coordinator, and unsupported `LOAD` fails before explicit-index commit.
 
 ---
 

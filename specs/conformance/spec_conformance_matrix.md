@@ -25,4 +25,14 @@ Every `AC-*` entry in an area spec SHOULD map to at least one `REQ-*` family and
 
 ## Current Evidence Limits
 
-Matrix coverage means a requirement is mapped, not that it is implemented or verified. In particular, `SCN-008` retains open transaction coordination, snapshot-read, and multi-operation rollback gaps described in the [transaction contract](../contracts/transaction_and_isolation_contract.md#current-implementation-status). `SCN-009` and `SCN-010` must distinguish the local facade's in-memory result from persisted graph-aware reasoning, as described in the [reasoning contract](../contracts/reasoning_contract.md#current-implementation-status). For `SCN-016`, evaluate generic graph-oriented and dedicated dataset-preserving I/O separately.
+Matrix coverage means a requirement is mapped, not that it is implemented or
+verified. `SCN-008` has executable triple- and quad-schema coverage for the
+store-owned update queue, staged request commit, failure atomicity, cache
+generation, and reopen coherence. Its [transaction
+contract](../contracts/transaction_and_isolation_contract.md#current-implementation-status)
+still excludes direct loaders, insert/delete calls, and facade queries from the
+coordinator boundary. `SCN-009` and `SCN-010` must distinguish the local
+facade's in-memory result from persisted graph-aware reasoning, as described in
+the [reasoning contract](../contracts/reasoning_contract.md#current-implementation-status).
+For `SCN-016`, evaluate generic graph-oriented and dedicated
+dataset-preserving I/O separately.

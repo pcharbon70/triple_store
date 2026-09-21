@@ -11,24 +11,23 @@ lifecycles.
 The application uses a `:one_for_one` supervisor for the query-cache registry,
 `SPARQL.PlanCache`, and `Snapshot`. Opening a database is not equivalent to
 adding every store-specific helper to that supervisor. `TripleStore.open/2`
-starts the storage adapter and dictionary manager and returns their references
-in a handle. Close the handle with `TripleStore.close/1`.
+starts the storage adapter, dictionary manager, and one store-owned transaction
+coordinator and returns their references in a handle. Close the handle with
+`TripleStore.close/1`.
 
 Optional statistics, result-cache, metrics, Prometheus, and scheduled-backup
 processes must be started and stopped by the caller or its supervisor.
 
 ## Coordination boundaries
 
-`Transaction` serializes requests sent to one coordinator. A facade update uses
-the coordinator in the handle or starts a temporary one for that call. Separate
-temporary coordinators, direct loader writes, and direct insert/delete calls do
-not share a global lock.
+`Transaction` serializes requests sent to one coordinator. `open/2` creates one
+store-owned coordinator and every facade update for that handle uses it. Direct
+loader writes and direct insert/delete calls do not share that queue.
 
-Update execution is synchronous, but its created snapshot is not injected into
-the query context. A request containing several update operations can commit
-multiple storage batches; a later failure does not imply rollback of every
-earlier batch. Treat these as current isolation boundaries when designing
-concurrent callers.
+Update execution is synchronous. A parsed request stages explicit-index
+mutations behind the coordinator, reads through that overlay for later
+operations, and publishes one mixed batch after all operations validate.
+Dictionary allocation remains outside that explicit-index atomic boundary.
 
 ## Resource ownership
 

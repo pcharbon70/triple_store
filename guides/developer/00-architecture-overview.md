@@ -8,9 +8,11 @@ transactions, and reasoning remain in Elixir.
 ## Runtime entry points
 
 `TripleStore.open/2` validates the path and schema, opens
-`Backend.RocksDB.ErlangAdapter`, and starts a dictionary manager. The returned
-handle contains `db`, `dict_manager`, `transaction`, `path`, and `schema`.
-`transaction` is `nil` unless the caller supplies a coordinator.
+`Backend.RocksDB.ErlangAdapter`, then starts a dictionary manager and a
+store-owned transaction coordinator. The returned handle contains `db`,
+`dict_manager`, `transaction`, `transaction_owner`, `path`, and `schema`.
+Callers may instead pass `transaction: {:external, manager}`; that coordinator
+remains caller-owned.
 
 The application supervisor starts:
 
@@ -39,10 +41,9 @@ algebra translation, optimizer, and executor. Execution uses dictionary IDs and
 index scans before materializing RDF terms for the result.
 
 The facade's `insert/2`, `delete/2`, and load functions write directly through
-the loader. `update/2` uses the handle's transaction coordinator or starts a
-temporary coordinator. `query/3` calls the query pipeline directly. These paths
-do not share one global lock, and the snapshot created during an update is not
-passed into the query context.
+the loader. `update/2` uses the store-owned transaction coordinator created by
+`open/2`. `query/3` calls the query pipeline directly. These paths do not share
+one global lock.
 
 Derived facts use the separate `derived` persistence surface. Deletion,
 backup, export, and incremental reasoning must preserve the distinction between
