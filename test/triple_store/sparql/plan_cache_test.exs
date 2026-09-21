@@ -11,8 +11,14 @@ defmodule TripleStore.SPARQL.PlanCacheTest do
   setup do
     name = unique_name()
     {:ok, pid} = PlanCache.start_link(name: name, max_size: 10)
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> stop_if_alive(pid) end)
     %{name: name, pid: pid}
+  end
+
+  defp stop_if_alive(pid) do
+    if Process.alive?(pid), do: GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 
   # ===========================================================================

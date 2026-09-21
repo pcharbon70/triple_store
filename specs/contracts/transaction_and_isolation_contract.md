@@ -7,11 +7,13 @@ This contract defines the normative write-coordination behavior for `TripleStore
 - `REQ-TXN-001`: Mutating SPARQL update paths MUST preserve single-writer coordination semantics.
 - `REQ-TXN-002`: Update execution MUST use atomic write fanout at the storage boundary.
 - `REQ-TXN-003`: Reads concurrent with updates through the transaction coordinator MUST observe a consistent store view rather than partial fanout.
-- `REQ-TXN-004`: Temporary transaction coordinators MUST preserve the same semantics as a managed long-lived coordinator.
+- `REQ-TXN-004`: A caller-supplied coordinator configured at store open MUST preserve the same serialized update semantics as the managed coordinator and MUST remain caller-owned.
 - `REQ-TXN-005`: Failed updates MUST return tagged errors and MUST NOT leave partial explicit-index mutation behind.
 - `REQ-TXN-006`: Update completion MUST trigger plan-cache invalidation and SHOULD trigger result-cache invalidation or statistics refresh behavior when relevant.
 - `REQ-TXN-007`: Public mutation surfaces MUST document their coordination differences explicitly; direct load, insert, and delete paths MUST NOT be misrepresented as equivalent to transaction-backed SPARQL update isolation.
-- `REQ-TXN-008`: Snapshot-oriented read support MUST remain subordinate to the single-writer model and MUST stay explicit at the transaction-manager boundary.
+- `REQ-TXN-008`: Transaction APIs MUST NOT claim snapshot isolation unless the
+  query execution context actually consumes the snapshot; storage snapshot
+  support MUST remain an explicit, separately owned surface.
 - `REQ-TXN-009`: Transaction timeouts MUST be explicit and separately configurable for reads and writes when the coordinator owns those flows.
 - `REQ-TXN-010`: `Transaction.query/3` MAY provide snapshot-aware reads, but `TripleStore.query/3` MUST NOT be specified as implicitly using that coordinator.
 - `REQ-TXN-011`: Transaction coordination semantics MUST remain Elixir-owned even when underlying storage mutation is delegated to RocksDB through the adapter layer.
@@ -41,5 +43,12 @@ The requirements above remain normative targets; this section describes observed
 - Result-cache, statistics-cache, and request-level success telemetry effects
   are published only after the final batch succeeds. The coordinator performs
   its configured plan-cache invalidation and statistics callback once for the
-  successful request.
-- `SCN-008` must be assessed with these boundaries explicit. Documentation validation and individual batch tests do not establish request-wide isolation or rollback.
+  successful request. The managed store coordinator uses the supervised
+  `SPARQL.PlanCache`; external coordinators retain caller-supplied cache
+  configuration.
+- `test/triple_store/phase_2_transaction_integration_test.exs` exercises
+  `SCN-008` for both schemas. It verifies failed-batch cache and index state,
+  public update ordering, staged-state invisibility, successful cache
+  invalidation, and reopen coherence. The direct loader, insert, delete, and
+  facade-query paths remain outside the coordinator; those boundaries prevent
+  describing the whole store as globally transaction-isolated.

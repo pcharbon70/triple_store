@@ -109,7 +109,9 @@ defmodule TripleStore do
     returns a PID-backed handle)
   - `:dict_manager` - Dictionary manager PID for term encoding/decoding
   - `:transaction` - Store-owned transaction manager used by public SPARQL updates
+  - `:transaction_owner` - `:store` for the default manager or `:external` for a caller-owned manager
   - `:path` - Path to the database directory
+  - `:schema` - Persisted `:triple` or `:quad` storage schema
 
   ## Thread Safety
 
@@ -168,10 +170,11 @@ defmodule TripleStore do
   alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.GraphReasoningConfig
-  alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningConfig
+  alias TripleStore.Reasoner.ReasoningProfile
   alias TripleStore.Reasoner.ReasoningStatus
   alias TripleStore.Reasoner.SemiNaive
+  alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.Query
   alias TripleStore.Statistics
   alias TripleStore.Telemetry
@@ -358,7 +361,7 @@ defmodule TripleStore do
   end
 
   defp start_store_transaction(db, dict_manager, :managed) do
-    case Transaction.start_link(db: db, dict_manager: dict_manager) do
+    case Transaction.start_link(db: db, dict_manager: dict_manager, plan_cache: PlanCache) do
       {:ok, transaction} -> {:ok, transaction, :store}
       {:error, _} = error -> error
     end
@@ -1659,7 +1662,13 @@ defmodule TripleStore do
   Executes a SPARQL UPDATE operation.
 
   Supports INSERT DATA, DELETE DATA, INSERT/DELETE WHERE, and other
-  SPARQL Update operations.
+  SPARQL Update operations. Operations in one request read a staged sequential
+  view and publish their explicit-index mutations in one final batch. A
+  planning, authorization, or final storage error leaves explicit indices
+  unchanged; dictionary planning can still allocate IDs that remain unused.
+
+  Calls are serialized through the coordinator in the store handle. Direct
+  `insert/2`, `delete/2`, and load APIs do not share that coordinator.
 
   ## Arguments
 
@@ -1679,6 +1688,12 @@ defmodule TripleStore do
       {:ok, count} = TripleStore.update(store, \"""
         DELETE { ?s ?p ?o }
         WHERE { ?s a <http://ex.org/Deprecated> ; ?p ?o }
+      \""")
+
+      # Later operations in the request observe earlier staged changes.
+      {:ok, 2} = TripleStore.update(store, \"""
+        INSERT DATA { <http://ex.org/s> <http://ex.org/p> "value" } ;
+        DELETE DATA { <http://ex.org/s> <http://ex.org/p> "value" }
       \""")
 
   """

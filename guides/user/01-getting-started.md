@@ -1,9 +1,9 @@
 # Getting Started
 
 TripleStore is an embedded Elixir/OTP library. `TripleStore.open/2` creates or
-opens a RocksDB database and starts a dictionary manager owned by the caller.
-The returned handle contains `:db`, `:dict_manager`, `:transaction`, `:path`,
-and `:schema`.
+opens a RocksDB database, starts a dictionary manager, and starts a store-owned
+transaction coordinator. The returned handle contains `:db`, `:dict_manager`,
+`:transaction`, `:transaction_owner`, `:path`, and `:schema`.
 
 ## Choose a persisted schema
 

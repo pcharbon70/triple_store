@@ -46,15 +46,15 @@ insert/delete/load
   -> one batch across all explicit indices
 
 SPARQL update
-  -> UpdateExecutor through a configured or temporary Transaction
-  -> pattern evaluation and authorization
-  -> one or more storage batches
-  -> cache invalidation after supported successful mutations
+  -> UpdateExecutor through the store-owned or configured Transaction
+  -> sequential pattern evaluation and authorization against a staged view
+  -> one mixed storage batch after every operation succeeds
+  -> cache invalidation after the commit succeeds
 ~~~
 
 Direct writes and independent transaction coordinators do not share a global
-lock. A multi-operation SPARQL request is not guaranteed to roll back earlier
-batches when a later operation fails.
+lock. One SPARQL request is atomic for explicit-index mutations, but dictionary
+allocation remains outside that commit and may leave unused IDs after failure.
 
 Dataset import uses dedicated N-Quads or TriG loader functions. The generic
 facade load path is graph-oriented and must not be used to claim dataset graph

@@ -90,7 +90,7 @@ defmodule TripleStore.RemediationIntegrationTest do
     assert {:ok, [:current]} =
              Cache.get(:protected_query, name: cache_name, store_id: store.store_id)
 
-    assert {:error, :injected} = execute_variable_modify(editor_ctx)
+    assert {:error, {:storage, :injected}} = execute_variable_modify(editor_ctx)
     assert before == index_contents(store.db)
 
     assert {:ok, [:current]} =

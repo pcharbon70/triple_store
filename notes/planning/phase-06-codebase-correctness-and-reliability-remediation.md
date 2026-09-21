@@ -438,17 +438,17 @@ failure atomicity, and serialized visibility through public and expert APIs.
 Description: Test successful and failed multi-operation requests against every
 explicit index and under controlled concurrent access without timing sleeps.
 
-- [ ] 2.4.1.1 Execute a successful first operation followed by a deterministic
+- [x] 2.4.1.1 Execute a successful first operation followed by a deterministic
   planning failure; assert all explicit indices remain byte-for-byte unchanged.
-- [ ] 2.4.1.2 Inject final batch failure and assert the same unchanged state,
+- [x] 2.4.1.2 Inject final batch failure and assert the same unchanged state,
   unchanged cache generation, and failure telemetry.
-- [ ] 2.4.1.3 Verify a later operation reads an earlier staged insert/delete and the
+- [x] 2.4.1.3 Verify a later operation reads an earlier staged insert/delete and the
   final result matches sequential SPARQL Update semantics.
-- [ ] 2.4.1.4 Run concurrent public updates against one store and assert they pass
+- [x] 2.4.1.4 Run concurrent public updates against one store and assert they pass
   through one coordinator in deterministic order.
-- [ ] 2.4.1.5 Run transaction queries during an update using barriers; assert no
+- [x] 2.4.1.5 Run transaction queries during an update using barriers; assert no
   partial multi-index or intermediate multi-operation state is observable.
-- [ ] 2.4.1.6 Reopen the store and verify triple and quad indices, graph metadata,
+- [x] 2.4.1.6 Reopen the store and verify triple and quad indices, graph metadata,
   and result-cache invalidation remain coherent.
 
 #### Task 2.4.2: Pass the Phase 2 quality gate
@@ -456,14 +456,28 @@ explicit index and under controlled concurrent access without timing sleeps.
 Description: Establish traceable evidence for the transaction requirements
 before security and persisted-data changes build on the new error behavior.
 
-- [ ] 2.4.2.1 Run transaction, update executor, MODIFY, graph management,
+- [x] 2.4.2.1 Run transaction, update executor, MODIFY, graph management,
   COPY/MOVE/ADD, cache invalidation, and concurrency suites.
-- [ ] 2.4.2.2 Run `SCN-008` conformance coverage for triple and quad schemas.
-- [ ] 2.4.2.3 Run strict compilation, formatting, and affected Credo checks.
-- [ ] 2.4.2.4 Update `REQ-TXN-*`, `AC-RT-07`, scenario evidence, user/developer
+- [x] 2.4.2.2 Run `SCN-008` conformance coverage for triple and quad schemas.
+- [x] 2.4.2.3 Run strict compilation, formatting, and affected Credo checks.
+- [x] 2.4.2.4 Update `REQ-TXN-*`, `AC-RT-07`, scenario evidence, user/developer
   guides, and facade examples to match the implemented coordinator model.
-- [ ] 2.4.2.5 Record remaining isolation limits for direct loader/insert/delete
+- [x] 2.4.2.5 Record remaining isolation limits for direct loader/insert/delete
   paths without representing them as transaction-backed operations.
+
+Section 2.4 evidence: the dedicated `SCN-008` module covers failed final
+commit telemetry and cache generation, deterministic public-update ordering,
+staged-state invisibility, supervised plan-cache invalidation, result-cache
+invalidation, reopen consistency, every explicit triple/quad index, and named
+graph discovery. The complete affected gate passed 297 tests with zero failures
+and four existing exclusions. The default suite completed 25 doctests, 10
+properties, and 6,717 tests with zero failures, 53 skips, and 345 excluded tests.
+Strict compilation, changed-file formatting, strict Credo for the four core
+transaction/update modules, specs governance, guides governance, code-doc
+validation, conformance validation, and Dialyzer passed. Repository-wide
+formatting remains blocked by the same seven pre-existing files recorded in
+Phase 1. Direct loader, insert, delete, and facade-query paths remain outside
+the coordinator, and unsupported `LOAD` fails before explicit-index commit.
 
 ---
 

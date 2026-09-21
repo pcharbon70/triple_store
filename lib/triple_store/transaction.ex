@@ -40,8 +40,10 @@ defmodule TripleStore.Transaction do
 
   ## Plan Cache Integration
 
-  After successful writes, the plan cache is automatically invalidated
-  to ensure query plans reflect the updated statistics.
+  After successful writes, the configured plan cache is invalidated to ensure
+  query plans reflect the updated statistics. The store-owned coordinator uses
+  the application-supervised plan cache; expert coordinators may omit or
+  replace it.
 
   ## Usage
 
@@ -188,8 +190,8 @@ defmodule TripleStore.Transaction do
   Executes a SPARQL UPDATE operation.
 
   The operation is serialized through the transaction manager, ensuring
-  no concurrent updates. After successful completion, the plan cache
-  is invalidated.
+  no concurrent updates. After successful completion, the configured plan
+  cache is invalidated.
 
   ## Arguments
 

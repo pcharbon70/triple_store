@@ -42,8 +42,9 @@ and rejects the full request before explicit-index commit.
 
 Successful supported updates invalidate every active named materialized-result
 cache for the affected open store. Failed and denied writes do not invalidate a
-valid result. A transaction invalidates a plan cache only when that coordinator
-was started with its `:plan_cache` option.
+valid result. The managed coordinator also invalidates the application's
+supervised plan cache after a successful request with mutations. An external
+coordinator invalidates the plan cache configured in its `:plan_cache` option.
 
 Explicit updates do not automatically perform a complete reasoning-maintenance
 cycle.

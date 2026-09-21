@@ -11,8 +11,9 @@ lifecycles.
 The application uses a `:one_for_one` supervisor for the query-cache registry,
 `SPARQL.PlanCache`, and `Snapshot`. Opening a database is not equivalent to
 adding every store-specific helper to that supervisor. `TripleStore.open/2`
-starts the storage adapter and dictionary manager and returns their references
-in a handle. Close the handle with `TripleStore.close/1`.
+starts the storage adapter, dictionary manager, and one store-owned transaction
+coordinator and returns their references in a handle. Close the handle with
+`TripleStore.close/1`.
 
 Optional statistics, result-cache, metrics, Prometheus, and scheduled-backup
 processes must be started and stopped by the caller or its supervisor.

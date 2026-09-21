@@ -218,7 +218,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
           staged_ctx = UpdateSession.context(session, ctx)
 
           case execute_operations(staged_ctx, operations) do
-            {:ok, count} -> commit_request(session, ctx.db, operations, count)
+            {:ok, count} -> commit_request(session, ctx.db, count)
             {:error, _} = error -> error
           end
         after
@@ -239,7 +239,7 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
     end)
   end
 
-  defp commit_request(session, base_db, operations, count) do
+  defp commit_request(session, base_db, count) do
     summary = UpdateSession.summary(session)
     start_time = System.monotonic_time()
 
@@ -261,8 +261,8 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
       {:ok, %{mutation_count: 0}} ->
         {:ok, count}
 
-      {:ok, _summary} ->
-        publish_commit_side_effects(base_db, operations)
+      {:ok, committed_summary} ->
+        publish_commit_side_effects(base_db, committed_summary)
         {:ok, count}
 
       {:error, _} = error ->
@@ -273,10 +273,13 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   defp commit_status({:ok, _summary}), do: :ok
   defp commit_status({:error, _reason}), do: :error
 
-  defp publish_commit_side_effects(base_db, operations) do
+  defp publish_commit_side_effects(base_db, summary) do
     Helpers.invalidate_result_caches(base_db)
-    invalidate_cache_for_operations(operations)
-    Statistics.invalidate_all_quad_cache(base_db)
+
+    Enum.each(summary.affected_graphs, fn graph_id ->
+      Statistics.invalidate_quad_cache(base_db, graph_id)
+    end)
+
     :ok
   end
 

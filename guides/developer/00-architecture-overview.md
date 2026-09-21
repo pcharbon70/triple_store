@@ -8,9 +8,11 @@ transactions, and reasoning remain in Elixir.
 ## Runtime entry points
 
 `TripleStore.open/2` validates the path and schema, opens
-`Backend.RocksDB.ErlangAdapter`, and starts a dictionary manager. The returned
-handle contains `db`, `dict_manager`, `transaction`, `path`, and `schema`.
-`transaction` is `nil` unless the caller supplies a coordinator.
+`Backend.RocksDB.ErlangAdapter`, then starts a dictionary manager and a
+store-owned transaction coordinator. The returned handle contains `db`,
+`dict_manager`, `transaction`, `transaction_owner`, `path`, and `schema`.
+Callers may instead pass `transaction: {:external, manager}`; that coordinator
+remains caller-owned.
 
 The application supervisor starts:
 
