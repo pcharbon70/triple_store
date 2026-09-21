@@ -321,7 +321,7 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       assert Transaction.update_in_progress?(txn) == false
-      assert Transaction.current_snapshot(txn) == nil
+      assert apply(Transaction, :current_snapshot, [txn]) == nil
 
       Transaction.stop(txn)
     end
@@ -430,14 +430,12 @@ defmodule TripleStore.TransactionTest do
     end
   end
 
-  describe "snapshot isolation" do
-    test "creates and releases snapshots during updates", %{db: db, manager: manager} do
+  describe "serialized read compatibility" do
+    test "updates do not retain unused snapshot state", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      # Before update
-      assert Transaction.current_snapshot(txn) == nil
+      assert apply(Transaction, :current_snapshot, [txn]) == nil
 
-      # Perform update (snapshot is created and released within the call)
       {:ok, 1} =
         Transaction.update(txn, """
           INSERT DATA {
@@ -445,8 +443,9 @@ defmodule TripleStore.TransactionTest do
           }
         """)
 
-      # After update (snapshot should be released)
-      assert Transaction.current_snapshot(txn) == nil
+      assert apply(Transaction, :current_snapshot, [txn]) == nil
+      refute Map.has_key?(:sys.get_state(txn), :current_snapshot)
+      refute Map.has_key?(:sys.get_state(txn), :update_in_progress)
 
       Transaction.stop(txn)
     end

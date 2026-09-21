@@ -411,16 +411,22 @@ Description: Retain the consistent serialized queue while eliminating the dead
 `current_snapshot` mechanism or deprecating it without claiming concurrent
 snapshot reads.
 
-- [ ] 2.3.1.1 Add a deterministic test proving a query through the same
+- [x] 2.3.1.1 Add a deterministic test proving a query through the same
   coordinator waits for an in-progress staged update and sees only the committed
   pre- or post-request state.
-- [ ] 2.3.1.2 Remove snapshot creation/release from synchronous update execution.
-- [ ] 2.3.1.3 Deprecate `current_snapshot/1` with a documented compatibility period,
+- [x] 2.3.1.2 Remove snapshot creation/release from synchronous update execution.
+- [x] 2.3.1.3 Deprecate `current_snapshot/1` with a documented compatibility period,
   or redefine it only if a real snapshot-aware read API is implemented.
-- [ ] 2.3.1.4 Remove unused `update_in_progress` state if it remains permanently
+- [x] 2.3.1.4 Remove unused `update_in_progress` state if it remains permanently
   false, or update state transitions if monitoring callers require it.
-- [ ] 2.3.1.5 Update module docs, public lifecycle specs, and the transaction
+- [x] 2.3.1.5 Update module docs, public lifecycle specs, and the transaction
   contract to describe serialized reads and the remaining direct-write boundary.
+
+Section 2.3 evidence: `Transaction` no longer creates update snapshots or stores
+unobservable progress/snapshot fields. `current_snapshot/1` is deprecated and
+returns `nil` after reaching the serialized queue. A commit-start telemetry
+barrier deterministically holds an update while a transaction query is queued;
+the query completes only after release and observes the committed request.
 
 ### Section 2.4: Integration Tests
 

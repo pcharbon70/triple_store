@@ -240,7 +240,24 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
   end
 
   defp commit_request(session, base_db, operations, count) do
-    case UpdateSession.commit(session) do
+    summary = UpdateSession.summary(session)
+    start_time = System.monotonic_time()
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :commit, :start],
+      %{system_time: System.system_time(), mutation_count: summary.mutation_count},
+      %{db: base_db}
+    )
+
+    result = UpdateSession.commit(session)
+
+    :telemetry.execute(
+      [:triple_store, :sparql, :update, :commit, :stop],
+      %{duration: System.monotonic_time() - start_time, mutation_count: summary.mutation_count},
+      %{db: base_db, status: commit_status(result)}
+    )
+
+    case result do
       {:ok, %{mutation_count: 0}} ->
         {:ok, count}
 
@@ -252,6 +269,9 @@ defmodule TripleStore.SPARQL.UpdateExecutor do
         error
     end
   end
+
+  defp commit_status({:ok, _summary}), do: :ok
+  defp commit_status({:error, _reason}), do: :error
 
   defp publish_commit_side_effects(base_db, operations) do
     Helpers.invalidate_result_caches(base_db)
