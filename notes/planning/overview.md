@@ -155,3 +155,5 @@ spargebra = "0.2"
 - [Phase 4: OWL 2 RL Reasoning](phase-04-owl2rl-reasoning.md)
 - [Phase 5: Production Hardening](phase-05-production-hardening.md)
 - [Phase 5 Companion: Dialyzer Remediation](phase-05-dialyzer-remediation.md)
+- [Phase 5 Companion: Correctness and Authorization Remediation](phase-05-correctness-remediation.md)
+- [Phase 6 Companion: Codebase Correctness and Reliability Remediation](phase-06-codebase-correctness-and-reliability-remediation.md)
