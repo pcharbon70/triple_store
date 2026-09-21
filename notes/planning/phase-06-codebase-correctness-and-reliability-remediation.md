@@ -8,7 +8,7 @@ The plan follows the repository's phase, section, task, and sub-task pattern.
 Phase, section, and task counts reflect implementation dependencies rather than
 a fixed template. Creating this plan does not implement or close a finding.
 
-**Status:** Planned.
+**Status:** Phase 1 complete; Phases 2-4 planned.
 
 Source review:
 [2026-09-21 entire-codebase review](../../.spec/reviews/2026-09-21T05-30-49-0400-parallel-code-review-entire-codebase.md).
@@ -238,15 +238,15 @@ transaction architecture changes begin.
 Description: Validate that planner internals compose with the parser, optimizer,
 executor, dictionary, indices, authorization hooks, and result materialization.
 
-- [ ] 1.4.1.1 Run the complete `quad_leapfrog_test.exs` and
+- [x] 1.4.1.1 Run the complete `quad_leapfrog_test.exs` and
   `executor_quad_integration_test.exs` suites.
-- [ ] 1.4.1.2 Run graph query, GRAPH clause, query authorization, and result-stream
+- [x] 1.4.1.2 Run graph query, GRAPH clause, query authorization, and result-stream
   integration tests for default and named graphs.
-- [ ] 1.4.1.3 Run COPY/MOVE/ADD and update authorization tests that previously
+- [x] 1.4.1.3 Run COPY/MOVE/ADD and update authorization tests that previously
   failed in binding conversion.
-- [ ] 1.4.1.4 Run iterator lifetime tests with exhaustion, early halt, caller exit,
+- [x] 1.4.1.4 Run iterator lifetime tests with exhaustion, early halt, caller exit,
   and construction failure.
-- [ ] 1.4.1.5 Compare Leapfrog and reference execution results for a matrix of
+- [x] 1.4.1.5 Compare Leapfrog and reference execution results for a matrix of
   bound positions, graph IDs, empty datasets, and duplicate matches.
 
 #### Task 1.4.2: Pass the Phase 1 quality gate
@@ -254,14 +254,42 @@ executor, dictionary, indices, authorization hooks, and result materialization.
 Description: Establish a clean query baseline and synchronized contract evidence
 for downstream transaction work.
 
-- [ ] 1.4.2.1 Run strict compilation and formatting checks.
-- [ ] 1.4.2.2 Run all query, update authorization, and graph-management tests.
-- [ ] 1.4.2.3 Run the default suite and confirm the 36-review-failure baseline is
+- [x] 1.4.2.1 Run strict compilation and formatting checks.
+- [x] 1.4.2.2 Run all query, update authorization, and graph-management tests.
+- [x] 1.4.2.3 Run the default suite and confirm the 36-review-failure baseline is
   eliminated or record unrelated failures with reproducible evidence.
-- [ ] 1.4.2.4 Update query specs, acceptance criteria, and conformance mappings for
+- [x] 1.4.2.4 Update query specs, acceptance criteria, and conformance mappings for
   the canonical binding and iterator-plan contracts.
-- [ ] 1.4.2.5 Record test commands, counts, skipped/excluded tags, and remaining
+- [x] 1.4.2.5 Record test commands, counts, skipped/excluded tags, and remaining
   risks in the phase pull request.
+
+Phase 1 evidence:
+
+- The focused query, graph, authorization, update, reference-matrix, and
+  lifetime-safety gate completed 276 tests with zero failures and two existing
+  skips. It included the normally excluded `:lifetime_safety` tag and excluded
+  `:benchmark`, `:large_dataset`, and `:slow`.
+- The complete SPARQL directory completed 10 properties and 2,394 tests. Two
+  runs each exposed one unrelated nondeterministic gate: a sub-millisecond
+  wall-clock assertion and a globally named `PlanCache` teardown race. Each
+  failing test passed immediately in isolation. Before the final blank-node
+  regression was added, the same directory completed 10 properties and 2,393
+  tests with zero failures.
+- The default suite completed 25 doctests, 10 properties, and 6,699 tests with
+  three failures, 53 skips, and 345 excluded tests. The named-graph provenance
+  failure led to the blank-node join repair in this phase; its complete 13-test
+  integration module then passed. The two remaining deterministic failures are
+  the pre-existing named-graph property-path cases at
+  `sparql_graph_test.exs:331` and `sparql_graph_test.exs:409`:
+  `PropertyPath` still reads triple indices instead of the active quad graph.
+- `scripts/compile_strict.sh`, strict Credo for `QuadScanPlan` and
+  `QuadLeapfrog`, specs governance, guides governance, and code-doc validation
+  passed. Repository-wide `mix format --check-formatted` remains blocked by
+  seven pre-existing unformatted files outside the Phase 1 diff; every file
+  changed by this phase is formatted.
+- Validation used Elixir `1.19.5-otp-28` and Erlang `28.3.1` because the exact
+  `.tool-versions` aliases were not installed locally. The local uncommitted
+  `mix.exs` dependency edit was preserved and excluded from all phase commits.
 
 ---
 

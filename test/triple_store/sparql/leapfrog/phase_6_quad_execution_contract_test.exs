@@ -113,6 +113,36 @@ defmodule TripleStore.SPARQL.Leapfrog.Phase6QuadExecutionContractTest do
     assert result["o"] == {:literal, :simple, "o1"}
   end
 
+  test "query blank nodes remain join variables through quad Leapfrog", %{ctx: ctx} do
+    graph = iri("provenance")
+    generated_by = iri("generated-by")
+    entity = iri("entity")
+
+    assert {:ok, 2} =
+             UpdateExecutor.execute_insert_data(ctx, [
+               {:quad, iri("resource"), generated_by, {:blank_node, "stored"}, graph},
+               {:quad, {:blank_node, "stored"}, entity, iri("source"), graph}
+             ])
+
+    query_blank = {:blank_node, "query-join"}
+
+    pattern =
+      {:bgp,
+       [
+         {:quad, {:variable, "resource"}, generated_by, query_blank, graph},
+         {:quad, query_blank, entity, {:variable, "source"}, graph}
+       ]}
+
+    assert {:ok, stream} = Executor.execute_quad_pattern(ctx, pattern, %{})
+
+    assert [
+             %{
+               "resource" => {:named_node, "http://example.org/resource"},
+               "source" => {:named_node, "http://example.org/source"}
+             }
+           ] = Enum.to_list(stream)
+  end
+
   test "iterator plans encode only the longest contiguous bound prefix" do
     all_variables =
       {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}

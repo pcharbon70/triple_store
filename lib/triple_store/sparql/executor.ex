@@ -266,6 +266,7 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Default graph ID (matches TripleStore.QuadIndex.default_graph_id/0)
   @default_graph_id 0
+  @blank_node_variable_prefix <<0, "blank:">>
 
   # ===========================================================================
   # Quad Pattern Helpers (Section 3.1: Quad Pattern Representation)
@@ -1115,6 +1116,14 @@ defmodule TripleStore.SPARQL.Executor do
     end
   end
 
+  defp term_to_leapfrog_component({:blank_node, name}, binding, _dict_manager)
+       when is_binary(name) do
+    case Map.fetch(binding, {:blank_node, name}) do
+      :error -> {:ok, {:variable, blank_node_variable_name(name)}}
+      {:ok, id} when is_integer(id) and id >= 0 -> {:ok, id}
+    end
+  end
+
   defp term_to_leapfrog_component(term, _binding, dict_manager) do
     encode_leapfrog_term(term, dict_manager)
   end
@@ -1162,8 +1171,24 @@ defmodule TripleStore.SPARQL.Executor do
     end
   end
 
+  defp maybe_bind_from_id_map(
+         binding,
+         {:blank_node, name} = blank_node,
+         id_bindings,
+         dict_manager
+       ) do
+    case Map.fetch(id_bindings, blank_node_variable_name(name)) do
+      {:ok, id} -> maybe_bind(binding, blank_node, id, dict_manager)
+      :error -> {:ok, binding}
+    end
+  end
+
   defp maybe_bind_from_id_map(binding, _bound, _id_bindings, _dict_manager),
     do: {:ok, binding}
+
+  # NUL cannot occur in a SPARQL variable name, so this namespace cannot
+  # collide with caller-visible bindings and does not allocate BEAM atoms.
+  defp blank_node_variable_name(name), do: @blank_node_variable_prefix <> name
 
   defp maybe_bind_graph_from_id_map(
          binding,
