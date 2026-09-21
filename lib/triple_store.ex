@@ -1512,7 +1512,7 @@ defmodule TripleStore do
     provenance_source = Keyword.get(opts, :provenance_source, :memory)
 
     with {:ok, id_quad} <- encode_explanation_quad(manager, quad, graph_id),
-         tracker <- load_provenance_tracker(db, graph_id, provenance_source),
+         {:ok, tracker} <- load_provenance_tracker(db, graph_id, provenance_source),
          {:ok, explanation} <- explain_derived_quad(db, tracker, id_quad) do
       {:ok, attach_explanation_terms(explanation, quad, graph_id)}
     else
@@ -1531,17 +1531,14 @@ defmodule TripleStore do
     end
   end
 
-  defp load_provenance_tracker(db, graph_id, :database) do
-    case DerivationProvenance.load(db, graph_id) do
-      {:ok, loaded} -> loaded
-      {:error, _reason} -> DerivationProvenance.new()
-    end
-  end
+  defp load_provenance_tracker(db, graph_id, :database),
+    do: DerivationProvenance.load(db, graph_id)
 
-  defp load_provenance_tracker(_db, _graph_id, :memory), do: DerivationProvenance.new()
+  defp load_provenance_tracker(_db, _graph_id, :memory),
+    do: {:ok, DerivationProvenance.new()}
 
   defp load_provenance_tracker(_db, _graph_id, provenance_source) do
-    throw({:error, {:invalid_provenance_source, provenance_source}})
+    {:error, {:invalid_provenance_source, provenance_source}}
   end
 
   defp explain_derived_quad(db, tracker, id_quad) do

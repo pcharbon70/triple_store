@@ -62,6 +62,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   # Database-related imports for the database API
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
+  alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.DerivedStore
 
   require Logger
@@ -331,7 +332,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
     max_depth = Keyword.get(opts, :max_trace_depth, @default_max_trace_depth)
 
     # Partition triples into those that exist as explicit vs derived
-    with {:ok, explicit_triples, derived_triples} <- partition_by_source(db, triples),
+    with {:ok, _provenance} <- DerivationProvenance.load(db),
+         {:ok, explicit_triples, derived_triples} <- partition_by_source(db, triples),
          # Delete explicit facts from the main index
          :ok <- delete_explicit_facts(db, explicit_triples),
          # Get all derived facts for backward tracing

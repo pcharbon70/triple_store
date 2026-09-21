@@ -591,9 +591,8 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     # Validate IRI before using
     case Namespaces.validate_iri(property_iri) do
       {:ok, _} ->
-        # Use string-based rule name to avoid atom exhaustion
         prop_local = Namespaces.extract_local_name(property_iri)
-        new_name = String.to_atom("#{rule.name}_#{suffix}_#{sanitize_local_name(prop_local)}")
+        new_name = specialized_rule_name(rule.name, suffix, [property_iri], [prop_local])
 
         # Substitute the property variable with the constant
         binding = %{var_name => {:iri, property_iri}}
@@ -629,10 +628,12 @@ defmodule TripleStore.Reasoner.RuleCompiler do
       p1_local = Namespaces.extract_local_name(p1_iri)
       p2_local = Namespaces.extract_local_name(p2_iri)
 
-      # Use sanitized names to avoid atom exhaustion with malicious inputs
       new_name =
-        String.to_atom(
-          "#{rule.name}_#{direction}_#{sanitize_local_name(p1_local)}_#{sanitize_local_name(p2_local)}"
+        specialized_rule_name(
+          rule.name,
+          direction,
+          [p1_iri, p2_iri],
+          [p1_local, p2_local]
         )
 
       binding = %{"p1" => {:iri, p1_iri}, "p2" => {:iri, p2_iri}}
@@ -666,6 +667,19 @@ defmodule TripleStore.Reasoner.RuleCompiler do
     name
     |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
     |> String.slice(0, 50)
+  end
+
+  defp specialized_rule_name(base_name, kind, iris, local_names) do
+    readable = Enum.map_join(local_names, "_", &sanitize_local_name/1)
+
+    digest =
+      iris
+      |> :erlang.term_to_binary()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    "#{base_name}_#{kind}_#{readable}_#{digest}"
   end
 
   # Substitute variables in a body element (pattern or condition)

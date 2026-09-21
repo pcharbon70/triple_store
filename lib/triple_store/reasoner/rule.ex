@@ -3,7 +3,7 @@ defmodule TripleStore.Reasoner.Rule do
   Represents a reasoning rule for OWL 2 RL forward-chaining inference.
 
   A rule consists of:
-  - A unique name identifying the rule (e.g., :cax_sco, :prp_trp)
+  - A stable atom or binary name identifying the rule (e.g., :cax_sco, :prp_trp)
   - A body containing patterns and conditions that must match
   - A head specifying the triple(s) to derive when the body matches
 
@@ -139,9 +139,12 @@ defmodule TripleStore.Reasoner.Rule do
           optional(:quad_rule) => boolean()
         }
 
+  @typedoc "Stable identifier for a reasoning rule"
+  @type name :: atom() | String.t()
+
   @typedoc "A complete reasoning rule"
   @type t :: %__MODULE__{
-          name: atom(),
+          name: name(),
           body: [body_element()],
           head: pattern() | quad_pattern(),
           description: String.t() | nil,
@@ -161,7 +164,7 @@ defmodule TripleStore.Reasoner.Rule do
 
   ## Parameters
 
-  - `name` - Unique atom identifying the rule (e.g., :cax_sco, :prp_trp)
+  - `name` - Stable atom or binary identifying the rule (e.g., :cax_sco, :prp_trp)
   - `body` - List of patterns and conditions that must be satisfied
   - `head` - Pattern to derive when body is satisfied
 
@@ -180,8 +183,9 @@ defmodule TripleStore.Reasoner.Rule do
       ...>   description: "Class membership through subclass"
       ...> )
   """
-  @spec new(atom(), [body_element()], graph_pattern(), keyword()) :: t()
-  def new(name, body, head, opts \\ []) when is_atom(name) and is_list(body) do
+  @spec new(name(), [body_element()], graph_pattern(), keyword()) :: t()
+  def new(name, body, head, opts \\ [])
+      when (is_atom(name) or is_binary(name)) and is_list(body) do
     %__MODULE__{
       name: name,
       body: body,
@@ -199,7 +203,7 @@ defmodule TripleStore.Reasoner.Rule do
 
   ## Parameters
 
-  - `name` - Unique atom identifying the rule
+  - `name` - Stable atom or binary identifying the rule
   - `body` - List of quad patterns and conditions
   - `head` - Quad pattern to derive when body is satisfied
 
@@ -220,8 +224,9 @@ defmodule TripleStore.Reasoner.Rule do
       ...>   scope: :local
       ...> )
   """
-  @spec new_quad(atom(), [body_element()], quad_pattern(), keyword()) :: t()
-  def new_quad(name, body, head, opts \\ []) when is_atom(name) and is_list(body) do
+  @spec new_quad(name(), [body_element()], quad_pattern(), keyword()) :: t()
+  def new_quad(name, body, head, opts \\ [])
+      when (is_atom(name) or is_binary(name)) and is_list(body) do
     # Validate that body patterns are all quad patterns
     validate_quad_body!(body)
 

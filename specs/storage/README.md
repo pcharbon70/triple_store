@@ -47,6 +47,10 @@ Mixed ownership:
 - Quad schema persists `id2str`, `str2id`, `gspo`, `gpos`, `spog`, `posg`, `derived`, `derivation_provenance`, `numeric_range`, and `acl`.
 - Statistics persistence currently reuses reserved keys in `id2str` rather than a dedicated statistics column family.
 - Generic `load/3`, `load_string/4`, and `export/3` remain graph-oriented facades, while `Loader`, `Exporter`, and `GraphBackup` expose richer quad-, dataset-, and named-graph workflows.
+- Full-store backup copies every column family, including quad ACL and derivation
+  provenance bytes. Verification detects the persisted index layout, and restore
+  reopens the destination with the detected triple or quad schema. Valid ACL and
+  provenance records therefore require no conversion during backup or restore.
 - In-place migration from triple schema to quad schema is not supported; export and import is the current migration path.
 
 ## Acceptance Criteria
@@ -57,7 +61,7 @@ Mixed ownership:
 | `AC-STO-02` | Explicit mutation fans out atomically across the schema-appropriate index set: `spo`/`pos`/`osp` for triple stores and `gspo`/`gpos`/`spog`/`posg` for quad stores. | `REQ-STO-*`, `REQ-TXN-*` | `SCN-004`, `SCN-008` |
 | `AC-STO-03` | Lookup paths follow the canonical pattern-to-index selection rules for both triple and quad access paths. | `REQ-STO-*`, `REQ-QRY-*` | `SCN-005` |
 | `AC-STO-04` | Derived facts, provenance, graph IDs, and ACL bytes remain explicit persistence surfaces rather than undocumented side channels. | `REQ-STO-*`, `REQ-RSN-*`, `REQ-QRY-*` | `SCN-010`, `SCN-017` |
-| `AC-STO-05` | Loader, exporter, backup, and graph-backup flows preserve the current schema-aware RDF I/O and recovery boundaries. | `REQ-STO-*`, `REQ-OBS-*` | `SCN-012`, `SCN-016` |
+| `AC-STO-05` | Loader, exporter, backup, and graph-backup flows preserve the current schema-aware RDF I/O and recovery boundaries, including quad ACL and provenance bytes across restore and reopen. | `REQ-STO-*`, `REQ-OBS-*` | `SCN-012`, `SCN-016` |
 
 ## Canonical References
 

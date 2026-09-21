@@ -498,13 +498,13 @@ caller-provided process names with bounded atoms or binary identifiers.
 Description: Classify dynamic atom creation by trust boundary and document the
 finite internal vocabularies that may legitimately use existing atoms.
 
-- [ ] 3.1.1.1 Inventory `String.to_atom/1`, `binary_to_atom/1`, interpolated
+- [x] 3.1.1.1 Inventory `String.to_atom/1`, `binary_to_atom/1`, interpolated
   registered names, and atom-producing decode paths under `lib/`.
-- [ ] 3.1.1.2 Mark each source as compile-time finite, validated existing atom, or
+- [x] 3.1.1.2 Mark each source as compile-time finite, validated existing atom, or
   externally unbounded input.
-- [ ] 3.1.1.3 Include query/cache process names, update helper property keys,
+- [x] 3.1.1.3 Include query/cache process names, update helper property keys,
   benchmark artifact fields, rule names, and rule-optimizer batch names.
-- [ ] 3.1.1.4 Add an allowlist comment or type for each intentionally finite atom
+- [x] 3.1.1.4 Add an allowlist comment or type for each intentionally finite atom
   conversion; reject undocumented dynamic creation.
 
 #### Task 3.1.2: Support binary names in reasoning rules and batches
@@ -512,16 +512,29 @@ finite internal vocabularies that may legitimately use existing atoms.
 Description: Extend internal identifier types so generated rule and batch names
 can remain binaries without changing semantic equality or diagnostic output.
 
-- [ ] 3.1.2.1 Extend `Rule` name types and constructors to accept stable binary
+- [x] 3.1.2.1 Extend `Rule` name types and constructors to accept stable binary
   identifiers while preserving existing built-in atom names.
-- [ ] 3.1.2.2 Generate specialized property and inverse-property rule names as
+- [x] 3.1.2.2 Generate specialized property and inverse-property rule names as
   binaries derived from validated IRIs.
-- [ ] 3.1.2.3 Generate optimizer batch identifiers as binaries or opaque bounded
+- [x] 3.1.2.3 Generate optimizer batch identifiers as binaries or opaque bounded
   references; keep them out of registered process names.
-- [ ] 3.1.2.4 Update maps, equality checks, logging, telemetry metadata, provenance,
+- [x] 3.1.2.4 Update maps, equality checks, logging, telemetry metadata, provenance,
   and serialization that currently assume atom names.
-- [ ] 3.1.2.5 Test many unique property IRIs and rule variables while asserting
+- [x] 3.1.2.5 Test many unique property IRIs and rule variables while asserting
   stable atom counts and deterministic rule identity.
+
+Section 3.1 evidence: the production inventory covered specialized rule names,
+optimizer batch names, query/result-cache ETS names, update property lookup,
+metrics histogram labels, executor telemetry events, benchmark JSON fields, and
+benchmark term artifacts. No runtime atom-conversion call remains under `lib/`.
+Built-in rule/profile names and telemetry event suffixes remain a compile-time
+finite atom vocabulary; externally derived rule and batch identifiers are
+deterministic binaries with content digests. Cache tables use unnamed ETS table
+identifiers, benchmark JSON converts only explicit finite enums/keys, and
+unknown artifact fields remain binaries. The focused Section 3.1 gate completed
+296 tests with zero failures, including 250 unique property IRIs, deterministic
+rule identity, bounded atom counts, binary rule construction, cache-table
+identity, update-property lookup, and JSON compatibility.
 
 ### Section 3.2: Safe ACL Decoding and Fail-Closed Authorization
 
@@ -533,17 +546,28 @@ and prevent read/corruption failures from becoming empty or permissive ACL state
 Description: Centralize ACL encoding/decoding rules around supported key and
 permission types with explicit corruption errors.
 
-- [ ] 3.2.1.1 Define the accepted ACL map shape, principal key forms, permission
+- [x] 3.2.1.1 Define the accepted ACL map shape, principal key forms, permission
   values, owner representation, and format/version behavior.
-- [ ] 3.2.1.2 Decode with `:erlang.binary_to_term(binary, [:safe])` and validate
+- [x] 3.2.1.2 Decode with `:erlang.binary_to_term(binary, [:safe])` and validate
   every key and value before use.
-- [ ] 3.2.1.3 Return `{:error, {:corrupt_acl, reason}}` or the repository's chosen
+- [x] 3.2.1.3 Return `{:error, {:corrupt_acl, reason}}` or the repository's chosen
   tagged equivalent for unsafe, malformed, or incompatible data.
-- [ ] 3.2.1.4 Propagate storage read errors during ACL mutation; do not replace them
+- [x] 3.2.1.4 Propagate storage read errors during ACL mutation; do not replace them
   with `%{}` and overwrite an unknown existing policy.
-- [ ] 3.2.1.5 Ensure authorization checks fail closed when ACL state cannot be read.
-- [ ] 3.2.1.6 Verify current valid ACL records remain readable without a rewrite;
+- [x] 3.2.1.5 Ensure authorization checks fail closed when ACL state cannot be read.
+- [x] 3.2.1.6 Verify current valid ACL records remain readable without a rewrite;
   define an explicit migration only if a format change becomes necessary.
+
+Section 3.2 evidence: ACL version 1 remains the existing unversioned
+single-principal map, so valid records require no migration or rewrite. The
+authorization boundary now safe-decodes and validates binary principals,
+finite permission lists, owner/public constraints, storage-key agreement, and
+unsupported version markers. Corruption propagates through direct checks,
+owner lookup, role lookup, and accessible-graph listing. Mutations propagate
+ACL read failures and preserve the original bytes on decode failure; removing
+the last permission now deletes the storage key instead of writing an empty
+tombstone. The focused authorization and update-authorization gate completed
+38 tests with zero failures after the external-term fixture correction.
 
 ### Section 3.3: Safe Provenance Decoding
 
@@ -555,16 +579,27 @@ provenance while preserving explicit-versus-derived and graph-scope semantics.
 Description: Treat persisted provenance as versioned structured data and return
 tagged corruption errors to every caller.
 
-- [ ] 3.3.1.1 Define the supported derivation record shape, fact key types, rule
+- [x] 3.3.1.1 Define the supported derivation record shape, fact key types, rule
   identifier types, premises, graph scope, and optional metadata.
-- [ ] 3.3.1.2 Decode with safe mode and validate the complete record before
+- [x] 3.3.1.2 Decode with safe mode and validate the complete record before
   constructing runtime provenance values.
-- [ ] 3.3.1.3 Update lookup, explanation, deletion, and rederivation callers to
+- [x] 3.3.1.3 Update lookup, explanation, deletion, and rederivation callers to
   propagate or explicitly handle tagged corruption errors.
-- [ ] 3.3.1.4 Preserve valid existing records and add a versioned migration path if
+- [x] 3.3.1.4 Preserve valid existing records and add a versioned migration path if
   binary rule identifiers require persisted-format evolution.
-- [ ] 3.3.1.5 Add malformed, truncated, unsafe-term, wrong-shape, and unsupported
+- [x] 3.3.1.5 Add malformed, truncated, unsafe-term, wrong-shape, and unsupported
   version fixtures.
+
+Section 3.3 evidence: provenance retains the existing unversioned derivation-map
+encoding, so legacy atom identifiers and new binary rule identifiers coexist
+without a migration. The persistence boundary safe-decodes and validates every
+32-byte graph-first fact key, rule identifier, premise, binding, timestamp, and
+optional metadata field before constructing a tracker. Malformed, unsafe, or
+unsupported records return tagged corruption errors. Explanation, graph clear,
+and triple or quad delete-with-reasoning now propagate those errors; deletion
+preflights persisted lineage so explicit facts remain untouched on corruption.
+The focused provenance, deletion, rederivation, and facade gate completed 157
+tests with zero failures.
 
 ### Section 3.4: Integration Tests
 
@@ -577,15 +612,15 @@ Description: Prove that external identifiers do not allocate atoms and invalid
 persisted state produces tagged failures without weakening authorization or
 corrupting derived data.
 
-- [ ] 3.4.1.1 Run a high-cardinality query-variable corpus and compare atom counts
+- [x] 3.4.1.1 Run a high-cardinality query-variable corpus and compare atom counts
   before and after garbage collection and query completion.
-- [ ] 3.4.1.2 Compile and optimize rules for many unique property IRIs; verify
+- [x] 3.4.1.2 Compile and optimize rules for many unique property IRIs; verify
   deterministic results and bounded atom growth.
-- [ ] 3.4.1.3 Inject corrupted ACL data and assert reads and writes fail closed,
+- [x] 3.4.1.3 Inject corrupted ACL data and assert reads and writes fail closed,
   authorized data is not exposed, and existing bytes are not overwritten.
-- [ ] 3.4.1.4 Inject corrupted provenance and assert explanation, deletion, and
+- [x] 3.4.1.4 Inject corrupted provenance and assert explanation, deletion, and
   rederivation return tagged errors without changing explicit or derived facts.
-- [ ] 3.4.1.5 Backup and restore valid ACL/provenance stores, reopen them, and
+- [x] 3.4.1.5 Backup and restore valid ACL/provenance stores, reopen them, and
   verify policies and lineage survive unchanged.
 
 #### Task 3.4.2: Pass the Phase 3 quality gate
@@ -593,15 +628,38 @@ corrupting derived data.
 Description: Confirm the safety changes remain compatible with authorization,
 reasoning, persistence, and release build requirements.
 
-- [ ] 3.4.2.1 Run authorization, update authorization, rule compiler, rule
+- [x] 3.4.2.1 Run authorization, update authorization, rule compiler, rule
   optimizer, provenance, rederivation, incremental reasoning, and backup suites.
-- [ ] 3.4.2.2 Run `SCN-010`, `SCN-011`, `SCN-012`, and `SCN-017` affected coverage.
-- [ ] 3.4.2.3 Run strict compilation, formatting, Credo, and Dialyzer for changed
+- [x] 3.4.2.2 Run `SCN-010`, `SCN-011`, `SCN-012`, and `SCN-017` affected coverage.
+- [x] 3.4.2.3 Run strict compilation, formatting, Credo, and Dialyzer for changed
   types and call sites.
-- [ ] 3.4.2.4 Update storage, reasoning, authorization, and operational docs with
+- [x] 3.4.2.4 Update storage, reasoning, authorization, and operational docs with
   format compatibility and corruption behavior.
-- [ ] 3.4.2.5 Record valid-format compatibility evidence and any required migration
+- [x] 3.4.2.5 Record valid-format compatibility evidence and any required migration
   command or operator action.
+
+Section 3.4 evidence: five composed integration tests complete 250 distinct
+SPARQL variable queries and 300-property rule compilation/optimization with no
+atom-count growth, prove corrupt ACL and provenance bytes fail closed without
+overwrites or fact changes, and verify a quad backup preserves ACL policy and
+lineage through restore and reopen. This exposed and fixed schema-neutral
+restore: full-store verification and restore now detect the persisted triple or
+quad index layout before opening the backup or destination. No ACL or provenance
+migration or operator action is required because both retain their compatible
+unversioned record formats.
+
+The authorization, update-authorization, compiler, optimizer, provenance,
+rederivation, incremental, backup, and Phase 3 integration gate completed 225
+tests with zero failures and two expected skips. Tagged `SCN-010`, `SCN-011`,
+`SCN-012`, and `SCN-017` coverage completed five tests with zero failures. The
+full default suite completed 25 doctests, 10 properties, and 6,741 tests with
+zero failures and 53 skips (345 excluded by the repository defaults). Strict
+compilation and Dialyzer passed; every Phase 3 source/test file passed the
+formatter. Specs, guides, code-doc, RFC, and conformance validators passed.
+Repository-wide formatting still reports the same seven pre-existing files,
+and repository-wide strict Credo still reports pre-existing findings in code
+outside the lines changed by Phase 3; the Phase 3 refactors introduced no new
+Credo finding.
 
 ---
 

@@ -52,6 +52,13 @@ graph TD
 - `SPARQL.Query` supports prepared queries, parameter binding, explain mode, streaming results, query logging, and timeout enforcement during setup or materialized execution.
 - The executor stack supports triple patterns, quad patterns, graph clauses, property paths, and lower-level authorization checks when a `:user` exists in the execution context.
 - `UpdateExecutor` handles SPARQL 1.1 update forms including graph management operations, invalidates query caches after successful writes, and can consult graph ACLs when invoked with a user-aware context.
+- ACL records use the compatible unversioned `%{principal_binary => permissions}`
+  format in the `acl` column family. The authorization boundary decodes Erlang
+  terms in safe mode, validates the complete principal/permission shape, and
+  returns `{:error, {:corrupt_acl, reason}}` for malformed or incompatible
+  state. ACL reads and mutations fail closed and never replace an unreadable
+  policy with an empty map. Named-graph query execution propagates that tagged
+  error instead of returning protected rows or treating corruption as no ACL.
 - `TripleStore.query/3` and `TripleStore.update/2` do not currently expose actor context, so user-aware authorization is a lower-level expert capability rather than a facade feature.
 - Streaming queries are lazy; the current timeout contract applies to setup and eager execution, not to the full duration of stream consumption.
 
@@ -85,6 +92,7 @@ graph TD
 | `AC-QRY-08` | `UpdateExecutor` preserves the current graph-aware update semantics, cache invalidation behavior, and lower-level authorization hooks. | `test/triple_store/sparql/update_executor_test.exs`, `test/triple_store/sparql/update_integration_test.exs`, `test/triple_store/sparql/graph_management_test.exs`, `test/triple_store/sparql/copy_move_add_test.exs`, `test/triple_store/sparql/update_authorization_test.exs` |
 | `AC-QRY-09` | Property-path, validation, error handling, and other bounded query operations expose typed limit and failure behavior instead of silent truncation. | `test/triple_store/sparql/property_path_test.exs`, `test/triple_store/sparql/property_path_integration_test.exs`, `test/triple_store/sparql/error_handler_test.exs`, `test/triple_store/sparql/executor_error_test.exs` |
 | `AC-QRY-17` | Quad Leapfrog execution preserves binary variable names, uses contiguous physical-index prefixes, returns results compatible with outer bindings, and releases iterators on every stream exit. | `test/triple_store/sparql/leapfrog/phase_6_quad_execution_contract_test.exs`, `test/triple_store/sparql/leapfrog/quad_scan_plan_test.exs`, `test/triple_store/sparql/leapfrog/quad_scan_reference_integration_test.exs`, `test/triple_store/sparql/leapfrog/quad_iterator_cleanup_test.exs`, `test/triple_store/sparql/executor_quad_integration_test.exs` |
+| `AC-QRY-18` | ACL records are safe-decoded and completely validated; corrupt policies block named-graph reads and mutations without overwriting the persisted bytes. | `test/triple_store/sparql/authorization_test.exs`, `test/triple_store/phase_3_persisted_state_safety_integration_test.exs` |
 
 Traceability: `AC-QRY-17` provides executable evidence for `REQ-QRY-004`,
 `REQ-QRY-006`, `REQ-QRY-009`, and `REQ-QRY-010` through `SCN-005` and

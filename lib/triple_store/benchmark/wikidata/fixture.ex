@@ -223,7 +223,7 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
 
   defp decode_manifest(binary) when is_binary(binary) do
     try do
-      case :erlang.binary_to_term(binary) do
+      case :erlang.binary_to_term(binary, [:safe]) do
         attrs when is_map(attrs) or is_list(attrs) -> {:ok, attrs}
         _ -> {:error, :invalid_manifest}
       end

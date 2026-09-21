@@ -163,8 +163,9 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
           %{
             benchmark_id: entry["benchmark_id"],
             query_name: entry["query_name"],
-            suite: String.to_atom(entry["suite"]),
-            execution_variant: String.to_atom(entry["execution_variant"]),
+            suite: decode_known_atom(entry["suite"], [:wgpb, :wdqs, :wdbench, :scholia]),
+            execution_variant:
+              decode_known_atom(entry["execution_variant"], [:raw, :count_only, :distinct_only]),
             answer_record: denormalize_json_map(entry["answer_record"])
           }
         end)
@@ -173,51 +174,66 @@ defmodule TripleStore.Benchmark.Wikidata.Baseline do
 
   defp denormalize_json_map(nil), do: nil
 
+  @known_json_keys ~w(
+    schema_version result_kind execution_variant ordering blank_node_policy
+    row_count distinct_row_count normalized_rows fingerprint unordered_fingerprint
+    distinct_fingerprint datatype_relaxed_fingerprint anonymous_blank_node_fingerprint
+    dataset_id tier source_url source_date dump_version checksum triple_count format
+    normalization_flags subset_seed subset_strategy generated_from local_data_path manifest_path
+    dataset_tier warmup_iterations measurement_iterations timeout_ms penalty_us
+    long_running_threshold_us execution_variants query_ids optimize capture_answers
+  )a
+
   defp denormalize_json_map(map) when is_map(map) do
     map
     |> Enum.map(fn {key, value} ->
-      normalized_key =
-        case key do
-          "suite" -> :suite
-          "execution_variant" -> :execution_variant
-          "blank_node_policy" -> :blank_node_policy
-          "ordering" -> :ordering
-          "result_kind" -> :result_kind
-          _ -> String.to_atom(key)
-        end
-
-      normalized_value =
-        case {normalized_key, value} do
-          {:suite, suite} when is_binary(suite) ->
-            String.to_atom(suite)
-
-          {:execution_variant, variant} when is_binary(variant) ->
-            String.to_atom(variant)
-
-          {:blank_node_policy, policy} when is_binary(policy) ->
-            String.to_atom(policy)
-
-          {:ordering, ordering} when is_binary(ordering) ->
-            String.to_atom(ordering)
-
-          {:result_kind, result_kind} when is_binary(result_kind) ->
-            String.to_atom(result_kind)
-
-          {_key, nested} when is_map(nested) ->
-            denormalize_json_map(nested)
-
-          {_key, nested} when is_list(nested) ->
-            Enum.map(nested, &denormalize_json_value/1)
-
-          {_key, other} ->
-            other
-        end
-
-      {normalized_key, normalized_value}
+      normalized_key = normalize_json_key(key)
+      {normalized_key, normalize_json_value(normalized_key, value)}
     end)
     |> Enum.into(%{})
   end
 
+  defp normalize_json_key("suite"), do: :suite
+  defp normalize_json_key("execution_variant"), do: :execution_variant
+  defp normalize_json_key("blank_node_policy"), do: :blank_node_policy
+  defp normalize_json_key("ordering"), do: :ordering
+  defp normalize_json_key("result_kind"), do: :result_kind
+  defp normalize_json_key(key), do: decode_known_key(key)
+
+  defp normalize_json_value(:suite, value) when is_binary(value),
+    do: decode_known_atom(value, [:wgpb, :wdqs, :wdbench, :scholia])
+
+  defp normalize_json_value(:execution_variant, value) when is_binary(value),
+    do: decode_known_atom(value, [:raw, :count_only, :distinct_only])
+
+  defp normalize_json_value(:blank_node_policy, value) when is_binary(value),
+    do: decode_known_atom(value, [:preserve, :anonymous])
+
+  defp normalize_json_value(:ordering, value) when is_binary(value),
+    do: decode_known_atom(value, [:ordered, :unordered])
+
+  defp normalize_json_value(:result_kind, value) when is_binary(value),
+    do: decode_known_atom(value, [:bindings, :boolean, :scalar])
+
+  defp normalize_json_value(_key, value) when is_map(value), do: denormalize_json_map(value)
+
+  defp normalize_json_value(_key, value) when is_list(value),
+    do: Enum.map(value, &denormalize_json_value/1)
+
+  defp normalize_json_value(_key, value), do: value
+
   defp denormalize_json_value(value) when is_map(value), do: denormalize_json_map(value)
   defp denormalize_json_value(value), do: value
+
+  defp decode_known_key(key) do
+    Enum.find(@known_json_keys, key, &(Atom.to_string(&1) == key))
+  end
+
+  # Benchmark JSON is externally editable. Convert only the documented finite
+  # vocabulary and preserve unknown values as binaries for downstream validation.
+  defp decode_known_atom(value, allowed) when is_binary(value) do
+    Enum.find(allowed, value, &(Atom.to_string(&1) == value))
+  end
+
+  defp decode_known_atom(value, _allowed), do: value
 end

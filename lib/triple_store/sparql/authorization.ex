@@ -54,6 +54,15 @@ defmodule TripleStore.SPARQL.Authorization do
   - `role:ROLE_NAME` - Role-based permissions
   - `owner:USER_ID` - Graph ownership
 
+  The supported on-disk ACL format is the existing unversioned, single-entry
+  map `%{principal_binary => permissions}`. Empty maps written by older
+  versions are treated as absent entries. Principal names are binaries and
+  permissions come from the finite `:read`, `:write`, `:admin`, and `:owner`
+  vocabulary. Reads use safe Erlang-term decoding and reject malformed,
+  incompatible, or principal-mismatched records as `{:corrupt_acl, reason}`.
+  Authorization and mutation calls propagate those errors instead of treating
+  unreadable policy as empty or permissive state.
+
   ## Examples
 
       # Check if user can read a graph
@@ -105,7 +114,7 @@ defmodule TripleStore.SPARQL.Authorization do
   @type permission :: :read | :write | :admin | :owner
 
   @typedoc "ACL entry"
-  @type acl_entry :: %{(String.t() | atom()) => [permission()]}
+  @type acl_entry :: %{optional(String.t()) => [permission()]}
 
   # ===========================================================================
   # Permit-All Mode (Open Access)
@@ -312,9 +321,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "user:#{user_id}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "user:#{user_id}", permission)
     end
   end
 
@@ -339,9 +347,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- remove_acl_entry(db, graph_id, "user:#{user_id}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      remove_acl_entry(db, graph_id, "user:#{user_id}", permission)
     end
   end
 
@@ -366,9 +373,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "role:#{role}", permission) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "role:#{role}", permission)
     end
   end
 
@@ -391,9 +397,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "__public__", :read) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "__public__", :read)
     end
   end
 
@@ -416,9 +421,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- remove_acl_entry(db, graph_id, "__public__", :read) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      remove_acl_entry(db, graph_id, "__public__", :read)
     end
   end
 
@@ -455,36 +459,29 @@ defmodule TripleStore.SPARQL.Authorization do
     include_default = Keyword.get(opts, :include_default, true)
 
     # Get all graphs from the database
-    case QuadOperations.list_graphs(db, include_default: include_default) do
-      {:ok, all_graphs} ->
-        accessible =
-          Enum.filter(all_graphs, fn graph_term ->
-            accessible_graph?(
-              ctx,
-              db,
-              dict_manager,
-              graph_term,
-              user_or_public,
-              permission
-            )
-          end)
+    with {:ok, all_graphs} <- QuadOperations.list_graphs(db, include_default: include_default),
+         {:ok, accessible} <-
+           filter_accessible_graphs(
+             all_graphs,
+             ctx,
+             db,
+             dict_manager,
+             user_or_public,
+             permission
+           ) do
+      graph_iris =
+        Enum.map(accessible, fn
+          # Don't include default in IRIs
+          :default -> nil
+          %RDF.IRI{value: iri} -> iri
+          %RDF.BlankNode{value: id} -> "_:#{id}"
+          {:named_node, iri} -> iri
+          {:blank_node, id} -> "_:#{id}"
+          _ -> nil
+        end)
+        |> Enum.reject(&is_nil/1)
 
-        graph_iris =
-          Enum.map(accessible, fn
-            # Don't include default in IRIs
-            :default -> nil
-            %RDF.IRI{value: iri} -> iri
-            %RDF.BlankNode{value: id} -> "_:#{id}"
-            {:named_node, iri} -> iri
-            {:blank_node, id} -> "_:#{id}"
-            _ -> nil
-          end)
-          |> Enum.reject(&is_nil/1)
-
-        {:ok, graph_iris}
-
-      {:error, reason} ->
-        {:error, reason}
+      {:ok, graph_iris}
     end
   end
 
@@ -510,9 +507,8 @@ defmodule TripleStore.SPARQL.Authorization do
     db = ctx[:db]
     dict_manager = ctx[:dict_manager]
 
-    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri),
-         :ok <- put_acl_entry(db, graph_id, "owner:#{user_id}", :owner) do
-      :ok
+    with {:ok, graph_id} <- graph_name_to_id(dict_manager, graph_iri) do
+      put_acl_entry(db, graph_id, "owner:#{user_id}", :owner)
     end
   end
 
@@ -541,41 +537,10 @@ defmodule TripleStore.SPARQL.Authorization do
       # We need to scan because we don't know the user_id in advance
       acl_prefix = "acl:graph:#{graph_id}:"
 
-      result =
-        ErlangAdapter.fold(db, :acl, acl_prefix, nil, fn {_k, v}, acc ->
-          # If we already found the owner, skip
-          if acc != nil do
-            {:halt, acc}
-          else
-            try do
-              entry = :erlang.binary_to_term(v)
-              # Find owner entry
-              owner_key =
-                Enum.find(entry, fn {k, _v} ->
-                  String.starts_with?(to_string(k), "owner:")
-                end)
-
-              case owner_key do
-                {key, [:owner]} ->
-                  {:halt, String.replace_prefix(to_string(key), "owner:", "")}
-
-                _ ->
-                  {:cont, nil}
-              end
-            rescue
-              _ -> {:cont, nil}
-            end
-          end
-        end)
-
-      # Unwrap the fold result (it might be wrapped in {:halt, ...})
-      owner_id =
-        case result do
-          {:halt, val} -> val
-          val -> val
-        end
-
-      {:ok, owner_id}
+      ErlangAdapter.fold(db, :acl, acl_prefix, {:ok, nil}, fn
+        _record, {:error, _reason} = error -> error
+        {key, value}, {:ok, owner_id} -> collect_owner(key, value, acl_prefix, owner_id)
+      end)
     end
   end
 
@@ -594,27 +559,70 @@ defmodule TripleStore.SPARQL.Authorization do
   end
 
   defp check_permission_for_term(ctx, db, dict_manager, graph_term, user_or_public, permission) do
-    # Permit-all mode bypasses all ACL checks (checked from both context and process)
-    if ctx[:permit_all] == true or permit_all?() do
-      {:ok, true}
-    else
-      # Special case: default graph is always readable
-      if graph_term in [:default, :default_graph] and permission == :read do
+    cond do
+      ctx[:permit_all] == true or permit_all?() ->
         {:ok, true}
-      else
-        # Check if graph exists and get permissions
-        with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term),
-             {:ok, acl_entry} <- get_acl_entry(db, graph_id, "__public__"),
-             {:ok, has_perm} <- check_public_permission(acl_entry, permission) do
-          {:ok, has_perm}
-        else
-          {:error, _} ->
-            # If public check fails or graph not found, check user/role permissions
-            check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
-        end
-      end
+
+      graph_term in [:default, :default_graph] and permission == :read ->
+        {:ok, true}
+
+      true ->
+        check_graph_permission(db, dict_manager, graph_term, user_or_public, permission)
     end
   end
+
+  defp check_graph_permission(db, dict_manager, graph_term, user_or_public, permission) do
+    with {:ok, graph_id} <- term_to_graph_id(db, dict_manager, graph_term) do
+      check_public_or_user_permission(
+        db,
+        dict_manager,
+        graph_id,
+        graph_term,
+        user_or_public,
+        permission
+      )
+    end
+  end
+
+  defp check_public_or_user_permission(
+         db,
+         dict_manager,
+         graph_id,
+         graph_term,
+         user_or_public,
+         permission
+       ) do
+    case get_acl_entry(db, graph_id, "__public__") do
+      {:ok, acl_entry} ->
+        continue_after_public_check(
+          check_public_permission(acl_entry, permission),
+          db,
+          dict_manager,
+          graph_term,
+          user_or_public,
+          permission
+        )
+
+      {:error, :not_found} ->
+        check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp continue_after_public_check({:ok, true}, _db, _manager, _graph, _user, _permission),
+    do: {:ok, true}
+
+  defp continue_after_public_check(
+         {:ok, false},
+         db,
+         dict_manager,
+         graph_term,
+         user_or_public,
+         permission
+       ),
+       do: check_user_permission(db, dict_manager, graph_term, user_or_public, permission)
 
   defp check_public_permission(acl_entry, permission) do
     permissions = Map.get(acl_entry, "__public__", [])
@@ -659,18 +667,32 @@ defmodule TripleStore.SPARQL.Authorization do
     end
   end
 
-  defp accessible_graph?(ctx, db, dict_manager, graph_term, user_or_public, permission) do
-    case check_permission_for_term(
-           ctx,
-           db,
-           dict_manager,
-           graph_term,
-           user_or_public,
-           permission
-         ) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      {:error, _} -> false
+  defp filter_accessible_graphs(
+         graphs,
+         ctx,
+         db,
+         dict_manager,
+         user_or_public,
+         permission
+       ) do
+    graphs
+    |> Enum.reduce_while({:ok, []}, fn graph_term, {:ok, acc} ->
+      case check_permission_for_term(
+             ctx,
+             db,
+             dict_manager,
+             graph_term,
+             user_or_public,
+             permission
+           ) do
+        {:ok, true} -> {:cont, {:ok, [graph_term | acc]}}
+        {:ok, false} -> {:cont, {:ok, acc}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, accessible} -> {:ok, Enum.reverse(accessible)}
+      {:error, _reason} = error -> error
     end
   end
 
@@ -715,33 +737,40 @@ defmodule TripleStore.SPARQL.Authorization do
 
   defp check_role_permissions(db, graph_id, graph_term, user, user_roles, permission) do
     # Check each role the user has
-    results =
-      Enum.map(user_roles, fn role ->
-        role_key = "role:#{role}"
-
-        case get_acl_entry(db, graph_id, role_key) do
-          {:ok, acl_entry} ->
-            permissions = Map.get(acl_entry, role_key, [])
-            permission in permissions
-
-          {:error, :not_found} ->
-            false
-
-          {:error, _} ->
-            false
-        end
+    result =
+      Enum.reduce_while(user_roles, {:ok, false}, fn role, {:ok, false} ->
+        reduce_role_permission(db, graph_id, role, permission)
       end)
 
-    # User has permission if any role grants it
-    has_permission = Enum.any?(results, & &1)
+    case result do
+      {:ok, true} ->
+        {:ok, true}
 
-    if not has_permission do
-      # Emit telemetry for role-based permission denial
-      graph_iri = extract_graph_iri(graph_term)
-      emit_auth_denied_telemetry(graph_iri, user, permission, :no_role_permission)
+      {:ok, false} ->
+        graph_iri = extract_graph_iri(graph_term)
+        emit_auth_denied_telemetry(graph_iri, user, permission, :no_role_permission)
+        {:ok, false}
+
+      {:error, _reason} = error ->
+        error
     end
+  end
 
-    {:ok, has_permission}
+  defp reduce_role_permission(db, graph_id, role, permission) do
+    role_key = "role:#{role}"
+
+    case get_acl_entry(db, graph_id, role_key) do
+      {:ok, acl_entry} ->
+        if permission in Map.get(acl_entry, role_key, []),
+          do: {:halt, {:ok, true}},
+          else: {:cont, {:ok, false}}
+
+      {:error, :not_found} ->
+        {:cont, {:ok, false}}
+
+      {:error, reason} ->
+        {:halt, {:error, reason}}
+    end
   end
 
   # ===========================================================================
@@ -749,28 +778,20 @@ defmodule TripleStore.SPARQL.Authorization do
   # ===========================================================================
 
   @acl_cf :acl
+  @permissions [:read, :write, :admin, :owner]
 
   defp put_acl_entry(db, graph_id, key, permission) do
     acl_key = encode_acl_key(graph_id, key)
 
-    # Get existing ACL entry for this key
-    current_entry =
-      case ErlangAdapter.get(db, @acl_cf, acl_key) do
-        {:ok, <<>>} -> %{}
-        {:ok, binary} when is_binary(binary) -> :erlang.binary_to_term(binary)
-        :not_found -> %{}
-        {:error, _} -> %{}
-      end
+    with :ok <- validate_permission_for_principal(key, permission),
+         {:ok, current_entry} <- read_acl_entry_for_mutation(db, acl_key, key) do
+      updated_entry =
+        Map.update(current_entry, key, [permission], fn perms ->
+          Enum.uniq([permission | perms])
+        end)
 
-    # Add permission to the entry
-    updated_entry =
-      Map.update(current_entry, key, [permission], fn perms ->
-        Enum.uniq([permission | perms])
-      end)
-
-    # Store back
-    encoded = :erlang.term_to_binary(updated_entry)
-    ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
+      ErlangAdapter.put(db, @acl_cf, acl_key, :erlang.term_to_binary(updated_entry))
+    end
   end
 
   defp remove_acl_entry(db, graph_id, key, permission) do
@@ -778,28 +799,10 @@ defmodule TripleStore.SPARQL.Authorization do
 
     case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
-        {:error, :not_found}
+        {:error, {:corrupt_acl, :empty_value}}
 
       {:ok, binary} when is_binary(binary) ->
-        current_entry = :erlang.binary_to_term(binary)
-
-        case Map.get(current_entry, key) do
-          nil ->
-            {:error, :not_found}
-
-          [_] ->
-            # Remove the only permission, delete the key
-            updated_entry = Map.delete(current_entry, key)
-            encoded = :erlang.term_to_binary(updated_entry)
-            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
-
-          permissions ->
-            # Remove this permission, keep others
-            updated_permissions = List.delete(permissions, permission)
-            updated_entry = Map.put(current_entry, key, updated_permissions)
-            encoded = :erlang.term_to_binary(updated_entry)
-            ErlangAdapter.put(db, @acl_cf, acl_key, encoded)
-        end
+        remove_acl_permission(db, acl_key, key, permission, binary)
 
       :not_found ->
         {:error, :not_found}
@@ -809,16 +812,49 @@ defmodule TripleStore.SPARQL.Authorization do
     end
   end
 
+  defp remove_acl_permission(db, acl_key, key, permission, binary) do
+    with :ok <- validate_permission_for_principal(key, permission),
+         {:ok, current_entry} <- decode_acl_entry(binary, key) do
+      update_acl_after_removal(db, acl_key, key, permission, current_entry)
+    end
+  end
+
+  defp update_acl_after_removal(db, acl_key, key, permission, current_entry) do
+    case Map.get(current_entry, key) do
+      nil ->
+        {:error, :not_found}
+
+      [^permission] ->
+        ErlangAdapter.delete(db, @acl_cf, acl_key)
+
+      permissions ->
+        persist_reduced_permissions(db, acl_key, key, permission, permissions, current_entry)
+    end
+  end
+
+  defp persist_reduced_permissions(db, acl_key, key, permission, permissions, current_entry) do
+    updated_permissions = List.delete(permissions, permission)
+
+    if updated_permissions == permissions do
+      {:error, :not_found}
+    else
+      updated_entry = Map.put(current_entry, key, updated_permissions)
+      ErlangAdapter.put(db, @acl_cf, acl_key, :erlang.term_to_binary(updated_entry))
+    end
+  end
+
   defp get_acl_entry(db, graph_id, key) do
     acl_key = encode_acl_key(graph_id, key)
 
     case ErlangAdapter.get(db, @acl_cf, acl_key) do
       {:ok, <<>>} ->
-        {:error, :not_found}
+        {:error, {:corrupt_acl, :empty_value}}
 
       {:ok, binary} when is_binary(binary) ->
-        entry = :erlang.binary_to_term(binary)
-        {:ok, entry}
+        case decode_acl_entry(binary, key) do
+          {:ok, entry} when map_size(entry) == 0 -> {:error, :not_found}
+          result -> result
+        end
 
       :not_found ->
         {:error, :not_found}
@@ -830,6 +866,137 @@ defmodule TripleStore.SPARQL.Authorization do
 
   defp encode_acl_key(graph_id, key) do
     "acl:graph:#{graph_id}:#{key}"
+  end
+
+  defp read_acl_entry_for_mutation(db, acl_key, principal) do
+    case ErlangAdapter.get(db, @acl_cf, acl_key) do
+      {:ok, <<>>} -> {:error, {:corrupt_acl, :empty_value}}
+      {:ok, binary} when is_binary(binary) -> decode_acl_entry(binary, principal)
+      :not_found -> {:ok, %{}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp decode_acl_entry(binary, expected_principal) do
+    binary
+    |> :erlang.binary_to_term([:safe])
+    |> validate_acl_entry(expected_principal)
+  rescue
+    ArgumentError -> {:error, {:corrupt_acl, :unsafe_or_invalid_term}}
+  end
+
+  defp validate_acl_entry(entry, _expected_principal) when entry == %{}, do: {:ok, entry}
+
+  defp validate_acl_entry(%{version: version}, _expected_principal),
+    do: {:error, {:corrupt_acl, {:unsupported_version, version}}}
+
+  defp validate_acl_entry(%{"version" => version}, _expected_principal),
+    do: {:error, {:corrupt_acl, {:unsupported_version, version}}}
+
+  defp validate_acl_entry(entry, expected_principal)
+       when is_map(entry) and map_size(entry) == 1 do
+    [{principal, permissions}] = Map.to_list(entry)
+
+    with :ok <- validate_acl_principal(principal),
+         :ok <- validate_expected_principal(principal, expected_principal),
+         :ok <- validate_persisted_permissions(principal, permissions) do
+      {:ok, entry}
+    else
+      {:error, reason} -> {:error, {:corrupt_acl, reason}}
+    end
+  end
+
+  defp validate_acl_entry(_entry, _expected_principal),
+    do: {:error, {:corrupt_acl, :invalid_entry_shape}}
+
+  defp validate_acl_principal("__public__"), do: :ok
+
+  defp validate_acl_principal(principal) when is_binary(principal) do
+    if Enum.any?(["user:", "role:", "owner:"], fn prefix ->
+         String.starts_with?(principal, prefix) and byte_size(principal) > byte_size(prefix)
+       end) do
+      :ok
+    else
+      {:error, {:invalid_principal, principal}}
+    end
+  end
+
+  defp validate_acl_principal(principal), do: {:error, {:invalid_principal, principal}}
+
+  defp validate_expected_principal(principal, principal), do: :ok
+
+  defp validate_expected_principal(principal, expected),
+    do: {:error, {:principal_mismatch, expected, principal}}
+
+  defp validate_persisted_permissions(principal, permissions)
+       when is_list(permissions) and permissions != [] do
+    with :ok <- validate_unique_permissions(permissions),
+         :ok <- validate_known_permissions(permissions) do
+      validate_principal_permissions(principal, permissions)
+    end
+  end
+
+  defp validate_persisted_permissions(_principal, permissions),
+    do: {:error, {:invalid_permissions, permissions}}
+
+  defp validate_unique_permissions(permissions) do
+    if Enum.uniq(permissions) == permissions, do: :ok, else: {:error, :duplicate_permissions}
+  end
+
+  defp validate_known_permissions(permissions) do
+    if Enum.all?(permissions, &(&1 in @permissions)),
+      do: :ok,
+      else: {:error, {:invalid_permissions, permissions}}
+  end
+
+  defp validate_principal_permissions("__public__", [:read]), do: :ok
+
+  defp validate_principal_permissions("__public__", permissions),
+    do: {:error, {:invalid_public_permissions, permissions}}
+
+  defp validate_principal_permissions("owner:" <> _owner, [:owner]), do: :ok
+
+  defp validate_principal_permissions("owner:" <> _owner, permissions),
+    do: {:error, {:invalid_owner_permissions, permissions}}
+
+  defp validate_principal_permissions(principal, permissions) do
+    if :owner in permissions,
+      do: {:error, {:invalid_owner_permission, principal}},
+      else: :ok
+  end
+
+  defp validate_permission_for_principal("__public__", :read), do: :ok
+  defp validate_permission_for_principal("owner:" <> owner, :owner) when owner != "", do: :ok
+
+  defp validate_permission_for_principal(principal, permission)
+       when permission in [:read, :write, :admin] do
+    if String.starts_with?(principal, "user:") or String.starts_with?(principal, "role:") do
+      :ok
+    else
+      {:error, {:invalid_acl_permission, principal, permission}}
+    end
+  end
+
+  defp validate_permission_for_principal(principal, permission),
+    do: {:error, {:invalid_acl_permission, principal, permission}}
+
+  defp collect_owner(key, value, acl_prefix, owner_id) do
+    if String.starts_with?(key, acl_prefix) do
+      principal = String.replace_prefix(key, acl_prefix, "")
+
+      case decode_acl_entry(value, principal) do
+        {:ok, %{^principal => [:owner]}} ->
+          {:ok, owner_id || String.replace_prefix(principal, "owner:", "")}
+
+        {:ok, _entry} ->
+          {:ok, owner_id}
+
+        {:error, _reason} = error ->
+          error
+      end
+    else
+      {:error, {:corrupt_acl, {:key_outside_graph_prefix, key}}}
+    end
   end
 
   # ===========================================================================

@@ -3989,7 +3989,7 @@ defmodule TripleStore.SPARQL.Executor do
     |> Enum.reduce_while([], fn {binding, index}, acc ->
       if index > limit do
         :telemetry.execute(
-          [:triple_store, :sparql, :executor, :"#{operation}_limit_exceeded"],
+          limit_event(operation),
           %{limit: limit},
           %{}
         )
@@ -4004,6 +4004,11 @@ defmodule TripleStore.SPARQL.Executor do
     end)
     |> Enum.reverse()
   end
+
+  # Operations are an internal finite vocabulary; keep event names literal so
+  # caller-controlled input can never allocate telemetry atoms.
+  defp limit_event(:order_by),
+    do: [:triple_store, :sparql, :executor, :order_by_limit_exceeded]
 
   # Checks if the query has exceeded its timeout
   # Returns {:ok, remaining_ms} or {:error, :timeout_exceeded}
