@@ -2942,7 +2942,8 @@ defmodule TripleStore.SPARQL.Executor do
   - `distinct?` indicates if DISTINCT modifier is applied
   """
   @type aggregate_spec ::
-          {:count, :star | term(), boolean()}
+          {:count_solutions, boolean()}
+          | {:count, :star | term(), boolean()}
           | {:sum, term(), boolean()}
           | {:avg, term(), boolean()}
           | {:min, term(), boolean()}
@@ -3120,6 +3121,13 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Compute a single aggregate over group bindings
   # Returns the aggregated RDF term value
+  defp compute_aggregate({:count_solutions, distinct?}, bindings) do
+    # The native parser represents COUNT(*) as :count_solutions. DISTINCT
+    # applies to complete solution mappings rather than to one expression.
+    count = if distinct?, do: bindings |> Enum.uniq() |> length(), else: length(bindings)
+    {:literal, :typed, Integer.to_string(count), "http://www.w3.org/2001/XMLSchema#integer"}
+  end
+
   defp compute_aggregate({:count, :star, _distinct?}, bindings) do
     # COUNT(*) counts all solutions
     count = length(bindings)

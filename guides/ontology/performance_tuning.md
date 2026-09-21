@@ -45,8 +45,12 @@ cache name.
 
 Use eager query `:timeout` for request isolation. Lazy stream consumption needs
 a caller-controlled deadline. Leapfrog execution applies only to supported
-algebra and pattern shapes, and the v0.1.0 quad path has documented limitations;
-measure and verify answers before relying on it.
+algebra and pattern shapes. Quad Leapfrog plans one physical scan per pattern,
+uses only contiguous bound index prefixes, and keeps binary SPARQL variable
+names through result conversion. Unsupported plans may fall back during
+construction; errors raised while a lazy stream is being consumed propagate to
+the caller. Measure representative queries and verify their answers alongside
+performance.
 
 ## Reasoning tuning
 

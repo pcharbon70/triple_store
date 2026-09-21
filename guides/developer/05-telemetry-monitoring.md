@@ -21,6 +21,11 @@ end
 event list. `sanitize_query/2` produces bounded query metadata; telemetry and
 logs should not expose raw query text by default.
 
+Scheduled backups emit `:tick`, `:error`, and `:stop` events under
+`[:triple_store, :scheduled_backup, ...]`. Stop metadata contains a sanitized
+backup-directory basename and a reason such as `:store_down`, `:terminal_error`,
+or `:shutdown`; it does not expose the complete filesystem path.
+
 ## Optional collectors
 
 Metrics are not started by the application supervisor. Start and supervise them

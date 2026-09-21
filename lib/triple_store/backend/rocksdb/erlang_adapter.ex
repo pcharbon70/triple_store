@@ -245,6 +245,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
     - `:mixed_batch_failure` - Deterministic mixed-batch failure reason for fault-injection tests
     - `:write_batch_failure` - Deterministic write-batch failure reason for fault-injection tests
     - `:read_failure` - `{column_family, reason}` for deterministic read fault-injection tests
+    - `:iterator_move_failure` - `{column_family, reason}` for deterministic iterator scan failures
 
   ## Returns
 
@@ -1223,6 +1224,7 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
            schema_type: schema_type,
            instance_id: make_ref(),
            read_failure: Keyword.get(opts, :read_failure),
+           iterator_move_failure: Keyword.get(opts, :iterator_move_failure),
            mixed_batch_failure: Keyword.get(opts, :mixed_batch_failure),
            write_batch_failure: Keyword.get(opts, :write_batch_failure)
          }}
@@ -1450,17 +1452,27 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @impl true
   def handle_call(
+        {:prefix_iterator, cf, _prefix},
+        _from,
+        %{read_failure: {cf, reason}} = state
+      ) do
+    {:reply, {:error, reason}, state}
+  end
+
+  def handle_call(
         {:prefix_iterator, cf, prefix},
         _from,
         %{db: db, cf_handles: cf_handles} = state
       ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
-         opts = [
-           prefix: prefix,
-           fill_cache: true,
-           total_order_seek: false,
-           prefix_same_as_start: false
-         ],
+         opts =
+           [
+             prefix: prefix,
+             fill_cache: true,
+             total_order_seek: false,
+             prefix_same_as_start: false
+           ]
+           |> maybe_put_iterator_move_failure(state, cf),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else
@@ -1470,12 +1482,23 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
 
   @impl true
   def handle_call(
+        {:prefix_iterator, cf, _prefix, _opts},
+        _from,
+        %{read_failure: {cf, reason}} = state
+      ) do
+    {:reply, {:error, reason}, state}
+  end
+
+  def handle_call(
         {:prefix_iterator, cf, prefix, opts},
         _from,
         %{db: db, cf_handles: cf_handles} = state
       ) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
-         opts = Keyword.put(opts, :prefix, prefix),
+         opts =
+           opts
+           |> Keyword.put(:prefix, prefix)
+           |> maybe_put_iterator_move_failure(state, cf),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else
@@ -1484,8 +1507,17 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
   end
 
   @impl true
+  def handle_call(
+        {:iterator, cf, _opts},
+        _from,
+        %{read_failure: {cf, reason}} = state
+      ) do
+    {:reply, {:error, reason}, state}
+  end
+
   def handle_call({:iterator, cf, opts}, _from, %{db: db, cf_handles: cf_handles} = state) do
     with {:ok, cf_handle} <- get_cf_handle(cf_handles, cf),
+         opts = maybe_put_iterator_move_failure(opts, state, cf),
          {:ok, iter_pid} <- Iterator.start_link(db, cf_handle, opts) do
       {:reply, {:ok, iter_pid}, state}
     else
@@ -1730,6 +1762,16 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
        ]}
     end
   end
+
+  defp maybe_put_iterator_move_failure(
+         opts,
+         %{iterator_move_failure: {cf, reason}},
+         cf
+       ) do
+    Keyword.put(opts, :move_failure, reason)
+  end
+
+  defp maybe_put_iterator_move_failure(opts, _state, _cf), do: opts
 
   # Maps column family handles to their atom names
   defp map_cf_handles(cf_handles, schema_type) do

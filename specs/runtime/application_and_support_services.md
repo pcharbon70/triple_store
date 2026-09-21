@@ -47,7 +47,10 @@ graph TD
 - `Statistics.Server` is richer and intended for new code, but it is not wired into the default application tree.
 - `Query.Cache` is the result cache integrated into `SPARQL.Query`, but it remains opt-in and is not supervised by default.
 - `SPARQL.QueryCache` is a separate ETS-backed query-cache implementation that remains present and tested.
-- `Metrics`, `Prometheus`, and `ScheduledBackup` are real production-facing helpers, but they are started explicitly by callers rather than by the main application supervisor.
+- `Metrics`, `Prometheus`, and `ScheduledBackup` are real production-facing
+  helpers, but they are started explicitly by callers rather than by the main
+  application supervisor. Each scheduled-backup process monitors its store-owned
+  dictionary manager and terminates when that store closes.
 
 ## Acceptance Criteria
 
@@ -56,4 +59,4 @@ graph TD
 | `AC-RT-10` | The application supervisor starts only globally reusable support services that do not require a store-specific database reference. | `test/triple_store/integration/database_lifecycle_test.exs`, `test/triple_store/snapshot_test.exs`, `test/triple_store/sparql/plan_cache_test.exs` |
 | `AC-RT-11` | Support services that require a store-specific database reference remain dynamic or caller-managed rather than prebooted globally. | `test/triple_store/statistics/cache_test.exs`, `test/triple_store/statistics/server_test.exs`, `test/triple_store/query/cache_test.exs` |
 | `AC-RT-12` | The specs capture the transitional state where `Statistics.Cache` is integrated but deprecated in favor of `Statistics.Server`. | `test/triple_store/statistics/cache_test.exs`, `test/triple_store/statistics/server_test.exs` |
-| `AC-RT-13` | Optional helper services remain explicitly opt-in rather than implicitly required by the default runtime. | `test/triple_store/query/cache_test.exs`, `test/triple_store/metrics_test.exs`, `test/triple_store/prometheus_test.exs`, `test/triple_store/scheduled_backup_test.exs` |
+| `AC-RT-13` | Optional helper services remain explicitly opt-in rather than implicitly required by the default runtime; scheduled backup also follows the lifecycle of its monitored store. | `test/triple_store/query/cache_test.exs`, `test/triple_store/metrics_test.exs`, `test/triple_store/prometheus_test.exs`, `test/triple_store/scheduled_backup_test.exs` |

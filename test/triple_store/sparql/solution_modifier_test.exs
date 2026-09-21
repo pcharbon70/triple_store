@@ -166,6 +166,25 @@ defmodule TripleStore.SPARQL.SolutionModifierTest do
                {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
              ]
     end
+
+    test "COUNT(*) handles the native parser aggregate representation" do
+      duplicate = create_binding({:named_node, "http://example.org/graph1"})
+      distinct = create_binding({:named_node, "http://example.org/graph2"})
+      stream = to_stream([duplicate, duplicate, distinct])
+
+      aggregates = [
+        {{:variable, "all"}, {:count_solutions, false}},
+        {{:variable, "unique"}, {:count_solutions, true}}
+      ]
+
+      [result] = stream |> Executor.implicit_group(aggregates) |> Enum.to_list()
+
+      assert result["all"] ==
+               {:literal, :typed, "3", "http://www.w3.org/2001/XMLSchema#integer"}
+
+      assert result["unique"] ==
+               {:literal, :typed, "2", "http://www.w3.org/2001/XMLSchema#integer"}
+    end
   end
 
   # ===========================================================================

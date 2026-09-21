@@ -8,7 +8,7 @@ The plan follows the repository's phase, section, task, and sub-task pattern.
 Phase, section, and task counts reflect implementation dependencies rather than
 a fixed template. Creating this plan does not implement or close a finding.
 
-**Status:** Phase 1 complete; Phases 2-4 planned.
+**Status:** Phases 1-4 complete with the recorded repository-baseline blockers.
 
 Source review:
 [2026-09-21 entire-codebase review](../../.spec/reviews/2026-09-21T05-30-49-0400-parallel-code-review-entire-codebase.md).
@@ -680,18 +680,27 @@ Description: Monitor the dictionary manager or a new store supervisor rather
 than the store map, and retain enough state to distinguish expected shutdown
 from unrelated process messages.
 
-- [ ] 4.1.1.1 Choose the lifecycle process established by Phase 2 and document
+- [x] 4.1.1.1 Choose the lifecycle process established by Phase 2 and document
   why its death means scheduled backups must stop.
-- [ ] 4.1.1.2 Call `Process.monitor/1` during scheduler initialization and store the
+- [x] 4.1.1.2 Call `Process.monitor/1` during scheduler initialization and store the
   monitored PID and reference.
-- [ ] 4.1.1.3 Match `:DOWN` by the stored reference and PID; ignore unrelated
+- [x] 4.1.1.3 Match `:DOWN` by the stored reference and PID; ignore unrelated
   monitor messages.
-- [ ] 4.1.1.4 Cancel timers, demonitor when appropriate, and release in-progress
+- [x] 4.1.1.4 Cancel timers, demonitor when appropriate, and release in-progress
   backup resources during terminate/normal stop.
-- [ ] 4.1.1.5 Define behavior when the store dies during a backup and when an
+- [x] 4.1.1.5 Define behavior when the store dies during a backup and when an
   operator explicitly stops the scheduler first.
-- [ ] 4.1.1.6 Emit observable stop/failure metadata without repeatedly scheduling
+- [x] 4.1.1.6 Emit observable stop/failure metadata without repeatedly scheduling
   backups against a closed store.
+
+Section 4.1 evidence: `ScheduledBackup` monitors the store-owned dictionary
+manager, the one process owned by every open store regardless of transaction
+coordinator selection. Backup work runs in an owned task so the scheduler can
+respond to the lifecycle monitor while a backup is active. Store shutdown and
+operator stop cancel timers and task work, demonitor when needed, and emit a
+sanitized `[:triple_store, :scheduled_backup, :stop]` event. Exact monitor
+matching ignores unrelated `:DOWN` messages. The focused scheduled-backup gate
+passes all 19 tests, including the seven `:slow` cases.
 
 ### Section 4.2: Reviewed Public Error Boundaries
 
@@ -704,27 +713,49 @@ every pattern match in the repository.
 Description: Replace the hard match in local fact loading with tagged storage
 errors that flow through the existing materialization result contract.
 
-- [ ] 4.2.1.1 Make `load_facts_from_db/2` return `{:ok, facts}` or a tagged error
+- [x] 4.2.1.1 Make `load_facts_from_db/2` return `{:ok, facts}` or a tagged error
   for iterator, decode, and storage failures.
-- [ ] 4.2.1.2 Propagate the result through `materialize/2` without claiming that the
+- [x] 4.2.1.2 Propagate the result through `materialize/2` without claiming that the
   local in-memory path persists or returns derived facts.
-- [ ] 4.2.1.3 Verify iterator cleanup on scan failure and early decode termination.
-- [ ] 4.2.1.4 Add injected adapter-failure tests for the public facade and the
+- [x] 4.2.1.3 Verify iterator cleanup on scan failure and early decode termination.
+- [x] 4.2.1.4 Add injected adapter-failure tests for the public facade and the
   lower-level reasoner entry point.
+
+Task 4.2.1 evidence: `Reasoner.FactLoader.load_facts_from_db/2` owns one SPO
+iterator, builds an all-or-error `MapSet`, validates exact 24-byte keys, and
+closes the iterator in `after`. Setup, iteration, storage-process, and decode
+failures have distinct tagged results. The local facade propagates those results
+and documents that it returns statistics without persisting or returning the
+derived fact set. Adapter fault injection covers iterator setup and movement;
+focused tests also insert malformed persisted bytes and compare adapter links
+before and after early termination.
 
 #### Task 4.2.2: Audit touched fallback and error paths
 
 Description: Review only modules changed by this plan for rescues, hard matches,
 and error-to-default conversions that could conceal the repaired failures.
 
-- [ ] 4.2.2.1 Check query fallback paths for lazy exceptions that escape the
+- [x] 4.2.2.1 Check query fallback paths for lazy exceptions that escape the
   construction-time rescue boundary.
-- [ ] 4.2.2.2 Check transaction and authorization paths for errors converted into
+- [x] 4.2.2.2 Check transaction and authorization paths for errors converted into
   zero counts, empty maps, or successful telemetry.
-- [ ] 4.2.2.3 Check scheduled backup and persistence paths for repeated retries
+- [x] 4.2.2.3 Check scheduled backup and persistence paths for repeated retries
   after terminal lifecycle or corruption errors.
-- [ ] 4.2.2.4 Add focused regressions for each verified issue; document inspected
+- [x] 4.2.2.4 Add focused regressions for each verified issue; document inspected
   non-issues instead of making speculative changes.
+
+Task 4.2.2 evidence: the quad multi-iterator rescue remains limited to eager
+construction, so lazy stream exceptions are not converted into fallback
+results; the dedicated iterator-cleanup regression covers consumer exceptions.
+Transaction manager exits remain tagged as `:transaction_unavailable`, ACL
+read/corruption errors propagate, and failed update telemetry carries
+`status: :error` even though its count measurement is zero. Plan-cache and
+statistics callback failures occur only after a successful commit and remain
+best-effort side effects. Scheduled backups now stop after lifecycle and known
+corruption/closed-storage terminal errors while transient operational failures
+retain interval retries. A focused terminal-corruption regression proves only
+one backup attempt. The Section 4.2 gate passes 78 tests with seven slow
+scheduled-backup cases deliberately excluded for the final integration gate.
 
 ### Section 4.3: Documentation and Maintainability Closure
 
@@ -736,14 +767,14 @@ retain only refactors that make the repaired contracts easier to maintain.
 Description: Update current-status sections and examples so they describe the
 implemented behavior and no longer preserve remediated caveats as current facts.
 
-- [ ] 4.3.1.1 Update transaction current-status text for coordinator ownership,
+- [x] 4.3.1.1 Update transaction current-status text for coordinator ownership,
   request atomicity, and serialized reads.
-- [ ] 4.3.1.2 Update query planning docs for canonical bindings, plan entries,
+- [x] 4.3.1.2 Update query planning docs for canonical bindings, plan entries,
   graph prefixes, fallback, and stream ownership.
-- [ ] 4.3.1.3 Update reasoning and storage docs for binary rule identifiers and
+- [x] 4.3.1.3 Update reasoning and storage docs for binary rule identifiers and
   safe persisted-record decoding.
-- [ ] 4.3.1.4 Update operations guides for scheduled-backup ownership and shutdown.
-- [ ] 4.3.1.5 Synchronize acceptance criteria, scenario catalog/matrix evidence,
+- [x] 4.3.1.4 Update operations guides for scheduled-backup ownership and shutdown.
+- [x] 4.3.1.5 Synchronize acceptance criteria, scenario catalog/matrix evidence,
   guides, moduledocs, and examples; do not mark standards conformance from
   structural validation alone.
 
@@ -752,16 +783,46 @@ implemented behavior and no longer preserve remediated caveats as current facts.
 Description: Remove obsolete helpers and duplication created by the old paths,
 then use static analysis as evidence rather than as a target for cosmetic churn.
 
-- [ ] 4.3.2.1 Remove dead temporary-transaction, unused snapshot, old binding
+- [x] 4.3.2.1 Remove dead temporary-transaction, unused snapshot, old binding
   conversion, zero-filled prefix, and unsafe decode helpers after callers migrate.
-- [ ] 4.3.2.2 Consolidate safe term-decoding mechanics only where ACL and provenance
+- [x] 4.3.2.2 Consolidate safe term-decoding mechanics only where ACL and provenance
   error schemas remain explicit.
-- [ ] 4.3.2.3 Review cache lifecycle/name helpers for atom creation while preserving
+- [x] 4.3.2.3 Review cache lifecycle/name helpers for atom creation while preserving
   the distinct semantics of PlanCache, Query.Cache, and SPARQL.QueryCache.
-- [ ] 4.3.2.4 Re-run complexity checks on `QuadLeapfrog` and executor paths; accept
+- [x] 4.3.2.4 Re-run complexity checks on `QuadLeapfrog` and executor paths; accept
   remaining complexity only with narrow tests and documented ownership.
-- [ ] 4.3.2.5 Keep unrelated large-module decomposition as separate follow-up work
+- [x] 4.3.2.5 Keep unrelated large-module decomposition as separate follow-up work
   unless a phase change establishes a stable extraction boundary.
+
+Section 4.3 evidence: transaction, query-planning, reasoning, storage, scenario,
+and matrix documents already carry the contracts established by Phases 1-3.
+The remaining user and operator guides now remove the obsolete v0.1 quad-query
+caveat, describe the store-owned transaction coordinator, distinguish facade
+queries and direct writes from its queue, and document scheduled-backup
+monitoring, shutdown, task cancellation, and sanitized stop telemetry. Runtime
+and operations acceptance criteria reflect the same lifecycle.
+
+The bounded source audit confirmed that the temporary public update coordinator,
+unused transaction snapshot state, incompatible Leapfrog binding converter,
+zero-filled quad scan prefix, and unsafe ACL/provenance decoders no longer have
+callers. The deprecated `current_snapshot/1` function remains as an explicit
+compatibility surface and returns `nil`. ACL and provenance safe decoders remain
+separate because they validate different persisted schemas and expose distinct
+tagged corruption errors. PlanCache, Query.Cache, and SPARQL.QueryCache contain
+no runtime atom conversion and retain separate lifecycle and key semantics. The
+legacy local materialization path no longer reads an ignored `parallel` option;
+its public documentation now states that limitation.
+
+Focused strict Credo analysis reports no finding in `QuadLeapfrog` and retains
+two existing executor refactoring opportunities: nesting in the multi-iterator
+fallback and the arity of the single-iterator reference path. Their ownership
+and fallback boundary are documented and covered by the focused quad execution,
+scan-plan, and fact-loader gate, which passes 21 tests with zero failures.
+Specs validation reports 58 requirements, 69 acceptance criteria, 17 scenarios,
+one ADR, and six matrix rows; guide and code-doc validation pass, and the absent
+`rfcs/` directory is an intentional RFC-validator skip. Broader executor and
+large-module decomposition remain follow-up work because this section did not
+establish another stable extraction boundary.
 
 ### Section 4.4: Integration Tests
 
@@ -775,18 +836,18 @@ Description: Exercise interactions that individual phase tests cannot establish,
 especially graph authorization during atomic updates and lifecycle behavior
 across close/reopen boundaries.
 
-- [ ] 4.4.1.1 Run a named-graph workflow covering load, authorized query, atomic
+- [x] 4.4.1.1 Run a named-graph workflow covering load, authorized query, atomic
   multi-operation update, result-cache invalidation, backup, close, restore,
   reopen, and query verification.
-- [ ] 4.4.1.2 Repeat relevant storage/query/update workflows for triple schema to
+- [x] 4.4.1.2 Repeat relevant storage/query/update workflows for triple schema to
   detect quad-specific refactoring regressions.
-- [ ] 4.4.1.3 Run concurrent update/query scenarios with barriers and verify no
+- [x] 4.4.1.3 Run concurrent update/query scenarios with barriers and verify no
   partial index fanout or intermediate request state.
-- [ ] 4.4.1.4 Run corrupted ACL/provenance scenarios through restore/reopen and
+- [x] 4.4.1.4 Run corrupted ACL/provenance scenarios through restore/reopen and
   assert fail-closed tagged outcomes.
-- [ ] 4.4.1.5 Close a store during idle and in-progress scheduled backups; verify
+- [x] 4.4.1.5 Close a store during idle and in-progress scheduled backups; verify
   scheduler termination, timer cleanup, and observable status.
-- [ ] 4.4.1.6 Verify atom counts remain bounded across combined query and reasoning
+- [x] 4.4.1.6 Verify atom counts remain bounded across combined query and reasoning
   workloads with unique external identifiers.
 
 #### Task 4.4.2: Run repository quality and conformance gates
@@ -794,16 +855,16 @@ across close/reopen boundaries.
 Description: Produce exact, reproducible validation evidence and distinguish
 executed behavior from structural documentation checks.
 
-- [ ] 4.4.2.1 Run `./scripts/compile_strict.sh` and
+- [x] 4.4.2.1 Run `./scripts/compile_strict.sh` and
   `mix format --check-formatted`.
-- [ ] 4.4.2.2 Run affected focused suites, then the complete default `mix test`.
-- [ ] 4.4.2.3 Run relevant excluded `:lifetime_safety`, `:slow`, and
+- [x] 4.4.2.2 Run affected focused suites, then the complete default `mix test`.
+- [x] 4.4.2.3 Run relevant excluded `:lifetime_safety`, `:slow`, and
   `:large_dataset` tests deliberately; record tags that remain out of scope.
-- [ ] 4.4.2.4 Run `mix credo --strict` and `mix dialyzer --format short`.
-- [ ] 4.4.2.5 Run specs, guides, RFC, code-doc, and conformance validation scripts.
-- [ ] 4.4.2.6 Run Rust formatter, Clippy, parser tests, and Elixir parser tests only
+- [x] 4.4.2.4 Run `mix credo --strict` and `mix dialyzer --format short`.
+- [x] 4.4.2.5 Run specs, guides, RFC, code-doc, and conformance validation scripts.
+- [x] 4.4.2.6 Run Rust formatter, Clippy, parser tests, and Elixir parser tests only
   if native parser code or its boundary changed.
-- [ ] 4.4.2.7 Record toolchain overrides, dependency/NIF state, commands, counts,
+- [x] 4.4.2.7 Record toolchain overrides, dependency/NIF state, commands, counts,
   failures, skips, exclusions, and artifact locations.
 
 #### Task 4.4.3: Close findings with evidence
@@ -811,13 +872,94 @@ executed behavior from structural documentation checks.
 Description: Mark only behavior demonstrated by source inspection and passing
 tests as complete, and preserve any residual risks as explicit follow-up work.
 
-- [ ] 4.4.3.1 Map each `R-*` finding to implementation commits, focused regressions,
+- [x] 4.4.3.1 Map each `R-*` finding to implementation commits, focused regressions,
   integration tests, requirements, acceptance criteria, and scenarios.
-- [ ] 4.4.3.2 Confirm the default suite has zero failures or identify each remaining
+- [x] 4.4.3.2 Confirm the default suite has zero failures or identify each remaining
   failure as a reproducible, independently tracked blocker.
-- [ ] 4.4.3.3 Verify no generated NIFs, databases, benchmark artifacts, logs, or
+- [x] 4.4.3.3 Verify no generated NIFs, databases, benchmark artifacts, logs, or
   temporary dependency edits are tracked.
-- [ ] 4.4.3.4 Review public API compatibility, persisted-format compatibility, and
+- [x] 4.4.3.4 Review public API compatibility, persisted-format compatibility, and
   operator migration notes before release tagging.
-- [ ] 4.4.3.5 Update this plan's status and checkboxes only after the corresponding
+- [x] 4.4.3.5 Update this plan's status and checkboxes only after the corresponding
   evidence is committed and reviewable.
+
+Section 4.4 composed evidence: the four tests in
+`test/triple_store/phase_4_release_qualification_integration_test.exs` cover
+authorized named-graph and triple-schema workflows through load, query, request
+update, cache invalidation, backup, restore, reopen, and verification. They also
+carry corrupt ACL and provenance bytes through restore/reopen and combine 150
+unique query variables with 200 unique rule identifiers without atom growth.
+The barrier-driven concurrent request cases remain in
+`test/triple_store/phase_2_transaction_integration_test.exs`; idle, active-task,
+and terminal-failure scheduler shutdown cases remain in
+`test/triple_store/scheduled_backup_test.exs`. The composed gate exposed and
+fixed two additional boundary mismatches: inline integer/decimal/date-time IDs
+were wrapped in an extra `{:ok, ...}` during DELETE WHERE matching, and the
+executor did not accept the native parser's `{:count_solutions, distinct?}`
+representation for `COUNT(*)`. Focused update, solution-modifier, full-system,
+and release-qualification tests pass after both repairs.
+
+Release-gate evidence was collected with Elixir `1.19.5-otp-28` and Erlang
+`28.3.1`, using `TMPDIR=/tmp` and `TRIPLE_STORE_TEST_TMPDIR=/tmp` for tests. The
+pre-existing local `mix.exs` dependency/Dialyzer edit was replaced temporarily
+with the committed file for repeatable validation and then restored byte for
+byte; it is not part of any phase commit.
+
+- `./scripts/compile_strict.sh` passes for the application. Its output retains
+  warnings in third-party `protocol_ex` and `rdf` dependencies.
+- The final default suite at seed `7129` passes 25 doctests, 10 properties, and
+  6,758 tests with zero failures, 53 skipped, and 345 excluded. The composed
+  Phase 4 file passes four tests, and the release-relevant large-data gate passes
+  33 tests with 13 excluded.
+- `mix test --only slow --timeout 180000` runs 68 tests with two failures and
+  7,070 exclusions. Both failures are the existing crash-harness assertions that
+  an iterator or snapshot remains usable after its database closes. The
+  dedicated `:lifetime_safety` run similarly executes eight tests and all eight
+  assert post-close resource usability, contrary to the documented ownership
+  contract that requires resources to be released before database close. These
+  tests are recorded as one baseline test-contract blocker. A slow histogram
+  case that timed out only while a million-triple benchmark competed for the
+  host passes alone in 36.5 seconds. Synthetic one-million-triple timing
+  benchmarks remain outside this correctness release gate.
+- `mix dialyzer --format short` passes with zero errors. Repository-wide strict
+  Credo completes with the existing 2 warnings, 25 refactoring opportunities,
+  8 readability issues, and 13 design suggestions. The bounded Phase 4 source
+  run introduces no finding; the two executor findings retained in Section 4.3
+  remain the only findings in the touched executor path.
+- Specs, guides, code-doc, and complete conformance validation pass with 58
+  requirements, 69 acceptance criteria, 17 scenarios, one ADR, and six matrix
+  rows. RFC validation skips because `rfcs/` is absent.
+- Native-boundary qualification passes Clippy, the Rust crate tests, and all 191
+  Elixir parser tests. Rust formatting reports only pre-existing formatting in
+  `native/sparql_parser_nif/src/lib.rs`, which this plan did not modify.
+- Repository-wide Elixir formatting reports the same seven pre-existing files:
+  `lib/triple_store/loader.ex`, `lib/triple_store/sparql/quad_pattern_recognition.ex`,
+  `lib/triple_store/sparql/graph_clause_optimization.ex`,
+  `test/triple_store/sparql/executor_quad_integration_test.exs`,
+  `test/triple_store/sparql/quad_pattern_recognition_test.exs`,
+  `test/triple_store/sparql/quad_pattern_sparql_integration_test.exs`, and
+  `test/triple_store/reasoner/section_7_8_4_incremental_maintenance_test.exs`.
+  Every file changed by Phase 4 is formatted.
+
+The final finding-to-evidence map is:
+
+| Finding | Implementation commits | Focused and integration evidence | Acceptance and scenarios |
+| --- | --- | --- | --- |
+| `R-01` | `46af7da`, `e8b1bc4`, `437ddd4`, `ad30011` | Phase 6 quad execution contract, quad scan reference, executor quad integration | `AC-QRY-03`, `AC-QRY-04`, `AC-QRY-17`; `SCN-005`, `SCN-017` |
+| `R-02` | `e8b1bc4`, `437ddd4`, `ad30011` | Quad scan plan/reference and graph-only/default-graph regressions | `AC-QRY-03`, `AC-QRY-17`, `AC-STO-03`; `SCN-005`, `SCN-017` |
+| `R-03` | `e8b1bc4`, `1955db6`, `079fbd8` | Quad variable-name stress, Phase 3 persisted-state integration, Phase 4 combined identifier test | `AC-QRY-17`, `AC-RSN-06`, `AC-RSN-12`; `SCN-005`, `SCN-009` |
+| `R-04` | `aafc765`, `15d8763` | Phase 2 request rollback, sequential visibility, and barrier integration | `AC-STO-02`, `AC-RT-07`; `SCN-004`, `SCN-008` |
+| `R-05` | `43f3356`, `15d8763` | Store transaction lifecycle, serialization, and Phase 2 integration | `AC-RT-02`, `AC-RT-07`; `SCN-008` |
+| `R-06` | `02aece8`, `15d8763` | Serialized coordinator reads and Phase 2 query/update barriers | `AC-RT-02`, `AC-RT-03`, `AC-OPS-14`; `SCN-008` |
+| `R-07` | `97034c4`, `e84ec29`, `079fbd8` | Authorization, provenance, Phase 3, and Phase 4 restore/reopen corruption tests | `AC-QRY-18`, `AC-RSN-12`, `AC-STO-04`, `AC-STO-05`; `SCN-010`, `SCN-017` |
+| `R-08` | `ee59f79` | Scheduled-backup lifecycle/telemetry tests and composed backup workflows | `AC-OPS-03`, `AC-OPS-13`; `SCN-012` |
+| `R-09` | `46af7da`, `689ca49`, Section 4.4 qualification commit | Quad boundary contract, fact-loader failures, inline DELETE WHERE, native `COUNT(*)`, and composed integration | `AC-QRY-04`, `AC-QRY-09`, `AC-QRY-17`, `AC-RSN-13`; `SCN-005`, `SCN-009` |
+
+No persisted key or record format changed. Existing stores remain reopenable,
+and the release tests restore both schemas plus opaque ACL/provenance bytes.
+The only operator-visible lifecycle change is intentional: a scheduled-backup
+process now terminates with its monitored store and must be started for a newly
+opened store. Guides and operational specs describe that behavior. The release
+artifact audit found no newly tracked native binary, database, benchmark output,
+log, or temporary dependency edit. The repository's existing Wikidata baseline
+JSON/CSV fixtures remain tracked, and validation logs remain under `/tmp`.

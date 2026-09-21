@@ -56,7 +56,9 @@ the result cache.
 The generic facade load/export path is graph-oriented. Use the dedicated
 `Loader` N-Quads/TriG functions and `Exporter` dataset functions when every
 graph identity must survive. `GraphBackup` handles one named graph;
-`Backup` handles a store. There is no graph-specific scheduled-backup API.
+`Backup` handles a store. There is no graph-specific scheduled-backup API. A
+full-store scheduler monitors the store lifecycle and terminates when the store
+closes.
 
 `GraphScopedReasoner` controls local, global, and hybrid materialization.
 Preserve explicit versus derived data, graph scope, provenance, and tuple order

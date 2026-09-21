@@ -31,8 +31,11 @@ A graph variable enumerates named graphs and binds the graph term:
 ~~~
 
 The optimizer can select quad Leapfrog execution for some basic graph patterns.
-The v0.1.0 full-suite baseline contains known binding and iterator failures in
-parts of that path; use focused tests for production query shapes.
+That path preserves binary variable names, chooses a quad index from its longest
+contiguous bound prefix, and owns its iterator until exhaustion, early halt, or
+failure. Unsupported plans may use the reference executor during construction;
+an error encountered later while consuming a lazy result is returned rather
+than hidden by fallback.
 
 ## Authorization boundary
 

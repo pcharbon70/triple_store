@@ -51,6 +51,21 @@ defmodule TripleStore.ScheduledBackupTest do
     File.rm_rf!(backup_dir)
   end
 
+  defp await_backup_idle(pid, attempts \\ 50)
+
+  defp await_backup_idle(_pid, 0), do: flunk("scheduled backup did not become idle")
+
+  defp await_backup_idle(pid, attempts) do
+    case ScheduledBackup.status(pid) do
+      {:ok, %{backup_in_progress: false} = status} ->
+        status
+
+      {:ok, %{backup_in_progress: true}} ->
+        Process.sleep(10)
+        await_backup_idle(pid, attempts - 1)
+    end
+  end
+
   # ===========================================================================
   # Start/Stop Tests
   # ===========================================================================
@@ -408,10 +423,14 @@ defmodule TripleStore.ScheduledBackupTest do
         # Wait for more backups than max (need at least max_backups + 1)
         Process.sleep(@test_interval * 12)
 
-        {:ok, status} = ScheduledBackup.status(pid)
+        status = await_backup_idle(pid)
         # We need at least max_backups + 1 to trigger rotation
         assert status.backup_count >= max_backups + 1,
                "Expected at least #{max_backups + 1} backups, got #{status.backup_count}"
+
+        # Stop while idle so the next interval cannot begin while we inspect the
+        # completed rotation set.
+        :ok = ScheduledBackup.stop(pid)
 
         # But only max_backups should exist
         {:ok, backups} = Backup.list(backup_dir)
@@ -423,8 +442,6 @@ defmodule TripleStore.ScheduledBackupTest do
 
         assert length(matching) <= max_backups,
                "Expected <= #{max_backups} backups, found #{length(matching)}"
-
-        :ok = ScheduledBackup.stop(pid)
       after
         cleanup_store(store, path)
         cleanup_backup_dir(backup_dir)
@@ -466,11 +483,195 @@ defmodule TripleStore.ScheduledBackupTest do
 
         assert_receive {:tick, measurements, metadata}, 1000
         assert measurements.count >= 0
-        assert metadata.backup_dir == backup_dir
+        assert metadata.backup_dir == Path.basename(backup_dir)
         assert metadata.interval_ms == @test_interval
 
         :telemetry.detach("test-scheduled-tick")
         :ok = ScheduledBackup.stop(pid)
+      after
+        cleanup_store(store, path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
+  end
+
+  # ===========================================================================
+  # Store Lifecycle Ownership Tests
+  # ===========================================================================
+
+  describe "store lifecycle ownership" do
+    test "monitors the dictionary manager and ignores unrelated DOWN messages" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: :timer.hours(1)
+          )
+
+        state = :sys.get_state(scheduler)
+        assert state.lifecycle_pid == store.dict_manager
+        assert is_reference(state.lifecycle_ref)
+
+        send(scheduler, {:DOWN, make_ref(), :process, self(), :unrelated})
+
+        assert {:ok, %{running: true, backup_in_progress: false}} =
+                 ScheduledBackup.status(scheduler)
+
+        :ok = ScheduledBackup.stop(scheduler)
+      after
+        cleanup_store(store, path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
+
+    test "stops an idle scheduler when the store closes" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+      test_pid = self()
+      handler_id = "scheduled-backup-store-down-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler_id,
+        [:triple_store, :scheduled_backup, :stop],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:scheduler_stopped, measurements, metadata})
+        end,
+        nil
+      )
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: :timer.hours(1)
+          )
+
+        scheduler_ref = Process.monitor(scheduler)
+        timer_ref = :sys.get_state(scheduler).timer_ref
+        assert is_reference(timer_ref)
+
+        assert :ok = TripleStore.close(store)
+        assert_receive {:DOWN, ^scheduler_ref, :process, ^scheduler, :normal}, 1_000
+
+        assert_receive {:scheduler_stopped, %{backup_count: 0}, metadata}, 1_000
+        assert metadata.reason == :store_lifecycle_down
+        assert metadata.backup_dir == Path.basename(backup_dir)
+        assert Process.read_timer(timer_ref) == false
+      after
+        :telemetry.detach(handler_id)
+        File.rm_rf!(path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
+
+    test "store close cancels an in-progress backup task" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+      test_pid = self()
+
+      backup_runner = fn _store, _backup_dir, _opts ->
+        send(test_pid, {:backup_started, self()})
+
+        receive do
+          :finish ->
+            {:ok,
+             %{
+               path: backup_dir,
+               source_path: path,
+               created_at: DateTime.utc_now(),
+               size_bytes: 0,
+               file_count: 0
+             }}
+        end
+      end
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: :timer.hours(1),
+            run_immediately: true,
+            backup_runner: backup_runner
+          )
+
+        scheduler_ref = Process.monitor(scheduler)
+        assert_receive {:backup_started, task_pid}, 1_000
+        task_ref = Process.monitor(task_pid)
+
+        assert {:ok, %{backup_in_progress: true}} = ScheduledBackup.status(scheduler)
+        assert :ok = TripleStore.close(store)
+
+        assert_receive {:DOWN, ^scheduler_ref, :process, ^scheduler, :normal}, 1_000
+        assert_receive {:DOWN, ^task_ref, :process, ^task_pid, _reason}, 1_000
+      after
+        File.rm_rf!(path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
+
+    test "operator stop cancels backup work without stopping the store" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+      test_pid = self()
+
+      backup_runner = fn _store, _backup_dir, _opts ->
+        send(test_pid, {:backup_started, self()})
+        receive do: (:finish -> {:error, :unexpected_finish})
+      end
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: :timer.hours(1),
+            run_immediately: true,
+            backup_runner: backup_runner
+          )
+
+        assert_receive {:backup_started, task_pid}, 1_000
+        task_ref = Process.monitor(task_pid)
+
+        assert :ok = ScheduledBackup.stop(scheduler)
+        assert_receive {:DOWN, ^task_ref, :process, ^task_pid, _reason}, 1_000
+        assert Process.alive?(store.dict_manager)
+      after
+        cleanup_store(store, path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
+
+    test "terminal corruption failures stop without retrying" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+      test_pid = self()
+
+      backup_runner = fn _store, _backup_dir, _opts ->
+        send(test_pid, :terminal_backup_attempt)
+        {:error, {:corrupt_provenance, :invalid_record}}
+      end
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: 10,
+            run_immediately: true,
+            backup_runner: backup_runner
+          )
+
+        scheduler_ref = Process.monitor(scheduler)
+
+        assert_receive :terminal_backup_attempt, 1_000
+        assert_receive {:DOWN, ^scheduler_ref, :process, ^scheduler, :normal}, 1_000
+        refute_receive :terminal_backup_attempt, 50
       after
         cleanup_store(store, path)
         cleanup_backup_dir(backup_dir)

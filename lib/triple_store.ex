@@ -169,6 +169,7 @@ defmodule TripleStore do
   alias TripleStore.Loader
   alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.DerivedStore
+  alias TripleStore.Reasoner.FactLoader
   alias TripleStore.Reasoner.GraphReasoningConfig
   alias TripleStore.Reasoner.ReasoningConfig
   alias TripleStore.Reasoner.ReasoningProfile
@@ -829,7 +830,9 @@ defmodule TripleStore do
   Materializes inferred triples using the specified reasoning profile.
 
   Uses forward-chaining semi-naive evaluation to compute the closure
-  of all applicable inference rules.
+  of all applicable inference rules. The default local path loads explicit
+  triple facts into memory and returns statistics; it does not persist or
+  return the derived fact set.
 
   ## Arguments
 
@@ -841,7 +844,9 @@ defmodule TripleStore do
     - `:rdfs` - RDFS entailment rules only
     - `:owl2rl` - OWL 2 RL profile (includes RDFS)
     - `:all` - All available rules
-  - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:parallel` - Enables parallel evaluation for graph-aware scopes. The
+    legacy local triple path accepts this option for compatibility but does not
+    currently apply it.
   - `:scope` - Graph-aware reasoning scope (default: :local)
     - `:local` - Each graph materializes independently
     - `:global` - All graphs in single inference closure
@@ -895,10 +900,9 @@ defmodule TripleStore do
   # Legacy triple materialization
   defp materialize_triples(%{db: db, dict_manager: _dict_manager}, opts) do
     profile = Keyword.get(opts, :profile, :owl2rl)
-    _parallel = Keyword.get(opts, :parallel, true)
 
     with {:ok, rules} <- ReasoningProfile.rules_for(profile),
-         {:ok, initial_facts} <- load_facts_from_db(db) do
+         {:ok, initial_facts} <- FactLoader.load_facts_from_db(db, []) do
       result =
         SemiNaive.materialize_in_memory(rules, initial_facts,
           max_iterations: TripleStore.Config.get(:max_iterations)
@@ -912,14 +916,6 @@ defmodule TripleStore do
           error
       end
     end
-  end
-
-  # Load all triples from the database as facts for reasoning
-  defp load_facts_from_db(db) do
-    {:ok, triples} = TripleStore.Index.lookup_all(db, {:var, :var, :var})
-    # Convert internal triple list to MapSet of tuples
-    facts = MapSet.new(triples)
-    {:ok, facts}
   end
 
   # Global reasoning using GraphScopedReasoner
