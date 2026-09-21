@@ -10,6 +10,7 @@ This document backfills the current reasoning subsystem implemented by:
 - `TripleStore.Reasoner.RuleOptimizer`
 - `TripleStore.Reasoner.PatternMatcher`
 - `TripleStore.Reasoner.DeltaComputation`
+- `TripleStore.Reasoner.FactLoader`
 - `TripleStore.Reasoner.SemiNaive`
 - `TripleStore.Reasoner.Incremental`
 - `TripleStore.Reasoner.IncrementalQuad`
@@ -54,7 +55,7 @@ graph TD
 ## Current Codebase Notes
 
 - The reasoning subsystem is broader than a single materializer: it includes configuration, graph-scoped status, provenance/backward tracing, incremental maintenance, and rederivation workflows.
-- `TripleStore.materialize/2` routes `scope: :local` through a legacy triple-only path: it reads `Index.lookup_all/2`, calls `SemiNaive.materialize_in_memory`, and returns statistics while discarding the resulting fact set. This path does not write `derived`, does not reload previously persisted derived facts, and does not forward its `parallel` option to the evaluator.
+- `TripleStore.materialize/2` routes `scope: :local` through a legacy triple-only path: `FactLoader` owns an SPO iterator and loads a complete explicit-fact set, then the facade calls `SemiNaive.materialize_in_memory` and returns statistics while discarding the resulting fact set. Iterator setup, scan, storage, and persisted-key decoding failures remain tagged, partial facts are not returned, and the iterator closes on every outcome. This path does not write `derived`, does not reload previously persisted derived facts, and does not forward its `parallel` option to the evaluator.
 - `materialize_graph/3`, `materialize_graphs/3`, and `materialize_all/2` route through `GraphScopedReasoner`, whose storage callbacks write inferred facts to `derived`. `DerivedStore` provides separate persistence and lookup APIs used by other reasoning workflows; the local facade path does not call it.
 - Fully ground non-delta premises are verified through the configured lookup
   provider. A missing premise yields no binding, while a provider error aborts
@@ -82,3 +83,4 @@ The dependency diagram above describes the subsystem, not a persistence guarante
 | `AC-RSN-10` | Fully ground premises require an exact lookup match, and lookup failures cannot be reported as successful convergence. | `test/triple_store/reasoner/ground_premise_regression_test.exs`, `test/triple_store/reasoner/delta_computation_test.exs`, `test/triple_store/reasoner/semi_naive_test.exs` |
 | `AC-RSN-11` | Derived quads use canonical GSPO bytes across batched writes, lookup, reopen, deletion, and recovery; global `:per_graph_cf` targets graph ID `0`. | `test/triple_store/reasoner/derived_quad_canonical_test.exs`, `test/triple_store/reasoner/section_7_8_5_derived_store_quad_test.exs` |
 | `AC-RSN-12` | Persisted derivation records are safe-decoded and completely validated; corrupt lineage produces a tagged error before explanation or maintained deletion mutates facts, while valid legacy atom names and binary rule names remain compatible. | `test/triple_store/reasoner/derivation_provenance_test.exs`, `test/triple_store/phase_3_persisted_state_safety_integration_test.exs` |
+| `AC-RSN-13` | Local materialization returns tagged input-scan errors without partial facts and releases its owned SPO iterator after success, scan failure, or malformed-key termination. | `test/triple_store/reasoner/fact_loader_test.exs` |

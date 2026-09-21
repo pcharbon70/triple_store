@@ -15,10 +15,18 @@ This contract defines the normative reasoning behavior for `TripleStore`.
 - `REQ-RSN-009`: Optional parallel reasoning MUST remain deterministic with respect to final derived facts.
 - `REQ-RSN-010`: Reasoning limits such as maximum iterations or fact counts MUST fail with typed outcomes rather than silent truncation.
 - `REQ-RSN-011`: Reasoning telemetry and provenance MUST make iteration, duration, per-graph behavior, and derived-fact lineage observable. Persisted provenance MUST be decoded without creating runtime atoms, completely validated before use, and rejected with a tagged corruption error before explanation or maintained deletion changes data.
+- `REQ-RSN-012`: Local materialization MUST return tagged iterator, scan,
+  storage, and persisted-key decoding failures without returning partial facts,
+  and MUST release its owned iterator on every outcome.
 
 ## Current Implementation Status
 
 The default local `TripleStore.materialize/2` path is an in-memory computation over explicit triple indices. It returns statistics, discards the computed fact set, and neither reads persisted derived facts nor stores new ones. It also does not forward its `parallel` option. This is a limitation of the current facade path, not a general persistence guarantee or a change to the normative requirements above.
+
+Local fact loading is owned by `TripleStore.Reasoner.FactLoader`. It scans the
+SPO index into a complete `MapSet`, closes the iterator on success and failure,
+and propagates tagged setup, scan, storage-process, and key-decoding errors
+through `TripleStore.materialize/2`.
 
 Graph-scoped APIs use `GraphScopedReasoner` and storage callbacks; `DerivedStore` exposes persistence APIs for reasoning workflows. Assess `REQ-RSN-001`, `REQ-RSN-005`, `REQ-RSN-006`, and `REQ-RSN-009` separately for each entry point. `SCN-009` fixpoint results alone do not establish `SCN-010` persistence, provenance, or later query visibility. A local facade persistence fix requires implementation and behavior-test evidence, not just a documentation update.
 

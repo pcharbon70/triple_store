@@ -713,27 +713,49 @@ every pattern match in the repository.
 Description: Replace the hard match in local fact loading with tagged storage
 errors that flow through the existing materialization result contract.
 
-- [ ] 4.2.1.1 Make `load_facts_from_db/2` return `{:ok, facts}` or a tagged error
+- [x] 4.2.1.1 Make `load_facts_from_db/2` return `{:ok, facts}` or a tagged error
   for iterator, decode, and storage failures.
-- [ ] 4.2.1.2 Propagate the result through `materialize/2` without claiming that the
+- [x] 4.2.1.2 Propagate the result through `materialize/2` without claiming that the
   local in-memory path persists or returns derived facts.
-- [ ] 4.2.1.3 Verify iterator cleanup on scan failure and early decode termination.
-- [ ] 4.2.1.4 Add injected adapter-failure tests for the public facade and the
+- [x] 4.2.1.3 Verify iterator cleanup on scan failure and early decode termination.
+- [x] 4.2.1.4 Add injected adapter-failure tests for the public facade and the
   lower-level reasoner entry point.
+
+Task 4.2.1 evidence: `Reasoner.FactLoader.load_facts_from_db/2` owns one SPO
+iterator, builds an all-or-error `MapSet`, validates exact 24-byte keys, and
+closes the iterator in `after`. Setup, iteration, storage-process, and decode
+failures have distinct tagged results. The local facade propagates those results
+and documents that it returns statistics without persisting or returning the
+derived fact set. Adapter fault injection covers iterator setup and movement;
+focused tests also insert malformed persisted bytes and compare adapter links
+before and after early termination.
 
 #### Task 4.2.2: Audit touched fallback and error paths
 
 Description: Review only modules changed by this plan for rescues, hard matches,
 and error-to-default conversions that could conceal the repaired failures.
 
-- [ ] 4.2.2.1 Check query fallback paths for lazy exceptions that escape the
+- [x] 4.2.2.1 Check query fallback paths for lazy exceptions that escape the
   construction-time rescue boundary.
-- [ ] 4.2.2.2 Check transaction and authorization paths for errors converted into
+- [x] 4.2.2.2 Check transaction and authorization paths for errors converted into
   zero counts, empty maps, or successful telemetry.
-- [ ] 4.2.2.3 Check scheduled backup and persistence paths for repeated retries
+- [x] 4.2.2.3 Check scheduled backup and persistence paths for repeated retries
   after terminal lifecycle or corruption errors.
-- [ ] 4.2.2.4 Add focused regressions for each verified issue; document inspected
+- [x] 4.2.2.4 Add focused regressions for each verified issue; document inspected
   non-issues instead of making speculative changes.
+
+Task 4.2.2 evidence: the quad multi-iterator rescue remains limited to eager
+construction, so lazy stream exceptions are not converted into fallback
+results; the dedicated iterator-cleanup regression covers consumer exceptions.
+Transaction manager exits remain tagged as `:transaction_unavailable`, ACL
+read/corruption errors propagate, and failed update telemetry carries
+`status: :error` even though its count measurement is zero. Plan-cache and
+statistics callback failures occur only after a successful commit and remain
+best-effort side effects. Scheduled backups now stop after lifecycle and known
+corruption/closed-storage terminal errors while transient operational failures
+retain interval retries. A focused terminal-corruption regression proves only
+one backup attempt. The Section 4.2 gate passes 78 tests with seven slow
+scheduled-backup cases deliberately excluded for the final integration gate.
 
 ### Section 4.3: Documentation and Maintainability Closure
 

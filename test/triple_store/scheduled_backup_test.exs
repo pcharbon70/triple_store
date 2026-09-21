@@ -646,6 +646,37 @@ defmodule TripleStore.ScheduledBackupTest do
         cleanup_backup_dir(backup_dir)
       end
     end
+
+    test "terminal corruption failures stop without retrying" do
+      {store, path} = create_test_store()
+      backup_dir = create_test_backup_dir()
+      test_pid = self()
+
+      backup_runner = fn _store, _backup_dir, _opts ->
+        send(test_pid, :terminal_backup_attempt)
+        {:error, {:corrupt_provenance, :invalid_record}}
+      end
+
+      try do
+        {:ok, scheduler} =
+          ScheduledBackup.start_link(
+            store: store,
+            backup_dir: backup_dir,
+            interval: 10,
+            run_immediately: true,
+            backup_runner: backup_runner
+          )
+
+        scheduler_ref = Process.monitor(scheduler)
+
+        assert_receive :terminal_backup_attempt, 1_000
+        assert_receive {:DOWN, ^scheduler_ref, :process, ^scheduler, :normal}, 1_000
+        refute_receive :terminal_backup_attempt, 50
+      after
+        cleanup_store(store, path)
+        cleanup_backup_dir(backup_dir)
+      end
+    end
   end
 
   # ===========================================================================

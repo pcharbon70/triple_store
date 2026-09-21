@@ -21,6 +21,7 @@ Primary ownership: **Reasoning Plane**.
 - `TripleStore.Reasoner.Rules`
 - `TripleStore.Reasoner.RuleCompiler`
 - `TripleStore.Reasoner.RuleOptimizer`
+- `TripleStore.Reasoner.FactLoader`
 - `TripleStore.Reasoner.SemiNaive`
 - `TripleStore.Reasoner.Incremental`
 - `TripleStore.Reasoner.IncrementalQuad`

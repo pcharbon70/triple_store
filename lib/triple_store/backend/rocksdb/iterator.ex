@@ -47,7 +47,8 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           snapshot: snapshot_ref() | nil,
           last_seek: binary() | nil,
           exhausted: boolean(),
-          positioned: boolean()
+          positioned: boolean(),
+          move_failure: term() | nil
         }
 
   # ===========================================================================
@@ -215,7 +216,8 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
           snapshot: Keyword.get(opts, :snapshot),
           last_seek: nil,
           exhausted: false,
-          positioned: false
+          positioned: false,
+          move_failure: Keyword.get(opts, :move_failure)
         }
 
         # Note: erlang-rocksdb db_ref is a reference, not a PID, so we don't monitor it
@@ -228,6 +230,10 @@ defmodule TripleStore.Backend.RocksDB.Iterator do
   end
 
   @impl true
+  def handle_call(:next, _from, %{move_failure: reason} = state) when not is_nil(reason) do
+    {:reply, {:error, reason}, %{state | move_failure: nil}}
+  end
+
   def handle_call(
         {:move, action},
         _from,
