@@ -23,7 +23,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   """
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.SPARQL.Leapfrog.QuadTrieIterator
+  alias TripleStore.SPARQL.Leapfrog.{QuadScanPlan, QuadTrieIterator}
 
   @type variable :: {:variable, String.t()}
   @type component :: non_neg_integer() | variable()
@@ -72,9 +72,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
             exhausted: false
 
   @max_iterations 10_000
-  @indexes [:gspo, :gpos, :spog, :posg]
-  @positions [:subject, :predicate, :object, :graph]
-
   @doc """
   Returns the preferred index for a semantic component position.
 
@@ -103,19 +100,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   normalized at this boundary. Newly produced patterns should use integer IDs.
   """
   @spec plan_iterators(tuple()) :: {:ok, iterator_plan()} | {:error, term()}
-  def plan_iterators(pattern) do
-    with {:ok, normalized} <- normalize_pattern(pattern) do
-      components = pattern_components(normalized)
-
-      if Enum.all?(components, &is_integer/1) do
-        {:ok, []}
-      else
-        {index, prefix_components} = best_index_and_prefix(components)
-        prefix = encode_prefix(prefix_components)
-        {:ok, [{3, index, length(prefix_components), prefix}]}
-      end
-    end
-  end
+  defdelegate plan_iterators(pattern), to: QuadScanPlan, as: :build
 
   @doc """
   Constructs a lazy quad-pattern scan.
@@ -127,10 +112,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   @spec from_pattern(pid(), tuple()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
   def from_pattern(db, pattern) do
     with :ok <- validate_store(db),
-         {:ok, normalized} <- normalize_pattern(pattern) do
+         {:ok, normalized} <- QuadScanPlan.normalize(pattern) do
       state = new_state(normalized)
 
-      if not_found_pattern?(normalized) do
+      if QuadScanPlan.not_found?(normalized) do
         exhausted(state)
       else
         open_pattern(db, state)
@@ -148,8 +133,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
           {:ok, [tagged_iterator()]} | {:error, term()}
   def create_iterators_for_pattern(db, pattern) do
     with :ok <- validate_store(db),
-         {:ok, normalized} <- normalize_pattern(pattern),
-         false <- not_found_pattern?(normalized),
+         {:ok, normalized} <- QuadScanPlan.normalize(pattern),
+         false <- QuadScanPlan.not_found?(normalized),
          {:ok, plan} <- plan_iterators(normalized) do
       open_plan(db, plan)
     else
@@ -234,12 +219,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   @spec quad_variable_ordering(tuple(), map() | nil) ::
           {:ok, [non_neg_integer()]} | {:error, term()}
   def quad_variable_ordering(pattern, stats) do
-    with {:ok, normalized} <- normalize_pattern(pattern) do
+    with {:ok, normalized} <- QuadScanPlan.normalize(pattern) do
       stats = if is_map(stats), do: stats, else: %{}
 
       ordering =
         normalized
-        |> pattern_components()
+        |> QuadScanPlan.components()
         |> Enum.with_index()
         |> Enum.sort_by(fn {component, position} ->
           {variable_score(component, position, stats), position}
@@ -253,25 +238,27 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # Construction
 
   defp open_pattern(db, %__MODULE__{pattern: pattern} = state) do
-    components = pattern_components(pattern)
+    components = QuadScanPlan.components(pattern)
 
     if Enum.all?(components, &is_integer/1) do
       fully_bound_lookup(db, state, components)
     else
-      with {:ok, plan} <- plan_iterators(pattern),
-           {:ok, tagged} <- open_plan(db, plan) do
-        opened = %{state | tagged_iterators: tagged}
-
-        case tagged do
-          [%{iterator: iterator}] ->
-            if QuadTrieIterator.exhausted?(iterator), do: exhausted(opened), else: {:ok, opened}
-
-          [] ->
-            exhausted(opened)
-        end
-      end
+      open_scanning_pattern(db, state, pattern)
     end
   end
+
+  defp open_scanning_pattern(db, state, pattern) do
+    with {:ok, plan} <- plan_iterators(pattern),
+         {:ok, tagged} <- open_plan(db, plan) do
+      classify_opened(%{state | tagged_iterators: tagged})
+    end
+  end
+
+  defp classify_opened(%__MODULE__{tagged_iterators: [%{iterator: iterator}]} = state) do
+    if QuadTrieIterator.exhausted?(iterator), do: exhausted(state), else: {:ok, state}
+  end
+
+  defp classify_opened(%__MODULE__{tagged_iterators: []} = state), do: exhausted(state)
 
   defp open_plan(_db, []), do: {:ok, []}
 
@@ -309,11 +296,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   defp safe_adapter_call(fun) do
-    try do
-      fun.()
-    catch
-      :exit, _reason -> {:error, :store_unavailable}
-    end
+    fun.()
+  catch
+    :exit, _reason -> {:error, :store_unavailable}
   end
 
   defp validate_store(db) when is_pid(db) do
@@ -331,22 +316,27 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   defp find_match(%__MODULE__{tagged_iterators: [%{iterator: iterator, index: index}]} = state) do
     case QuadTrieIterator.current_key(iterator) do
       {:ok, key} ->
-        examined = %{state | iterations: state.iterations + 1}
-
-        case bindings_for_key(key, index, state.pattern) do
-          {:ok, bindings} ->
-            {:ok, %{examined | bindings: bindings, advanced: true}}
-
-          :no_match ->
-            case advance_iterator(examined) do
-              {:ok, advanced} -> find_match(advanced)
-              {:exhausted, exhausted_state} -> {:exhausted, exhausted_state}
-              {:error, _} = error -> error
-            end
-        end
+        match_current_key(state, key, index)
 
       :exhausted ->
         exhausted(state)
+    end
+  end
+
+  defp match_current_key(state, key, index) do
+    examined = %{state | iterations: state.iterations + 1}
+
+    case QuadScanPlan.bindings_for_key(key, index, state.pattern) do
+      {:ok, bindings} -> {:ok, %{examined | bindings: bindings, advanced: true}}
+      :no_match -> advance_to_match(examined)
+    end
+  end
+
+  defp advance_to_match(state) do
+    case advance_iterator(state) do
+      {:ok, advanced} -> find_match(advanced)
+      {:exhausted, exhausted_state} -> {:exhausted, exhausted_state}
+      {:error, _} = error -> error
     end
   end
 
@@ -374,40 +364,6 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     end
   end
 
-  defp bindings_for_key(key, index, pattern) do
-    values = decode_key(key, index) |> Tuple.to_list()
-    components = pattern_components(pattern)
-
-    components
-    |> Enum.zip(values)
-    |> Enum.reduce_while({:ok, %{}}, fn
-      {component, value}, {:ok, bindings} when is_integer(component) ->
-        if component == value, do: {:cont, {:ok, bindings}}, else: {:halt, :no_match}
-
-      {{:variable, "_"}, _value}, {:ok, bindings} ->
-        {:cont, {:ok, bindings}}
-
-      {{:variable, name}, value}, {:ok, bindings} ->
-        case Map.fetch(bindings, name) do
-          :error -> {:cont, {:ok, Map.put(bindings, name, value)}}
-          {:ok, ^value} -> {:cont, {:ok, bindings}}
-          {:ok, _other} -> {:halt, :no_match}
-        end
-    end)
-  end
-
-  defp decode_key(<<g::64-big, s::64-big, p::64-big, o::64-big>>, :gspo),
-    do: {s, p, o, g}
-
-  defp decode_key(<<g::64-big, p::64-big, o::64-big, s::64-big>>, :gpos),
-    do: {s, p, o, g}
-
-  defp decode_key(<<s::64-big, p::64-big, o::64-big, g::64-big>>, :spog),
-    do: {s, p, o, g}
-
-  defp decode_key(<<p::64-big, o::64-big, s::64-big, g::64-big>>, :posg),
-    do: {s, p, o, g}
-
   defp prefix_match?(_key, <<>>), do: true
 
   defp prefix_match?(key, prefix) do
@@ -433,80 +389,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   defp safe_close(_iterator), do: :ok
 
-  # Planning
-
-  defp best_index_and_prefix(components) do
-    @indexes
-    |> Enum.map(fn index ->
-      {index, contiguous_bound_prefix(components_for_index(components, index))}
-    end)
-    |> Enum.max_by(
-      fn {_index, prefix_components} -> length(prefix_components) end,
-      fn -> {:gspo, []} end
-    )
-  end
-
-  defp contiguous_bound_prefix(components), do: Enum.take_while(components, &is_integer/1)
-  defp encode_prefix(components), do: Enum.map_join(components, fn id -> <<id::64-big>> end)
-
-  defp components_for_index([s, p, o, g], :gspo), do: [g, s, p, o]
-  defp components_for_index([s, p, o, g], :gpos), do: [g, p, o, s]
-  defp components_for_index([s, p, o, g], :spog), do: [s, p, o, g]
-  defp components_for_index([s, p, o, g], :posg), do: [p, o, s, g]
-
-  # Validation and normalization
-
-  defp normalize_pattern({:quad, s, p, o, g}) do
-    [s, p, o, g]
-    |> Enum.zip(@positions)
-    |> Enum.reduce_while({:ok, []}, fn {component, position}, {:ok, acc} ->
-      case normalize_component(component) do
-        {:ok, normalized} -> {:cont, {:ok, [normalized | acc]}}
-        :error -> {:halt, {:error, {:invalid_quad_component, position, component}}}
-      end
-    end)
-    |> case do
-      {:ok, reversed} ->
-        [normalized_s, normalized_p, normalized_o, normalized_g] = Enum.reverse(reversed)
-        {:ok, {:quad, normalized_s, normalized_p, normalized_o, normalized_g}}
-
-      {:error, _} = error ->
-        error
-    end
-  end
-
-  defp normalize_pattern(_pattern), do: {:error, :invalid_quad_pattern}
-
-  defp normalize_component(component) when is_integer(component) and component >= 0,
-    do: {:ok, component}
-
-  defp normalize_component({:bound, component})
-       when is_integer(component) and component >= 0,
-       do: {:ok, component}
-
-  defp normalize_component({:bound, nil}), do: {:ok, :not_found}
-  defp normalize_component(:default_graph), do: {:ok, 0}
-
-  defp normalize_component({:variable, name}) when is_binary(name) and byte_size(name) > 0,
-    do: {:ok, {:variable, name}}
-
-  defp normalize_component(_component), do: :error
-
-  defp pattern_components({:quad, s, p, o, g}), do: [s, p, o, g]
-  defp not_found_pattern?(pattern), do: :not_found in pattern_components(pattern)
-
   defp new_state(pattern) do
-    %__MODULE__{variables: extract_variables(pattern_components(pattern)), pattern: pattern}
-  end
-
-  defp extract_variables(components) do
-    components
-    |> Enum.flat_map(fn
-      {:variable, "_"} -> []
-      {:variable, name} -> [name]
-      _bound -> []
-    end)
-    |> Enum.uniq()
+    %__MODULE__{variables: QuadScanPlan.variables(pattern), pattern: pattern}
   end
 
   defp bound_component?({:variable, _name}), do: false

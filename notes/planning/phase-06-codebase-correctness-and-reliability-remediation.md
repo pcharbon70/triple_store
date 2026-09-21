@@ -211,16 +211,21 @@ to drift, without changing the behavior established in Sections 1.1 and 1.2.
 Description: Split `from_pattern/2` around validation, component analysis, index
 selection, prefix encoding, iterator opening, and stream binding extraction.
 
-- [ ] 1.3.1.1 Extract pure component-analysis and index-selection functions with
+- [x] 1.3.1.1 Extract pure component-analysis and index-selection functions with
   exhaustive pattern tests.
-- [ ] 1.3.1.2 Extract pure prefix encoding from iterator construction.
-- [ ] 1.3.1.3 Isolate iterator acquisition in one function that owns rollback of
+- [x] 1.3.1.2 Extract pure prefix encoding from iterator construction.
+- [x] 1.3.1.3 Isolate iterator acquisition in one function that owns rollback of
   partially acquired resources.
-- [ ] 1.3.1.4 Isolate key decoding and binding construction by index order.
-- [ ] 1.3.1.5 Remove stale three-tuple/four-tuple branches and test-only production
+- [x] 1.3.1.4 Isolate key decoding and binding construction by index order.
+- [x] 1.3.1.5 Remove stale three-tuple/four-tuple branches and test-only production
   behavior after all callers use the canonical types.
-- [ ] 1.3.1.6 Run strict Credo on the affected modules and record any remaining
+- [x] 1.3.1.6 Run strict Credo on the affected modules and record any remaining
   complexity that is justified by the execution algorithm.
+
+Section evidence: strict Credo reported no issues across `QuadScanPlan` and
+`QuadLeapfrog`; the focused planner and executor run completed 82 tests with
+zero failures. Existing warnings in older test modules are outside this
+section's production-code complexity scope.
 
 ### Section 1.4: Integration Tests
 
