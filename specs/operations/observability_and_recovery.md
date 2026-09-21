@@ -48,6 +48,11 @@ graph TD
 - `Snapshot` is a globally supervised support service and is already used by integration tests for read-consistency behavior.
 - `Statistics.Cache` is deprecated but still runtime-integrated through `TripleStore.Application.start_stats_cache/2`; `Statistics.Server` is the intended successor.
 - Backup and scheduled-backup support are current production-facing features, including incremental backup, verification, restore, and rotation behavior. Full-store verification and restore detect the persisted index layout and reopen triple and quad backups with their original schema; quad ACL and provenance column families remain byte-compatible across restore and reopen.
+- Each scheduled-backup process monitors its store-owned dictionary manager as
+  the store lifecycle sentinel. Store shutdown cancels its timer and any owned
+  backup task, emits a scheduled-backup stop event, and terminates without
+  scheduling work against the closed database. Unrelated monitor messages do
+  not affect the scheduler.
 - `GraphBackup` is the current graph-scoped recovery surface and uses N-Quads export/import plus per-graph metadata.
 
 ## Acceptance Criteria
@@ -56,6 +61,6 @@ graph TD
 |---|---|---|
 | `AC-OPS-11` | Telemetry remains the shared source for metrics and Prometheus-style export rather than parallel ad hoc instrumentation stacks. | `test/triple_store/telemetry_test.exs`, `test/triple_store/metrics_test.exs`, `test/triple_store/prometheus_test.exs` |
 | `AC-OPS-12` | Health distinguishes store liveness, readiness, and full-health status while reflecting optional support services accurately. | `test/triple_store/health_test.exs` |
-| `AC-OPS-13` | Backup, restore, graph backup, incremental backup, and scheduled backup remain documented as current runtime features; full-store restore preserves the detected triple or quad schema. | `test/triple_store/backup_test.exs`, `test/triple_store/graph_backup_test.exs`, `test/triple_store/scheduled_backup_test.exs`, `test/triple_store/phase_3_persisted_state_safety_integration_test.exs` |
+| `AC-OPS-13` | Backup, restore, graph backup, incremental backup, and scheduled backup remain documented as current runtime features; full-store restore preserves the detected triple or quad schema, and a scheduled backup stops with its monitored store lifecycle. | `test/triple_store/backup_test.exs`, `test/triple_store/graph_backup_test.exs`, `test/triple_store/scheduled_backup_test.exs`, `test/triple_store/phase_3_persisted_state_safety_integration_test.exs` |
 | `AC-OPS-14` | Snapshot lifecycle management remains an explicit operational support surface for read consistency and cleanup. | `test/triple_store/snapshot_test.exs`, `test/triple_store/integration/storage_layer_test.exs` |
 | `AC-OPS-15` | The specs capture the current split between deprecated `Statistics.Cache` integration and the newer `Statistics.Server` implementation. | `test/triple_store/statistics/cache_test.exs`, `test/triple_store/statistics/server_test.exs`, `test/triple_store/statistics_quad_test.exs` |

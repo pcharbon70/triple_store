@@ -6,6 +6,13 @@ defmodule TripleStore.ScheduledBackup do
   rotation policies. Uses `TripleStore.Backup.rotate/3` for each backup
   to automatically clean up old backups.
 
+  The scheduler monitors the store's dictionary manager. That process is
+  owned by every store opened through `TripleStore.open/2`, including stores
+  that use an external transaction coordinator, and it is stopped before the
+  database is closed. Its termination is therefore the scheduler's signal to
+  cancel timers, stop any in-progress backup task, and terminate without
+  scheduling another backup against a closed store.
+
   ## Usage
 
       # Start scheduled backups every hour, keeping 24 backups
@@ -30,6 +37,9 @@ defmodule TripleStore.ScheduledBackup do
   - `:max_backups` - Maximum backups to keep (default: 5)
   - `:prefix` - Backup name prefix (default: "scheduled")
   - `:run_immediately` - Run first backup immediately (default: false)
+  - `:backup_runner` - Optional three-argument function used to execute a
+    rotation. It defaults to `TripleStore.Backup.rotate/3` and is primarily
+    useful for controlled embedding and lifecycle tests.
 
   ## Telemetry Events
 
@@ -43,6 +53,10 @@ defmodule TripleStore.ScheduledBackup do
   - `[:triple_store, :scheduled_backup, :error]` - On backup failure
     - Measurements: `%{}`
     - Metadata: `%{reason: term, backup_dir: String.t}`
+
+  - `[:triple_store, :scheduled_backup, :stop]` - When the scheduler stops
+    - Measurements: `%{backup_count: integer}`
+    - Metadata: `%{reason: atom, backup_dir: String.t}`
 
   """
 
@@ -72,7 +86,9 @@ defmodule TripleStore.ScheduledBackup do
           interval: pos_integer(),
           max_backups: pos_integer(),
           prefix: String.t(),
-          run_immediately: boolean()
+          run_immediately: boolean(),
+          backup_runner: (TripleStore.store(), Path.t(), keyword() ->
+                            {:ok, Backup.backup_metadata()} | {:error, term()})
         ]
 
   @typedoc "Scheduler status"
@@ -84,7 +100,8 @@ defmodule TripleStore.ScheduledBackup do
           backup_count: non_neg_integer(),
           last_backup: DateTime.t() | nil,
           last_error: term() | nil,
-          next_backup: DateTime.t() | nil
+          next_backup: DateTime.t() | nil,
+          backup_in_progress: boolean()
         }
 
   # ===========================================================================
@@ -102,6 +119,8 @@ defmodule TripleStore.ScheduledBackup do
   - `:max_backups` - Maximum backups to keep (default: 5)
   - `:prefix` - Backup name prefix (default: "scheduled")
   - `:run_immediately` - Run first backup immediately (default: false)
+  - `:backup_runner` - Optional three-argument backup function; defaults to
+    `TripleStore.Backup.rotate/3`
 
   ## Returns
 
@@ -178,30 +197,40 @@ defmodule TripleStore.ScheduledBackup do
       max_backups = Keyword.get(opts, :max_backups, @default_max_backups)
       prefix = Keyword.get(opts, :prefix, @default_prefix)
       run_immediately = Keyword.get(opts, :run_immediately, false)
+      backup_runner = Keyword.get(opts, :backup_runner, &Backup.rotate/3)
 
-      state = %{
-        store: store,
-        backup_dir: backup_dir,
-        interval: interval,
-        max_backups: max_backups,
-        prefix: prefix,
-        backup_count: 0,
-        last_backup: nil,
-        last_error: nil,
-        timer_ref: nil
-      }
+      with {:ok, lifecycle_pid} <- store_lifecycle_pid(store),
+           true <- is_function(backup_runner, 3) do
+        lifecycle_ref = Process.monitor(lifecycle_pid)
 
-      # Schedule first backup
-      state =
+        state = %{
+          store: store,
+          backup_dir: backup_dir,
+          interval: interval,
+          max_backups: max_backups,
+          prefix: prefix,
+          backup_runner: backup_runner,
+          backup_count: 0,
+          last_backup: nil,
+          last_error: nil,
+          timer_ref: nil,
+          lifecycle_pid: lifecycle_pid,
+          lifecycle_ref: lifecycle_ref,
+          backup_task: nil,
+          backup_waiter: nil,
+          stop_reason: :operator_stop
+        }
+
         if run_immediately do
-          # Run immediately by sending a message to ourselves
           send(self(), :backup)
-          state
+          {:ok, state}
         else
-          schedule_next_backup(state)
+          {:ok, schedule_next_backup(state)}
         end
-
-      {:ok, state}
+      else
+        false -> {:stop, :invalid_backup_runner}
+        {:error, reason} -> {:stop, reason}
+      end
     else
       :error ->
         {:stop, :missing_required_option}
@@ -218,47 +247,78 @@ defmodule TripleStore.ScheduledBackup do
       backup_count: state.backup_count,
       last_backup: state.last_backup,
       last_error: state.last_error,
-      next_backup: calculate_next_backup(state)
+      next_backup: calculate_next_backup(state),
+      backup_in_progress: not is_nil(state.backup_task)
     }
 
     {:reply, {:ok, status}, state}
   end
 
   @impl true
-  def handle_call(:trigger_backup, _from, state) do
-    # Cancel existing timer
-    state = cancel_timer(state)
-
-    # Run backup
-    {result, state} = do_backup(state)
-
-    # Schedule next backup
-    state = schedule_next_backup(state)
-
-    {:reply, result, state}
-  end
-
-  @impl true
-  def handle_info(:backup, state) do
-    # Run backup
-    {_result, state} = do_backup(state)
-
-    # Schedule next backup
-    state = schedule_next_backup(state)
-
+  def handle_call(:trigger_backup, from, %{backup_task: nil} = state) do
+    state = state |> cancel_timer() |> start_backup(from)
     {:noreply, state}
   end
 
-  @impl true
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    # Store process died - stop the scheduler
-    Logger.warning("Store process died, stopping scheduled backups")
-    {:stop, :normal, state}
+  def handle_call(:trigger_backup, _from, state) do
+    {:reply, {:error, :backup_in_progress}, state}
   end
 
   @impl true
+  def handle_info(:backup, %{backup_task: nil} = state) do
+    {:noreply, start_backup(state, nil)}
+  end
+
+  @impl true
+  def handle_info(:backup, state), do: {:noreply, state}
+
+  def handle_info(
+        {ref, result},
+        %{backup_task: %Task{ref: ref}} = state
+      ) do
+    Process.demonitor(ref, [:flush])
+    finish_backup(result, %{state | backup_task: nil})
+  end
+
+  def handle_info(
+        {:DOWN, lifecycle_ref, :process, lifecycle_pid, reason},
+        %{lifecycle_ref: lifecycle_ref, lifecycle_pid: lifecycle_pid} = state
+      ) do
+    Logger.warning("Store lifecycle ended; stopping scheduled backups")
+
+    state = %{
+      state
+      | lifecycle_ref: nil,
+        stop_reason: :store_lifecycle_down,
+        last_error: {:store_lifecycle_down, reason}
+    }
+
+    reply_to_waiter(state.backup_waiter, {:error, {:store_unavailable, reason}})
+    {:stop, :normal, %{state | backup_waiter: nil}}
+  end
+
+  def handle_info(
+        {:DOWN, task_ref, :process, task_pid, reason},
+        %{backup_task: %Task{ref: task_ref, pid: task_pid}} = state
+      ) do
+    finish_backup({:error, {:backup_task_exit, reason}}, %{state | backup_task: nil})
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
+
+  @impl true
   def terminate(_reason, state) do
-    cancel_timer(state)
+    state
+    |> cancel_timer()
+    |> stop_backup_task()
+    |> demonitor_store()
+
+    :telemetry.execute(
+      [:triple_store, :scheduled_backup, :stop],
+      %{backup_count: state.backup_count},
+      %{reason: state.stop_reason, backup_dir: Path.basename(state.backup_dir)}
+    )
+
     :ok
   end
 
@@ -266,49 +326,93 @@ defmodule TripleStore.ScheduledBackup do
   # Private Helpers
   # ===========================================================================
 
-  defp do_backup(state) do
+  defp start_backup(state, waiter) do
+    emit_backup_tick(state)
+
+    task =
+      Task.async(fn ->
+        run_backup(state)
+      end)
+
+    %{state | backup_task: task, backup_waiter: waiter, timer_ref: nil}
+  end
+
+  defp run_backup(state) do
     %{
       store: store,
       backup_dir: backup_dir,
       max_backups: max_backups,
       prefix: prefix,
-      backup_count: count
+      backup_runner: backup_runner
     } = state
 
-    # Emit telemetry for scheduled backup tick
+    backup_runner.(store, backup_dir, max_backups: max_backups, prefix: prefix)
+  rescue
+    exception -> {:error, {:backup_exception, exception.__struct__}}
+  catch
+    kind, reason -> {:error, {:backup_throw, kind, reason}}
+  end
+
+  defp emit_backup_tick(state) do
     :telemetry.execute(
       [:triple_store, :scheduled_backup, :tick],
-      %{count: count},
-      %{backup_dir: backup_dir, interval_ms: state.interval}
+      %{count: state.backup_count},
+      %{backup_dir: Path.basename(state.backup_dir), interval_ms: state.interval}
     )
+  end
 
-    case Backup.rotate(store, backup_dir, max_backups: max_backups, prefix: prefix) do
+  defp finish_backup(result, state) do
+    waiter = state.backup_waiter
+    state = %{state | backup_waiter: nil}
+
+    case result do
       {:ok, metadata} ->
         Logger.info("Scheduled backup completed: #{metadata.path}")
 
         state = %{
           state
-          | backup_count: count + 1,
+          | backup_count: state.backup_count + 1,
             last_backup: DateTime.utc_now(),
             last_error: nil
         }
 
-        {{:ok, metadata}, state}
+        reply_to_waiter(waiter, {:ok, metadata})
+        {:noreply, schedule_next_backup(state)}
 
       {:error, reason} = error ->
         Logger.error("Scheduled backup failed: #{inspect(reason)}")
-
-        # Emit error telemetry
-        :telemetry.execute(
-          [:triple_store, :scheduled_backup, :error],
-          %{},
-          %{reason: reason, backup_dir: backup_dir}
-        )
-
+        emit_backup_error(state, reason)
+        reply_to_waiter(waiter, error)
         state = %{state | last_error: reason}
-        {error, state}
+
+        if terminal_backup_error?(reason) do
+          {:stop, :normal, %{state | stop_reason: :terminal_backup_error}}
+        else
+          {:noreply, schedule_next_backup(state)}
+        end
+
+      invalid_result ->
+        finish_backup({:error, {:invalid_backup_result, invalid_result}}, state)
     end
   end
+
+  defp emit_backup_error(state, reason) do
+    :telemetry.execute(
+      [:triple_store, :scheduled_backup, :error],
+      %{},
+      %{reason: reason, backup_dir: Path.basename(state.backup_dir)}
+    )
+  end
+
+  defp terminal_backup_error?(reason) do
+    reason in [:database_closed, :db_closed, :invalid_db] or
+      match?({:corrupt_acl, _}, reason) or
+      match?({:corrupt_provenance, _}, reason) or
+      match?({:cannot_open, _}, reason)
+  end
+
+  defp reply_to_waiter(nil, _result), do: :ok
+  defp reply_to_waiter(waiter, result), do: GenServer.reply(waiter, result)
 
   defp schedule_next_backup(state) do
     timer_ref = Process.send_after(self(), :backup, state.interval)
@@ -321,6 +425,27 @@ defmodule TripleStore.ScheduledBackup do
     Process.cancel_timer(ref)
     %{state | timer_ref: nil}
   end
+
+  defp stop_backup_task(%{backup_task: nil} = state), do: state
+
+  defp stop_backup_task(%{backup_task: task, backup_waiter: waiter} = state) do
+    Task.shutdown(task, :brutal_kill)
+    reply_to_waiter(waiter, {:error, :scheduler_stopped})
+    %{state | backup_task: nil, backup_waiter: nil}
+  end
+
+  defp demonitor_store(%{lifecycle_ref: nil} = state), do: state
+
+  defp demonitor_store(%{lifecycle_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    %{state | lifecycle_ref: nil}
+  end
+
+  defp store_lifecycle_pid(%{dict_manager: pid}) when is_pid(pid) do
+    if Process.alive?(pid), do: {:ok, pid}, else: {:error, :store_unavailable}
+  end
+
+  defp store_lifecycle_pid(_store), do: {:error, :invalid_store_lifecycle}
 
   defp calculate_next_backup(%{timer_ref: nil}), do: nil
 

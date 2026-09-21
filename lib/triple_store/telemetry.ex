@@ -414,7 +414,8 @@ defmodule TripleStore.Telemetry do
       @prefix ++ [:backup, :verify, :start],
       @prefix ++ [:backup, :verify, :stop],
       @prefix ++ [:scheduled_backup, :tick],
-      @prefix ++ [:scheduled_backup, :error]
+      @prefix ++ [:scheduled_backup, :error],
+      @prefix ++ [:scheduled_backup, :stop]
     ]
   end
 

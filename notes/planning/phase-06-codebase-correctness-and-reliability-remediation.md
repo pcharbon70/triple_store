@@ -680,18 +680,27 @@ Description: Monitor the dictionary manager or a new store supervisor rather
 than the store map, and retain enough state to distinguish expected shutdown
 from unrelated process messages.
 
-- [ ] 4.1.1.1 Choose the lifecycle process established by Phase 2 and document
+- [x] 4.1.1.1 Choose the lifecycle process established by Phase 2 and document
   why its death means scheduled backups must stop.
-- [ ] 4.1.1.2 Call `Process.monitor/1` during scheduler initialization and store the
+- [x] 4.1.1.2 Call `Process.monitor/1` during scheduler initialization and store the
   monitored PID and reference.
-- [ ] 4.1.1.3 Match `:DOWN` by the stored reference and PID; ignore unrelated
+- [x] 4.1.1.3 Match `:DOWN` by the stored reference and PID; ignore unrelated
   monitor messages.
-- [ ] 4.1.1.4 Cancel timers, demonitor when appropriate, and release in-progress
+- [x] 4.1.1.4 Cancel timers, demonitor when appropriate, and release in-progress
   backup resources during terminate/normal stop.
-- [ ] 4.1.1.5 Define behavior when the store dies during a backup and when an
+- [x] 4.1.1.5 Define behavior when the store dies during a backup and when an
   operator explicitly stops the scheduler first.
-- [ ] 4.1.1.6 Emit observable stop/failure metadata without repeatedly scheduling
+- [x] 4.1.1.6 Emit observable stop/failure metadata without repeatedly scheduling
   backups against a closed store.
+
+Section 4.1 evidence: `ScheduledBackup` monitors the store-owned dictionary
+manager, the one process owned by every open store regardless of transaction
+coordinator selection. Backup work runs in an owned task so the scheduler can
+respond to the lifecycle monitor while a backup is active. Store shutdown and
+operator stop cancel timers and task work, demonitor when needed, and emit a
+sanitized `[:triple_store, :scheduled_backup, :stop]` event. Exact monitor
+matching ignores unrelated `:DOWN` messages. The focused scheduled-backup gate
+passes all 19 tests, including the seven `:slow` cases.
 
 ### Section 4.2: Reviewed Public Error Boundaries
 
