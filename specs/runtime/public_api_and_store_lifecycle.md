@@ -76,7 +76,11 @@ graph TD
 
 - `open/2` and its option type support `schema: :triple | :quad` and `dictionary_shards`.
 - Transaction queries and updates share a synchronous queue when they use the store coordinator. Transaction queries wait for updates; no unused update snapshot is presented as concurrent snapshot isolation. See the [transaction contract implementation status](../contracts/transaction_and_isolation_contract.md#current-implementation-status).
-- `close/1` stops a store-owned transaction coordinator before the dictionary manager and DB reference. Externally supplied coordinators and separately started helpers remain caller-managed. A repeated close returns `{:error, :already_closed}`.
+- `close/1` stops a store-owned transaction coordinator before the dictionary
+  manager and DB reference. Externally supplied coordinators and separately
+  started helpers remain caller-managed, while a `ScheduledBackup` linked to
+  the store observes dictionary-manager termination and stops itself. A repeated
+  close returns `{:error, :already_closed}`.
 - `insert/2` and `delete/2` do not use `Transaction`; they normalize RDF input and write through storage-layer batch functions.
 - `query/3` does not currently accept a user or actor option, so graph ACL enforcement is available only through lower-level SPARQL execution contexts.
 - `load_graph/3` effectively supports both `RDF.Graph` and `RDF.Dataset` because it delegates to `Loader.load_graph/4`, but the public spec and examples are still graph-focused.

@@ -28,8 +28,10 @@ Measure changes with repository benchmarks.
 {:ok, count} = TripleStore.load(store, "data.nt", batch_size: 5_000)
 ~~~
 
-Concurrent calls can share a store handle, but this does not create a shared
-transaction coordinator.
+Each opened store has one transaction coordinator, and public SPARQL updates on
+that handle share its serialized queue. `Transaction.query/3` calls sent to the
+same coordinator wait behind updates. Facade queries and direct load,
+insert, and delete calls do not use that queue.
 
 ## Health, statistics, and scheduled backup
 
@@ -46,6 +48,12 @@ transaction coordinator.
 {:ok, backup_status} = TripleStore.ScheduledBackup.status(scheduler)
 :ok = TripleStore.ScheduledBackup.stop(scheduler)
 ~~~
+
+The scheduler is opt-in and remains an application-owned process. It monitors
+the store's dictionary manager as its lifecycle sentinel: closing the store
+cancels the interval timer and any owned backup task, emits a scheduled-backup
+stop event, and terminates the scheduler. Explicitly stop the scheduler first
+when the application needs to distinguish operator shutdown from store closure.
 
 `TripleStore.Health.health/2` provides the richer component view.
 `TripleStore.Metrics` and `TripleStore.Prometheus` are opt-in processes and are

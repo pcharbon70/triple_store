@@ -844,7 +844,9 @@ defmodule TripleStore do
     - `:rdfs` - RDFS entailment rules only
     - `:owl2rl` - OWL 2 RL profile (includes RDFS)
     - `:all` - All available rules
-  - `:parallel` - Enable parallel rule evaluation (default: true)
+  - `:parallel` - Enables parallel evaluation for graph-aware scopes. The
+    legacy local triple path accepts this option for compatibility but does not
+    currently apply it.
   - `:scope` - Graph-aware reasoning scope (default: :local)
     - `:local` - Each graph materializes independently
     - `:global` - All graphs in single inference closure
@@ -898,7 +900,6 @@ defmodule TripleStore do
   # Legacy triple materialization
   defp materialize_triples(%{db: db, dict_manager: _dict_manager}, opts) do
     profile = Keyword.get(opts, :profile, :owl2rl)
-    _parallel = Keyword.get(opts, :parallel, true)
 
     with {:ok, rules} <- ReasoningProfile.rules_for(profile),
          {:ok, initial_facts} <- FactLoader.load_facts_from_db(db, []) do

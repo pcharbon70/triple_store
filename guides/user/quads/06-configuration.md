@@ -37,7 +37,9 @@ List RDF graph terms with `QuadOperations`, not the `TripleStore` facade:
 
 `TripleStore.schedule_backup/3` schedules full-store backups. `GraphBackup` has
 no graph scheduler; applications needing one must schedule
-`GraphBackup.backup_graph/4` themselves.
+`GraphBackup.backup_graph/4` themselves. A full-store scheduler monitors the
+store lifecycle and terminates automatically when the store closes, including
+while a scheduled backup task is active.
 
 ## Optional services
 

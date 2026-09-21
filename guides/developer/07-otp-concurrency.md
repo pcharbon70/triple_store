@@ -16,7 +16,10 @@ coordinator and returns their references in a handle. Close the handle with
 `TripleStore.close/1`.
 
 Optional statistics, result-cache, metrics, Prometheus, and scheduled-backup
-processes must be started and stopped by the caller or its supervisor.
+processes must be started by the caller or its supervisor. A scheduled-backup
+process monitors the store-owned dictionary manager and stops itself when that
+store lifecycle ends. Callers may stop it earlier for an explicit operator
+shutdown.
 
 ## Coordination boundaries
 

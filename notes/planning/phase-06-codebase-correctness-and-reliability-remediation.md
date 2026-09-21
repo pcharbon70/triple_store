@@ -8,7 +8,7 @@ The plan follows the repository's phase, section, task, and sub-task pattern.
 Phase, section, and task counts reflect implementation dependencies rather than
 a fixed template. Creating this plan does not implement or close a finding.
 
-**Status:** Phase 1 complete; Phases 2-4 planned.
+**Status:** Phases 1-3 complete; Phase 4 Sections 4.1-4.3 complete.
 
 Source review:
 [2026-09-21 entire-codebase review](../../.spec/reviews/2026-09-21T05-30-49-0400-parallel-code-review-entire-codebase.md).
@@ -767,14 +767,14 @@ retain only refactors that make the repaired contracts easier to maintain.
 Description: Update current-status sections and examples so they describe the
 implemented behavior and no longer preserve remediated caveats as current facts.
 
-- [ ] 4.3.1.1 Update transaction current-status text for coordinator ownership,
+- [x] 4.3.1.1 Update transaction current-status text for coordinator ownership,
   request atomicity, and serialized reads.
-- [ ] 4.3.1.2 Update query planning docs for canonical bindings, plan entries,
+- [x] 4.3.1.2 Update query planning docs for canonical bindings, plan entries,
   graph prefixes, fallback, and stream ownership.
-- [ ] 4.3.1.3 Update reasoning and storage docs for binary rule identifiers and
+- [x] 4.3.1.3 Update reasoning and storage docs for binary rule identifiers and
   safe persisted-record decoding.
-- [ ] 4.3.1.4 Update operations guides for scheduled-backup ownership and shutdown.
-- [ ] 4.3.1.5 Synchronize acceptance criteria, scenario catalog/matrix evidence,
+- [x] 4.3.1.4 Update operations guides for scheduled-backup ownership and shutdown.
+- [x] 4.3.1.5 Synchronize acceptance criteria, scenario catalog/matrix evidence,
   guides, moduledocs, and examples; do not mark standards conformance from
   structural validation alone.
 
@@ -783,16 +783,46 @@ implemented behavior and no longer preserve remediated caveats as current facts.
 Description: Remove obsolete helpers and duplication created by the old paths,
 then use static analysis as evidence rather than as a target for cosmetic churn.
 
-- [ ] 4.3.2.1 Remove dead temporary-transaction, unused snapshot, old binding
+- [x] 4.3.2.1 Remove dead temporary-transaction, unused snapshot, old binding
   conversion, zero-filled prefix, and unsafe decode helpers after callers migrate.
-- [ ] 4.3.2.2 Consolidate safe term-decoding mechanics only where ACL and provenance
+- [x] 4.3.2.2 Consolidate safe term-decoding mechanics only where ACL and provenance
   error schemas remain explicit.
-- [ ] 4.3.2.3 Review cache lifecycle/name helpers for atom creation while preserving
+- [x] 4.3.2.3 Review cache lifecycle/name helpers for atom creation while preserving
   the distinct semantics of PlanCache, Query.Cache, and SPARQL.QueryCache.
-- [ ] 4.3.2.4 Re-run complexity checks on `QuadLeapfrog` and executor paths; accept
+- [x] 4.3.2.4 Re-run complexity checks on `QuadLeapfrog` and executor paths; accept
   remaining complexity only with narrow tests and documented ownership.
-- [ ] 4.3.2.5 Keep unrelated large-module decomposition as separate follow-up work
+- [x] 4.3.2.5 Keep unrelated large-module decomposition as separate follow-up work
   unless a phase change establishes a stable extraction boundary.
+
+Section 4.3 evidence: transaction, query-planning, reasoning, storage, scenario,
+and matrix documents already carry the contracts established by Phases 1-3.
+The remaining user and operator guides now remove the obsolete v0.1 quad-query
+caveat, describe the store-owned transaction coordinator, distinguish facade
+queries and direct writes from its queue, and document scheduled-backup
+monitoring, shutdown, task cancellation, and sanitized stop telemetry. Runtime
+and operations acceptance criteria reflect the same lifecycle.
+
+The bounded source audit confirmed that the temporary public update coordinator,
+unused transaction snapshot state, incompatible Leapfrog binding converter,
+zero-filled quad scan prefix, and unsafe ACL/provenance decoders no longer have
+callers. The deprecated `current_snapshot/1` function remains as an explicit
+compatibility surface and returns `nil`. ACL and provenance safe decoders remain
+separate because they validate different persisted schemas and expose distinct
+tagged corruption errors. PlanCache, Query.Cache, and SPARQL.QueryCache contain
+no runtime atom conversion and retain separate lifecycle and key semantics. The
+legacy local materialization path no longer reads an ignored `parallel` option;
+its public documentation now states that limitation.
+
+Focused strict Credo analysis reports no finding in `QuadLeapfrog` and retains
+two existing executor refactoring opportunities: nesting in the multi-iterator
+fallback and the arity of the single-iterator reference path. Their ownership
+and fallback boundary are documented and covered by the focused quad execution,
+scan-plan, and fact-loader gate, which passes 21 tests with zero failures.
+Specs validation reports 58 requirements, 69 acceptance criteria, 17 scenarios,
+one ADR, and six matrix rows; guide and code-doc validation pass, and the absent
+`rfcs/` directory is an intentional RFC-validator skip. Broader executor and
+large-module decomposition remain follow-up work because this section did not
+establish another stable extraction boundary.
 
 ### Section 4.4: Integration Tests
 

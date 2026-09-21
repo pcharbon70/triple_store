@@ -163,6 +163,9 @@ flowchart LR
 ## Current Codebase Notes
 
 - The default topology includes only global plan-cache and snapshot services.
-- `Query.Cache`, `SPARQL.QueryCache`, `Metrics`, `Prometheus`, `Statistics.Server`, and `ScheduledBackup` are opt-in additions.
+- `Query.Cache`, `SPARQL.QueryCache`, `Metrics`, `Prometheus`,
+  `Statistics.Server`, and `ScheduledBackup` are opt-in additions. A
+  scheduled-backup process uses the store-owned dictionary manager as its
+  lifecycle sentinel and exits when that process ends.
 - `TripleStore.Health` provides richer health topology than the compact `TripleStore.health/1` facade.
 - `GraphBackup` and dataset export make named-graph topology a current operational concern, not a future design placeholder.

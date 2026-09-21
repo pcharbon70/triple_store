@@ -27,8 +27,10 @@ tagged error.
 
 The default facade path uses local scope, reads triple indices, calls the
 in-memory evaluator, returns statistics, and discards the returned fact set. It
-does not persist inferred triples and is not schema-neutral. Do not infer
-persistence from a successful statistics result.
+does not persist inferred triples, is not schema-neutral, and currently ignores
+the accepted `parallel` option. Fact loading owns one SPO iterator and returns
+tagged setup, scan, storage, or key-decoding failures without using a partial
+fact set. Do not infer persistence from a successful statistics result.
 
 ## Persistent and incremental reasoning
 
