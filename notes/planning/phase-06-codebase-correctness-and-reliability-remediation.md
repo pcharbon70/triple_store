@@ -498,13 +498,13 @@ caller-provided process names with bounded atoms or binary identifiers.
 Description: Classify dynamic atom creation by trust boundary and document the
 finite internal vocabularies that may legitimately use existing atoms.
 
-- [ ] 3.1.1.1 Inventory `String.to_atom/1`, `binary_to_atom/1`, interpolated
+- [x] 3.1.1.1 Inventory `String.to_atom/1`, `binary_to_atom/1`, interpolated
   registered names, and atom-producing decode paths under `lib/`.
-- [ ] 3.1.1.2 Mark each source as compile-time finite, validated existing atom, or
+- [x] 3.1.1.2 Mark each source as compile-time finite, validated existing atom, or
   externally unbounded input.
-- [ ] 3.1.1.3 Include query/cache process names, update helper property keys,
+- [x] 3.1.1.3 Include query/cache process names, update helper property keys,
   benchmark artifact fields, rule names, and rule-optimizer batch names.
-- [ ] 3.1.1.4 Add an allowlist comment or type for each intentionally finite atom
+- [x] 3.1.1.4 Add an allowlist comment or type for each intentionally finite atom
   conversion; reject undocumented dynamic creation.
 
 #### Task 3.1.2: Support binary names in reasoning rules and batches
@@ -512,16 +512,29 @@ finite internal vocabularies that may legitimately use existing atoms.
 Description: Extend internal identifier types so generated rule and batch names
 can remain binaries without changing semantic equality or diagnostic output.
 
-- [ ] 3.1.2.1 Extend `Rule` name types and constructors to accept stable binary
+- [x] 3.1.2.1 Extend `Rule` name types and constructors to accept stable binary
   identifiers while preserving existing built-in atom names.
-- [ ] 3.1.2.2 Generate specialized property and inverse-property rule names as
+- [x] 3.1.2.2 Generate specialized property and inverse-property rule names as
   binaries derived from validated IRIs.
-- [ ] 3.1.2.3 Generate optimizer batch identifiers as binaries or opaque bounded
+- [x] 3.1.2.3 Generate optimizer batch identifiers as binaries or opaque bounded
   references; keep them out of registered process names.
-- [ ] 3.1.2.4 Update maps, equality checks, logging, telemetry metadata, provenance,
+- [x] 3.1.2.4 Update maps, equality checks, logging, telemetry metadata, provenance,
   and serialization that currently assume atom names.
-- [ ] 3.1.2.5 Test many unique property IRIs and rule variables while asserting
+- [x] 3.1.2.5 Test many unique property IRIs and rule variables while asserting
   stable atom counts and deterministic rule identity.
+
+Section 3.1 evidence: the production inventory covered specialized rule names,
+optimizer batch names, query/result-cache ETS names, update property lookup,
+metrics histogram labels, executor telemetry events, benchmark JSON fields, and
+benchmark term artifacts. No runtime atom-conversion call remains under `lib/`.
+Built-in rule/profile names and telemetry event suffixes remain a compile-time
+finite atom vocabulary; externally derived rule and batch identifiers are
+deterministic binaries with content digests. Cache tables use unnamed ETS table
+identifiers, benchmark JSON converts only explicit finite enums/keys, and
+unknown artifact fields remain binaries. The focused Section 3.1 gate completed
+296 tests with zero failures, including 250 unique property IRIs, deterministic
+rule identity, bounded atom counts, binary rule construction, cache-table
+identity, update-property lookup, and JSON compatibility.
 
 ### Section 3.2: Safe ACL Decoding and Fail-Closed Authorization
 

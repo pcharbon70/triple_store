@@ -592,7 +592,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
       # Specialized rules should have bound properties
       for rule <- specialized do
         # Name should contain property local name
-        name_str = Atom.to_string(rule.name)
+        name_str = to_string(rule.name)
         assert String.contains?(name_str, "_")
       end
     end
@@ -622,7 +622,7 @@ defmodule TripleStore.Reasoner.RuleCompilerIntegrationTest do
 
       # Each batch should have rules and metadata
       for batch <- batches do
-        assert is_atom(batch.name)
+        assert is_binary(batch.name)
         assert is_list(batch.rules)
         assert batch.batch_type in [:same_predicate, :same_head, :independent]
       end

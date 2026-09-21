@@ -28,9 +28,9 @@ defmodule TripleStore.MetricsTest do
       metrics = Metrics.query_metrics(name: name)
       histogram_keys = Map.keys(metrics.histogram)
 
-      assert :le_1ms in histogram_keys
-      assert :le_10ms in histogram_keys
-      assert :le_100ms in histogram_keys
+      assert "le_1ms" in histogram_keys
+      assert "le_10ms" in histogram_keys
+      assert "le_100ms" in histogram_keys
       assert :inf in histogram_keys
 
       GenServer.stop(pid)
@@ -136,9 +136,9 @@ defmodule TripleStore.MetricsTest do
 
       metrics = Metrics.query_metrics(name: name)
 
-      assert metrics.histogram[:le_10ms] == 1
-      assert metrics.histogram[:le_50ms] == 1
-      assert metrics.histogram[:le_100ms] == 1
+      assert metrics.histogram["le_10ms"] == 1
+      assert metrics.histogram["le_50ms"] == 1
+      assert metrics.histogram["le_100ms"] == 1
       assert metrics.histogram[:inf] == 1
 
       GenServer.stop(pid)

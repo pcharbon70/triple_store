@@ -134,11 +134,6 @@ defmodule TripleStore.Query.Cache do
   @registry TripleStore.Query.Cache.Registry
   @registry_key :active_query_cache
 
-  # ETS table names (atoms derived from process name)
-  @results_table_suffix :_results
-  @lru_table_suffix :_lru
-  @predicate_index_suffix :_pred_idx
-
   # ===========================================================================
   # Client API
   # ===========================================================================
@@ -710,7 +705,6 @@ defmodule TripleStore.Query.Cache do
     max_result_size = Keyword.get(opts, :max_result_size, @default_max_result_size)
     max_memory_bytes = Keyword.get(opts, :max_memory_bytes, @default_max_memory_bytes)
     ttl_ms = Keyword.get(opts, :ttl_ms, @default_ttl_ms)
-    name = Keyword.get(opts, :name, @default_name)
     persistence_path = Keyword.get(opts, :persistence_path)
     warm_on_start = Keyword.get(opts, :warm_on_start, false)
     allowed_persistence_dir = Keyword.get(opts, :allowed_persistence_dir)
@@ -719,15 +713,12 @@ defmodule TripleStore.Query.Cache do
       {:ok, _} = Registry.register(@registry, @registry_key, nil)
     end
 
-    # Create ETS tables
-    results_table = table_name(name, @results_table_suffix)
-    lru_table = table_name(name, @lru_table_suffix)
-    predicate_index_table = table_name(name, @predicate_index_suffix)
-
-    :ets.new(results_table, [:set, :named_table, :public, read_concurrency: true])
-    :ets.new(lru_table, [:ordered_set, :named_table, :public])
+    # Unnamed tables return opaque table identifiers and avoid allocating atoms
+    # from caller-provided cache process names.
+    results_table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true])
+    lru_table = :ets.new(__MODULE__, [:ordered_set, :public])
     # Predicate index: {predicate, cache_key} - bag allows multiple keys per predicate
-    :ets.new(predicate_index_table, [:bag, :named_table, :public])
+    predicate_index_table = :ets.new(__MODULE__, [:bag, :public])
 
     state = %{
       results_table: results_table,
@@ -979,15 +970,15 @@ defmodule TripleStore.Query.Cache do
 
     # Clean up ETS tables (they're owned by GenServer and will be deleted anyway,
     # but explicit cleanup is good practice)
-    if :ets.whereis(state.results_table) != :undefined do
+    if :ets.info(state.results_table) != :undefined do
       :ets.delete(state.results_table)
     end
 
-    if :ets.whereis(state.lru_table) != :undefined do
+    if :ets.info(state.lru_table) != :undefined do
       :ets.delete(state.lru_table)
     end
 
-    if :ets.whereis(state.predicate_index_table) != :undefined do
+    if :ets.info(state.predicate_index_table) != :undefined do
       :ets.delete(state.predicate_index_table)
     end
 
@@ -997,10 +988,6 @@ defmodule TripleStore.Query.Cache do
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
-
-  defp table_name(process_name, suffix) when is_atom(process_name) do
-    String.to_atom("#{process_name}#{suffix}")
-  end
 
   defp do_put(state, key, result, result_size, predicates, store_id) do
     now = System.monotonic_time(:millisecond)

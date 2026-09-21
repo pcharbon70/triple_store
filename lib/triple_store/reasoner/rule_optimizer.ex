@@ -89,7 +89,7 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
 
   @typedoc "A batch of rules that can be evaluated together"
   @type rule_batch :: %{
-          name: atom(),
+          name: String.t(),
           rules: [Rule.t()],
           shared_patterns: [Rule.pattern()],
           batch_type: :same_predicate | :same_head | :independent
@@ -536,7 +536,14 @@ defmodule TripleStore.Reasoner.RuleOptimizer do
         _ -> "unknown"
       end
 
-    String.to_atom("batch_#{batch_type}_#{pred_str}")
+    digest =
+      predicate
+      |> :erlang.term_to_binary()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    "batch_#{batch_type}_#{pred_str}_#{digest}"
   end
 
   defp extract_local_name(iri) do

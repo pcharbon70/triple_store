@@ -93,10 +93,6 @@ defmodule TripleStore.SPARQL.PlanCache do
   @default_max_size 1000
   @default_name __MODULE__
 
-  # ETS table names (atoms derived from process name)
-  @plans_table_suffix :_plans
-  @lru_table_suffix :_lru
-
   # ===========================================================================
   # Client API
   # ===========================================================================
@@ -345,14 +341,10 @@ defmodule TripleStore.SPARQL.PlanCache do
   @impl true
   def init(opts) do
     max_size = Keyword.get(opts, :max_size, @default_max_size)
-    name = Keyword.get(opts, :name, @default_name)
-
-    # Create ETS tables
-    plans_table = table_name(name, @plans_table_suffix)
-    lru_table = table_name(name, @lru_table_suffix)
-
-    :ets.new(plans_table, [:set, :named_table, :public, read_concurrency: true])
-    :ets.new(lru_table, [:ordered_set, :named_table, :public])
+    # Unnamed tables return opaque table identifiers and avoid allocating atoms
+    # from caller-provided cache process names.
+    plans_table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true])
+    lru_table = :ets.new(__MODULE__, [:ordered_set, :public])
 
     state = %{
       plans_table: plans_table,
@@ -484,10 +476,6 @@ defmodule TripleStore.SPARQL.PlanCache do
   # ===========================================================================
   # Private Helpers
   # ===========================================================================
-
-  defp table_name(process_name, suffix) when is_atom(process_name) do
-    String.to_atom("#{process_name}#{suffix}")
-  end
 
   defp maybe_evict(state) do
     current_size = :ets.info(state.plans_table, :size)

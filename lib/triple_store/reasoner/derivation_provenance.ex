@@ -58,7 +58,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   @typedoc "Derivation record for a single derived quad"
   @type derivation :: %{
-          rule_name: atom(),
+          rule_name: Rule.name(),
           premises: [id_quad()],
           bindings: bindings(),
           timestamp: integer()
@@ -197,7 +197,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   List of `{derived_quad, derivation}` tuples.
   """
-  @spec find_by_rule(t(), atom()) :: [{id_quad(), derivation()}]
+  @spec find_by_rule(t(), Rule.name()) :: [{id_quad(), derivation()}]
   def find_by_rule(%__MODULE__{} = tracker, rule_name) do
     tracker.derivations
     |> Enum.filter(fn {_quad, derivation} -> derivation.rule_name == rule_name end)

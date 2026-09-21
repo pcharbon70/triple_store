@@ -73,7 +73,7 @@ defmodule TripleStore.Metrics do
           min_duration_ms: float() | nil,
           max_duration_ms: float() | nil,
           mean_duration_ms: float(),
-          histogram: %{atom() => non_neg_integer()},
+          histogram: %{(String.t() | :inf) => non_neg_integer()},
           percentiles: %{atom() => float()}
         }
 
@@ -382,7 +382,7 @@ defmodule TripleStore.Metrics do
     |> Map.put(:inf, 0)
   end
 
-  defp bucket_key(ms), do: String.to_atom("le_#{ms}ms")
+  defp bucket_key(ms), do: "le_#{ms}ms"
 
   defp update_query_metrics(state, duration_ms) do
     # Update histogram bucket

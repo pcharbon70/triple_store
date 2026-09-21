@@ -205,7 +205,7 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
     |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, acc} ->
       attrs =
         attrs
-        |> Enum.map(fn {key, value} -> {String.to_existing_atom(key), value} end)
+        |> Enum.map(fn {key, value} -> {accepted_json_key(key), value} end)
         |> Enum.into(%{})
         |> deserialize_date(:accepted_on)
         |> deserialize_date(:expires_at)
@@ -219,5 +219,14 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
       {:ok, records} -> {:ok, Enum.reverse(records)}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @accepted_json_keys ~w(
+    benchmark_id execution_variant classification reference_fingerprint
+    actual_fingerprint notes accepted_on expires_at
+  )a
+
+  defp accepted_json_key(key) when is_binary(key) do
+    Enum.find(@accepted_json_keys, key, &(Atom.to_string(&1) == key))
   end
 end
