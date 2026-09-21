@@ -293,6 +293,121 @@ defmodule TripleStore.SPARQL.AuthorizationTest do
       assert Map.has_key?(acl_entry, "user:#{user_id}")
       assert :read in acl_entry["user:#{user_id}"]
     end
+
+    test "reads existing valid unversioned ACL records without rewriting them", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
+      graph_iri = "http://example.org/legacy-valid-acl"
+      user_id = "legacy-user"
+      insert_test_quad(db, manager, graph_iri)
+      {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
+      acl_key = "acl:graph:#{graph_id}:user:#{user_id}"
+      encoded = :erlang.term_to_binary(%{"user:#{user_id}" => [:read, :write]})
+      :ok = ErlangAdapter.put(db, :acl, acl_key, encoded)
+
+      assert {:ok, true} = Authorization.can_read?(ctx, graph_iri, %{id: user_id})
+      assert {:ok, ^encoded} = ErlangAdapter.get(db, :acl, acl_key)
+    end
+
+    test "rejects unsafe ACL terms and fails authorization closed", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
+      graph_iri = "http://example.org/corrupt-public"
+      insert_test_quad(db, manager, graph_iri)
+      {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
+      acl_key = "acl:graph:#{graph_id}:__public__"
+      atom_name = "untrusted_acl_atom_#{System.unique_integer([:positive])}"
+      unsafe = <<131, 119, byte_size(atom_name), atom_name::binary>>
+      :ok = ErlangAdapter.put(db, :acl, acl_key, unsafe)
+
+      assert {:error, {:corrupt_acl, :unsafe_or_invalid_term}} =
+               Authorization.can_read?(ctx, graph_iri, :public)
+
+      assert {:error, {:corrupt_acl, :unsafe_or_invalid_term}} =
+               Authorization.list_accessible_graphs(ctx, :public, :read)
+    end
+
+    test "does not overwrite malformed ACL bytes during a grant", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
+      graph_iri = "http://example.org/corrupt-user"
+      user_id = "user123"
+      insert_test_quad(db, manager, graph_iri)
+      {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
+      acl_key = "acl:graph:#{graph_id}:user:#{user_id}"
+      malformed = :erlang.term_to_binary(%{"user:#{user_id}" => :read})
+      :ok = ErlangAdapter.put(db, :acl, acl_key, malformed)
+
+      assert {:error, {:corrupt_acl, {:invalid_permissions, :read}}} =
+               Authorization.grant(ctx, graph_iri, user_id, :write)
+
+      assert {:ok, ^malformed} = ErlangAdapter.get(db, :acl, acl_key)
+
+      assert {:error, {:corrupt_acl, {:invalid_permissions, :read}}} =
+               Authorization.can_read?(ctx, graph_iri, %{id: user_id})
+    end
+
+    test "rejects incompatible ACL versions and propagates owner corruption", %{
+      db: db,
+      ctx: ctx,
+      manager: manager
+    } do
+      graph_iri = "http://example.org/corrupt-owner"
+      insert_test_quad(db, manager, graph_iri)
+      {:ok, graph_id} = Manager.get_or_create_id(manager, RDF.iri(graph_iri))
+      acl_key = "acl:graph:#{graph_id}:owner:user123"
+      incompatible = :erlang.term_to_binary(%{version: 2, owner: "user123"})
+      :ok = ErlangAdapter.put(db, :acl, acl_key, incompatible)
+
+      assert {:error, {:corrupt_acl, {:unsupported_version, 2}}} =
+               Authorization.get_owner(ctx, graph_iri)
+    end
+
+    test "propagates ACL storage read failures without writing a replacement policy" do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "triple_store_acl_read_failure_#{System.unique_integer([:positive])}"
+        )
+
+      File.rm_rf!(path)
+      on_exit(fn -> File.rm_rf(path) end)
+      {:ok, writable_db} = ErlangAdapter.open(path, schema: :quad)
+      {:ok, writable_manager} = Manager.start_link(db: writable_db)
+      graph_iri = "http://example.org/read-failure"
+      insert_test_quad(writable_db, writable_manager, graph_iri)
+      Manager.stop(writable_manager)
+      ErlangAdapter.close(writable_db)
+
+      {:ok, failing_db} =
+        ErlangAdapter.open(path, schema: :quad, read_failure: {:acl, :injected_read_failure})
+
+      {:ok, failing_manager} = Manager.start_link(db: failing_db)
+      failing_ctx = %{db: failing_db, dict_manager: failing_manager}
+
+      assert {:error, :injected_read_failure} =
+               Authorization.grant(failing_ctx, graph_iri, "user123", :read)
+
+      Manager.stop(failing_manager)
+      ErlangAdapter.close(failing_db)
+
+      {:ok, verify_db} = ErlangAdapter.open(path, schema: :quad)
+      {:ok, verify_manager} = Manager.start_link(db: verify_db)
+      {:ok, graph_id} = Manager.get_or_create_id(verify_manager, RDF.iri(graph_iri))
+
+      assert :not_found =
+               ErlangAdapter.get(verify_db, :acl, "acl:graph:#{graph_id}:user:user123")
+
+      Manager.stop(verify_manager)
+      ErlangAdapter.close(verify_db)
+      File.rm_rf!(path)
+    end
   end
 
   # ===========================================================================

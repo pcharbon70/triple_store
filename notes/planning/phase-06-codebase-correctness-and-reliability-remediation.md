@@ -546,17 +546,28 @@ and prevent read/corruption failures from becoming empty or permissive ACL state
 Description: Centralize ACL encoding/decoding rules around supported key and
 permission types with explicit corruption errors.
 
-- [ ] 3.2.1.1 Define the accepted ACL map shape, principal key forms, permission
+- [x] 3.2.1.1 Define the accepted ACL map shape, principal key forms, permission
   values, owner representation, and format/version behavior.
-- [ ] 3.2.1.2 Decode with `:erlang.binary_to_term(binary, [:safe])` and validate
+- [x] 3.2.1.2 Decode with `:erlang.binary_to_term(binary, [:safe])` and validate
   every key and value before use.
-- [ ] 3.2.1.3 Return `{:error, {:corrupt_acl, reason}}` or the repository's chosen
+- [x] 3.2.1.3 Return `{:error, {:corrupt_acl, reason}}` or the repository's chosen
   tagged equivalent for unsafe, malformed, or incompatible data.
-- [ ] 3.2.1.4 Propagate storage read errors during ACL mutation; do not replace them
+- [x] 3.2.1.4 Propagate storage read errors during ACL mutation; do not replace them
   with `%{}` and overwrite an unknown existing policy.
-- [ ] 3.2.1.5 Ensure authorization checks fail closed when ACL state cannot be read.
-- [ ] 3.2.1.6 Verify current valid ACL records remain readable without a rewrite;
+- [x] 3.2.1.5 Ensure authorization checks fail closed when ACL state cannot be read.
+- [x] 3.2.1.6 Verify current valid ACL records remain readable without a rewrite;
   define an explicit migration only if a format change becomes necessary.
+
+Section 3.2 evidence: ACL version 1 remains the existing unversioned
+single-principal map, so valid records require no migration or rewrite. The
+authorization boundary now safe-decodes and validates binary principals,
+finite permission lists, owner/public constraints, storage-key agreement, and
+unsupported version markers. Corruption propagates through direct checks,
+owner lookup, role lookup, and accessible-graph listing. Mutations propagate
+ACL read failures and preserve the original bytes on decode failure; removing
+the last permission now deletes the storage key instead of writing an empty
+tombstone. The focused authorization and update-authorization gate completed
+38 tests with zero failures after the external-term fixture correction.
 
 ### Section 3.3: Safe Provenance Decoding
 

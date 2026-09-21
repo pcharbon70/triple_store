@@ -52,6 +52,12 @@ graph TD
 - `SPARQL.Query` supports prepared queries, parameter binding, explain mode, streaming results, query logging, and timeout enforcement during setup or materialized execution.
 - The executor stack supports triple patterns, quad patterns, graph clauses, property paths, and lower-level authorization checks when a `:user` exists in the execution context.
 - `UpdateExecutor` handles SPARQL 1.1 update forms including graph management operations, invalidates query caches after successful writes, and can consult graph ACLs when invoked with a user-aware context.
+- ACL records use the compatible unversioned `%{principal_binary => permissions}`
+  format in the `acl` column family. The authorization boundary decodes Erlang
+  terms in safe mode, validates the complete principal/permission shape, and
+  returns `{:error, {:corrupt_acl, reason}}` for malformed or incompatible
+  state. ACL reads and mutations fail closed and never replace an unreadable
+  policy with an empty map.
 - `TripleStore.query/3` and `TripleStore.update/2` do not currently expose actor context, so user-aware authorization is a lower-level expert capability rather than a facade feature.
 - Streaming queries are lazy; the current timeout contract applies to setup and eager execution, not to the full duration of stream consumption.
 
