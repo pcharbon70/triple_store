@@ -1018,18 +1018,27 @@ defmodule TripleStore.SPARQL.Executor do
       if should_use_multi_iterator?(ctx, quad_pattern) do
         execute_quad_with_multi_iterator(ctx, binding, quad_pattern, s, p, o, g)
       else
-        execute_quad_with_single_iterator(ctx, binding, quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern)
+        execute_quad_with_single_iterator(
+          ctx,
+          binding,
+          quad_pattern,
+          s,
+          p,
+          o,
+          g,
+          s_pattern,
+          p_pattern,
+          o_pattern,
+          g_pattern
+        )
       end
     end
   end
 
   # Build a quad pattern tuple from individual patterns
   defp build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern) do
-    {:quad,
-      pattern_to_component(s_pattern),
-      pattern_to_component(p_pattern),
-      pattern_to_component(o_pattern),
-      pattern_to_component(g_pattern)}
+    {:quad, pattern_to_component(s_pattern), pattern_to_component(p_pattern),
+     pattern_to_component(o_pattern), pattern_to_component(g_pattern)}
   end
 
   # Convert term pattern to component format for analysis
@@ -1053,70 +1062,146 @@ defmodule TripleStore.SPARQL.Executor do
   defp execute_quad_with_multi_iterator(ctx, binding, _quad_pattern, s, p, o, g) do
     %{db: db, dict_manager: dict_manager} = ctx
 
-    # Build QuadLeapfrog pattern format
-    lf_pattern = build_leapfrog_pattern(s, p, o, g, binding, dict_manager)
+    with {:ok, lf_pattern} <- build_leapfrog_pattern(s, p, o, g, binding, dict_manager) do
+      case QuadLeapfrog.from_pattern(db, lf_pattern) do
+        {:ok, lf} ->
+          binding_stream =
+            QuadLeapfrog.stream(lf)
+            |> Stream.flat_map(fn id_bindings ->
+              case extend_binding_from_leapfrog(
+                     binding,
+                     id_bindings,
+                     {s, p, o, g},
+                     dict_manager
+                   ) do
+                {:ok, extended} -> [extended]
+                {:error, :binding_mismatch} -> []
+                {:error, reason} -> raise "QuadLeapfrog binding error: #{inspect(reason)}"
+              end
+            end)
 
-    case QuadLeapfrog.from_pattern(db, lf_pattern) do
-      {:ok, lf} ->
-        # Convert QuadLeapfrog stream to binding stream
-        binding_stream =
-          QuadLeapfrog.stream(lf)
-          |> Stream.map(fn lf_bindings ->
-            Map.merge(binding, convert_leapfrog_bindings(lf_bindings))
-          end)
+          {:ok, binding_stream}
 
-        {:ok, binding_stream}
+        {:exhausted, lf} ->
+          QuadLeapfrog.close(lf)
+          {:ok, empty_stream()}
 
-      {:exhausted, lf} ->
-        # Construction may open iterators before the multi-iterator strategy
-        # reports exhaustion. Preserve the existing single-iterator fallback,
-        # but release the abandoned strategy's resources first.
-        QuadLeapfrog.close(lf)
-        execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
-
-      {:error, _reason} ->
-        # Fall back to single iterator on error
-        execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+        {:error, _reason} ->
+          execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+      end
     end
   rescue
     _e ->
-      # On any error, fall back to single iterator
+      # Construction-time failures retain the correctness-first reference path.
+      # Lazy stream failures occur after this function returns and are not hidden.
       execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
   end
 
   # Build a QuadLeapfrog pattern from SPARQL terms
   defp build_leapfrog_pattern(s, p, o, g, binding, dict_manager) do
-    s_comp = term_to_leapfrog_component(s, binding, dict_manager)
-    p_comp = term_to_leapfrog_component(p, binding, dict_manager)
-    o_comp = term_to_leapfrog_component(o, binding, dict_manager)
-    g_comp = term_to_leapfrog_component(g, binding, dict_manager)
-
-    {:quad, s_comp, p_comp, o_comp, g_comp}
-  end
-
-  # Convert a SPARQL term to QuadLeapfrog component format
-  defp term_to_leapfrog_component({:variable, var_name}, _binding, _dict_manager) do
-    {:variable, var_name}
-  end
-
-  defp term_to_leapfrog_component(term, _binding, dict_manager) do
-    case Term.encode(term, dict_manager) do
-      {:ok, id} -> {:bound, id}
-      {:error, :not_found} -> {:bound, nil}
+    with {:ok, s_comp} <- term_to_leapfrog_component(s, binding, dict_manager),
+         {:ok, p_comp} <- term_to_leapfrog_component(p, binding, dict_manager),
+         {:ok, o_comp} <- term_to_leapfrog_component(o, binding, dict_manager),
+         {:ok, g_comp} <- term_to_leapfrog_graph_component(g, binding, dict_manager) do
+      {:ok, {:quad, s_comp, p_comp, o_comp, g_comp}}
     end
   end
 
-  # Convert QuadLeapfrog bindings to executor binding format
-  defp convert_leapfrog_bindings(lf_bindings) do
-    Enum.map(lf_bindings, fn
-      {:variable, name} -> {name, nil}
-      {:bound, _id} = bound -> bound
-    end)
-    |> Enum.into(%{})
+  # Convert a SPARQL term to QuadLeapfrog component format
+  defp term_to_leapfrog_component({:variable, var_name}, binding, dict_manager) do
+    case Map.fetch(binding, var_name) do
+      :error -> {:ok, {:variable, var_name}}
+      {:ok, term} -> encode_leapfrog_term(term, dict_manager)
+    end
   end
 
+  defp term_to_leapfrog_component(term, _binding, dict_manager) do
+    encode_leapfrog_term(term, dict_manager)
+  end
+
+  defp encode_leapfrog_term(term, dict_manager) do
+    case Term.encode(term, dict_manager) do
+      {:ok, id} -> {:ok, id}
+      :not_found -> {:ok, {:bound, nil}}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp term_to_leapfrog_graph_component({:variable, var_name}, binding, dict_manager) do
+    case Map.fetch(binding, var_name) do
+      :error -> {:ok, {:variable, var_name}}
+      {:ok, :default_graph} -> {:ok, 0}
+      {:ok, :default} -> {:ok, 0}
+      {:ok, term} -> encode_leapfrog_term(term, dict_manager)
+    end
+  end
+
+  defp term_to_leapfrog_graph_component(graph, _binding, _dict_manager)
+       when graph in [:default, :default_graph],
+       do: {:ok, 0}
+
+  defp term_to_leapfrog_graph_component(graph, _binding, dict_manager) do
+    term_to_leapfrog_component(graph, %{}, dict_manager)
+  end
+
+  defp extend_binding_from_leapfrog(binding, id_bindings, {s, p, o, g}, dict_manager) do
+    with {:ok, binding1} <- maybe_bind_from_id_map(binding, s, id_bindings, dict_manager),
+         {:ok, binding2} <- maybe_bind_from_id_map(binding1, p, id_bindings, dict_manager),
+         {:ok, binding3} <- maybe_bind_from_id_map(binding2, o, id_bindings, dict_manager) do
+      maybe_bind_graph_from_id_map(binding3, g, id_bindings, dict_manager)
+    end
+  end
+
+  defp maybe_bind_from_id_map(binding, {:variable, "_"}, _id_bindings, _dict_manager),
+    do: {:ok, binding}
+
+  defp maybe_bind_from_id_map(binding, {:variable, name} = variable, id_bindings, dict_manager) do
+    case Map.fetch(id_bindings, name) do
+      {:ok, id} -> maybe_bind(binding, variable, id, dict_manager)
+      :error -> {:ok, binding}
+    end
+  end
+
+  defp maybe_bind_from_id_map(binding, _bound, _id_bindings, _dict_manager),
+    do: {:ok, binding}
+
+  defp maybe_bind_graph_from_id_map(
+         binding,
+         {:variable, "_"},
+         _id_bindings,
+         _dict_manager
+       ),
+       do: {:ok, binding}
+
+  defp maybe_bind_graph_from_id_map(
+         binding,
+         {:variable, name} = variable,
+         id_bindings,
+         dict_manager
+       ) do
+    case Map.fetch(id_bindings, name) do
+      {:ok, id} -> maybe_bind_graph(binding, variable, id, dict_manager)
+      :error -> {:ok, binding}
+    end
+  end
+
+  defp maybe_bind_graph_from_id_map(binding, _bound, _id_bindings, _dict_manager),
+    do: {:ok, binding}
+
   # Execute quad pattern using single iterator (existing logic)
-  defp execute_quad_with_single_iterator(ctx, binding, _quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern) do
+  defp execute_quad_with_single_iterator(
+         ctx,
+         binding,
+         _quad_pattern,
+         s,
+         p,
+         o,
+         g,
+         s_pattern,
+         p_pattern,
+         o_pattern,
+         g_pattern
+       ) do
     %{db: db, dict_manager: dict_manager} = ctx
 
     # Check if any bound term was not found in the dictionary
@@ -1177,7 +1262,20 @@ defmodule TripleStore.SPARQL.Executor do
          {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
          {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
       quad_pattern = build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern)
-      execute_quad_with_single_iterator(ctx, binding, quad_pattern, s, p, o, g, s_pattern, p_pattern, o_pattern, g_pattern)
+
+      execute_quad_with_single_iterator(
+        ctx,
+        binding,
+        quad_pattern,
+        s,
+        p,
+        o,
+        g,
+        s_pattern,
+        p_pattern,
+        o_pattern,
+        g_pattern
+      )
     end
   end
 
@@ -1456,9 +1554,15 @@ defmodule TripleStore.SPARQL.Executor do
   # If graph is bound (:default_graph or named IRI), don't bind to binding
   defp maybe_bind_graph(binding, {:variable, name}, graph_id, dict_manager) do
     # Bind graph variable to the graph IRI term
-    case Term.decode(graph_id, dict_manager) do
-      {:ok, term} -> {:ok, Map.put(binding, name, term)}
-      {:error, _} = error -> error
+    case graph_id do
+      0 ->
+        {:ok, Map.put(binding, name, :default_graph)}
+
+      _ ->
+        case Term.decode(graph_id, dict_manager) do
+          {:ok, term} -> {:ok, Map.put(binding, name, term)}
+          {:error, _} = error -> error
+        end
     end
   end
 

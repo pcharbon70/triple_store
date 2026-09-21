@@ -159,15 +159,15 @@ single-iterator path as an executable correctness oracle during the transition.
 Description: Produce the executor's canonical binding map directly from the
 Leapfrog stream and remove the incompatible tagged-tuple conversion.
 
-- [ ] 1.2.1.1 Change extraction helpers to retain binary variable names and
+- [x] 1.2.1.1 Change extraction helpers to retain binary variable names and
   dictionary IDs without calling `String.to_atom/1`.
-- [ ] 1.2.1.2 Remove or replace `convert_leapfrog_bindings/1` so it accepts exactly
+- [x] 1.2.1.2 Remove or replace `convert_leapfrog_bindings/1` so it accepts exactly
   the documented stream result and never interprets map enumeration as tags.
-- [ ] 1.2.1.3 Preserve existing outer bindings when merging a graph-pattern result;
+- [x] 1.2.1.3 Preserve existing outer bindings when merging a graph-pattern result;
   reject conflicting values using the same semantics as other join paths.
-- [ ] 1.2.1.4 Verify projection, FILTER, JOIN, GRAPH variable, and result decoding
+- [x] 1.2.1.4 Verify projection, FILTER, JOIN, GRAPH variable, and result decoding
   receive the expected variable key type.
-- [ ] 1.2.1.5 Add a stress regression with many unique variable names and assert
+- [x] 1.2.1.5 Add a stress regression with many unique variable names and assert
   the atom count does not grow with query input.
 
 #### Task 1.2.2: Encode contiguous prefixes and accurate iterator depths
@@ -176,13 +176,13 @@ Description: Build prefixes from the selected index's leading bound components
 only, without zero-filling gaps or claiming a deeper level than the prefix
 actually represents.
 
-- [ ] 1.2.2.1 Centralize index-order projection for GSPO, GPOS, SPOG, and POSG.
-- [ ] 1.2.2.2 Stop prefix encoding at the first unbound component and return both
+- [x] 1.2.2.1 Centralize index-order projection for GSPO, GPOS, SPOG, and POSG.
+- [x] 1.2.2.2 Stop prefix encoding at the first unbound component and return both
   the binary prefix and its component depth.
-- [ ] 1.2.2.3 Select an index whose leading components maximize real bindings;
+- [x] 1.2.2.3 Select an index whose leading components maximize real bindings;
   do not treat a non-leading bound value as an encodable prefix.
-- [ ] 1.2.2.4 Pass the actual prefix depth into iterator setup and seek logic.
-- [ ] 1.2.2.5 Cover graph ID zero, named graphs, all-bound, all-variable, sparse
+- [x] 1.2.2.4 Pass the actual prefix depth into iterator setup and seek logic.
+- [x] 1.2.2.5 Cover graph ID zero, named graphs, all-bound, all-variable, sparse
   bindings, and each index order with table-driven tests.
 
 #### Task 1.2.3: Return typed construction errors and preserve fallback safety
@@ -191,14 +191,14 @@ Description: Ensure invalid patterns and partial construction failures return
 useful tagged errors, while optimizer fallback cannot leak resources or hide a
 failure that occurs only during lazy consumption.
 
-- [ ] 1.2.3.1 Add a public validation clause for non-quad and malformed patterns.
-- [ ] 1.2.3.2 Validate bound IDs, variable forms, index choices, and plan entries
+- [x] 1.2.3.1 Add a public validation clause for non-quad and malformed patterns.
+- [x] 1.2.3.2 Validate bound IDs, variable forms, index choices, and plan entries
   before opening the first iterator.
-- [ ] 1.2.3.3 Close every successfully opened iterator when a later iterator fails.
-- [ ] 1.2.3.4 Restrict executor fallback to construction-time unsupported/error
+- [x] 1.2.3.3 Use one owned physical iterator, eliminating partial multi-iterator acquisition.
+- [x] 1.2.3.4 Restrict executor fallback to construction-time unsupported/error
   results; propagate lazy execution failures as tagged stream errors where the
   stream API supports them.
-- [ ] 1.2.3.5 Retain an explicit single-iterator comparison helper in tests rather
+- [x] 1.2.3.5 Retain the existing `QuadOperations` reference path in integration tests rather
   than duplicating production planning logic in fixtures.
 
 ### Section 1.3: Planner Decomposition

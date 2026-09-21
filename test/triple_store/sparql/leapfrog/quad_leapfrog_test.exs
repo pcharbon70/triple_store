@@ -460,1129 +460,203 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrogTest do
   end
 
   # ===========================================================================
-  # QuadLeapfrog Pattern Tests
+  # QuadLeapfrog Planning and Execution
   # ===========================================================================
-
-  describe "QuadLeapfrog.from_pattern/2" do
-    test "creates leapfrog from all-variable pattern", %{db: db} do
-      # Insert some quads
-      Enum.each([{1, 10, 100, 0}, {2, 11, 101, 0}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      assert lf.variables == ["s", "p", "o", "g"]
-      assert lf.pattern == pattern
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "creates leapfrog from graph-bound pattern", %{db: db} do
-      Enum.each([{1, 10, 100, 0}, {2, 11, 101, 0}, {3, 12, 102, 5}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      # Pattern with bound graph (5)
-      # Note: Only graph-prefixed patterns work with current implementation
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 5}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      assert lf.variables == ["s", "p", "o"]
-      assert lf.pattern == pattern
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "creates leapfrog from default graph pattern", %{db: db} do
-      Enum.each([{1, 10, 100, 0}, {2, 11, 101, 0}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      # Pattern with bound default graph (0)
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      assert lf.variables == ["s", "p", "o"]
-      assert lf.pattern == pattern
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  describe "QuadLeapfrog.search/1" do
-    test "finds first match for graph-scoped pattern", %{db: db} do
-      # Insert quads in different graphs
-      Enum.each([{1, 10, 100, 0}, {2, 11, 101, 0}, {3, 12, 102, 5}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      # Pattern bound to graph 0
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Search should find first match in graph 0
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      bindings = QuadLeapfrog.bindings(lf)
-      # Should find one of the quads in graph 0
-      assert bindings["s"] in [1, 2]
-      assert bindings["p"] in [10, 11]
-      assert bindings["o"] in [100, 101]
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "returns exhausted when no quads in target graph", %{db: db} do
-      # Insert quads only in graph 0
-      Enum.each([{1, 10, 100, 0}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      # Pattern looking for quads in graph 999 (doesn't exist)
-      # Note: Current implementation doesn't support graph-scoped filtering
-      # because graph is at the end of the pattern tuple, not the beginning
-      # The iterator will scan all quads and we need to check the result
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
-
-      case QuadLeapfrog.from_pattern(db, pattern) do
-        {:exhausted, lf} ->
-          assert QuadLeapfrog.exhausted?(lf)
-          QuadLeapfrog.close(lf)
-
-        {:ok, lf} ->
-          # Search may find quads in other graphs due to implementation limitation
-          case QuadLeapfrog.search(lf) do
-            {:exhausted, lf} ->
-              assert QuadLeapfrog.exhausted?(lf)
-              QuadLeapfrog.close(lf)
-
-            {:ok, lf} ->
-              # Found quads but not in the target graph - this is expected
-              # given the current implementation limitations
-              QuadLeapfrog.close(lf)
-          end
-      end
-    end
-  end
-
-  describe "QuadLeapfrog.next/1" do
-    test "advances to next match in same graph", %{db: db} do
-      # Insert multiple quads across multiple graphs
-      quads = [
-        {1, 10, 100, 0},
-        {2, 11, 101, 5},
-        {3, 12, 102, 10}
-      ]
-
-      Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern with no graph bound (will iterate over all graphs)
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # First search
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-      bindings1 = QuadLeapfrog.bindings(lf)
-      assert is_map(bindings1)
-      assert Map.has_key?(bindings1, "s")
-
-      # Next should find another match
-      assert {:ok, lf} = QuadLeapfrog.next(lf)
-      bindings2 = QuadLeapfrog.bindings(lf)
-      assert is_map(bindings2)
-      assert Map.has_key?(bindings2, "s")
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "returns exhausted after all matches", %{db: db} do
-      # Insert only one quad in graph 5
-      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 5})
-
-      # Pattern bound to graph 5
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 5}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # First search should find the quad
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      # Next should be exhausted (no more matches)
-      assert {:exhausted, lf} = QuadLeapfrog.next(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  describe "QuadLeapfrog.stream/1" do
-    test "streams matches in graph", %{db: db} do
-      # Insert multiple quads in graph 0
-      quads = [
-        {1, 10, 100, 0},
-        {2, 11, 101, 0},
-        {3, 12, 102, 0}
-      ]
-
-      Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern bound to graph 0
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Stream results
-      stream = QuadLeapfrog.stream(lf)
-      results = Enum.to_list(stream)
-
-      # Note: With single iterator, stream may not return all results
-      # The stream implementation is designed for multi-iterator joins
-      refute Enum.empty?(results)
-
-      # All results should have bindings
-      Enum.each(results, fn bindings ->
-        assert is_map(bindings)
-        assert Map.has_key?(bindings, "s")
-        assert Map.has_key?(bindings, "p")
-        assert Map.has_key?(bindings, "o")
-      end)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "returns empty stream for non-existent graph", %{db: db} do
-      # Insert quads in graph 0
-      Enum.each([{1, 10, 100, 0}], fn quad ->
-        :ok = QuadOperations.insert_quad(db, quad)
-      end)
-
-      # Pattern looking for quads in graph 999 (doesn't exist)
-      # Note: from_pattern may return exhausted directly or find quads
-      # due to implementation limitations (graph at end of pattern tuple)
-      case QuadLeapfrog.from_pattern(
-             db,
-             {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
-           ) do
-        {:exhausted, lf} ->
-          # Iterator is exhausted immediately
-          assert QuadLeapfrog.exhausted?(lf)
-          QuadLeapfrog.close(lf)
-
-        {:ok, lf} ->
-          # Stream results (may be empty or contain quads from other graphs)
-          stream = QuadLeapfrog.stream(lf)
-          results = Enum.to_list(stream)
-
-          # With current implementation, results may not be empty
-          # because graph filtering doesn't work with graph at end of tuple
-          # We just verify the stream completes without error
-          assert is_list(results)
-
-          QuadLeapfrog.close(lf)
-      end
-    end
-  end
-
-  describe "QuadLeapfrog.bindings/1" do
-    test "returns variable bindings from current match", %{db: db} do
-      :ok = QuadOperations.insert_quad(db, {42, 99, 123, 0})
-
-      # Pattern bound to graph 0
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      bindings = QuadLeapfrog.bindings(lf)
-      assert bindings["s"] == 42
-      assert bindings["p"] == 99
-      assert bindings["o"] == 123
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "returns empty map when no match", %{db: db} do
-      # Insert some quads first
-      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      assert {:ok, lf} =
-               QuadLeapfrog.from_pattern(db, {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0})
-
-      # Before search, bindings should be empty
-      bindings = QuadLeapfrog.bindings(lf)
-      assert bindings == %{}
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  describe "QuadLeapfrog.exhausted?/1" do
-    test "returns false for active leapfrog", %{db: db} do
-      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      assert {:ok, lf} =
-               QuadLeapfrog.from_pattern(
-                 db,
-                 {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-               )
-
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      refute QuadLeapfrog.exhausted?(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "returns true for exhausted leapfrog", %{db: db} do
-      # Empty database - no quads in graph 999
-      case QuadLeapfrog.from_pattern(
-             db,
-             {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 999}
-           ) do
-        {:exhausted, lf} ->
-          assert QuadLeapfrog.exhausted?(lf)
-          QuadLeapfrog.close(lf)
-
-        {:ok, lf} ->
-          assert {:exhausted, lf} = QuadLeapfrog.search(lf)
-          assert QuadLeapfrog.exhausted?(lf)
-          QuadLeapfrog.close(lf)
-      end
-    end
-  end
-
-  describe "QuadLeapfrog.close/1" do
-    test "closes leapfrog and releases resources", %{db: db} do
-      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      assert {:ok, lf} =
-               QuadLeapfrog.from_pattern(
-                 db,
-                 {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-               )
-
-      # Close should return :ok
-      assert :ok = QuadLeapfrog.close(lf)
-    end
-  end
-
-  # ===========================================================================
-  # Integration Tests
-  # ===========================================================================
-
-  describe "multi-graph pattern matching" do
-    test "finds quads across multiple graphs", %{db: db} do
-      # Insert quads in different graphs
-      quads = [
-        # default graph
-        {1, 10, 100, 0},
-        # graph 5
-        {2, 11, 101, 5},
-        # graph 10
-        {3, 12, 102, 10}
-      ]
-
-      Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern matching all graphs
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Stream all results
-      stream = QuadLeapfrog.stream(lf)
-      results = Enum.to_list(stream)
-
-      # Should find all 3 quads
-      assert length(results) == 3
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "filters by graph when graph is bound", %{db: db} do
-      # Insert quads in different graphs
-      quads = [
-        {1, 10, 100, 0},
-        {2, 11, 101, 5},
-        {3, 12, 102, 5}
-      ]
-
-      Enum.each(quads, fn quad -> :ok = QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern bound to graph 5
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 5}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Should only find quads in graph 5
-      stream = QuadLeapfrog.stream(lf)
-      results = Enum.to_list(stream)
-
-      assert length(results) == 2
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  describe "quad key encoding and decoding" do
-    test "correctly encodes and decodes quad keys", %{db: db} do
-      :ok = QuadOperations.insert_quad(db, {999, 888, 777, 666})
-
-      assert {:ok, iter} = QuadTrieIterator.new(db, :gspo, <<>>, 0)
-
-      # Seek to graph 666
-      assert {:ok, iter} = QuadTrieIterator.seek(iter, 666)
-
-      # Get current key
-      assert {:ok, key} = QuadTrieIterator.current_key(iter)
-
-      # Decode and verify
-      {g, s, p, o} = QuadTrieIterator.decode_key(key)
-      assert g == 666
-      assert s == 999
-      assert p == 888
-      assert o == 777
-
-      QuadTrieIterator.close(iter)
-    end
-  end
-
-  # ===========================================================================
-  # Section 1.1: Quad Index Strategy Tests
-  # ===========================================================================
-
-  describe "index_for_position/2" do
-    test "returns GSPO when subject and graph are bound" do
-      pattern = {:quad, 42, {:variable, "p"}, 1, 0}
-      assert QuadLeapfrog.index_for_position(pattern, 0) == :gspo
-    end
-
-    test "returns SPOG when subject is bound but graph is not" do
-      pattern = {:quad, 42, {:variable, "p"}, 1, {:variable, "g"}}
-      assert QuadLeapfrog.index_for_position(pattern, 0) == :spog
-    end
-
-    test "returns GPOS when graph is bound and position is predicate" do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 1, 0}
-      assert QuadLeapfrog.index_for_position(pattern, 1) == :gpos
-    end
-
-    test "returns GSPO by default for object position" do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-      assert QuadLeapfrog.index_for_position(pattern, 2) == :gspo
-    end
-  end
 
   describe "plan_iterators/1" do
-    test "returns empty plan for fully-bound pattern" do
-      pattern = {:quad, 1, 2, 3, 0}
-      assert {:ok, []} = QuadLeapfrog.plan_iterators(pattern)
+    test "uses direct lookup for a fully bound pattern" do
+      assert {:ok, []} = QuadLeapfrog.plan_iterators({:quad, 1, 2, 3, 4})
     end
 
-    test "returns single iterator plan for one variable" do
-      pattern = {:quad, {:variable, "s"}, 2, 3, 0}
-      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
-      assert length(plan) == 1
+    test "returns one four-field physical scan plan" do
+      pattern =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
-      [{pos, _index, depth}] = plan
-      assert pos == 0  # Subject is the variable
-      assert depth == 1  # Graph is bound before subject
+      assert {:ok, [{3, :gspo, 0, <<>>}]} = QuadLeapfrog.plan_iterators(pattern)
     end
 
-    test "returns multiple iterators for multiple variables" do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
-      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
-      assert length(plan) == 2
-
-      # Should have plans for position 0 (s) and 1 (p)
-      positions = Enum.map(plan, fn {pos, _index, _depth} -> pos end)
-      assert 0 in positions
-      assert 1 in positions
-    end
-
-    test "returns four iterators for fully unbound pattern" do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
-      assert length(plan) == 4
-
-      # All four positions should be in the plan
-      positions = Enum.map(plan, fn {pos, _index, _depth} -> pos end)
-      assert Enum.sort(positions) == [0, 1, 2, 3]
-    end
-
-    test "includes prefix depth in iterator plan" do
-      pattern = {:quad, 1, {:variable, "p"}, 3, 0}
-      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
-
-      # Position 1 (predicate) should have depth 1 (subject is bound before it)
-      [{pos, _index, depth}] = plan
-      assert pos == 1  # Predicate is the variable
-      assert depth == 1  # Subject is bound before predicate
-    end
-
-    test "selects appropriate index for each iterator" do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
-      assert {:ok, plan} = QuadLeapfrog.plan_iterators(pattern)
-
-      # All iterators should use GSPO since graph is bound
-      indexes = Enum.map(plan, fn {_pos, index, _depth} -> index end)
-      assert Enum.all?(indexes, &(&1 == :gspo))
-    end
-  end
-
-  # ===========================================================================
-  # Section 1.2: Multi-Iterator Creation Tests
-  # ===========================================================================
-
-  describe "Section 1.2: Multi-Iterator Creation" do
-    test "creates 4 iterators for fully unbound pattern", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      # Should create 4 iterators, one per variable
-      assert length(iterators) == 4
-
-      # Each iterator should have metadata
-      Enum.each(iterators, fn tagged_iter ->
-        assert is_map(tagged_iter)
-        assert Map.has_key?(tagged_iter, :iterator)
-        assert Map.has_key?(tagged_iter, :variable_name)
-        assert Map.has_key?(tagged_iter, :position)
-        assert Map.has_key?(tagged_iter, :index)
-      end)
-    end
-
-    test "creates fewer iterators when some components are bound", %{db: db} do
-      pattern = {:quad, 1, {:variable, "p"}, 3, 0}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      # Should create only 1 iterator for the single variable
-      assert length(iterators) == 1
-
-      [iter] = iterators
-      assert iter.position == 1
-      assert iter.variable_name == "p"
-    end
-
-    test "each iterator has correct prefix for its position", %{db: db} do
-      # Pattern: g=0 is bound, s and p are variables, o=3 is bound
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 0}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      # Should have 2 iterators (for s and p)
-      assert length(iterators) == 2
-
-      # Find the iterators for each position
-      s_iter = Enum.find(iterators, fn i -> i.position == 0 end)
-      p_iter = Enum.find(iterators, fn i -> i.position == 1 end)
-
-      # S iterator should be at level 1 (after graph in GSPO)
-      assert s_iter.iterator.level == 1
-
-      # P iterator should be at level 2 (after graph and subject in GSPO)
-      assert p_iter.iterator.level == 2
-    end
-
-    test "iterator metadata includes correct variable name and position", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, 2, {:variable, "o"}, 0}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      assert length(iterators) == 2
-
-      # Find iterator for "s"
-      s_iter = Enum.find(iterators, fn i -> i.variable_name == "s" end)
-      assert s_iter.position == 0
-
-      # Find iterator for "o"
-      o_iter = Enum.find(iterators, fn i -> i.variable_name == "o" end)
-      assert o_iter.position == 2
-    end
-
-    test "uses correct index for each iterator position", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      # Graph is bound (0), so all iterators should use GSPO
-      assert length(iterators) == 3
-
-      # All iterators should use GSPO when graph is bound
-      Enum.each(iterators, fn iter ->
-        assert iter.index in [:gspo, :gpos, :spog, :posg]
-      end)
-    end
-
-    test "handles single variable pattern with existing behavior", %{db: db} do
-      pattern = {:quad, 1, 2, {:variable, "o"}, 0}
-
-      {:ok, iterators} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
-
-      # Should create 1 iterator for the single variable
-      assert length(iterators) == 1
-
-      [iter] = iterators
-      assert iter.position == 2
-      assert iter.variable_name == "o"
-    end
-  end
-
-  # ===========================================================================
-  # Section 1.3: Leapfrog Integration Tests
-  # ===========================================================================
-
-  describe "Section 1.3: Leapfrog Integration" do
-    test "Leapfrog accepts 4 QuadTrieIterator instances", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      # Fully unbound pattern creates 4 iterators
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Should have 4 tagged iterators stored
-      assert length(lf.tagged_iterators) == 4
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "Leapfrog searches for intersection across multiple iterators", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern with 2 variables creates 2 iterators
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
-
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Section 1.3: Verify from_pattern creates multiple iterators successfully
-      # (Multi-iterator search coordination is completed in Section 1.4)
-      assert length(lf.tagged_iterators) == 2
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "Leapfrog handles exhausted state correctly", %{db: db} do
-      # Empty database
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-
-      # Should return exhausted immediately
-      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert QuadLeapfrog.exhausted?(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "Leapfrog next advances state correctly", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}, {2, 10, 100, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern with single variable (single iterator, so bindings should work)
-      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      # Get first match
-      first_bindings = QuadLeapfrog.bindings(lf)
-      assert map_size(first_bindings) > 0
-
-      # Advance to next match
-      assert {:ok, lf} = QuadLeapfrog.next(lf)
-
-      # Should have bindings
-      second_bindings = QuadLeapfrog.bindings(lf)
-      assert map_size(second_bindings) > 0
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "QuadLeapfrog delegates search to core Leapfrog", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Search should delegate to Leapfrog and return updated state
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-      assert is_map(lf.bindings)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "QuadLeapfrog delegates next to core Leapfrog", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}, {2, 10, 100, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      # Next should delegate to Leapfrog and return updated state
-      assert {:ok, lf} = QuadLeapfrog.next(lf)
-      assert is_map(lf.bindings)
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  # ===========================================================================
-  # Section 1.4: Binding Extraction Tests
-  # ===========================================================================
-
-  describe "Section 1.4: Binding Extraction" do
-    test "extracts bindings from 4-variable pattern", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      # Fully unbound pattern (4 variables)
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      # Direct lookup for single quad test - use single variable pattern for now
-      single_var_pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-      assert {:ok, lf} = QuadLeapfrog.from_pattern(db, single_var_pattern)
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-
-      bindings = QuadLeapfrog.bindings(lf)
-      assert bindings["s"] == 1
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "extracts bindings from mixed bound/unbound pattern", %{db: db} do
-      # Insert test data
-      quads = [{1, 10, 100, 0}, {2, 11, 101, 0}]
-      Enum.each(quads, fn quad -> :ok = TripleStore.QuadOperations.insert_quad(db, quad) end)
-
-      # Pattern with 2 variables
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
-
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Verify 2 iterators were created
-      assert length(lf.tagged_iterators) == 2
-
-      # Verify variable names are correct
-      var_names = Enum.map(lf.tagged_iterators, & &1.variable_name)
-      assert "s" in var_names
-      assert "p" in var_names
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "bindings include correct variable names", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      pattern = {:quad, {:variable, "my_subject"}, 10, 100, 0}
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      {:ok, lf} = QuadLeapfrog.search(lf)
-
-      bindings = QuadLeapfrog.bindings(lf)
-      assert Map.has_key?(bindings, "my_subject")
-      assert bindings["my_subject"] == 1
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "handles empty tagged_iterators (legacy path)", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      {:ok, lf} = QuadLeapfrog.search(lf)
-
-      # Should have bindings via legacy single-iterator path
-      bindings = QuadLeapfrog.bindings(lf)
-      assert bindings["s"] == 1
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  # ===========================================================================
-  # Section 1.5: Additional Unit Tests
-  # ===========================================================================
-
-  describe "Section 1.5: Additional Unit Tests" do
-    test "three-variable pattern creates 3 iterators", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Pattern with 3 variables
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Should create 3 iterators (one for each variable)
-      assert length(lf.tagged_iterators) == 3
-
-      # Verify positions
-      positions = Enum.map(lf.tagged_iterators, & &1.position)
-      assert Enum.sort(positions) == [0, 1, 2]  # s, p, o positions
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "fully-bound pattern uses direct lookup", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Fully-bound pattern
-      pattern = {:quad, 1, 10, 100, 0}
-
-      # Fully-bound patterns return exhausted immediately (nothing to iterate)
-      # The quad exists, so the result is known without iteration
-      {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Should have empty tagged_iterators (direct lookup path)
-      assert lf.tagged_iterators == []
-
-      # Should be marked as exhausted
-      assert QuadLeapfrog.exhausted?(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  # ===========================================================================
-  # Section 2.1: Performance Optimization Tests
-  # ===========================================================================
-
-  describe "Section 2.1: Performance Optimization" do
-    test "iterators ordered by selectivity (bound before unbound)", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Pattern with 2 variables (s and p), o and g bound
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
-
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Iterators should be ordered: unbound positions (s and p)
-      # Both are unbound, so sorted by position
-      assert length(lf.tagged_iterators) == 2
-
-      positions = Enum.map(lf.tagged_iterators, & &1.position)
-      assert Enum.sort(positions) == [0, 1]  # s and p positions
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "short-circuit for fully-bound pattern avoids iterator creation", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Fully-bound pattern
-      pattern = {:quad, 1, 10, 100, 0}
-
-      # Should return exhausted immediately (no iterators)
-      {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert lf.tagged_iterators == []
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "three-variable pattern creates 3 iterators", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Pattern with 3 variables
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Should create 3 iterators
-      assert length(lf.tagged_iterators) == 3
-
-      positions = Enum.map(lf.tagged_iterators, & &1.position)
-      assert Enum.sort(positions) == [0, 1, 2]  # s, p, o positions
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "iterator ordering is consistent", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Same pattern should produce same iterator order
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 100, 0}
-
-      {:ok, lf1} = QuadLeapfrog.from_pattern(db, pattern)
-      {:ok, lf2} = QuadLeapfrog.from_pattern(db, pattern)
-
-      order1 = Enum.map(lf1.tagged_iterators, & &1.position)
-      order2 = Enum.map(lf2.tagged_iterators, & &1.position)
-
-      assert order1 == order2
-
-      QuadLeapfrog.close(lf1)
-      QuadLeapfrog.close(lf2)
-    end
-  end
-
-  # ===========================================================================
-  # Section 2.2: Edge Case Handling Tests
-  # ===========================================================================
-
-  describe "Section 2.2: Edge Case Handling" do
-    test "empty database returns exhausted immediately", %{db: db} do
-      # Database is empty (no quads inserted)
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
-
-      # Should return exhausted immediately
-      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert QuadLeapfrog.exhausted?(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "malformed pattern returns helpful error", %{db: db} do
-      # Invalid pattern (not a quad tuple)
-      invalid_pattern = {:invalid, "data"}
-
-      assert {:error, _reason} = QuadLeapfrog.from_pattern(db, invalid_pattern)
-    end
-
-    test "pattern with no variables uses direct lookup", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Fully-bound pattern (no variables)
-      pattern = {:quad, 1, 10, 100, 0}
-
-      # Should return exhausted immediately (quad exists, nothing to iterate)
-      assert {:exhausted, lf} = QuadLeapfrog.from_pattern(db, pattern)
-      assert QuadLeapfrog.exhausted?(lf)
-
-      QuadLeapfrog.close(lf)
-    end
-
-    test "max iterations safeguard prevents infinite loops", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      pattern = {:quad, {:variable, "s"}, 10, 100, 0}
-      {:ok, lf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Stream should handle many iterations without hanging
-      # (Actual max_iterations test would require many quads, this is basic check)
-      assert lf.iterations == 0
-
-      # After search, iterations should increment
-      assert {:ok, lf} = QuadLeapfrog.search(lf)
-      assert lf.iterations == 1
-
-      QuadLeapfrog.close(lf)
-    end
-  end
-
-  # ===========================================================================
-  # Section 2.3: QuadTrieIterator Protocol Enhancements Tests
-  # ===========================================================================
-
-  describe "Section 2.3: QuadTrieIterator Protocol Enhancements" do
-    test "protocol functions work correctly for each position type", %{db: db} do
-      # Insert test data
-      :ok = TripleStore.QuadOperations.insert_quad(db, {1, 10, 100, 0})
-
-      # Test each level (position) of QuadTrieIterator
-      for level <- [0, 1, 2, 3] do
-        {:ok, iter} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<0::64-big>>, level)
-
-        # Should implement TrieIteratorProtocol
-        assert TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.current(iter) != nil
-        assert TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.exhausted?(iter) in [true, false]
-
-        # Clean up iterator using the protocol
-        :ok = TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter)
-      end
-    end
-
-    test "key encoding consistency across all positions", %{db: db} do
-      # Insert test data
-      quad = {1, 10, 100, 0}
-      :ok = TripleStore.QuadOperations.insert_quad(db, quad)
-
-      # All four iterators should agree on the same quad key
-      {:ok, iter_g} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 0)
-      {:ok, iter_s} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 1)
-      {:ok, iter_p} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 2)
-      {:ok, iter_o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, :gspo, <<>>, 3)
-
-      # Get current keys (all should point to the same quad)
-      {:ok, key_g} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_g)
-      {:ok, key_s} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_s)
-      {:ok, key_p} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_p)
-      {:ok, key_o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter_o)
-
-      # All keys should be identical (same quad, same full key)
-      assert key_g == key_s
-      assert key_s == key_p
-      assert key_p == key_o
-
-      # Decode and verify the quad values
-      {g, s, p, o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.decode_key(key_g)
-      assert {g, s, p, o} == {0, 1, 10, 100}
-
-      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_g)
-      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_s)
-      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_p)
-      TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter_o)
-    end
-
-    test "encoding/decoding round-trip for each index", %{db: db} do
-      quad = {1, 10, 100, 0}
-      :ok = TripleStore.QuadOperations.insert_quad(db, quad)
-
-      # Test encoding/decoding for each index
-      for index <- [:gspo, :gpos, :spog, :posg] do
-        {:ok, iter} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.new(db, index, <<>>, 0)
-
-        {:ok, key} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.current_key(iter)
-        {g, s, p, o} = TripleStore.SPARQL.Leapfrog.QuadTrieIterator.decode_key(key)
-
-        # Values should match the original quad (order may differ by index)
-        assert 1 in [g, s, p, o]
-        assert 10 in [g, s, p, o]
-        assert 100 in [g, s, p, o]
-        assert 0 in [g, s, p, o]
-
-        TripleStore.SPARQL.Leapfrog.TrieIteratorProtocol.close(iter)
-      end
-    end
-  end
-
-  describe "Section 2.4: Stream and Enumeration" do
-    setup %{db: db} do
-      # Insert test data
-      quads = [
-        {1, 10, 100, 0},
-        {1, 10, 101, 0},
-        {1, 11, 100, 0},
-        {2, 10, 100, 0}
+    test "chooses the longest contiguous prefix across index orders" do
+      cases = [
+        {{:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 9},
+         {3, :gspo, 1, <<9::64-big>>}},
+        {{:quad, 1, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}},
+         {3, :spog, 1, <<1::64-big>>}},
+        {{:quad, {:variable, "s"}, 2, {:variable, "o"}, {:variable, "g"}},
+         {3, :posg, 1, <<2::64-big>>}},
+        {{:quad, 1, 2, {:variable, "o"}, 9}, {3, :gspo, 3, <<9::64-big, 1::64-big, 2::64-big>>}},
+        {{:quad, {:variable, "s"}, 2, 3, 9}, {3, :gpos, 3, <<9::64-big, 2::64-big, 3::64-big>>}}
       ]
 
-      Enum.each(quads, fn quad -> TripleStore.QuadOperations.insert_quad(db, quad) end)
+      Enum.each(cases, fn {pattern, expected} ->
+        assert {:ok, [^expected]} = QuadLeapfrog.plan_iterators(pattern)
+      end)
+    end
+
+    test "does not encode a bound component after a variable gap" do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, 3, 9}
+      assert {:ok, [{3, :gspo, 1, <<9::64-big>>}]} = QuadLeapfrog.plan_iterators(pattern)
+    end
+
+    test "normalizes compatibility bound tuples" do
+      pattern = {:quad, {:variable, "s"}, {:bound, 2}, {:bound, 3}, {:bound, 9}}
+
+      assert {:ok, [{3, :gpos, 3, <<9::64-big, 2::64-big, 3::64-big>>}]} =
+               QuadLeapfrog.plan_iterators(pattern)
+    end
+
+    test "rejects malformed patterns and components" do
+      assert {:error, :invalid_quad_pattern} = QuadLeapfrog.plan_iterators({:triple, 1, 2, 3})
+
+      assert {:error, {:invalid_quad_component, :object, -1}} =
+               QuadLeapfrog.plan_iterators({:quad, 1, 2, -1, 0})
+    end
+  end
+
+  describe "create_iterators_for_pattern/2" do
+    test "opens one full-key iterator with plan metadata", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 0}
+      assert {:ok, [tagged]} = QuadLeapfrog.create_iterators_for_pattern(db, pattern)
+      assert tagged.index == :gspo
+      assert tagged.prefix_depth == 1
+      assert tagged.position == 3
+      assert tagged.variable_name == nil
+      assert tagged.iterator.level == 3
+      assert tagged.iterator.prefix == <<0::64-big>>
+      QuadTrieIterator.close(tagged.iterator)
+    end
+
+    test "does not open an iterator for fully bound lookup", %{db: db} do
+      assert {:ok, []} = QuadLeapfrog.create_iterators_for_pattern(db, {:quad, 1, 2, 3, 4})
+    end
+  end
+
+  describe "from_pattern/2" do
+    test "constructs an active scan for matching prefixes", %{db: db} do
+      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 5})
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 5}
+
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert scan.variables == ["s", "p", "o"]
+      assert length(scan.tagged_iterators) == 1
+      refute QuadLeapfrog.exhausted?(scan)
+      QuadLeapfrog.close(scan)
+    end
+
+    test "returns exhausted when a selected prefix is empty", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, 99}
+      assert {:exhausted, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert QuadLeapfrog.exhausted?(scan)
+      QuadLeapfrog.close(scan)
+    end
+
+    test "fully bound lookup yields one empty binding when present", %{db: db} do
+      :ok = QuadOperations.insert_quad(db, {1, 10, 100, 0})
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, {:quad, 1, 10, 100, 0})
+      assert [%{}] = Enum.to_list(QuadLeapfrog.stream(scan))
+    end
+
+    test "fully bound lookup is exhausted when absent", %{db: db} do
+      assert {:exhausted, scan} = QuadLeapfrog.from_pattern(db, {:quad, 1, 10, 100, 0})
+      assert [] = Enum.to_list(QuadLeapfrog.stream(scan))
+    end
+
+    test "returns tagged validation errors", %{db: db} do
+      assert {:error, :invalid_quad_pattern} = QuadLeapfrog.from_pattern(db, {:invalid, :pattern})
+
+      assert {:error, {:invalid_quad_component, :graph, :invalid}} =
+               QuadLeapfrog.from_pattern(db, {:quad, 1, 2, 3, :invalid})
+    end
+  end
+
+  describe "search/1 and next/1" do
+    setup %{db: db} do
+      Enum.each(
+        [{1, 10, 100, 0}, {1, 11, 101, 0}, {2, 10, 100, 0}, {3, 12, 102, 5}],
+        &QuadOperations.insert_quad(db, &1)
+      )
 
       :ok
     end
 
-    test "stream/1 yields binding maps for all matches", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+    test "extracts binary-key bindings from the full physical key", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0}
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert {:ok, first} = QuadLeapfrog.search(scan)
+      assert %{"s" => 1, "o" => 100} = QuadLeapfrog.bindings(first)
+      QuadLeapfrog.close(first)
+    end
 
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+    test "advances to the next matching key and skips non-matches", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, 10, {:variable, "o"}, 0}
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert {:ok, first} = QuadLeapfrog.search(scan)
+      assert {:ok, second} = QuadLeapfrog.next(first)
+      assert second.bindings == %{"s" => 2, "o" => 100}
+      assert {:exhausted, exhausted} = QuadLeapfrog.next(second)
+      assert QuadLeapfrog.exhausted?(exhausted)
+      QuadLeapfrog.close(exhausted)
+    end
 
-      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
+    test "enforces repeated-variable equality", %{db: db} do
+      :ok = QuadOperations.insert_quad(db, {7, 10, 7, 0})
+      pattern = {:quad, {:variable, "same"}, 10, {:variable, "same"}, 0}
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert [%{"same" => 7}] = Enum.to_list(QuadLeapfrog.stream(scan))
+    end
 
-      # Should get 4 quads worth of bindings
+    test "omits anonymous variables", %{db: db} do
+      pattern = {:quad, {:variable, "s"}, {:variable, "_"}, {:variable, "_"}, 5}
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      assert [%{"s" => 3}] = Enum.to_list(QuadLeapfrog.stream(scan))
+    end
+  end
+
+  describe "stream/1" do
+    setup %{db: db} do
+      Enum.each(
+        [{1, 10, 100, 0}, {1, 10, 101, 0}, {1, 11, 100, 0}, {2, 10, 100, 0}],
+        &QuadOperations.insert_quad(db, &1)
+      )
+
+      :ok
+    end
+
+    test "lazily enumerates every matching quad", %{db: db} do
+      pattern =
+        {:quad, {:variable, "subject"}, {:variable, "predicate"}, {:variable, "object"},
+         {:variable, "graph"}}
+
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      stream = QuadLeapfrog.stream(scan)
+      assert is_function(stream)
+
+      results = Enum.to_list(stream)
       assert length(results) == 4
 
-      # Each result should be a map with bindings
-      Enum.each(results, fn binding ->
-        assert is_map(binding)
-        assert map_size(binding) > 0
-      end)
+      assert Enum.all?(results, fn binding ->
+               Enum.sort(Map.keys(binding)) == ["graph", "object", "predicate", "subject"]
+             end)
     end
 
-    test "stream/1 terminates when exhausted", %{db: db} do
-      pattern = {:quad, 1, 10, 100, 0}
-
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
-
-      # Single exact match
-      assert length(results) == 1
-    end
-
-    test "stream/1 is lazy (doesn't materialize all results)", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Stream should be a Stream struct (lazy)
-      stream = QuadLeapfrog.stream(qlf)
-      assert is_function(stream)
-    end
-
-    test "stream/1 can be halted mid-execution", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Take only 2 results even though there are 4
-      results = QuadLeapfrog.stream(qlf) |> Enum.take(2)
-
-      assert length(results) == 2
-    end
-
-    test "stream/1 works with Enum.take for limiting results", %{db: db} do
-      pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
-
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      # Take 1 result
-      results = QuadLeapfrog.stream(qlf) |> Enum.take(1)
-
-      assert length(results) == 1
-
-      # Take 3 results
-      {:ok, qlf2} = QuadLeapfrog.from_pattern(db, pattern)
-      results2 = QuadLeapfrog.stream(qlf2) |> Enum.take(3)
-
-      assert length(results2) == 3
-    end
-
-    test "stream/1 handles empty results", %{db: db} do
-      # Pattern that won't match anything
-      pattern = {:quad, 999, 999, 999, 999}
-
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
-
-      assert length(results) == 0
-    end
-
-    test "stream/1 works with bound patterns", %{db: db} do
-      # Only subject bound
+    test "bound components filter results but are not emitted", %{db: db} do
       pattern = {:quad, 1, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      results = Enum.to_list(QuadLeapfrog.stream(scan))
 
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
-
-      results = QuadLeapfrog.stream(qlf) |> Enum.to_list()
-
-      # Subject 1 appears in 3 quads
       assert length(results) == 3
-
-      # All results should have subject = 1
-      Enum.each(results, fn binding ->
-        assert Map.get(binding, :s) == 1
-      end)
+      assert Enum.all?(results, &(Map.keys(&1) |> Enum.sort() == ["g", "o", "p"]))
     end
 
-    test "stream/1 preserves binding variable names", %{db: db} do
-      pattern = {:quad, {:variable, "subject"}, {:variable, "predicate"}, {:variable, "object"}, {:variable, "graph"}}
+    test "early halt closes the owned iterator", %{db: db} do
+      pattern =
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
-      {:ok, qlf} = QuadLeapfrog.from_pattern(db, pattern)
+      assert {:ok, scan} = QuadLeapfrog.from_pattern(db, pattern)
+      [tagged] = scan.tagged_iterators
+      iterator_pid = tagged.iterator.iter_ref
 
-      [first | _] = QuadLeapfrog.stream(qlf) |> Enum.take(1)
-
-      # Should have keys matching variable names
-      assert Map.has_key?(first, :subject)
-      assert Map.has_key?(first, :predicate)
-      assert Map.has_key?(first, :object)
-      assert Map.has_key?(first, :graph)
+      assert [_] = scan |> QuadLeapfrog.stream() |> Enum.take(1)
+      refute Process.alive?(iterator_pid)
     end
   end
 end
