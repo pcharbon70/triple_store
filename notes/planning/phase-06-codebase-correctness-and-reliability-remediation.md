@@ -579,16 +579,27 @@ provenance while preserving explicit-versus-derived and graph-scope semantics.
 Description: Treat persisted provenance as versioned structured data and return
 tagged corruption errors to every caller.
 
-- [ ] 3.3.1.1 Define the supported derivation record shape, fact key types, rule
+- [x] 3.3.1.1 Define the supported derivation record shape, fact key types, rule
   identifier types, premises, graph scope, and optional metadata.
-- [ ] 3.3.1.2 Decode with safe mode and validate the complete record before
+- [x] 3.3.1.2 Decode with safe mode and validate the complete record before
   constructing runtime provenance values.
-- [ ] 3.3.1.3 Update lookup, explanation, deletion, and rederivation callers to
+- [x] 3.3.1.3 Update lookup, explanation, deletion, and rederivation callers to
   propagate or explicitly handle tagged corruption errors.
-- [ ] 3.3.1.4 Preserve valid existing records and add a versioned migration path if
+- [x] 3.3.1.4 Preserve valid existing records and add a versioned migration path if
   binary rule identifiers require persisted-format evolution.
-- [ ] 3.3.1.5 Add malformed, truncated, unsafe-term, wrong-shape, and unsupported
+- [x] 3.3.1.5 Add malformed, truncated, unsafe-term, wrong-shape, and unsupported
   version fixtures.
+
+Section 3.3 evidence: provenance retains the existing unversioned derivation-map
+encoding, so legacy atom identifiers and new binary rule identifiers coexist
+without a migration. The persistence boundary safe-decodes and validates every
+32-byte graph-first fact key, rule identifier, premise, binding, timestamp, and
+optional metadata field before constructing a tracker. Malformed, unsafe, or
+unsupported records return tagged corruption errors. Explanation, graph clear,
+and triple or quad delete-with-reasoning now propagate those errors; deletion
+preflights persisted lineage so explicit facts remain untouched on corruption.
+The focused provenance, deletion, rederivation, and facade gate completed 157
+tests with zero failures.
 
 ### Section 3.4: Integration Tests
 

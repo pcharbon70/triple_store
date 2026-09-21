@@ -36,6 +36,7 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   alias TripleStore.QuadIndex
   alias TripleStore.QuadOperations
   alias TripleStore.Reasoner.BackwardTraceQuad
+  alias TripleStore.Reasoner.DerivationProvenance
   alias TripleStore.Reasoner.ForwardRederiveQuad
   alias TripleStore.Reasoner.Rule
 
@@ -112,7 +113,26 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
   """
   @spec delete_quads_with_reasoning(db_ref(), [id_quad()], [Rule.t()], delete_opts()) ::
           {:ok, delete_stats()} | {:error, term()}
+  def delete_quads_with_reasoning(_db, [], _rules, _opts) do
+    {:ok,
+     %{
+       explicit_deleted: 0,
+       derived_deleted: 0,
+       derived_kept: 0,
+       potentially_invalid_count: 0,
+       duration_ms: 0
+     }}
+  end
+
   def delete_quads_with_reasoning(db, quads, rules, opts) when is_list(quads) do
+    graph_id = Keyword.fetch!(opts, :graph_id)
+
+    with {:ok, _provenance} <- DerivationProvenance.load(db, graph_id) do
+      do_delete_quads_with_reasoning(db, quads, rules, opts)
+    end
+  end
+
+  defp do_delete_quads_with_reasoning(db, quads, rules, opts) do
     start_time = System.monotonic_time(:millisecond)
 
     graph_id = Keyword.fetch!(opts, :graph_id)
@@ -178,17 +198,6 @@ defmodule TripleStore.Reasoner.DeleteWithReasoningQuad do
     end
 
     {:ok, stats}
-  end
-
-  def delete_quads_with_reasoning(_db, [], _rules, _opts) do
-    {:ok,
-     %{
-       explicit_deleted: 0,
-       derived_deleted: 0,
-       derived_kept: 0,
-       potentially_invalid_count: 0,
-       duration_ms: 0
-     }}
   end
 
   @doc """

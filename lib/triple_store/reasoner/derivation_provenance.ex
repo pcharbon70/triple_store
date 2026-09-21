@@ -23,7 +23,10 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   ## Storage
 
   Provenance is stored in-memory during reasoning and can be persisted
-  to a separate column family for debugging and audit trails.
+  to a separate column family for debugging and audit trails. The supported
+  on-disk format is the existing unversioned derivation map. Reads use safe
+  Erlang-term decoding and validate the complete record; malformed or
+  incompatible records return `{:error, {:corrupt_provenance, reason}}`.
 
   ## Usage
 
@@ -58,10 +61,11 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   @typedoc "Derivation record for a single derived quad"
   @type derivation :: %{
+          optional(:metadata) => map(),
           rule_name: Rule.name(),
           premises: [id_quad()],
           bindings: bindings(),
-          timestamp: integer()
+          timestamp: non_neg_integer()
         }
 
   @typedoc "Provenance tracker mapping derived quads to their derivations"
@@ -111,6 +115,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     rule_name = Keyword.fetch!(opts, :rule_name)
     premises = Keyword.get(opts, :premises, [])
     bindings = Keyword.get(opts, :bindings, %{})
+    metadata = Keyword.get(opts, :metadata)
 
     derivation = %{
       rule_name: rule_name,
@@ -118,6 +123,9 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
       bindings: bindings,
       timestamp: System.system_time(:millisecond)
     }
+
+    derivation =
+      if is_nil(metadata), do: derivation, else: Map.put(derivation, :metadata, metadata)
 
     updated_derivations = Map.put(tracker.derivations, derived_quad, derivation)
 
@@ -304,15 +312,9 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   """
   @spec save(term(), t()) :: :ok | {:error, term()}
   def save(db, %__MODULE__{} = tracker) do
-    operations =
-      tracker.derivations
-      |> Enum.map(fn {quad, derivation} ->
-        key = encode_provenance_key(quad)
-        value = encode_derivation(derivation)
-        {@provenance_cf, key, value}
-      end)
-
-    ErlangAdapter.write_batch(db, operations, true)
+    with {:ok, operations} <- build_persistence_operations(tracker.derivations) do
+      ErlangAdapter.write_batch(db, operations, true)
+    end
   rescue
     error -> {:error, error}
   end
@@ -334,25 +336,35 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   def load(db, graph_id \\ nil) do
     prefix = if graph_id, do: <<graph_id::64-big>>, else: <<>>
 
-    derivations =
-      ErlangAdapter.fold(db, @provenance_cf, prefix, [], &collect_persisted_derivation/2)
+    case ErlangAdapter.fold(
+           db,
+           @provenance_cf,
+           prefix,
+           {:ok, []},
+           &collect_persisted_derivation/2
+         ) do
+      {:ok, derivations} ->
+        {:ok,
+         %__MODULE__{
+           derivations: Map.new(derivations),
+           count: length(derivations)
+         }}
 
-    tracker = %__MODULE__{
-      derivations: Map.new(derivations),
-      count: length(derivations)
-    }
-
-    {:ok, tracker}
+      {:error, _reason} = error ->
+        error
+    end
   rescue
     error -> {:error, error}
   end
 
-  defp collect_persisted_derivation({key, value}, acc) do
+  defp collect_persisted_derivation(_record, {:error, _reason} = error), do: error
+
+  defp collect_persisted_derivation({key, value}, {:ok, acc}) do
     with {:ok, {_g, _s, _p, _o} = quad} <- decode_provenance_key(key),
          {:ok, derivation} <- decode_derivation(value) do
-      [{quad, derivation} | acc]
+      {:ok, [{quad, derivation} | acc]}
     else
-      _ -> acc
+      {:error, reason} -> {:error, {:corrupt_provenance, reason}}
     end
   end
 
@@ -371,23 +383,19 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   """
   @spec clear_graph(term(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, term()}
   def clear_graph(db, graph_id) do
-    prefix = <<graph_id::64-big>>
-
     try do
-      # Collect all keys for this graph
-      keys =
-        ErlangAdapter.fold_keys(db, @provenance_cf, prefix, [], fn key, acc ->
-          [key | acc]
-        end)
+      with {:ok, tracker} <- load(db, graph_id) do
+        keys = Enum.map(Map.keys(tracker.derivations), &encode_provenance_key/1)
 
-      if keys == [] do
-        {:ok, 0}
-      else
-        operations = Enum.map(keys, fn key -> {@provenance_cf, key} end)
+        if keys == [] do
+          {:ok, 0}
+        else
+          operations = Enum.map(keys, fn key -> {@provenance_cf, key} end)
 
-        case ErlangAdapter.delete_batch(db, operations, true) do
-          :ok -> {:ok, length(keys)}
-          error -> error
+          case ErlangAdapter.delete_batch(db, operations, true) do
+            :ok -> {:ok, length(keys)}
+            error -> error
+          end
         end
       end
     rescue
@@ -401,7 +409,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   defp format_explanation({g, s, p, o}, derivation, db) do
     # Build a human-readable explanation
-    rule_str = Atom.to_string(derivation.rule_name)
+    rule_str = to_string(derivation.rule_name)
 
     premise_str =
       derivation.premises
@@ -409,7 +417,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
     binding_str =
       derivation.bindings
-      |> Enum.map_join(", ", fn {var, {:bound, value}} -> "#{var}=#{value}" end)
+      |> Enum.map_join(", ", fn {var, value} -> "#{var}=#{format_binding(value)}" end)
 
     """
     Derived: #{format_quad({g, s, p, o}, db)}
@@ -419,6 +427,9 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     """
     |> String.trim()
   end
+
+  defp format_binding({:bound, value}), do: to_string(value)
+  defp format_binding(value), do: inspect(value)
 
   defp format_quad({g, s, p, o}, db) do
     # Try to look up term strings for readability
@@ -448,7 +459,7 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     {:ok, {g, s, p, o}}
   end
 
-  defp decode_provenance_key(_other), do: :error
+  defp decode_provenance_key(_other), do: {:error, :invalid_fact_key}
 
   # Encode a derivation record for storage
   defp encode_derivation(derivation) do
@@ -457,8 +468,124 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   # Decode a derivation record from storage
   defp decode_derivation(binary) when is_binary(binary) do
-    {:ok, :erlang.binary_to_term(binary)}
-  rescue
-    _ -> :error
+    try do
+      binary
+      |> :erlang.binary_to_term([:safe])
+      |> validate_derivation()
+    rescue
+      ArgumentError -> {:error, :unsafe_or_invalid_term}
+    end
+  end
+
+  defp build_persistence_operations(derivations) do
+    Enum.reduce_while(derivations, {:ok, []}, fn {quad, derivation}, {:ok, acc} ->
+      with :ok <- validate_id_quad(quad),
+           {:ok, valid_derivation} <- validate_derivation(derivation) do
+        operation =
+          {@provenance_cf, encode_provenance_key(quad), encode_derivation(valid_derivation)}
+
+        {:cont, {:ok, [operation | acc]}}
+      else
+        {:error, reason} -> {:halt, {:error, {:invalid_provenance, reason}}}
+      end
+    end)
+    |> case do
+      {:ok, operations} -> {:ok, Enum.reverse(operations)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp validate_derivation(%{version: version}),
+    do: {:error, {:unsupported_version, version}}
+
+  defp validate_derivation(derivation) when is_map(derivation) do
+    required_keys = MapSet.new([:rule_name, :premises, :bindings, :timestamp])
+    allowed_keys = MapSet.put(required_keys, :metadata)
+    actual_keys = MapSet.new(Map.keys(derivation))
+
+    cond do
+      not MapSet.subset?(required_keys, actual_keys) ->
+        {:error, :missing_required_fields}
+
+      not MapSet.subset?(actual_keys, allowed_keys) ->
+        {:error,
+         {:unsupported_fields, MapSet.difference(actual_keys, allowed_keys) |> MapSet.to_list()}}
+
+      not valid_rule_name?(derivation.rule_name) ->
+        {:error, {:invalid_rule_name, derivation.rule_name}}
+
+      not is_list(derivation.premises) or
+          not Enum.all?(derivation.premises, &(validate_id_quad(&1) == :ok)) ->
+        {:error, {:invalid_premises, derivation.premises}}
+
+      not valid_bindings?(derivation.bindings) ->
+        {:error, {:invalid_bindings, derivation.bindings}}
+
+      not is_integer(derivation.timestamp) or derivation.timestamp < 0 ->
+        {:error, {:invalid_timestamp, derivation.timestamp}}
+
+      not valid_metadata?(Map.get(derivation, :metadata)) ->
+        {:error, {:invalid_metadata, Map.get(derivation, :metadata)}}
+
+      true ->
+        {:ok, derivation}
+    end
+  end
+
+  defp validate_derivation(_derivation), do: {:error, :invalid_record_shape}
+
+  defp validate_id_quad({g, s, p, o}) do
+    if Enum.all?([g, s, p, o], &(is_integer(&1) and &1 >= 0 and &1 <= 0xFFFFFFFFFFFFFFFF)) do
+      :ok
+    else
+      {:error, :invalid_fact_key}
+    end
+  end
+
+  defp validate_id_quad(_quad), do: {:error, :invalid_fact_key}
+
+  defp valid_rule_name?(name) when is_atom(name), do: name not in [nil, true, false]
+  defp valid_rule_name?(name) when is_binary(name), do: byte_size(name) > 0
+  defp valid_rule_name?(_name), do: false
+
+  defp valid_bindings?(bindings) when is_map(bindings) do
+    Enum.all?(bindings, fn
+      {name, value} when is_binary(name) -> valid_binding_value?(value)
+      _other -> false
+    end)
+  end
+
+  defp valid_bindings?(_bindings), do: false
+
+  defp valid_binding_value?({:bound, value}), do: is_integer(value) and value >= 0
+  defp valid_binding_value?({:iri, value}), do: is_binary(value)
+  defp valid_binding_value?({:blank_node, value}), do: is_binary(value)
+  defp valid_binding_value?({:literal, :simple, value}), do: is_binary(value)
+
+  defp valid_binding_value?({:literal, type, value, qualifier})
+       when type in [:typed, :lang],
+       do: is_binary(value) and is_binary(qualifier)
+
+  defp valid_binding_value?(_value), do: false
+
+  defp valid_metadata?(nil), do: true
+
+  defp valid_metadata?(metadata) when is_map(metadata) do
+    allowed_keys = MapSet.new([:graph_id, :scope, :iteration])
+    keys = MapSet.new(Map.keys(metadata))
+
+    MapSet.subset?(keys, allowed_keys) and
+      valid_optional_non_negative(metadata, :graph_id) and
+      valid_optional_non_negative(metadata, :iteration) and
+      Map.get(metadata, :scope, :local) in [:local, :global]
+  end
+
+  defp valid_metadata?(_metadata), do: false
+
+  defp valid_optional_non_negative(metadata, key) do
+    case Map.fetch(metadata, key) do
+      :error -> true
+      {:ok, value} -> is_integer(value) and value >= 0
+    end
   end
 end

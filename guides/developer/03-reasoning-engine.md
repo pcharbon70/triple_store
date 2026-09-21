@@ -37,6 +37,13 @@ persistence from a successful statistics result.
 deletion support uses provenance and rederivation modules to decide what remains
 supported. Direct loading does not automatically invoke incremental reasoning.
 
+Persistent derivation records retain their existing unversioned map encoding.
+Rule identifiers may be legacy atoms or nonempty binaries. Provenance readers
+safe-decode and validate the entire key and record, returning
+`{:error, {:corrupt_provenance, reason}}` for malformed, unsafe, or unsupported
+data. Explanation and delete-with-reasoning propagate that result before
+changing explicit or derived facts. Valid existing records require no migration.
+
 Triple derived APIs use `{s, p, o}`. Quad derived APIs use graph-first
 `{g, s, p, o}`. This differs from `QuadOperations`, which uses
 `{s, p, o, g}`.
