@@ -7,7 +7,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   efficient iteration over quad indices.
 
   ## Current Implementation Status
-  @moduledoc """
+  @moduledoc \"""
   Quad-specific Leapfrog join for 4-way joins on quad patterns.
 
   Extends the core Leapfrog algorithm to handle quad patterns with subject,
@@ -79,7 +79,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   - `:bound` - Component is a concrete value (integer ID or atom)
   - `:variable` - Component is a variable with a name
   """
-  @type component :: {:bound, non_neg_integer()} | {:variable, String.t()}
+  @type component :: non_neg_integer() | {:variable, String.t()}
 
   @typedoc """
   Index selection for a quad join position.
@@ -97,15 +97,20 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   - `:component` - The component at this position
   - `:index` - Which index to use for this position
   """
-  @type iterator_position :: {position :: non_neg_integer(), component :: component(), index :: index()}
+  @type iterator_position ::
+          {position :: non_neg_integer(), component :: component(), index :: index()}
 
   @typedoc """
   Plan for creating iterators for a quad pattern.
 
-  Each entry specifies which index to use for each variable position,
-  along with the prefix depth (number of bound components before it).
+  A quad pattern uses one physical index scan. The entry contains the scan
+  level, selected index, number of contiguous bound components encoded in the
+  prefix, and the prefix itself. Fully bound patterns use direct lookup and
+  therefore have an empty plan.
   """
-  @type iterator_plan :: [{position :: non_neg_integer(), index :: index(), prefix_depth :: non_neg_integer()}]
+  @type iterator_plan :: [
+          {scan_level :: 0..3, index :: index(), prefix_depth :: 0..3, prefix :: binary()}
+        ]
 
   @typedoc """
   Iterator with quad-specific metadata for multi-iterator joins.
@@ -140,7 +145,16 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         }
 
   @enforce_keys [:leapfrog, :variables, :pattern]
-  defstruct [:leapfrog, :variables, :pattern, bindings: %{}, tagged_iterators: nil, iterations: 0, yielded: false, advanced: false]
+  defstruct [
+    :leapfrog,
+    :variables,
+    :pattern,
+    bindings: %{},
+    tagged_iterators: nil,
+    iterations: 0,
+    yielded: false,
+    advanced: false
+  ]
 
   # Maximum iterations before giving up (Section 2.2.2: safeguard)
   @max_iterations 10_000
@@ -286,12 +300,17 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   @dialyzer {:nowarn_function, build_prefix_with_bound: 2}
   defp build_prefix_with_bound([s, p, o, g], index) do
     # Reorder according to index
-    ordered_with_positions = case index do
-      :gspo -> [{0, g}, {1, s}, {2, p}, {3, o}]  # g, s, p, o
-      :gpos -> [{0, g}, {1, p}, {2, o}, {3, s}]  # g, p, o, s
-      :spog -> [{0, s}, {1, p}, {2, o}, {3, g}]  # s, p, o, g
-      :posg -> [{0, p}, {1, o}, {2, s}, {3, g}]  # p, o, s, g
-    end
+    ordered_with_positions =
+      case index do
+        # g, s, p, o
+        :gspo -> [{0, g}, {1, s}, {2, p}, {3, o}]
+        # g, p, o, s
+        :gpos -> [{0, g}, {1, p}, {2, o}, {3, s}]
+        # s, p, o, g
+        :spog -> [{0, s}, {1, p}, {2, o}, {3, g}]
+        # p, o, s, g
+        :posg -> [{0, p}, {1, o}, {2, s}, {3, g}]
+      end
 
     # Build prefix by putting bound values at their positions
     # Create a list of values or nil
@@ -329,10 +348,14 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       # Select index based on which components are bound
       selected_index =
         cond do
-          bound?(g) -> :gspo  # Graph-bound: use GSPO
-          bound?(s) -> :gspo  # Subject-bound: use GSPO
-          bound?(p) -> :gpos  # Predicate-bound: use GPOS
-          true -> :gspo       # Default to GSPO
+          # Graph-bound: use GSPO
+          bound?(g) -> :gspo
+          # Subject-bound: use GSPO
+          bound?(s) -> :gspo
+          # Predicate-bound: use GPOS
+          bound?(p) -> :gpos
+          # Default to GSPO
+          true -> :gspo
         end
 
       # Build prefix with bound components
@@ -344,9 +367,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       # Select the base index based on what's bound
       base_index =
         cond do
-          bound?(g) -> :gspo  # Graph-bound: use GSPO for all iterators
-          bound?(s) -> :spog  # Subject-bound but not graph: use SPOG
-          true -> :posg       # Fallback to POSG
+          # Graph-bound: use GSPO for all iterators
+          bound?(g) -> :gspo
+          # Subject-bound but not graph: use SPOG
+          bound?(s) -> :spog
+          # Fallback to POSG
+          true -> :posg
         end
 
       components
@@ -415,7 +441,8 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
           with :ok <- validate_iterators(tagged_iterators) do
             cond do
               # Single iterator case (4-variable pattern scan) without Leapfrog
-              length(tagged_iterators) == 1 and variable?(s) and variable?(p) and variable?(o) and variable?(g) ->
+              length(tagged_iterators) == 1 and variable?(s) and variable?(p) and variable?(o) and
+                  variable?(g) ->
                 # Single iterator for 4-variable pattern: use direct scan path
                 {:ok,
                  %__MODULE__{
@@ -427,10 +454,10 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
               # Single iterator case (3-variable pattern scan) without Leapfrog
               length(tagged_iterators) == 1 and
-                ((variable?(s) and variable?(p) and variable?(o)) or
-                 (variable?(s) and variable?(p) and variable?(g)) or
-                 (variable?(s) and variable?(o) and variable?(g)) or
-                 (variable?(p) and variable?(o) and variable?(g))) ->
+                  ((variable?(s) and variable?(p) and variable?(o)) or
+                     (variable?(s) and variable?(p) and variable?(g)) or
+                     (variable?(s) and variable?(o) and variable?(g)) or
+                     (variable?(p) and variable?(o) and variable?(g))) ->
                 # Single iterator for 3-variable pattern: use direct scan path
                 {:ok,
                  %__MODULE__{
@@ -557,7 +584,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec search(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def search(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf) do
+  def search(
+        %__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf
+      ) do
     # Direct scan case (4-variable pattern with single iterator)
     if iterations >= @max_iterations do
       {:error, :max_iterations_exceeded}
@@ -611,7 +640,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   """
   @spec next(t()) :: {:ok, t()} | {:exhausted, t()} | {:error, term()}
-  def next(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf) do
+  def next(
+        %__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], iterations: iterations} = qlf
+      ) do
     # Direct scan case: advance to next quad by iterating to the next key
     if iterations >= @max_iterations do
       {:error, :max_iterations_exceeded}
@@ -620,11 +651,13 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         {:ok, key, _value} ->
           # Update the iterator state
           iter = %{
-            single_iter.iterator |
-            current_key: key,
-            current_value: QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
-            exhausted: false
+            single_iter.iterator
+            | current_key: key,
+              current_value:
+                QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
+              exhausted: false
           }
+
           updated_iter = %{single_iter | iterator: iter}
           updated_qlf = %{qlf | tagged_iterators: [updated_iter], iterations: iterations + 1}
           updated_qlf = extract_bindings(updated_qlf)
@@ -958,25 +991,41 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Finds the index order position (0-3) for a given quad position in a specific index
-  defp find_position_in_index_order(0, :gspo), do: 1  # s is at index 1 in GSPO
-  defp find_position_in_index_order(1, :gspo), do: 2  # p is at index 2 in GSPO
-  defp find_position_in_index_order(2, :gspo), do: 3  # o is at index 3 in GSPO
-  defp find_position_in_index_order(3, :gspo), do: 0  # g is at index 0 in GSPO
+  # s is at index 1 in GSPO
+  defp find_position_in_index_order(0, :gspo), do: 1
+  # p is at index 2 in GSPO
+  defp find_position_in_index_order(1, :gspo), do: 2
+  # o is at index 3 in GSPO
+  defp find_position_in_index_order(2, :gspo), do: 3
+  # g is at index 0 in GSPO
+  defp find_position_in_index_order(3, :gspo), do: 0
 
-  defp find_position_in_index_order(0, :gpos), do: 3  # s is at index 3 in GPOS
-  defp find_position_in_index_order(1, :gpos), do: 1  # p is at index 1 in GPOS
-  defp find_position_in_index_order(2, :gpos), do: 2  # o is at index 2 in GPOS
-  defp find_position_in_index_order(3, :gpos), do: 0  # g is at index 0 in GPOS
+  # s is at index 3 in GPOS
+  defp find_position_in_index_order(0, :gpos), do: 3
+  # p is at index 1 in GPOS
+  defp find_position_in_index_order(1, :gpos), do: 1
+  # o is at index 2 in GPOS
+  defp find_position_in_index_order(2, :gpos), do: 2
+  # g is at index 0 in GPOS
+  defp find_position_in_index_order(3, :gpos), do: 0
 
-  defp find_position_in_index_order(0, :spog), do: 0  # s is at index 0 in SPOG
-  defp find_position_in_index_order(1, :spog), do: 1  # p is at index 1 in SPOG
-  defp find_position_in_index_order(2, :spog), do: 2  # o is at index 2 in SPOG
-  defp find_position_in_index_order(3, :spog), do: 3  # g is at index 3 in SPOG
+  # s is at index 0 in SPOG
+  defp find_position_in_index_order(0, :spog), do: 0
+  # p is at index 1 in SPOG
+  defp find_position_in_index_order(1, :spog), do: 1
+  # o is at index 2 in SPOG
+  defp find_position_in_index_order(2, :spog), do: 2
+  # g is at index 3 in SPOG
+  defp find_position_in_index_order(3, :spog), do: 3
 
-  defp find_position_in_index_order(0, :posg), do: 2  # s is at index 2 in POSG
-  defp find_position_in_index_order(1, :posg), do: 0  # p is at index 0 in POSG
-  defp find_position_in_index_order(2, :posg), do: 1  # o is at index 1 in POSG
-  defp find_position_in_index_order(3, :posg), do: 3  # g is at index 3 in POSG
+  # s is at index 2 in POSG
+  defp find_position_in_index_order(0, :posg), do: 2
+  # p is at index 0 in POSG
+  defp find_position_in_index_order(1, :posg), do: 0
+  # o is at index 1 in POSG
+  defp find_position_in_index_order(2, :posg), do: 1
+  # g is at index 3 in POSG
+  defp find_position_in_index_order(3, :posg), do: 3
 
   # Returns components in the order they appear in the given index
   defp components_for_index([s, p, o, g], :gspo), do: [g, s, p, o]
@@ -1020,6 +1069,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Extracts variable name from component, with fallback to position-based name
   defp extract_variable_name({:variable, name}, _position), do: name
+
   defp extract_variable_name(_component, position) do
     # Fallback to position-based name for non-variable components
     Enum.at(["s", "p", "o", "g"], position, "var_#{position}")
@@ -1088,7 +1138,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   end
 
   # Extract bindings from the current match
-  defp extract_bindings(%__MODULE__{leapfrog: nil, pattern: pattern, tagged_iterators: [single_iter]} = qlf) do
+  defp extract_bindings(
+         %__MODULE__{leapfrog: nil, pattern: pattern, tagged_iterators: [single_iter]} = qlf
+       ) do
     # Direct scan case: extract bindings from the single iterator
     case QuadTrieIterator.current_key(single_iter.iterator) do
       {:ok, key} ->
@@ -1100,7 +1152,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     end
   end
 
-  defp extract_bindings(%__MODULE__{leapfrog: lf, pattern: pattern, tagged_iterators: tagged_iterators} = qlf) do
+  defp extract_bindings(
+         %__MODULE__{leapfrog: lf, pattern: pattern, tagged_iterators: tagged_iterators} = qlf
+       ) do
     case Leapfrog.current(lf) do
       :exhausted ->
         %{qlf | bindings: %{}}
@@ -1112,6 +1166,7 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
             nil ->
               # Legacy single-iterator path
               iterators = Leapfrog.iterators(lf)
+
               case iterators do
                 [%QuadTrieIterator{} = iter | _] ->
                   bindings_from_quad_iterator(iter, pattern)
@@ -1186,11 +1241,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
     {:quad, s_pat, p_pat, o_pat, g_pat} = pattern
 
     # Start with bound components from the pattern
-    initial_bindings = %{}
-    |> add_bound_component(s_pat, "s")
-    |> add_bound_component(p_pat, "p")
-    |> add_bound_component(o_pat, "o")
-    |> add_bound_component(g_pat, "g")
+    initial_bindings =
+      %{}
+      |> add_bound_component(s_pat, "s")
+      |> add_bound_component(p_pat, "p")
+      |> add_bound_component(o_pat, "o")
+      |> add_bound_component(g_pat, "g")
 
     # Check if we have a single iterator for 4-variable pattern (full scan case)
     if length(tagged_iterators) == 1 and
@@ -1209,7 +1265,12 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       # Extract bindings from each iterator based on its position and index
       Enum.reduce(tagged_iterators, initial_bindings, fn tagged, bindings ->
         case tagged do
-          %{iterator: %QuadTrieIterator{} = iter, position: position, variable_name: var_name, index: index} ->
+          %{
+            iterator: %QuadTrieIterator{} = iter,
+            position: position,
+            variable_name: var_name,
+            index: index
+          } ->
             case QuadTrieIterator.current_key(iter) do
               {:ok, key} ->
                 # Decode key based on the iterator's index
@@ -1229,36 +1290,72 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Extract all 4 bindings from a single quad key
   # Pattern tuple is {:quad, s, p, o, g}, so positions are: 0=s, 1=p, 2=o, 3=g
-  defp extract_all_bindings_from_key(<<g::64-big, s::64-big, p::64-big, o::64-big>>, :gspo, pattern, initial) do
+  defp extract_all_bindings_from_key(
+         <<g::64-big, s::64-big, p::64-big, o::64-big>>,
+         :gspo,
+         pattern,
+         initial
+       ) do
     initial
-    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
-    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
-    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
-    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
+    # Graph at position 3
+    |> add_variable_binding(pattern, 3, g, "g")
+    # Subject at position 0
+    |> add_variable_binding(pattern, 0, s, "s")
+    # Predicate at position 1
+    |> add_variable_binding(pattern, 1, p, "p")
+    # Object at position 2
+    |> add_variable_binding(pattern, 2, o, "o")
   end
 
-  defp extract_all_bindings_from_key(<<g::64-big, p::64-big, o::64-big, s::64-big>>, :gpos, pattern, initial) do
+  defp extract_all_bindings_from_key(
+         <<g::64-big, p::64-big, o::64-big, s::64-big>>,
+         :gpos,
+         pattern,
+         initial
+       ) do
     initial
-    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
-    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
-    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
-    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
+    # Graph at position 3
+    |> add_variable_binding(pattern, 3, g, "g")
+    # Predicate at position 1
+    |> add_variable_binding(pattern, 1, p, "p")
+    # Object at position 2
+    |> add_variable_binding(pattern, 2, o, "o")
+    # Subject at position 0
+    |> add_variable_binding(pattern, 0, s, "s")
   end
 
-  defp extract_all_bindings_from_key(<<s::64-big, p::64-big, o::64-big, g::64-big>>, :spog, pattern, initial) do
+  defp extract_all_bindings_from_key(
+         <<s::64-big, p::64-big, o::64-big, g::64-big>>,
+         :spog,
+         pattern,
+         initial
+       ) do
     initial
-    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
-    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
-    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
-    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+    # Subject at position 0
+    |> add_variable_binding(pattern, 0, s, "s")
+    # Predicate at position 1
+    |> add_variable_binding(pattern, 1, p, "p")
+    # Object at position 2
+    |> add_variable_binding(pattern, 2, o, "o")
+    # Graph at position 3
+    |> add_variable_binding(pattern, 3, g, "g")
   end
 
-  defp extract_all_bindings_from_key(<<p::64-big, o::64-big, s::64-big, g::64-big>>, :posg, pattern, initial) do
+  defp extract_all_bindings_from_key(
+         <<p::64-big, o::64-big, s::64-big, g::64-big>>,
+         :posg,
+         pattern,
+         initial
+       ) do
     initial
-    |> add_variable_binding(pattern, 1, p, "p")  # Predicate at position 1
-    |> add_variable_binding(pattern, 2, o, "o")  # Object at position 2
-    |> add_variable_binding(pattern, 0, s, "s")  # Subject at position 0
-    |> add_variable_binding(pattern, 3, g, "g")  # Graph at position 3
+    # Predicate at position 1
+    |> add_variable_binding(pattern, 1, p, "p")
+    # Object at position 2
+    |> add_variable_binding(pattern, 2, o, "o")
+    # Subject at position 0
+    |> add_variable_binding(pattern, 0, s, "s")
+    # Graph at position 3
+    |> add_variable_binding(pattern, 3, g, "g")
   end
 
   defp add_variable_binding(bindings, pattern, position, value, _default_name) do
@@ -1270,21 +1367,25 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
         Map.put(bindings, String.to_atom(name), value)
 
       {:variable, "_"} ->
-        bindings  # Don't bind anonymous variables
+        # Don't bind anonymous variables
+        bindings
 
       bound_value when is_integer(bound_value) ->
         # For bound components, add to bindings with the position-based name
         # This allows tests to verify bound values
-        pos_name = case position do
-          0 -> "s"
-          1 -> "p"
-          2 -> "o"
-          3 -> "g"
-        end
+        pos_name =
+          case position do
+            0 -> "s"
+            1 -> "p"
+            2 -> "o"
+            3 -> "g"
+          end
+
         Map.put(bindings, String.to_atom(pos_name), bound_value)
 
       _ ->
-        bindings  # Other cases
+        # Other cases
+        bindings
     end
   end
 
@@ -1294,42 +1395,74 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
   # GPOS: Graph(0) | Predicate(1) | Object(2) | Subject(3)
   # SPOG: Subject(0) | Predicate(1) | Object(2) | Graph(3)
   # POSG: Predicate(0) | Object(1) | Subject(2) | Graph(3)
-  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :gspo) do
+  defp extract_value_from_key(
+         <<first::64-big, second::64-big, third::64-big, fourth::64-big>>,
+         position,
+         :gspo
+       ) do
     case position do
-      0 -> second  # Subject is at position 1 in GSPO
-      1 -> third   # Predicate is at position 2 in GSPO
-      2 -> fourth  # Object is at position 3 in GSPO
-      3 -> first   # Graph is at position 0 in GSPO
+      # Subject is at position 1 in GSPO
+      0 -> second
+      # Predicate is at position 2 in GSPO
+      1 -> third
+      # Object is at position 3 in GSPO
+      2 -> fourth
+      # Graph is at position 0 in GSPO
+      3 -> first
       _ -> nil
     end
   end
 
-  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :gpos) do
+  defp extract_value_from_key(
+         <<first::64-big, second::64-big, third::64-big, fourth::64-big>>,
+         position,
+         :gpos
+       ) do
     case position do
-      0 -> fourth  # Subject is at position 3 in GPOS
-      1 -> second  # Predicate is at position 1 in GPOS
-      2 -> third   # Object is at position 2 in GPOS
-      3 -> first   # Graph is at position 0 in GPOS
+      # Subject is at position 3 in GPOS
+      0 -> fourth
+      # Predicate is at position 1 in GPOS
+      1 -> second
+      # Object is at position 2 in GPOS
+      2 -> third
+      # Graph is at position 0 in GPOS
+      3 -> first
       _ -> nil
     end
   end
 
-  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :spog) do
+  defp extract_value_from_key(
+         <<first::64-big, second::64-big, third::64-big, fourth::64-big>>,
+         position,
+         :spog
+       ) do
     case position do
-      0 -> first   # Subject is at position 0 in SPOG
-      1 -> second  # Predicate is at position 1 in SPOG
-      2 -> third   # Object is at position 2 in SPOG
-      3 -> fourth  # Graph is at position 3 in SPOG
+      # Subject is at position 0 in SPOG
+      0 -> first
+      # Predicate is at position 1 in SPOG
+      1 -> second
+      # Object is at position 2 in SPOG
+      2 -> third
+      # Graph is at position 3 in SPOG
+      3 -> fourth
       _ -> nil
     end
   end
 
-  defp extract_value_from_key(<<first::64-big, second::64-big, third::64-big, fourth::64-big>>, position, :posg) do
+  defp extract_value_from_key(
+         <<first::64-big, second::64-big, third::64-big, fourth::64-big>>,
+         position,
+         :posg
+       ) do
     case position do
-      0 -> third   # Subject is at position 2 in POSG
-      1 -> first   # Predicate is at position 0 in POSG
-      2 -> second  # Object is at position 1 in POSG
-      3 -> fourth  # Graph is at position 3 in POSG
+      # Subject is at position 2 in POSG
+      0 -> third
+      # Predicate is at position 0 in POSG
+      1 -> first
+      # Object is at position 1 in POSG
+      2 -> second
+      # Graph is at position 3 in POSG
+      3 -> fourth
       _ -> nil
     end
   end
@@ -1355,7 +1488,9 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
 
   # Helper for stream: search if not at match, otherwise advance then search
   # Must put more specific clauses first
-  defp search_or_next(%__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], advanced: false} = qlf) do
+  defp search_or_next(
+         %__MODULE__{leapfrog: nil, tagged_iterators: [single_iter], advanced: false} = qlf
+       ) do
     # Direct scan case: yield current position first, then advance on next call
     case QuadTrieIterator.current(single_iter.iterator) do
       {:ok, _value} ->
@@ -1374,11 +1509,13 @@ defmodule TripleStore.SPARQL.Leapfrog.QuadLeapfrog do
       {:ok, key, _value} ->
         # Update the iterator state
         iter = %{
-          single_iter.iterator |
-          current_key: key,
-          current_value: QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
-          exhausted: false
+          single_iter.iterator
+          | current_key: key,
+            current_value:
+              QuadTrieIterator.extract_value_at_level(key, single_iter.iterator.level),
+            exhausted: false
         }
+
         updated_iter = %{single_iter | iterator: iter}
         updated_qlf = %{qlf | tagged_iterators: [updated_iter]}
         updated_qlf = extract_bindings(updated_qlf)

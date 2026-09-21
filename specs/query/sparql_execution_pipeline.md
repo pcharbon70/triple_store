@@ -55,6 +55,27 @@ graph TD
 - `TripleStore.query/3` and `TripleStore.update/2` do not currently expose actor context, so user-aware authorization is a lower-level expert capability rather than a facade feature.
 - Streaming queries are lazy; the current timeout contract applies to setup and eager execution, not to the full duration of stream consumption.
 
+### Quad Leapfrog Boundary Contract
+
+- A quad pattern is represented as `{:quad, s, p, o, g}`. Bound components at
+  the Leapfrog boundary are non-negative dictionary IDs; variables are
+  `{:variable, binary_name}`. Anonymous variable `_` is never emitted as a
+  binding.
+- A solution binding is a map from the original binary variable name to its
+  dictionary ID. `SPARQL.Executor` owns conversion from dictionary IDs to RDF
+  terms and compatibility with an incoming outer binding.
+- One quad pattern uses one physical index scan. Its iterator plan entry is
+  `{scan_level, index, prefix_depth, prefix}`. The prefix contains only the
+  longest contiguous sequence of bound components in the chosen index order;
+  missing components are never encoded as zero placeholders.
+- `QuadLeapfrog.stream/1` owns every iterator in the supplied state after
+  enumeration begins. It closes them on exhaustion, early halt, and exceptions.
+  A caller that constructs but never enumerates a stream must call
+  `QuadLeapfrog.close/1`.
+- Invalid patterns and iterator-construction failures return tagged errors.
+  Optimizer fallback may handle construction-time inability to use Leapfrog,
+  but it must not conceal failures raised after lazy enumeration begins.
+
 ## Acceptance Criteria
 
 | Acceptance ID | Criterion | Related Tests |
@@ -63,3 +84,4 @@ graph TD
 | `AC-QRY-07` | `SPARQL.Query` supports the current public query features: timeout, explain, prepared queries, parameter binding, streaming, and optional result caching. | `test/triple_store/sparql/query_test.exs`, `test/triple_store/sparql/result_stream_test.exs`, `test/triple_store/sparql/enhanced_explain_test.exs`, `test/triple_store/sparql/telemetry_test.exs` |
 | `AC-QRY-08` | `UpdateExecutor` preserves the current graph-aware update semantics, cache invalidation behavior, and lower-level authorization hooks. | `test/triple_store/sparql/update_executor_test.exs`, `test/triple_store/sparql/update_integration_test.exs`, `test/triple_store/sparql/graph_management_test.exs`, `test/triple_store/sparql/copy_move_add_test.exs`, `test/triple_store/sparql/update_authorization_test.exs` |
 | `AC-QRY-09` | Property-path, validation, error handling, and other bounded query operations expose typed limit and failure behavior instead of silent truncation. | `test/triple_store/sparql/property_path_test.exs`, `test/triple_store/sparql/property_path_integration_test.exs`, `test/triple_store/sparql/error_handler_test.exs`, `test/triple_store/sparql/executor_error_test.exs` |
+| `AC-QRY-10` | Quad Leapfrog execution preserves binary variable names, uses contiguous physical-index prefixes, returns results compatible with outer bindings, and releases iterators on every stream exit. | `test/triple_store/sparql/leapfrog/phase_6_quad_execution_contract_test.exs`, `test/triple_store/sparql/leapfrog/quad_leapfrog_test.exs`, `test/triple_store/sparql/executor_quad_integration_test.exs` |
