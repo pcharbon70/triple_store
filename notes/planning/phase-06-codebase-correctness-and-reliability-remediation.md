@@ -612,15 +612,15 @@ Description: Prove that external identifiers do not allocate atoms and invalid
 persisted state produces tagged failures without weakening authorization or
 corrupting derived data.
 
-- [ ] 3.4.1.1 Run a high-cardinality query-variable corpus and compare atom counts
+- [x] 3.4.1.1 Run a high-cardinality query-variable corpus and compare atom counts
   before and after garbage collection and query completion.
-- [ ] 3.4.1.2 Compile and optimize rules for many unique property IRIs; verify
+- [x] 3.4.1.2 Compile and optimize rules for many unique property IRIs; verify
   deterministic results and bounded atom growth.
-- [ ] 3.4.1.3 Inject corrupted ACL data and assert reads and writes fail closed,
+- [x] 3.4.1.3 Inject corrupted ACL data and assert reads and writes fail closed,
   authorized data is not exposed, and existing bytes are not overwritten.
-- [ ] 3.4.1.4 Inject corrupted provenance and assert explanation, deletion, and
+- [x] 3.4.1.4 Inject corrupted provenance and assert explanation, deletion, and
   rederivation return tagged errors without changing explicit or derived facts.
-- [ ] 3.4.1.5 Backup and restore valid ACL/provenance stores, reopen them, and
+- [x] 3.4.1.5 Backup and restore valid ACL/provenance stores, reopen them, and
   verify policies and lineage survive unchanged.
 
 #### Task 3.4.2: Pass the Phase 3 quality gate
@@ -628,15 +628,38 @@ corrupting derived data.
 Description: Confirm the safety changes remain compatible with authorization,
 reasoning, persistence, and release build requirements.
 
-- [ ] 3.4.2.1 Run authorization, update authorization, rule compiler, rule
+- [x] 3.4.2.1 Run authorization, update authorization, rule compiler, rule
   optimizer, provenance, rederivation, incremental reasoning, and backup suites.
-- [ ] 3.4.2.2 Run `SCN-010`, `SCN-011`, `SCN-012`, and `SCN-017` affected coverage.
-- [ ] 3.4.2.3 Run strict compilation, formatting, Credo, and Dialyzer for changed
+- [x] 3.4.2.2 Run `SCN-010`, `SCN-011`, `SCN-012`, and `SCN-017` affected coverage.
+- [x] 3.4.2.3 Run strict compilation, formatting, Credo, and Dialyzer for changed
   types and call sites.
-- [ ] 3.4.2.4 Update storage, reasoning, authorization, and operational docs with
+- [x] 3.4.2.4 Update storage, reasoning, authorization, and operational docs with
   format compatibility and corruption behavior.
-- [ ] 3.4.2.5 Record valid-format compatibility evidence and any required migration
+- [x] 3.4.2.5 Record valid-format compatibility evidence and any required migration
   command or operator action.
+
+Section 3.4 evidence: five composed integration tests complete 250 distinct
+SPARQL variable queries and 300-property rule compilation/optimization with no
+atom-count growth, prove corrupt ACL and provenance bytes fail closed without
+overwrites or fact changes, and verify a quad backup preserves ACL policy and
+lineage through restore and reopen. This exposed and fixed schema-neutral
+restore: full-store verification and restore now detect the persisted triple or
+quad index layout before opening the backup or destination. No ACL or provenance
+migration or operator action is required because both retain their compatible
+unversioned record formats.
+
+The authorization, update-authorization, compiler, optimizer, provenance,
+rederivation, incremental, backup, and Phase 3 integration gate completed 225
+tests with zero failures and two expected skips. Tagged `SCN-010`, `SCN-011`,
+`SCN-012`, and `SCN-017` coverage completed five tests with zero failures. The
+full default suite completed 25 doctests, 10 properties, and 6,741 tests with
+zero failures and 53 skips (345 excluded by the repository defaults). Strict
+compilation and Dialyzer passed; every Phase 3 source/test file passed the
+formatter. Specs, guides, code-doc, RFC, and conformance validators passed.
+Repository-wide formatting still reports the same seven pre-existing files,
+and repository-wide strict Credo still reports pre-existing findings in code
+outside the lines changed by Phase 3; the Phase 3 refactors introduced no new
+Credo finding.
 
 ---
 

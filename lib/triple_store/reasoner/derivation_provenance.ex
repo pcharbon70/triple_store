@@ -383,24 +383,22 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   """
   @spec clear_graph(term(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, term()}
   def clear_graph(db, graph_id) do
-    try do
-      with {:ok, tracker} <- load(db, graph_id) do
-        keys = Enum.map(Map.keys(tracker.derivations), &encode_provenance_key/1)
+    with {:ok, tracker} <- load(db, graph_id) do
+      keys = Enum.map(Map.keys(tracker.derivations), &encode_provenance_key/1)
 
-        if keys == [] do
-          {:ok, 0}
-        else
-          operations = Enum.map(keys, fn key -> {@provenance_cf, key} end)
+      if keys == [] do
+        {:ok, 0}
+      else
+        operations = Enum.map(keys, fn key -> {@provenance_cf, key} end)
 
-          case ErlangAdapter.delete_batch(db, operations, true) do
-            :ok -> {:ok, length(keys)}
-            error -> error
-          end
+        case ErlangAdapter.delete_batch(db, operations, true) do
+          :ok -> {:ok, length(keys)}
+          error -> error
         end
       end
-    rescue
-      error -> {:error, error}
     end
+  rescue
+    error -> {:error, error}
   end
 
   # ============================================================================
@@ -468,13 +466,11 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
 
   # Decode a derivation record from storage
   defp decode_derivation(binary) when is_binary(binary) do
-    try do
-      binary
-      |> :erlang.binary_to_term([:safe])
-      |> validate_derivation()
-    rescue
-      ArgumentError -> {:error, :unsafe_or_invalid_term}
-    end
+    binary
+    |> :erlang.binary_to_term([:safe])
+    |> validate_derivation()
+  rescue
+    ArgumentError -> {:error, :unsafe_or_invalid_term}
   end
 
   defp build_persistence_operations(derivations) do
@@ -499,40 +495,62 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
     do: {:error, {:unsupported_version, version}}
 
   defp validate_derivation(derivation) when is_map(derivation) do
-    required_keys = MapSet.new([:rule_name, :premises, :bindings, :timestamp])
-    allowed_keys = MapSet.put(required_keys, :metadata)
-    actual_keys = MapSet.new(Map.keys(derivation))
+    required_keys = [:rule_name, :premises, :bindings, :timestamp]
+    allowed_keys = [:metadata | required_keys]
+    actual_keys = Map.keys(derivation)
 
-    cond do
-      not MapSet.subset?(required_keys, actual_keys) ->
-        {:error, :missing_required_fields}
-
-      not MapSet.subset?(actual_keys, allowed_keys) ->
-        {:error,
-         {:unsupported_fields, MapSet.difference(actual_keys, allowed_keys) |> MapSet.to_list()}}
-
-      not valid_rule_name?(derivation.rule_name) ->
-        {:error, {:invalid_rule_name, derivation.rule_name}}
-
-      not is_list(derivation.premises) or
-          not Enum.all?(derivation.premises, &(validate_id_quad(&1) == :ok)) ->
-        {:error, {:invalid_premises, derivation.premises}}
-
-      not valid_bindings?(derivation.bindings) ->
-        {:error, {:invalid_bindings, derivation.bindings}}
-
-      not is_integer(derivation.timestamp) or derivation.timestamp < 0 ->
-        {:error, {:invalid_timestamp, derivation.timestamp}}
-
-      not valid_metadata?(Map.get(derivation, :metadata)) ->
-        {:error, {:invalid_metadata, Map.get(derivation, :metadata)}}
-
-      true ->
-        {:ok, derivation}
+    with :ok <- validate_required_fields(required_keys, actual_keys),
+         :ok <- validate_supported_fields(actual_keys, allowed_keys),
+         :ok <- validate_rule_name(derivation.rule_name),
+         :ok <- validate_premises(derivation.premises),
+         :ok <- validate_bindings(derivation.bindings),
+         :ok <- validate_timestamp(derivation.timestamp),
+         :ok <- validate_metadata(Map.get(derivation, :metadata)) do
+      {:ok, derivation}
     end
   end
 
   defp validate_derivation(_derivation), do: {:error, :invalid_record_shape}
+
+  defp validate_required_fields(required, actual) do
+    if Enum.all?(required, &(&1 in actual)), do: :ok, else: {:error, :missing_required_fields}
+  end
+
+  defp validate_supported_fields(actual, allowed) do
+    unsupported = actual -- allowed
+
+    if unsupported == [] do
+      :ok
+    else
+      {:error, {:unsupported_fields, unsupported}}
+    end
+  end
+
+  defp validate_rule_name(name) do
+    if valid_rule_name?(name), do: :ok, else: {:error, {:invalid_rule_name, name}}
+  end
+
+  defp validate_premises(premises) do
+    if is_list(premises) and Enum.all?(premises, &(validate_id_quad(&1) == :ok)) do
+      :ok
+    else
+      {:error, {:invalid_premises, premises}}
+    end
+  end
+
+  defp validate_bindings(bindings) do
+    if valid_bindings?(bindings), do: :ok, else: {:error, {:invalid_bindings, bindings}}
+  end
+
+  defp validate_timestamp(timestamp) do
+    if is_integer(timestamp) and timestamp >= 0,
+      do: :ok,
+      else: {:error, {:invalid_timestamp, timestamp}}
+  end
+
+  defp validate_metadata(metadata) do
+    if valid_metadata?(metadata), do: :ok, else: {:error, {:invalid_metadata, metadata}}
+  end
 
   defp validate_id_quad({g, s, p, o}) do
     if Enum.all?([g, s, p, o], &(is_integer(&1) and &1 >= 0 and &1 <= 0xFFFFFFFFFFFFFFFF)) do
@@ -571,10 +589,10 @@ defmodule TripleStore.Reasoner.DerivationProvenance do
   defp valid_metadata?(nil), do: true
 
   defp valid_metadata?(metadata) when is_map(metadata) do
-    allowed_keys = MapSet.new([:graph_id, :scope, :iteration])
-    keys = MapSet.new(Map.keys(metadata))
+    allowed_keys = [:graph_id, :scope, :iteration]
+    keys = Map.keys(metadata)
 
-    MapSet.subset?(keys, allowed_keys) and
+    Enum.all?(keys, &(&1 in allowed_keys)) and
       valid_optional_non_negative(metadata, :graph_id) and
       valid_optional_non_negative(metadata, :iteration) and
       Map.get(metadata, :scope, :local) in [:local, :global]

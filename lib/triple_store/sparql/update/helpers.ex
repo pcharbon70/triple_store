@@ -361,13 +361,15 @@ defmodule TripleStore.SPARQL.Update.Helpers do
         value
 
       nil ->
-        Enum.find_value(props, default, fn
-          {prop_key, value} when is_atom(prop_key) ->
-            if Atom.to_string(prop_key) == key, do: value
-
-          _other ->
-            nil
-        end)
+        case Enum.find(props, &matching_atom_key?(&1, key)) do
+          {_prop_key, value} -> value
+          nil -> default
+        end
     end
   end
+
+  defp matching_atom_key?({prop_key, _value}, key) when is_atom(prop_key),
+    do: Atom.to_string(prop_key) == key
+
+  defp matching_atom_key?(_property, _key), do: false
 end

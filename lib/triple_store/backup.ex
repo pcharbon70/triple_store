@@ -20,6 +20,8 @@ defmodule TripleStore.Backup do
   - **Consistency**: Close the store before backup for guaranteed consistency
   - **Hot Backup**: Hot backups (while open) may capture writes in progress
   - **Space**: Full backup requires same disk space; incremental saves space via hard links
+  - **Schema preservation**: Verification and restore detect the persisted triple
+    or quad column-family layout and reopen the destination with that schema.
 
   ## Usage
 
@@ -350,9 +352,10 @@ defmodule TripleStore.Backup do
 
     Telemetry.span(:backup, :restore, telemetry_meta, fn ->
       with {:ok, :valid} <- verify(backup_path),
+           {:ok, schema} <- get_backup_schema(backup_path),
            :ok <- validate_restore_path(restore_path, overwrite),
            {:ok, _} <- copy_directory(backup_path, restore_path),
-           {:ok, store} <- TripleStore.open(restore_path),
+           {:ok, store} <- TripleStore.open(restore_path, schema: schema),
            :ok <- restore_counter_state(backup_path, store) do
         {{:ok, store}, %{}}
       end
@@ -413,15 +416,24 @@ defmodule TripleStore.Backup do
         {:error, :missing_files}
 
       true ->
-        # Try to open the backup to verify it's valid
-        case ErlangAdapter.open(backup_path) do
-          {:ok, db} ->
-            ErlangAdapter.close(db)
-            {:ok, :valid}
+        verify_openable_backup(backup_path)
+    end
+  end
 
-          {:error, reason} ->
-            {:error, {:cannot_open, reason}}
-        end
+  defp verify_openable_backup(backup_path) do
+    with {:ok, schema} <- get_backup_schema(backup_path) do
+      open_backup_for_verification(backup_path, schema)
+    end
+  end
+
+  defp open_backup_for_verification(backup_path, schema) do
+    case ErlangAdapter.open(backup_path, schema: schema) do
+      {:ok, db} ->
+        ErlangAdapter.close(db)
+        {:ok, :valid}
+
+      {:error, reason} ->
+        {:error, {:cannot_open, reason}}
     end
   end
 

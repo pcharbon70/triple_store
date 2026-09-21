@@ -62,8 +62,8 @@ defmodule TripleStore.Reasoner.DeleteWithReasoning do
   # Database-related imports for the database API
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Index
-  alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.Reasoner.DerivationProvenance
+  alias TripleStore.Reasoner.DerivedStore
 
   require Logger
 

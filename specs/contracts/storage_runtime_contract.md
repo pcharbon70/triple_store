@@ -13,5 +13,5 @@ This contract defines the normative storage behavior for `TripleStore`.
 - `REQ-STO-007`: Sequence allocation and graph-term allocation MUST avoid ID reuse across process or node restarts.
 - `REQ-STO-008`: Storage operations MUST validate paths, bounds, schema, and term inputs before mutation.
 - `REQ-STO-009`: Loader, exporter, and graph-backup flows MUST keep their schema-aware graph-preservation behavior explicit rather than silently pretending all APIs are graph-equivalent.
-- `REQ-STO-010`: Backup and restore flows MUST operate on canonical persisted bytes, and triple-to-quad migration MUST remain an export/import workflow rather than an in-place schema rewrite.
+- `REQ-STO-010`: Backup and restore flows MUST operate on canonical persisted bytes, detect and preserve the backed-up triple or quad schema when reopening a restored store, and keep triple-to-quad migration as an export/import workflow rather than an in-place schema rewrite.
 - `REQ-STO-011`: Storage semantics MUST remain accessible through Elixir modules and MUST NOT require callers to address RocksDB column families directly.

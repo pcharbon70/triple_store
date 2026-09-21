@@ -76,7 +76,9 @@ computed fact set after returning statistics. Persistent quad reasoning uses
 
 ## Backup and restore
 
-`Backup` creates and restores store-level RocksDB backups and records schema
-metadata. `GraphBackup` exports or restores one graph. Verify the backup and
-schema before restore. A triple backup cannot be treated as an in-place
-quad-schema migration.
+`Backup` creates and restores store-level RocksDB backups. Verification detects
+the persisted index layout, and restore opens the destination with the original
+triple or quad schema. All full-store column families are copied, so valid quad
+ACL and provenance records remain byte-compatible through restore and reopen.
+`GraphBackup` exports or restores one graph. A triple backup cannot be treated
+as an in-place quad-schema migration.
