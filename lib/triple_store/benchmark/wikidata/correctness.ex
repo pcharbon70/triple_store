@@ -173,6 +173,10 @@ defmodule TripleStore.Benchmark.Wikidata.Correctness do
   end
 
   defp classify_divergence(query_run, actual, reference) do
+    classify_fingerprint_divergence(actual, reference) || classify_query_divergence(query_run)
+  end
+
+  defp classify_fingerprint_divergence(actual, reference) do
     cond do
       actual.unordered_fingerprint == reference.unordered_fingerprint and
           actual.fingerprint != reference.fingerprint ->
@@ -188,6 +192,13 @@ defmodule TripleStore.Benchmark.Wikidata.Correctness do
           actual.row_count != reference.row_count ->
         :duplicates
 
+      true ->
+        nil
+    end
+  end
+
+  defp classify_query_divergence(query_run) do
+    cond do
       limit_or_distinct_sensitive?(query_run) ->
         :limit_or_distinct_semantics
 

@@ -25,9 +25,8 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
   """
   @spec ensure_root(Path.t()) :: :ok | {:error, term()}
   def ensure_root(root_dir) when is_binary(root_dir) do
-    with :ok <- File.mkdir_p(Path.join(root_dir, "datasets")),
-         :ok <- File.mkdir_p(Path.join(root_dir, "stores")) do
-      :ok
+    with :ok <- File.mkdir_p(Path.join(root_dir, "datasets")) do
+      File.mkdir_p(Path.join(root_dir, "stores"))
     end
   end
 
@@ -57,10 +56,8 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
       when is_binary(root_dir) and is_binary(source_path) do
     with :ok <- ensure_root(root_dir),
          :ok <-
-           File.mkdir_p(layout_paths(root_dir, manifest.dataset_id, manifest.format).dataset_dir),
-         {:ok, updated_manifest} <-
-           copy_and_persist_manifest(root_dir, manifest, source_path, manifest.dataset_id) do
-      {:ok, updated_manifest}
+           File.mkdir_p(layout_paths(root_dir, manifest.dataset_id, manifest.format).dataset_dir) do
+      copy_and_persist_manifest(root_dir, manifest, source_path, manifest.dataset_id)
     end
   end
 
@@ -72,9 +69,8 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
     manifest_path = Path.join([root_dir, "datasets", dataset_id, @manifest_filename])
 
     with {:ok, binary} <- File.read(manifest_path),
-         {:ok, manifest_map} <- decode_manifest(binary),
-         {:ok, manifest} <- DatasetManifest.new(manifest_map) do
-      {:ok, manifest}
+         {:ok, manifest_map} <- decode_manifest(binary) do
+      DatasetManifest.new(manifest_map)
     end
   end
 
@@ -168,25 +164,9 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
   @spec selection_plan(non_neg_integer(), non_neg_integer(), integer()) :: map()
   def selection_plan(total_statements, target_statements, seed)
       when total_statements >= 0 and target_statements >= 0 and is_integer(seed) do
-    target =
-      cond do
-        total_statements == 0 -> 0
-        target_statements <= 0 -> 0
-        true -> min(total_statements, target_statements)
-      end
-
-    stride =
-      cond do
-        target <= 1 -> max(total_statements, 1)
-        total_statements <= target -> 1
-        true -> max(div(total_statements, target), 1)
-      end
-
-    offset =
-      cond do
-        stride <= 1 -> 0
-        true -> rem(abs(seed), stride)
-      end
+    target = selection_target(total_statements, target_statements)
+    stride = selection_stride(total_statements, target)
+    offset = selection_offset(stride, seed)
 
     %{
       total_statements: total_statements,
@@ -203,6 +183,21 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
   def persist_manifest(%DatasetManifest{} = manifest) do
     File.write(manifest.manifest_path, :erlang.term_to_binary(DatasetManifest.to_map(manifest)))
   end
+
+  defp selection_target(0, _target_statements), do: 0
+  defp selection_target(_total_statements, target_statements) when target_statements <= 0, do: 0
+
+  defp selection_target(total_statements, target_statements),
+    do: min(total_statements, target_statements)
+
+  defp selection_stride(total_statements, target) when target <= 1,
+    do: max(total_statements, 1)
+
+  defp selection_stride(total_statements, target) when total_statements <= target, do: 1
+  defp selection_stride(total_statements, target), do: max(div(total_statements, target), 1)
+
+  defp selection_offset(stride, _seed) when stride <= 1, do: 0
+  defp selection_offset(stride, seed), do: rem(abs(seed), stride)
 
   defp copy_and_persist_manifest(root_dir, manifest, source_path, dataset_id) do
     layout = layout_paths(root_dir, dataset_id, manifest.format)
@@ -222,14 +217,12 @@ defmodule TripleStore.Benchmark.Wikidata.Fixture do
   end
 
   defp decode_manifest(binary) when is_binary(binary) do
-    try do
-      case :erlang.binary_to_term(binary, [:safe]) do
-        attrs when is_map(attrs) or is_list(attrs) -> {:ok, attrs}
-        _ -> {:error, :invalid_manifest}
-      end
-    rescue
-      ArgumentError -> {:error, :invalid_manifest}
+    case :erlang.binary_to_term(binary, [:safe]) do
+      attrs when is_map(attrs) or is_list(attrs) -> {:ok, attrs}
+      _ -> {:error, :invalid_manifest}
     end
+  rescue
+    ArgumentError -> {:error, :invalid_manifest}
   end
 
   defp ensure_subset_tier(tier) when tier in [:smoke, :medium], do: :ok

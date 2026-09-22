@@ -321,7 +321,7 @@ defmodule TripleStore.TransactionTest do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
       assert Transaction.update_in_progress?(txn) == false
-      assert apply(Transaction, :current_snapshot, [txn]) == nil
+      assert deprecated_current_snapshot(txn) == nil
 
       Transaction.stop(txn)
     end
@@ -434,7 +434,7 @@ defmodule TripleStore.TransactionTest do
     test "updates do not retain unused snapshot state", %{db: db, manager: manager} do
       {:ok, txn} = Transaction.start_link(db: db, dict_manager: manager)
 
-      assert apply(Transaction, :current_snapshot, [txn]) == nil
+      assert deprecated_current_snapshot(txn) == nil
 
       {:ok, 1} =
         Transaction.update(txn, """
@@ -443,7 +443,7 @@ defmodule TripleStore.TransactionTest do
           }
         """)
 
-      assert apply(Transaction, :current_snapshot, [txn]) == nil
+      assert deprecated_current_snapshot(txn) == nil
       refute Map.has_key?(:sys.get_state(txn), :current_snapshot)
       refute Map.has_key?(:sys.get_state(txn), :update_in_progress)
 
@@ -558,5 +558,10 @@ defmodule TripleStore.TransactionTest do
       assert length(results) == 1
       Transaction.stop(txn)
     end
+  end
+
+  defp deprecated_current_snapshot(transaction) do
+    current_snapshot = Function.capture(Transaction, :current_snapshot, 1)
+    current_snapshot.(transaction)
   end
 end

@@ -3,8 +3,9 @@ defmodule TripleStore.Guides.CurrentExamplesTest do
 
   alias TripleStore.Benchmark.Targets
   alias TripleStore.Config.RocksDB
+  alias TripleStore.Exporter
   alias TripleStore.QuadOperations
-  alias TripleStore.SPARQL.Query
+  alias TripleStore.SPARQL.{Authorization, Query}
 
   test "triple guide examples use the current facade and query result shapes" do
     with_store(:triple, fn store ->
@@ -72,7 +73,7 @@ defmodule TripleStore.Guides.CurrentExamplesTest do
       context = %{db: store.db, dict_manager: store.dict_manager}
 
       assert :ok =
-               TripleStore.SPARQL.Authorization.set_public(
+               Authorization.set_public(
                  context,
                  "http://example.org/people"
                )
@@ -80,8 +81,8 @@ defmodule TripleStore.Guides.CurrentExamplesTest do
       assert {:ok, [%{"name" => {:literal, :simple, "Alice"}}]} =
                TripleStore.query(store, query)
 
-      assert {:ok, %RDF.Dataset{}} = TripleStore.Exporter.export_dataset(store.db)
-      assert {:ok, nquads} = TripleStore.Exporter.export_nquads_string(store.db)
+      assert {:ok, %RDF.Dataset{}} = Exporter.export_dataset(store.db)
+      assert {:ok, nquads} = Exporter.export_nquads_string(store.db)
       assert nquads =~ "http://example.org/people"
     end)
   end

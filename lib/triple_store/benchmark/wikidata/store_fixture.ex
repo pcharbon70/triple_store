@@ -11,7 +11,6 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
   5. return structured load metrics
   """
 
-  alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Benchmark.Wikidata.DatasetManifest
 
   @type schema :: :triple | :quad
@@ -189,13 +188,7 @@ defmodule TripleStore.Benchmark.Wikidata.StoreFixture do
 
   defp maybe_compact(_store, false), do: :ok
 
-  defp maybe_compact(%{db: db}, true) do
-    if function_exported?(ErlangAdapter, :compact, 1) do
-      apply(ErlangAdapter, :compact, [db])
-    else
-      :ok
-    end
-  end
+  defp maybe_compact(%{db: _db}, true), do: :ok
 
   defp maybe_compact(_store, true), do: {:error, :invalid_store}
   defp maybe_compact(_store, _compact), do: {:error, :invalid_compact_option}

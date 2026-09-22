@@ -179,12 +179,19 @@ defmodule TripleStore.Benchmark.Wikidata.Corpus do
          classification: classification,
          fragment: fragment,
          notes: notes
-       })
-       when is_binary(benchmark_id) and benchmark_id != "" and
-              (is_atom(family) or is_binary(family)) and is_atom(reason) and
-              is_atom(classification) and is_binary(fragment) and fragment != "" and
-              is_binary(notes) and notes != "",
-       do: true
+       }) do
+    Enum.all?([
+      non_empty_binary?(benchmark_id),
+      valid_family?(family),
+      is_atom(reason),
+      is_atom(classification),
+      non_empty_binary?(fragment),
+      non_empty_binary?(notes)
+    ])
+  end
 
   defp valid_exclusion?(_), do: false
+
+  defp non_empty_binary?(value), do: is_binary(value) and value != ""
+  defp valid_family?(family), do: is_atom(family) or is_binary(family)
 end

@@ -1017,20 +1017,13 @@ defmodule TripleStore.SPARQL.Executor do
 
       # Decide whether to use multi-iterator or single-iterator approach
       if should_use_multi_iterator?(ctx, quad_pattern) do
-        execute_quad_with_multi_iterator(ctx, binding, quad_pattern, s, p, o, g)
+        execute_quad_with_multi_iterator(ctx, binding, s, p, o, g)
       else
         execute_quad_with_single_iterator(
           ctx,
           binding,
-          quad_pattern,
-          s,
-          p,
-          o,
-          g,
-          s_pattern,
-          p_pattern,
-          o_pattern,
-          g_pattern
+          {s, p, o, g},
+          {s_pattern, p_pattern, o_pattern, g_pattern}
         )
       end
     end
@@ -1060,7 +1053,7 @@ defmodule TripleStore.SPARQL.Executor do
   end
 
   # Execute quad pattern using multi-iterator (QuadLeapfrog)
-  defp execute_quad_with_multi_iterator(ctx, binding, _quad_pattern, s, p, o, g) do
+  defp execute_quad_with_multi_iterator(ctx, binding, s, p, o, g) do
     %{db: db, dict_manager: dict_manager} = ctx
 
     with {:ok, lf_pattern} <- build_leapfrog_pattern(s, p, o, g, binding, dict_manager) do
@@ -1068,18 +1061,9 @@ defmodule TripleStore.SPARQL.Executor do
         {:ok, lf} ->
           binding_stream =
             QuadLeapfrog.stream(lf)
-            |> Stream.flat_map(fn id_bindings ->
-              case extend_binding_from_leapfrog(
-                     binding,
-                     id_bindings,
-                     {s, p, o, g},
-                     dict_manager
-                   ) do
-                {:ok, extended} -> [extended]
-                {:error, :binding_mismatch} -> []
-                {:error, reason} -> raise "QuadLeapfrog binding error: #{inspect(reason)}"
-              end
-            end)
+            |> Stream.flat_map(
+              &extend_leapfrog_stream_binding(&1, binding, {s, p, o, g}, dict_manager)
+            )
 
           {:ok, binding_stream}
 
@@ -1096,6 +1080,14 @@ defmodule TripleStore.SPARQL.Executor do
       # Construction-time failures retain the correctness-first reference path.
       # Lazy stream failures occur after this function returns and are not hidden.
       execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g)
+  end
+
+  defp extend_leapfrog_stream_binding(id_bindings, binding, terms, dict_manager) do
+    case extend_binding_from_leapfrog(binding, id_bindings, terms, dict_manager) do
+      {:ok, extended} -> [extended]
+      {:error, :binding_mismatch} -> []
+      {:error, reason} -> raise "QuadLeapfrog binding error: #{inspect(reason)}"
+    end
   end
 
   # Build a QuadLeapfrog pattern from SPARQL terms
@@ -1217,15 +1209,8 @@ defmodule TripleStore.SPARQL.Executor do
   defp execute_quad_with_single_iterator(
          ctx,
          binding,
-         _quad_pattern,
-         s,
-         p,
-         o,
-         g,
-         s_pattern,
-         p_pattern,
-         o_pattern,
-         g_pattern
+         {s, p, o, g},
+         {s_pattern, p_pattern, o_pattern, g_pattern}
        ) do
     %{db: db, dict_manager: dict_manager} = ctx
 
@@ -1286,20 +1271,11 @@ defmodule TripleStore.SPARQL.Executor do
          {:ok, p_pattern} <- term_to_index_pattern(p, binding, dict_manager),
          {:ok, o_pattern} <- term_to_index_pattern(o, binding, dict_manager),
          {:ok, g_pattern} <- term_to_index_pattern_for_graph(g, binding, dict_manager) do
-      quad_pattern = build_quad_pattern(s_pattern, p_pattern, o_pattern, g_pattern)
-
       execute_quad_with_single_iterator(
         ctx,
         binding,
-        quad_pattern,
-        s,
-        p,
-        o,
-        g,
-        s_pattern,
-        p_pattern,
-        o_pattern,
-        g_pattern
+        {s, p, o, g},
+        {s_pattern, p_pattern, o_pattern, g_pattern}
       )
     end
   end

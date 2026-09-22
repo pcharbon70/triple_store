@@ -10,6 +10,7 @@ defmodule TripleStore.Benchmark.Wikidata.Scholia do
   alias TripleStore.Benchmark.Wikidata.{
     Corpus,
     Manifest,
+    Normalizer,
     PublicWorkloads,
     Query,
     ScholiaTemplate
@@ -75,23 +76,8 @@ defmodule TripleStore.Benchmark.Wikidata.Scholia do
     limit_policy = Keyword.get(opts, :limit_policy, PublicWorkloads.limit_policy_for_tier(tier))
 
     {queries, exclusions} =
-      Enum.reduce(templates(), {[], []}, fn template, {queries, exclusions} ->
-        items = Map.get(representatives(tier), template.class_id, [])
-
-        if items == [] do
-          {queries, [missing_instantiation_exclusion(template, tier) | exclusions]}
-        else
-          instantiated =
-            Enum.flat_map(items, fn item ->
-              instantiate(template, item,
-                tier: tier,
-                requested_variants: requested_variants,
-                limit_policy: limit_policy
-              )
-            end)
-
-          {queries ++ instantiated, exclusions}
-        end
+      Enum.reduce(templates(), {[], []}, fn template, acc ->
+        accumulate_template(template, acc, tier, requested_variants, limit_policy)
       end)
 
     Corpus.new(
@@ -103,6 +89,27 @@ defmodule TripleStore.Benchmark.Wikidata.Scholia do
       queries: queries,
       exclusions: Enum.reverse(exclusions)
     )
+  end
+
+  defp accumulate_template(template, {queries, exclusions}, tier, variants, limit_policy) do
+    case Map.get(representatives(tier), template.class_id, []) do
+      [] ->
+        {queries, [missing_instantiation_exclusion(template, tier) | exclusions]}
+
+      items ->
+        instantiated = instantiate_items(template, items, tier, variants, limit_policy)
+        {queries ++ instantiated, exclusions}
+    end
+  end
+
+  defp instantiate_items(template, items, tier, variants, limit_policy) do
+    Enum.flat_map(items, fn item ->
+      instantiate(template, item,
+        tier: tier,
+        requested_variants: variants,
+        limit_policy: limit_policy
+      )
+    end)
   end
 
   @doc """
@@ -150,7 +157,7 @@ defmodule TripleStore.Benchmark.Wikidata.Scholia do
         sparql:
           template.sparql
           |> substitute(bindings)
-          |> TripleStore.Benchmark.Wikidata.Normalizer.apply_limit_policy(limit_policy),
+          |> Normalizer.apply_limit_policy(limit_policy),
         params: template.params,
         group: template.class_id,
         shape: template.shape,
