@@ -291,12 +291,14 @@ defmodule TripleStore.Query.Cache do
   @spec invalidate_store(reference()) :: :ok
   def invalidate_store(store_id) when is_reference(store_id) do
     if Process.whereis(@registry) do
-      Registry.dispatch(@registry, @registry_key, fn entries ->
-        Enum.each(entries, fn {pid, _value} -> safe_invalidate_store(pid, store_id) end)
-      end)
+      Registry.dispatch(@registry, @registry_key, &invalidate_store_entries(&1, store_id))
     end
 
     :ok
+  end
+
+  defp invalidate_store_entries(entries, store_id) do
+    Enum.each(entries, fn {pid, _value} -> safe_invalidate_store(pid, store_id) end)
   end
 
   @doc """

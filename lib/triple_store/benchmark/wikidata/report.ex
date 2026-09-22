@@ -118,8 +118,7 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
           query_summary.partial_failure_class,
           query_summary.divergence_status
         ]
-        |> Enum.map(&to_string/1)
-        |> Enum.join(",")
+        |> Enum.map_join(",", &to_string/1)
       end)
 
     if rows == "", do: header, else: header <> "\n" <> rows
@@ -358,11 +357,9 @@ defmodule TripleStore.Benchmark.Wikidata.Report do
     separator_line = "| " <> Enum.map_join(headers, " | ", fn _ -> "---" end) <> " |"
 
     row_lines =
-      rows
-      |> Enum.map(fn row ->
+      Enum.map_join(rows, "\n", fn row ->
         "| " <> Enum.map_join(row, " | ", &escape_markdown/1) <> " |"
       end)
-      |> Enum.join("\n")
 
     [header_line, separator_line, row_lines]
     |> Enum.reject(&(&1 == ""))

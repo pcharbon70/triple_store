@@ -1,8 +1,8 @@
 defmodule TripleStore.SPARQL.ExecutorQuadIntegrationTest do
   use ExUnit.Case, async: false
-  alias TripleStore.SPARQL.Executor
-  alias TripleStore.SPARQL.QuadPatternRecognition
+
   alias TripleStore.SPARQL.GraphClauseOptimization
+  alias TripleStore.SPARQL.QuadPatternRecognition
 
   @moduletag :executor_quad_integration
 
@@ -233,15 +233,6 @@ defmodule TripleStore.SPARQL.ExecutorQuadIntegrationTest do
       # The convert function stores bound values directly in the map
       assert 42 in Map.values(result)
     end
-  end
-
-  # Helper functions for tests
-  defp count_variables_in_pattern({:quad, s, p, o, g}) do
-    components = [s, p, o, g]
-    Enum.count(components, fn
-      {:variable, _} -> true
-      _ -> false
-    end)
   end
 
   defp convert_leapfrog_bindings_to_executor(lf_bindings) do

@@ -8,6 +8,8 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
     AcceptedDivergence,
     Baseline,
     Correctness,
+    DatasetManifest,
+    Fixture,
     Metrics,
     PublicWorkloads,
     Query,
@@ -209,7 +211,7 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
       dump_version = Keyword.get(opts, :dump_version, "2024-10")
 
       with {:ok, manifest} <-
-             TripleStore.Benchmark.Wikidata.DatasetManifest.from_source(
+             DatasetManifest.from_source(
                source_path,
                dataset_id: dataset_id,
                tier: tier,
@@ -218,7 +220,7 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
                source_date: Keyword.get(opts, :source_date, ~D[2024-10-01]),
                normalization_flags: [:truthy_only]
              ) do
-        TripleStore.Benchmark.Wikidata.Fixture.register_dataset(
+        Fixture.register_dataset(
           fixture_root,
           manifest,
           source_path
@@ -229,11 +231,7 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
     end
   end
 
-  defp smoke_corpora do
-    with {:ok, public} <- corpora_for_tier(:smoke) do
-      {:ok, public}
-    end
-  end
+  defp smoke_corpora, do: corpora_for_tier(:smoke)
 
   defp corpora_for_tier(tier) do
     public = PublicWorkloads.all_corpora(tier: tier)
@@ -392,9 +390,9 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
   defp report_id(_tier, report_id), do: report_id
 
   defp persist_optional_baselines(run_result, bundle, opts) do
-    with :ok <- maybe_write_answer_baseline(run_result, Keyword.get(opts, :write_answer_baseline)),
-         :ok <- maybe_write_accepted_report(bundle, Keyword.get(opts, :write_accepted_report)) do
-      :ok
+    with :ok <-
+           maybe_write_answer_baseline(run_result, Keyword.get(opts, :write_answer_baseline)) do
+      maybe_write_accepted_report(bundle, Keyword.get(opts, :write_accepted_report))
     end
   end
 
@@ -415,9 +413,8 @@ defmodule TripleStore.Benchmark.Wikidata.Operations do
 
     with :ok <- File.mkdir_p(dir),
          :ok <- File.write(Path.join(dir, "summary.json"), Report.to_json(portable_report)),
-         :ok <- File.write(Path.join(dir, "query_summaries.csv"), Report.to_csv(portable_report)),
-         :ok <- File.write(Path.join(dir, "summary.md"), Report.to_markdown(portable_report)) do
-      :ok
+         :ok <- File.write(Path.join(dir, "query_summaries.csv"), Report.to_csv(portable_report)) do
+      File.write(Path.join(dir, "summary.md"), Report.to_markdown(portable_report))
     end
   end
 

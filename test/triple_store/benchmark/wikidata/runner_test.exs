@@ -1,7 +1,7 @@
 defmodule TripleStore.Benchmark.Wikidata.RunnerTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.Benchmark.Wikidata.{DatasetManifest, PublicWorkloads, Query, Runner}
+  alias TripleStore.Benchmark.Wikidata.{DatasetManifest, Manifest, PublicWorkloads, Query, Runner}
 
   describe "defaults_for_tier/1" do
     test "returns per-tier defaults for supported tiers" do
@@ -186,7 +186,7 @@ defmodule TripleStore.Benchmark.Wikidata.RunnerTest do
       Query.new(%{
         manifest:
           template.manifest
-          |> TripleStore.Benchmark.Wikidata.Manifest.to_map()
+          |> Manifest.to_map()
           |> Map.put(:benchmark_id, benchmark_id),
         name: template.name,
         description: template.description,

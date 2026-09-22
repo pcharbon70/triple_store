@@ -36,12 +36,12 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
   @type component :: {:bound, term()} | {:variable, String.t()}
   @type decision :: :use_single_iterator | :use_multi_iterator
   @type analysis :: %{
-                 decision: decision(),
-                 reason: String.t(),
-                 variable_count: non_neg_integer(),
-                 estimated_cardinality: float(),
-                 recommended_approach: atom()
-               }
+          decision: decision(),
+          reason: String.t(),
+          variable_count: non_neg_integer(),
+          estimated_cardinality: float(),
+          recommended_approach: atom()
+        }
 
   # ===========================================================================
   # Constants
@@ -122,11 +122,11 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
 
         # Multiple variables with high cardinality - use multi-iterator
         variable_count >= @multi_iterator_threshold and
-          estimated_card > @max_single_iterator_cardinality ->
+            estimated_card > @max_single_iterator_cardinality ->
           %{
             decision: :use_multi_iterator,
             reason:
-              "Pattern has #{variable_count} unbound variables with high cardinality (#{ trunc_float(estimated_card) }) - multi-iterator leapfrog is optimal",
+              "Pattern has #{variable_count} unbound variables with high cardinality (#{trunc_float(estimated_card)}) - multi-iterator leapfrog is optimal",
             variable_count: variable_count,
             estimated_cardinality: estimated_card,
             recommended_approach: :quad_leapfrog
@@ -244,7 +244,8 @@ defmodule TripleStore.SPARQL.QuadPatternRecognition do
   defp estimate_cardinality(pattern, stats) do
     QuadCardinality.estimate_pattern(pattern, stats)
   rescue
-    _ -> 1_000.0  # Fallback estimate
+    # Fallback estimate
+    _ -> 1_000.0
   end
 
   # Truncate number to integer for display

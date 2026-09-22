@@ -9,8 +9,8 @@ defmodule TripleStore.SPARQL.QuadPatternSPARQLIntegrationTest do
   """
   use ExUnit.Case, async: true
 
-  alias TripleStore.SPARQL.QuadPatternRecognition
   alias TripleStore.SPARQL.GraphClauseOptimization
+  alias TripleStore.SPARQL.QuadPatternRecognition
 
   @moduletag :quad_pattern_sparql_integration
 
@@ -246,7 +246,11 @@ defmodule TripleStore.SPARQL.QuadPatternSPARQLIntegrationTest do
 
       graph_analysis = GraphClauseOptimization.analyze_graph_clause(graph_pattern, graph_term)
       assert graph_analysis.recommended_strategy == :four_iterator_enumeration
-      assert GraphClauseOptimization.should_use_multi_iterator_for_graph?(graph_term, graph_pattern)
+
+      assert GraphClauseOptimization.should_use_multi_iterator_for_graph?(
+               graph_term,
+               graph_pattern
+             )
     end
 
     test "single-variable patterns consistently use single iterator" do
@@ -263,7 +267,11 @@ defmodule TripleStore.SPARQL.QuadPatternSPARQLIntegrationTest do
 
       graph_analysis = GraphClauseOptimization.analyze_graph_clause(graph_pattern, graph_term)
       assert graph_analysis.recommended_strategy == :graph_prefixed_single_iterator
-      refute GraphClauseOptimization.should_use_multi_iterator_for_graph?(graph_term, graph_pattern)
+
+      refute GraphClauseOptimization.should_use_multi_iterator_for_graph?(
+               graph_term,
+               graph_pattern
+             )
     end
   end
 
@@ -276,7 +284,8 @@ defmodule TripleStore.SPARQL.QuadPatternSPARQLIntegrationTest do
       pattern = {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
       stats = %{total_quads: 10_000_000}
 
-      {time, _analysis} = :timer.tc(fn -> QuadPatternRecognition.analyze_quad_pattern(pattern, stats) end)
+      {time, _analysis} =
+        :timer.tc(fn -> QuadPatternRecognition.analyze_quad_pattern(pattern, stats) end)
 
       # Analysis should be sub-millisecond
       assert time < 1000
@@ -303,7 +312,9 @@ defmodule TripleStore.SPARQL.QuadPatternSPARQLIntegrationTest do
       pattern = {:bgp, triple_patterns}
 
       {time, _analysis} =
-        :timer.tc(fn -> GraphClauseOptimization.analyze_graph_clause(pattern, {:variable, "g"}) end)
+        :timer.tc(fn ->
+          GraphClauseOptimization.analyze_graph_clause(pattern, {:variable, "g"})
+        end)
 
       # Should handle 100 triple patterns efficiently
       assert time < 10_000

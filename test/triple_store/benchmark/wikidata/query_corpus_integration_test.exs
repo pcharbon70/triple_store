@@ -131,7 +131,7 @@ defmodule TripleStore.Benchmark.Wikidata.QueryCorpusIntegrationTest do
 
         Enum.each(sample_queries, fn query ->
           assert {:ok, results} = TripleStore.query(fixture_state.store, query.sparql)
-          assert length(results) >= 1
+          refute Enum.empty?(results)
         end)
       after
         assert :ok = StoreFixture.teardown(fixture_state, delete_store: true)
@@ -166,7 +166,7 @@ defmodule TripleStore.Benchmark.Wikidata.QueryCorpusIntegrationTest do
 
         assert {:ok, count_results} = TripleStore.query(fixture_state.store, scholia_count.sparql)
 
-        assert length(distinct_results) >= 1
+        refute Enum.empty?(distinct_results)
         assert length(count_results) == 1
 
         runtime_record = %{

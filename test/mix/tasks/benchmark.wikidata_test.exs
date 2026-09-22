@@ -3,6 +3,8 @@ defmodule Mix.Tasks.Benchmark.WikidataTest do
 
   import ExUnit.CaptureIO
 
+  alias Mix.Tasks.Benchmark.Wikidata, as: BenchmarkWikidataTask
+
   test "smoke mode runs from a clean checkout path and prints artifact location" do
     Mix.Task.reenable("benchmark.wikidata")
 
@@ -11,7 +13,7 @@ defmodule Mix.Tasks.Benchmark.WikidataTest do
 
     output =
       capture_io(fn ->
-        Mix.Tasks.Benchmark.Wikidata.run([
+        BenchmarkWikidataTask.run([
           "smoke",
           "--fixture-root",
           fixture_root,

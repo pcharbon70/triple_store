@@ -4,6 +4,7 @@ defmodule TripleStore.Benchmark.Wikidata.RunnerAndReportIntegrationTest do
   alias TripleStore.Benchmark.Wikidata.{
     DatasetManifest,
     Fixture,
+    Manifest,
     Metrics,
     PublicWorkloads,
     Query,
@@ -128,7 +129,7 @@ defmodule TripleStore.Benchmark.Wikidata.RunnerAndReportIntegrationTest do
         Query.new(%{
           manifest:
             template.manifest
-            |> TripleStore.Benchmark.Wikidata.Manifest.to_map()
+            |> Manifest.to_map()
             |> Map.put(:benchmark_id, "phase-3-parse-error"),
           name: "Invalid parse query",
           description: "Forces a parser failure",

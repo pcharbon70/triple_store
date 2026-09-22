@@ -540,7 +540,11 @@ defmodule TripleStore.Reasoner.Section784IncrementalMaintenanceTest do
 
       # Should derive new facts
       assert stats.derived_count >= 1
-      assert MapSet.member?(all_facts, quad(0, iri("Artifact"), rdfs_subclass_of(), iri("Object")))
+
+      assert MapSet.member?(
+               all_facts,
+               quad(0, iri("Artifact"), rdfs_subclass_of(), iri("Object"))
+             )
     end
   end
 

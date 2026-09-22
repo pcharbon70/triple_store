@@ -119,8 +119,7 @@ defmodule TripleStore.Benchmark.Wikidata.Normalizer do
   defp apply_rewrite(_rewrite, sparql), do: sparql
 
   defp build_label_service_rewrite(bindings) do
-    bindings
-    |> Enum.map(fn %{subject: subject, label: label, language: language} ->
+    Enum.map_join(bindings, "\n", fn %{subject: subject, label: label, language: language} ->
       """
       OPTIONAL {
         #{subject} rdfs:label #{label} .
@@ -129,7 +128,6 @@ defmodule TripleStore.Benchmark.Wikidata.Normalizer do
       """
       |> String.trim()
     end)
-    |> Enum.join("\n")
   end
 
   defp maybe_add_rdfs_prefix(sparql, []), do: sparql

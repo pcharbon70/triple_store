@@ -3,11 +3,13 @@ defmodule TripleStore.Benchmark.Wikidata.CorrectnessAndAutomationIntegrationTest
 
   import ExUnit.CaptureIO
 
+  alias Mix.Tasks.Benchmark.Wikidata, as: BenchmarkWikidataTask
+
   alias TripleStore.Benchmark.Wikidata.{
     AcceptedDivergence,
     Baseline,
-    Correctness,
     Corpus,
+    Correctness,
     DatasetManifest,
     Manifest,
     Metrics,
@@ -182,7 +184,7 @@ defmodule TripleStore.Benchmark.Wikidata.CorrectnessAndAutomationIntegrationTest
 
       task_output =
         capture_io(fn ->
-          Mix.Tasks.Benchmark.Wikidata.run([
+          BenchmarkWikidataTask.run([
             "smoke",
             "--fixture-root",
             unique_tmp_dir!("wikidata_phase4_mix_fixture"),

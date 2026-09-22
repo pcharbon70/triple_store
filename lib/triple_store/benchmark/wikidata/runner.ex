@@ -570,20 +570,19 @@ defmodule TripleStore.Benchmark.Wikidata.Runner do
     do: Enum.filter(queries, &(Query.benchmark_id(&1) in query_ids))
 
   defp expand_execution_variants(queries, execution_variants) do
-    Enum.flat_map(queries, fn query ->
-      if query.manifest.execution_variant == :raw do
-        Enum.map(execution_variants, fn variant ->
-          if variant == :raw do
-            query
-          else
-            {:ok, variant_query} = Query.with_variant(query, variant)
-            variant_query
-          end
-        end)
-      else
-        [query]
-      end
-    end)
+    Enum.flat_map(queries, &execution_variants_for(&1, execution_variants))
+  end
+
+  defp execution_variants_for(%Query{manifest: %{execution_variant: :raw}} = query, variants),
+    do: Enum.map(variants, &execution_variant(query, &1))
+
+  defp execution_variants_for(query, _variants), do: [query]
+
+  defp execution_variant(query, :raw), do: query
+
+  defp execution_variant(query, variant) do
+    {:ok, variant_query} = Query.with_variant(query, variant)
+    variant_query
   end
 
   defp adjusted_elapsed_us(elapsed_us, nil, long_running_threshold_us, penalty_us) do

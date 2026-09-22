@@ -35,15 +35,18 @@ defmodule TripleStore.SPARQL.GraphClauseOptimization do
   # ===========================================================================
 
   @type graph_clause :: :static | :variable
-  @type strategy :: :graph_prefixed_single_iterator | :four_iterator_enumeration
-                 | :sequential_graph_iteration | :direct_lookup
-                 | :multi_iterator_with_bound_graph
+  @type strategy ::
+          :graph_prefixed_single_iterator
+          | :four_iterator_enumeration
+          | :sequential_graph_iteration
+          | :direct_lookup
+          | :multi_iterator_with_bound_graph
   @type analysis :: %{
-                 graph_type: graph_clause(),
-                 recommended_strategy: strategy(),
-                 reason: String.t(),
-                 optimization_hints: keyword()
-               }
+          graph_type: graph_clause(),
+          recommended_strategy: strategy(),
+          reason: String.t(),
+          optimization_hints: keyword()
+        }
 
   # ===========================================================================
   # Constants
@@ -100,61 +103,65 @@ defmodule TripleStore.SPARQL.GraphClauseOptimization do
     graph_type = determine_graph_type(graph_term)
     variable_count = count_variables_in_pattern(pattern)
 
-    cond do
-      # Fully-bound pattern - direct lookup
-      variable_count == 0 ->
-        %{
-          graph_type: graph_type,
-          recommended_strategy: :direct_lookup,
-          reason: "Pattern is fully-bound - use direct lookup",
-          optimization_hints: [use_direct_lookup: true]
-        }
+    strategy_analysis(graph_type, variable_count)
+  end
 
-      # Static graph with single variable - graph-prefixed iterator
-      graph_type == :static and variable_count == 1 ->
-        %{
-          graph_type: :static,
-          recommended_strategy: :graph_prefixed_single_iterator,
-          reason: "Static graph with single variable - use graph-prefixed iterator",
-          optimization_hints: [bind_graph: true, reduce_iterator_count: true]
-        }
+  defp strategy_analysis(graph_type, 0) do
+    %{
+      graph_type: graph_type,
+      recommended_strategy: :direct_lookup,
+      reason: "Pattern is fully-bound - use direct lookup",
+      optimization_hints: [use_direct_lookup: true]
+    }
+  end
 
-      # Static graph with 2+ variables - multi-iterator with bound graph
-      graph_type == :static and variable_count >= @multi_iterator_threshold ->
-        %{
-          graph_type: :static,
-          recommended_strategy: :multi_iterator_with_bound_graph,
-          reason: "Static graph with #{variable_count} variables - use multi-iterator with graph bound",
-          optimization_hints: [use_multi_iterator: true, bind_graph: true]
-        }
+  defp strategy_analysis(:static, 1) do
+    %{
+      graph_type: :static,
+      recommended_strategy: :graph_prefixed_single_iterator,
+      reason: "Static graph with single variable - use graph-prefixed iterator",
+      optimization_hints: [bind_graph: true, reduce_iterator_count: true]
+    }
+  end
 
-      # Variable graph with 3 other variables - 4-iterator enumeration
-      graph_type == :variable and variable_count >= 3 ->
-        %{
-          graph_type: :variable,
-          recommended_strategy: :four_iterator_enumeration,
-          reason: "Variable graph with #{variable_count} other variables - use 4-iterator join for full enumeration",
-          optimization_hints: [use_multi_iterator: true, enumerate_all_graphs: true]
-        }
+  defp strategy_analysis(:static, variable_count)
+       when variable_count >= @multi_iterator_threshold do
+    %{
+      graph_type: :static,
+      recommended_strategy: :multi_iterator_with_bound_graph,
+      reason:
+        "Static graph with #{variable_count} variables - use multi-iterator with graph bound",
+      optimization_hints: [use_multi_iterator: true, bind_graph: true]
+    }
+  end
 
-      # Variable graph with fewer variables - sequential graph iteration
-      graph_type == :variable ->
-        %{
-          graph_type: :variable,
-          recommended_strategy: :sequential_graph_iteration,
-          reason: "Variable graph with #{variable_count} other variables - use sequential graph iteration",
-          optimization_hints: [use_sequential_iteration: true]
-        }
+  defp strategy_analysis(:variable, variable_count) when variable_count >= 3 do
+    %{
+      graph_type: :variable,
+      recommended_strategy: :four_iterator_enumeration,
+      reason:
+        "Variable graph with #{variable_count} other variables - use 4-iterator join for full enumeration",
+      optimization_hints: [use_multi_iterator: true, enumerate_all_graphs: true]
+    }
+  end
 
-      # Default - sequential iteration
-      true ->
-        %{
-          graph_type: graph_type,
-          recommended_strategy: :sequential_graph_iteration,
-          reason: "Use default sequential graph iteration",
-          optimization_hints: []
-        }
-    end
+  defp strategy_analysis(:variable, variable_count) do
+    %{
+      graph_type: :variable,
+      recommended_strategy: :sequential_graph_iteration,
+      reason:
+        "Variable graph with #{variable_count} other variables - use sequential graph iteration",
+      optimization_hints: [use_sequential_iteration: true]
+    }
+  end
+
+  defp strategy_analysis(graph_type, _variable_count) do
+    %{
+      graph_type: graph_type,
+      recommended_strategy: :sequential_graph_iteration,
+      reason: "Use default sequential graph iteration",
+      optimization_hints: []
+    }
   end
 
   @doc """
@@ -171,7 +178,11 @@ defmodule TripleStore.SPARQL.GraphClauseOptimization do
   @spec should_use_multi_iterator_for_graph?(term(), term()) :: boolean()
   def should_use_multi_iterator_for_graph?(graph_term, pattern) do
     analysis = analyze_graph_clause(pattern, graph_term)
-    analysis.recommended_strategy in [:four_iterator_enumeration, :multi_iterator_with_bound_graph]
+
+    analysis.recommended_strategy in [
+      :four_iterator_enumeration,
+      :multi_iterator_with_bound_graph
+    ]
   end
 
   @doc """
@@ -237,10 +248,10 @@ defmodule TripleStore.SPARQL.GraphClauseOptimization do
 
   # Count variables in a list of components
   defp count_component_variables(components) do
-    Enum.count(components, &is_variable?/1)
+    Enum.count(components, &variable?/1)
   end
 
   # Check if a term is a variable
-  defp is_variable?({:variable, _name}), do: true
-  defp is_variable?(_), do: false
+  defp variable?({:variable, _name}), do: true
+  defp variable?(_), do: false
 end

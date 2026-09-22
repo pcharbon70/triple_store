@@ -53,33 +53,30 @@ defmodule TripleStore.Benchmark.Wikidata.AcceptedDivergence do
   """
   @spec matches?(t(), map()) :: boolean()
   def matches?(%__MODULE__{} = record, comparison_summary) when is_map(comparison_summary) do
-    same_benchmark? = record.benchmark_id == Map.get(comparison_summary, :benchmark_id)
-
-    same_variant? =
-      is_nil(record.execution_variant) or
-        record.execution_variant == Map.get(comparison_summary, :execution_variant)
-
-    same_classification? =
-      record.classification == Map.get(comparison_summary, :classification)
-
-    same_reference? =
-      is_nil(record.reference_fingerprint) or
-        record.reference_fingerprint == Map.get(comparison_summary, :reference_fingerprint)
-
-    same_actual? =
-      is_nil(record.actual_fingerprint) or
-        record.actual_fingerprint == Map.get(comparison_summary, :answer_fingerprint)
-
-    not_expired? =
-      case record.expires_at do
-        %Date{} = expires_at -> Date.compare(expires_at, Date.utc_today()) in [:gt, :eq]
-        nil -> true
-        _ -> true
-      end
-
-    same_benchmark? and same_variant? and same_classification? and same_reference? and
-      same_actual? and not_expired?
+    [
+      record.benchmark_id == Map.get(comparison_summary, :benchmark_id),
+      optional_match?(record.execution_variant, Map.get(comparison_summary, :execution_variant)),
+      record.classification == Map.get(comparison_summary, :classification),
+      optional_match?(
+        record.reference_fingerprint,
+        Map.get(comparison_summary, :reference_fingerprint)
+      ),
+      optional_match?(
+        record.actual_fingerprint,
+        Map.get(comparison_summary, :answer_fingerprint)
+      ),
+      active_on?(record.expires_at, Date.utc_today())
+    ]
+    |> Enum.all?()
   end
+
+  defp optional_match?(nil, _actual), do: true
+  defp optional_match?(expected, actual), do: expected == actual
+
+  defp active_on?(%Date{} = expires_at, date),
+    do: Date.compare(expires_at, date) in [:gt, :eq]
+
+  defp active_on?(_expires_at, _date), do: true
 
   @doc """
   Persists accepted divergence records in Erlang term format.

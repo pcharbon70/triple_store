@@ -3,8 +3,8 @@ defmodule TripleStore.Phase2TransactionIntegrationTest do
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
   alias TripleStore.Dictionary.Manager, as: DictManager
-  alias TripleStore.Query.Cache
   alias TripleStore.QuadOperations
+  alias TripleStore.Query.Cache
   alias TripleStore.SPARQL.Parser
   alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.UpdateExecutor

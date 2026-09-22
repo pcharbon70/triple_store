@@ -177,6 +177,7 @@ defmodule TripleStore do
   alias TripleStore.Reasoner.SemiNaive
   alias TripleStore.SPARQL.PlanCache
   alias TripleStore.SPARQL.Query
+  alias TripleStore.SPARQL.Update.Helpers
   alias TripleStore.Statistics
   alias TripleStore.Telemetry
   alias TripleStore.Transaction
@@ -589,7 +590,7 @@ defmodule TripleStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def load(%{db: db, dict_manager: dict_manager}, path, opts \\ []) do
     result = Loader.load_file(db, dict_manager, path, opts)
-    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
+    Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -619,7 +620,7 @@ defmodule TripleStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def load_graph(%{db: db, dict_manager: dict_manager}, graph, opts \\ []) do
     result = Loader.load_graph(db, dict_manager, graph, opts)
-    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
+    Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -654,7 +655,7 @@ defmodule TripleStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def load_string(%{db: db, dict_manager: dict_manager}, content, format, opts \\ []) do
     result = Loader.load_string(db, dict_manager, content, format, opts)
-    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
+    Helpers.invalidate_result_caches_after(db, result)
   end
 
   # ===========================================================================
@@ -710,7 +711,7 @@ defmodule TripleStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def insert(%{db: db, dict_manager: dict_manager}, triples) do
     result = Loader.insert(db, dict_manager, triples)
-    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
+    Helpers.invalidate_result_caches_after(db, result)
   end
 
   @doc """
@@ -747,7 +748,7 @@ defmodule TripleStore do
           {:ok, non_neg_integer()} | {:error, term()}
   def delete(%{db: db, dict_manager: dict_manager}, triples) do
     result = Loader.delete(db, dict_manager, triples)
-    TripleStore.SPARQL.Update.Helpers.invalidate_result_caches_after(db, result)
+    Helpers.invalidate_result_caches_after(db, result)
   end
 
   # ===========================================================================
@@ -2118,10 +2119,8 @@ defmodule TripleStore do
   end
 
   defp build_reasoning_config(opts, scope) when scope in [:local, :global, :hybrid] do
-    with {:ok, graph_configs} <- normalize_graph_configs(Keyword.get(opts, :graph_configs)),
-         {:ok, config} <-
-           ReasoningConfig.new(build_reasoning_config_opts(opts, scope, graph_configs)) do
-      {:ok, config}
+    with {:ok, graph_configs} <- normalize_graph_configs(Keyword.get(opts, :graph_configs)) do
+      ReasoningConfig.new(build_reasoning_config_opts(opts, scope, graph_configs))
     end
   end
 

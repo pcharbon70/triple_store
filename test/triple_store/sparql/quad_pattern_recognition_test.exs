@@ -39,8 +39,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognitionTest do
 
     test "four variable pattern recommends multi-iterator" do
       pattern =
-        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
-         {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
       analysis = QuadPatternRecognition.analyze_quad_pattern(pattern)
 
@@ -82,8 +81,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognitionTest do
 
     test "returns true for four variable pattern" do
       pattern =
-        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
-         {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
       assert QuadPatternRecognition.should_use_multi_iterator?(pattern)
     end
@@ -122,8 +120,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognitionTest do
   describe "translate_to_leapfrog_pattern/1" do
     test "preserves variable components" do
       pattern =
-        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
-         {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
       result = QuadPatternRecognition.translate_to_leapfrog_pattern(pattern)
 
@@ -145,8 +142,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognitionTest do
       result = QuadPatternRecognition.translate_to_leapfrog_pattern(pattern)
 
       assert result ==
-               {:quad, {:bound, :default_graph}, {:bound, 42}, {:bound, 35},
-                {:bound, 0}}
+               {:quad, {:bound, :default_graph}, {:bound, 42}, {:bound, 35}, {:bound, 0}}
     end
   end
 
@@ -169,8 +165,7 @@ defmodule TripleStore.SPARQL.QuadPatternRecognitionTest do
 
     test "returns all variable names for all-variable pattern" do
       pattern =
-        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"},
-         {:variable, "g"}}
+        {:quad, {:variable, "s"}, {:variable, "p"}, {:variable, "o"}, {:variable, "g"}}
 
       result = QuadPatternRecognition.extract_variables(pattern)
 
