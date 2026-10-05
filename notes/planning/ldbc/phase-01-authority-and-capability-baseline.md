@@ -99,15 +99,15 @@ Description: Parse and classify the canonical read operations against the curren
 TripleStore query stack, distinguishing parser support from correct end-to-end
 execution.
 
-- [ ] 1.3.1.1 Map SPB and SNB operations to SPARQL features including aggregates,
+- [x] 1.3.1.1 Map SPB and SNB operations to SPARQL features including aggregates,
   subqueries, expressions, OPTIONAL, UNION, MINUS, ordering, slicing, and property paths.
-- [ ] 1.3.1.2 Identify BI operations that require weighted shortest paths or other
+- [x] 1.3.1.2 Identify BI operations that require weighted shortest paths or other
   semantics not expressible in standard SPARQL 1.1.
-- [ ] 1.3.1.3 Verify datatype, collation, date arithmetic, integer-width, null or
+- [x] 1.3.1.3 Verify datatype, collation, date arithmetic, integer-width, null or
   unbound, duplicate, and tie-breaking behavior against benchmark result schemas.
-- [ ] 1.3.1.4 Identify operations whose correct execution requires materialization
+- [x] 1.3.1.4 Identify operations whose correct execution requires materialization
   or algorithms outside the existing streaming query path.
-- [ ] 1.3.1.5 Produce a machine-readable capability matrix with `supported`,
+- [x] 1.3.1.5 Produce a machine-readable capability matrix with `supported`,
   `requires_fix`, `requires_extension`, and `profile_exclusion` states.
 
 ### Task 1.3.2: Audit update, isolation, and reasoning semantics
@@ -115,15 +115,15 @@ execution.
 Description: Compare benchmark concurrency and inference requirements with the
 current embedded store lifecycle and documented transaction boundaries.
 
-- [ ] 1.3.2.1 Map SPB editorial operations and SNB update operations to current
+- [x] 1.3.2.1 Map SPB editorial operations and SNB update operations to current
   public and expert update APIs.
-- [ ] 1.3.2.2 Identify where direct queries bypass the store transaction coordinator
+- [x] 1.3.2.2 Identify where direct queries bypass the store transaction coordinator
   and whether benchmark reads can observe partially ordered workload state.
-- [ ] 1.3.2.3 Determine the isolation and atomicity required for Interactive driver
+- [x] 1.3.2.3 Determine the isolation and atomicity required for Interactive driver
   concurrency and BI microbatches.
-- [ ] 1.3.2.4 Map the SPB RDFS/OWL rules to implemented reasoning profiles and record
+- [x] 1.3.2.4 Map the SPB RDFS/OWL rules to implemented reasoning profiles and record
   gaps in persisted, query-visible, and incrementally maintained derived facts.
-- [ ] 1.3.2.5 Classify SPB context, text, geospatial, backup, replication, and
+- [x] 1.3.2.5 Classify SPB context, text, geospatial, backup, replication, and
   failover requirements as mandatory, optional, or unsupported for each profile.
 
 ### Task 1.3.3: Approve the benchmark adapter architecture
@@ -131,15 +131,15 @@ current embedded store lifecycle and documented transaction boundaries.
 Description: Define a benchmark-only boundary that lets upstream Java drivers
 control an embedded Elixir store without turning TripleStore into a network service.
 
-- [ ] 1.3.3.1 Compare a framed local socket bridge, port protocol, and driver-port
+- [x] 1.3.3.1 Compare a framed local socket bridge, port protocol, and driver-port
   implementation for upstream Java integration.
-- [ ] 1.3.3.2 Keep the selected bridge under benchmark tooling and outside the
+- [x] 1.3.3.2 Keep the selected bridge under benchmark tooling and outside the
   `TripleStore` public API and default OTP supervision tree.
-- [ ] 1.3.3.3 Define request IDs, operation IDs, typed parameters, typed results,
+- [x] 1.3.3.3 Define request IDs, operation IDs, typed parameters, typed results,
   error frames, cancellation, timeout, and graceful shutdown behavior.
-- [ ] 1.3.3.4 Define how one benchmark store, dictionary manager, transaction
+- [x] 1.3.3.4 Define how one benchmark store, dictionary manager, transaction
   coordinator, caches, and statistics services are owned and released.
-- [ ] 1.3.3.5 Write an ADR for RDF mapping ownership, benchmark-only query extensions,
+- [x] 1.3.3.5 Write an ADR for RDF mapping ownership, benchmark-only query extensions,
   and the rule that application-side post-processing may not hide missing engine work.
 
 ## Section 1.4: Integration Tests
