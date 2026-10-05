@@ -60,15 +60,15 @@ reported as complete LDBC results.
 Description: Define named profiles for smoke, development, comparable, and audit
 preparation runs, including the language permitted in reports for each profile.
 
-- [ ] 1.2.1.1 Define `smoke` profiles that use reduced fixtures and representative
+- [x] 1.2.1.1 Define `smoke` profiles that use reduced fixtures and representative
   operations without emitting official score names.
-- [ ] 1.2.1.2 Define `development` profiles that may run selected operation families
+- [x] 1.2.1.2 Define `development` profiles that may run selected operation families
   or shortened durations and are explicitly non-comparable.
-- [ ] 1.2.1.3 Define `comparable` profiles that preserve the selected specification's
+- [x] 1.2.1.3 Define `comparable` profiles that preserve the selected specification's
   complete operation mix, parameters, scheduling, validation, and scoring rules.
-- [ ] 1.2.1.4 Define `audit_preparation` profiles that also capture disclosure,
+- [x] 1.2.1.4 Define `audit_preparation` profiles that also capture disclosure,
   pricing, configuration, and provenance evidence required for external review.
-- [ ] 1.2.1.5 Add report validation that rejects `official`, `certified`, and
+- [x] 1.2.1.5 Add report validation that rejects `official`, `certified`, and
   `audited` labels unless explicit audit metadata is present.
 
 ### Task 1.2.2: Build canonical operation catalogs
@@ -76,15 +76,15 @@ preparation runs, including the language permitted in reports for each profile.
 Description: Extract every benchmark operation and its semantic contract into a
 versioned local catalog without yet translating it into TripleStore execution code.
 
-- [ ] 1.2.2.1 Catalog SPB aggregation operations, editorial CRUD operations,
+- [x] 1.2.2.1 Catalog SPB aggregation operations, editorial CRUD operations,
   inference checks, validation actions, and resilience actions.
-- [ ] 1.2.2.2 Catalog all SNB BI reads, variants, parameter types, limits, ordering,
+- [x] 1.2.2.2 Catalog all SNB BI reads, variants, parameter types, limits, ordering,
   result schemas, choke points, and update-batch operations.
-- [ ] 1.2.2.3 Catalog all selected SNB Interactive complex reads, short reads,
+- [x] 1.2.2.3 Catalog all selected SNB Interactive complex reads, short reads,
   update operations, frequencies, dependencies, result schemas, and ordering rules.
-- [ ] 1.2.2.4 Record optional, mandatory, version-specific, and audit-only operations
+- [x] 1.2.2.4 Record optional, mandatory, version-specific, and audit-only operations
   explicitly instead of omitting them.
-- [ ] 1.2.2.5 Give every catalog item a stable local ID that retains its canonical
+- [x] 1.2.2.5 Give every catalog item a stable local ID that retains its canonical
   upstream identifier and profile version.
 
 ## Section 1.3: TripleStore Capability and Architecture Decision
