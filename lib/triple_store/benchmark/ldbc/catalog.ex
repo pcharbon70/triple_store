@@ -123,6 +123,7 @@ defmodule TripleStore.Benchmark.LDBC.Catalog do
     |> require_catalog_field(id, catalog, :benchmark, &(&1 in @benchmarks))
     |> require_catalog_field(id, catalog, :source_id, &MapSet.member?(source_ids, &1))
     |> validate_operations(id, operations)
+    |> validate_operation_versions(id, Map.get(catalog, :version), operations)
     |> validate_expected_ids(id, operations, expected_ids)
   end
 
@@ -190,6 +191,24 @@ defmodule TripleStore.Benchmark.LDBC.Catalog do
 
   defp validate_expected_ids(errors, id, _operations, _expected_ids),
     do: [{id, :expected_operation_ids, "must be a list"} | errors]
+
+  defp validate_operation_versions(errors, id, version, operations)
+       when is_binary(version) and is_list(operations) do
+    invalid =
+      Enum.reject(operations, fn operation ->
+        is_map(operation) and is_binary(Map.get(operation, :id)) and
+          String.ends_with?(operation.id, "@#{version}")
+      end)
+
+    if invalid == [] do
+      errors
+    else
+      [{id, :operation_version, "every operation ID must end with @#{version}"} | errors]
+    end
+  end
+
+  defp validate_operation_versions(errors, id, _version, _operations),
+    do: [{id, :operation_version, "catalog version and operations are required"} | errors]
 
   defp cross_catalog_errors(catalogs) do
     operation_ids =

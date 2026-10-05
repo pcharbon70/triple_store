@@ -7,6 +7,9 @@ transaction, and reasoning behavior. By the end of the phase, later work should
 have immutable upstream pins and an accepted architecture rather than relying on
 benchmark names or moving default branches.
 
+Qualification evidence is recorded in the
+[Phase 1 validation record](phase-01-validation-record.md).
+
 ---
 
 ## Section 1.1: Upstream Authority and Version Pins
@@ -152,12 +155,12 @@ and capability decisions form a coherent foundation before data or runner code i
 Description: Exercise manifest loading and catalog generation using checked-in
 metadata and small license-compatible fixtures.
 
-- [ ] 1.4.1.1 Verify every source entry has an immutable version, checksum, license,
+- [x] 1.4.1.1 Verify every source entry has an immutable version, checksum, license,
   and owning benchmark profile.
-- [ ] 1.4.1.2 Verify every canonical operation in the pinned specifications appears
+- [x] 1.4.1.2 Verify every canonical operation in the pinned specifications appears
   exactly once in a local operation catalog.
-- [ ] 1.4.1.3 Verify catalog regeneration is deterministic for a fixed source pin.
-- [ ] 1.4.1.4 Verify moving branches, unpinned URLs, missing notices, and unknown
+- [x] 1.4.1.3 Verify catalog regeneration is deterministic for a fixed source pin.
+- [x] 1.4.1.4 Verify moving branches, unpinned URLs, missing notices, and unknown
   operation versions fail validation.
 
 ### Task 1.4.2: Pass the Phase 1 capability gate
@@ -165,11 +168,11 @@ metadata and small license-compatible fixtures.
 Description: Confirm that every discovered gap has an implementation owner and
 that no later phase relies on an undocumented assumption.
 
-- [ ] 1.4.2.1 Parse representative operations from all three suites through the
+- [x] 1.4.2.1 Parse representative operations from all three suites through the
   real parser and record end-to-end support separately from parse support.
-- [ ] 1.4.2.2 Exercise representative update and reasoning paths through the real
+- [x] 1.4.2.2 Exercise representative update and reasoning paths through the real
   store lifecycle and record their observed isolation and visibility.
-- [ ] 1.4.2.3 Verify the capability matrix has no unclassified canonical operation.
-- [ ] 1.4.2.4 Review and accept the adapter and RDF-mapping ADR before Phase 2 begins.
-- [ ] 1.4.2.5 Record exact commands, toolchain versions, test counts, exclusions,
+- [x] 1.4.2.3 Verify the capability matrix has no unclassified canonical operation.
+- [x] 1.4.2.4 Review and accept the adapter and RDF-mapping ADR before Phase 2 begins.
+- [x] 1.4.2.5 Record exact commands, toolchain versions, test counts, exclusions,
   and unresolved blocking capabilities in the phase pull request.

@@ -44,7 +44,7 @@ performance results incomparable.
    scheduling substitutions, or hidden retries.
 7. TripleStore-owned translations, graph algorithms, and result codecs remain in
    Elixir benchmark and query modules. Native parsing and RocksDB remain bounded
-   adapters under the existing ownership matrix and ADR-0001.
+   adapters under the existing ownership matrix and control-plane authority decision.
 8. Phase 2 defines one versioned SNB RDF mapping. The mapping owns IRIs, entity and
    relationship representation, relationship properties, datatype encodings,
    default or named graph placement, and deterministic serialization. Dataset
@@ -82,7 +82,6 @@ performance results incomparable.
 ## Related authority
 
 - [Control-plane ownership matrix](../contracts/control_plane_ownership_matrix.md)
-- [ADR-0001](ADR-0001-control-plane-authority.md)
 - [Transaction and isolation contract](../contracts/transaction_and_isolation_contract.md)
 - [Query execution contract](../contracts/query_execution_contract.md)
 - [Reasoning contract](../contracts/reasoning_contract.md)
