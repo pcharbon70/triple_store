@@ -9,6 +9,10 @@ This plan outlines the implementation of a high-performance RDF triple store in 
 Current companion plans:
 
 - [Correctness and Authorization Remediation](phase-05-correctness-remediation.md) — remediation of the six findings from the 2026-09-09 code review, organized by implementation dependencies, with numbered sections, tasks, sub-tasks, and validation gates.
+- [LDBC Benchmark Family](ldbc/overview.md) — phased implementation of the
+  Semantic Publishing, SNB Business Intelligence, and SNB Interactive benchmark
+  families with pinned upstream sources, correctness gates, and protocol-aware
+  reporting.
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|------------------|

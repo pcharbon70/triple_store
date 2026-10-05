@@ -12,6 +12,9 @@ This specs system reuses the existing implementation plans in `notes/planning/` 
 - [`notes/planning/phase-05-production-hardening.md`](../../notes/planning/phase-05-production-hardening.md)
 - [`notes/planning/phase-05-dialyzer-remediation.md`](../../notes/planning/phase-05-dialyzer-remediation.md)
 - [`notes/planning/phase-05-correctness-remediation.md`](../../notes/planning/phase-05-correctness-remediation.md) — phased remediation of the 2026-09-09 cache, authorization, atomic-write, and reasoning review findings.
+- [`notes/planning/ldbc/overview.md`](../../notes/planning/ldbc/overview.md) —
+  phased implementation of LDBC SPB, SNB Business Intelligence, and SNB
+  Interactive benchmark integrations.
 
 ## Alignment Rules
 
