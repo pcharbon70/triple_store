@@ -65,3 +65,25 @@ N-Quads, validates relationship endpoints with a disk-backed index, preserves
 relationship properties, and emits separate initial, parameter, and ordered
 update components. Every component is checksum-addressed in its dataset
 manifest.
+
+## Loading and reset lifecycle
+
+`TripleStore.Benchmark.LDBC.StoreFixture.setup/3` validates every manifest
+component checksum before opening a store. It acquires an exclusive lock for the
+manifest's `path_identity`, loads initial N-Quads in bounded batches through the
+normal dictionary and four-index write paths, closes the store, creates a
+fingerprinted pristine copy, and verifies every explicit quad index after reopen.
+
+Load metrics keep parse, RDF-shape mapping, dictionary, and write timings
+separate. They also report statement throughput, the BEAM memory high-water
+mark, warnings, and final on-disk store bytes. `cancel?: fn -> boolean end`
+allows cooperative cancellation between batches; failed or cancelled setup
+closes the store and removes its staging directory and lock.
+
+Stateful SNB runs use `StoreFixture.apply_updates/2` for an ordered update
+component and `StoreFixture.reset/2` before the next measured run. Reset closes
+all store resources, verifies that the pristine copy has not changed, copies it
+to a sibling staging directory, atomically exchanges directories, reopens the
+store, and checks manifest counts plus any caller-supplied answer probes. Finish
+with `StoreFixture.teardown/2` to release the run lock; pass `delete: true` to
+remove both mutable and pristine copies.

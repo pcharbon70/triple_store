@@ -126,27 +126,27 @@ preparing store state, reopening stores, applying update streams, and cleaning u
 Description: Load all benchmark formats through bounded-memory adapters while
 measuring load behavior separately from query performance.
 
-- [ ] 2.4.1.1 Add benchmark load adapters for SPB RDF and mapped SNB RDF streams.
-- [ ] 2.4.1.2 Use existing loader and storage batches without bypassing dictionary
+- [x] 2.4.1.1 Add benchmark load adapters for SPB RDF and mapped SNB RDF streams.
+- [x] 2.4.1.2 Use existing loader and storage batches without bypassing dictionary
   or index invariants.
-- [ ] 2.4.1.3 Capture parse time, mapping time, dictionary time, write time, throughput,
+- [x] 2.4.1.3 Capture parse time, mapping time, dictionary time, write time, throughput,
   warnings, memory high-water mark, and final store size.
-- [ ] 2.4.1.4 Verify all relevant indices and schema metadata after load and reopen.
-- [ ] 2.4.1.5 Add cancellation and tagged cleanup behavior for interrupted or failed loads.
+- [x] 2.4.1.4 Verify all relevant indices and schema metadata after load and reopen.
+- [x] 2.4.1.5 Add cancellation and tagged cleanup behavior for interrupted or failed loads.
 
 ### Task 2.4.2: Implement immutable fixture and reset controls
 
 Description: Provide fast, reproducible reset behavior for workloads whose updates
 make the store stateful.
 
-- [ ] 2.4.2.1 Create a validated pristine-store snapshot or filesystem copy after
+- [x] 2.4.2.1 Create a validated pristine-store snapshot or filesystem copy after
   each initial load.
-- [ ] 2.4.2.2 Restore the pristine state atomically before stateful validation or
+- [x] 2.4.2.2 Restore the pristine state atomically before stateful validation or
   measured runs that require it.
-- [ ] 2.4.2.3 Prevent concurrent runs from sharing mutable store directories.
-- [ ] 2.4.2.4 Release managers, transactions, iterators, snapshots, and RocksDB
+- [x] 2.4.2.3 Prevent concurrent runs from sharing mutable store directories.
+- [x] 2.4.2.4 Release managers, transactions, iterators, snapshots, and RocksDB
   handles before copying, restoring, or deleting store fixtures.
-- [ ] 2.4.2.5 Verify reset state using manifest counts and selected answer probes.
+- [x] 2.4.2.5 Verify reset state using manifest counts and selected answer probes.
 
 ## Section 2.5: Integration Tests
 
