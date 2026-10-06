@@ -1,0 +1,2 @@
+sequence|operation|id|firstName|lastName|gender|birthday|creationDate|locationIP|browserUsed|languages|email
+1|insert|12|Fatima|Foster|female|1992-07-20|1262304110000|198.51.100.12|Firefox|en;ar|fatima@example.test

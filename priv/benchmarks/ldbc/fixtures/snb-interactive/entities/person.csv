@@ -1,0 +1,3 @@
+id|firstName|lastName|gender|birthday|creationDate|locationIP|browserUsed|languages|email
+10|Dora|Diaz|female|1988-03-11|1262304100000|198.51.100.10|Firefox|en;es|dora@example.test
+11|Evan|Edwards|male|1987-12-01|1262304101000|198.51.100.11|Chromium|en|evan@example.test
