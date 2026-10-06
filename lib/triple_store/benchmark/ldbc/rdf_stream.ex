@@ -18,20 +18,26 @@ defmodule TripleStore.Benchmark.LDBC.RDFStream do
   def reduce(path, format, initial, reducer)
       when format in [:ntriples, :nquads] and is_function(reducer, 2) do
     path
-    |> File.stream!([], :line)
+    |> File.stream!(:line)
     |> Stream.with_index(1)
-    |> Enum.reduce_while({:ok, initial, 0}, fn {line, line_number}, {:ok, acc, count} ->
-      if Artifact.statement_line?(line) do
-        case parse_line(line, format) do
-          {:ok, statement} -> {:cont, {:ok, reducer.(statement, acc), count + 1}}
-          {:error, reason} -> {:halt, {:error, {:rdf_parse_error, line_number, reason}}}
-        end
-      else
-        {:cont, {:ok, acc, count}}
-      end
-    end)
+    |> Enum.reduce_while({:ok, initial, 0}, &reduce_line(&1, &2, format, reducer))
   rescue
     error in File.Error -> {:error, {:file_error, error.reason}}
+  end
+
+  defp reduce_line({line, line_number}, {:ok, acc, count}, format, reducer) do
+    if Artifact.statement_line?(line) do
+      reduce_statement(line, line_number, acc, count, format, reducer)
+    else
+      {:cont, {:ok, acc, count}}
+    end
+  end
+
+  defp reduce_statement(line, line_number, acc, count, format, reducer) do
+    case parse_line(line, format) do
+      {:ok, statement} -> {:cont, {:ok, reducer.(statement, acc), count + 1}}
+      {:error, reason} -> {:halt, {:error, {:rdf_parse_error, line_number, reason}}}
+    end
   end
 
   @doc "Scans syntax, counts statements, and records graph identities."

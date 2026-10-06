@@ -41,19 +41,17 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Pipeline do
          {:ok, parameters} <- generate_parameters(output_path, scan),
          :ok <- write_parameters(parameters_path, parameters),
          {:ok, parameter_checksum} <- Artifact.checksum(parameters_path),
-         {:ok, source_checksum} <- input_checksum(input),
-         {:ok, manifest} <-
-           build_manifest(
-             input,
-             seed,
-             scale,
-             output_path,
-             parameters_path,
-             scan,
-             parameter_checksum,
-             source_checksum
-           ) do
-      {:ok, manifest}
+         {:ok, source_checksum} <- input_checksum(input) do
+      build_manifest(
+        input,
+        seed,
+        scale,
+        output_path,
+        parameters_path,
+        scan,
+        parameter_checksum,
+        source_checksum
+      )
     end
   end
 
@@ -67,7 +65,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Pipeline do
   @spec external_generator_spec(Path.t(), Path.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def external_generator_spec(checkout, output_dir, opts) do
     with {:ok, input} <- inputs(),
-         :ok <- validate_checkout_layout(checkout),
+         :ok <- validate_checkout_layout(checkout, input),
          {:ok, jar} <- fetch_non_empty(opts, :jar),
          {:ok, scale} <- fetch_positive_integer(opts, :dataset_size),
          {:ok, seed} <- fetch_integer(opts, :seed),
@@ -231,13 +229,16 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Pipeline do
 
   defp validate_inputs(_), do: {:error, :invalid_spb_inputs}
 
-  defp validate_checkout_layout(checkout) do
-    required = ["build.xml", "test.properties", "datasets_and_queries"]
+  defp validate_checkout_layout(checkout, input) do
+    required =
+      ["build.xml", "test.properties"] ++
+        input.ontologies ++
+        input.reference_datasets ++
+        [input.rule_configuration] ++ input.generator_definitions
 
-    if Enum.all?(required, &File.exists?(Path.join(checkout, &1))) do
-      :ok
-    else
-      {:error, :invalid_spb_checkout}
+    case Enum.find(required, &(not File.exists?(Path.join(checkout, &1)))) do
+      nil -> :ok
+      missing -> {:error, {:missing_spb_input, missing}}
     end
   end
 

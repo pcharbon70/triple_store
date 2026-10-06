@@ -134,26 +134,29 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Mapping do
     row
     |> Enum.reject(fn {key, value} -> key == "id" or missing?(value) end)
     |> Enum.sort_by(&elem(&1, 0))
-    |> Enum.reduce_while({:ok, []}, fn {property, value}, {:ok, quads} ->
-      case Map.fetch(@property_types, property) do
-        {:ok, type} ->
-          predicate = RDF.iri(@ontology <> property)
-          values = if match?({:array, _}, type), do: split_array(value), else: [value]
-          scalar_type = if match?({:array, _}, type), do: elem(type, 1), else: type
+    |> Enum.reduce_while({:ok, []}, &map_property(&1, &2, subject, graph))
+  end
 
-          case map_values(values, scalar_type) do
-            {:ok, objects} ->
-              mapped = Enum.map(objects, &{subject, predicate, &1, graph})
-              {:cont, {:ok, quads ++ mapped}}
+  defp map_property({property, value}, {:ok, quads}, subject, graph) do
+    case Map.fetch(@property_types, property) do
+      {:ok, type} -> map_known_property(property, value, type, subject, graph, quads)
+      :error -> {:halt, {:error, {:unknown_property, property}}}
+    end
+  end
 
-            {:error, _} = error ->
-              {:halt, error}
-          end
+  defp map_known_property(property, value, type, subject, graph, quads) do
+    predicate = RDF.iri(@ontology <> property)
+    values = if match?({:array, _}, type), do: split_array(value), else: [value]
+    scalar_type = if match?({:array, _}, type), do: elem(type, 1), else: type
 
-        :error ->
-          {:halt, {:error, {:unknown_property, property}}}
-      end
-    end)
+    case map_values(values, scalar_type) do
+      {:ok, objects} ->
+        mapped = Enum.map(objects, &{subject, predicate, &1, graph})
+        {:cont, {:ok, quads ++ mapped}}
+
+      {:error, _} = error ->
+        {:halt, error}
+    end
   end
 
   defp map_values(values, type) do

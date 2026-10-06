@@ -12,8 +12,8 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   - subset-generation metadata for derived fixtures
   """
 
-  alias TripleStore.Benchmark.Wikidata.Contract
   alias TripleStore.Benchmark.Artifact
+  alias TripleStore.Benchmark.Wikidata.Contract
 
   @enforce_keys [
     :dataset_id,

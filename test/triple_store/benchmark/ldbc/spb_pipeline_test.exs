@@ -63,7 +63,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.PipelineTest do
   end
 
   test "external generation requires a valid pinned checkout and explicit execution" do
-    assert {:error, :invalid_spb_checkout} =
+    assert {:error, {:missing_spb_input, "build.xml"}} =
              Pipeline.external_generator_spec("/tmp/not-an-spb-checkout", "/tmp/output",
                jar: "driver.jar",
                dataset_size: 1_000,

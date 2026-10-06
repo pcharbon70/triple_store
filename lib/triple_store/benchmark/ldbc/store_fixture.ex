@@ -41,6 +41,7 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   def setup(root, %DatasetManifest{} = manifest, opts \\ []) when is_binary(root) do
     with :ok <- DatasetManifest.validate(manifest),
          :ok <- validate_identity(manifest.store.path_identity),
+         :ok <- validate_expected_identity(manifest, opts),
          :ok <- validate_components(manifest),
          paths <- paths(root, manifest.store.path_identity),
          :ok <- prepare_directories(paths),
@@ -141,41 +142,50 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
     stage = paths.store <> ".load.#{System.unique_integer([:positive])}"
     pristine_stage = paths.pristine <> ".partial.#{System.unique_integer([:positive])}"
 
-    result =
-      with :ok <- ensure_absent(paths.store, :store_already_exists),
-           :ok <- ensure_absent(paths.pristine, :pristine_store_already_exists),
-           {:ok, store} <- TripleStore.open(stage, schema: :quad),
-           {:ok, metrics} <- load_and_close(store, manifest, opts),
-           :ok <- copy_directory(stage, pristine_stage),
-           :ok <- File.rename(pristine_stage, paths.pristine),
-           {:ok, fingerprint} <- directory_fingerprint(paths.pristine),
-           :ok <- File.rename(stage, paths.store),
-           {:ok, opened} <- TripleStore.open(paths.store, schema: :quad, create_if_missing: false),
-           {:ok, verification} <- verify_state(opened, manifest, opts) do
-        {:ok,
-         %__MODULE__{
-           manifest: manifest,
-           fixture_root: root,
-           store: opened,
-           store_path: paths.store,
-           pristine_path: paths.pristine,
-           pristine_fingerprint: fingerprint,
-           lock_path: paths.lock,
-           load_metrics: metrics,
-           verification: verification
-         }}
+    with :ok <- ensure_absent(paths.store, :store_already_exists),
+         :ok <- ensure_absent(paths.pristine, :pristine_store_already_exists) do
+      result = build_fixture(paths, root, manifest, opts, stage, pristine_stage)
+
+      case result do
+        {:ok, _} = success ->
+          success
+
+        {:error, _} = error ->
+          File.rm_rf(stage)
+          File.rm_rf(pristine_stage)
+          File.rm_rf(paths.store)
+          File.rm_rf(paths.pristine)
+          File.rm(paths.lock)
+          error
       end
-
-    case result do
-      {:ok, _} = success ->
-        success
-
+    else
       {:error, _} = error ->
-        File.rm_rf(stage)
-        File.rm_rf(pristine_stage)
-        File.rm_rf(paths.pristine)
         File.rm(paths.lock)
         error
+    end
+  end
+
+  defp build_fixture(paths, root, manifest, opts, stage, pristine_stage) do
+    with {:ok, store} <- TripleStore.open(stage, schema: :quad),
+         {:ok, metrics} <- load_and_close(store, manifest, opts),
+         :ok <- copy_directory(stage, pristine_stage),
+         :ok <- File.rename(pristine_stage, paths.pristine),
+         {:ok, fingerprint} <- directory_fingerprint(paths.pristine),
+         :ok <- File.rename(stage, paths.store),
+         {:ok, opened} <- TripleStore.open(paths.store, schema: :quad, create_if_missing: false),
+         {:ok, verification} <- verify_state(opened, manifest, opts) do
+      {:ok,
+       %__MODULE__{
+         manifest: manifest,
+         fixture_root: root,
+         store: opened,
+         store_path: paths.store,
+         pristine_path: paths.pristine,
+         pristine_fingerprint: fingerprint,
+         lock_path: paths.lock,
+         load_metrics: metrics,
+         verification: verification
+       }}
     end
   end
 
@@ -262,9 +272,8 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
 
   defp prepare_directories(paths) do
     with :ok <- File.mkdir_p(Path.dirname(paths.store)),
-         :ok <- File.mkdir_p(Path.dirname(paths.pristine)),
-         :ok <- File.mkdir_p(Path.dirname(paths.lock)) do
-      :ok
+         :ok <- File.mkdir_p(Path.dirname(paths.pristine)) do
+      File.mkdir_p(Path.dirname(paths.lock))
     end
   end
 
@@ -295,6 +304,22 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   end
 
   defp validate_identity(_identity), do: {:error, :unsafe_store_path_identity}
+
+  defp validate_expected_identity(manifest, opts) do
+    expected_suite = Keyword.get(opts, :expected_suite, manifest.suite)
+    expected_profile = Keyword.get(opts, :expected_profile, manifest.profile) |> to_string()
+
+    cond do
+      expected_suite != manifest.suite ->
+        {:error, {:manifest_suite_mismatch, expected_suite, manifest.suite}}
+
+      expected_profile != manifest.profile ->
+        {:error, {:manifest_profile_mismatch, expected_profile, manifest.profile}}
+
+      true ->
+        :ok
+    end
+  end
 
   defp ensure_absent(path, error) do
     if File.exists?(path), do: {:error, error}, else: :ok

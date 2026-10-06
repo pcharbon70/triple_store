@@ -90,19 +90,25 @@ defmodule TripleStore.Benchmark.Artifact do
         end
 
       File.dir?(path) ->
-        path
-        |> Path.join("**/*")
-        |> Path.wildcard(match_dot: true)
-        |> Enum.reduce_while({:ok, 0}, fn entry, {:ok, total} ->
-          case File.stat(entry) do
-            {:ok, %{type: :regular, size: bytes}} -> {:cont, {:ok, total + bytes}}
-            {:ok, _stat} -> {:cont, {:ok, total}}
-            {:error, reason} -> {:halt, {:error, reason}}
-          end
-        end)
+        directory_size(path)
 
       true ->
         {:error, :not_found}
+    end
+  end
+
+  defp directory_size(path) do
+    path
+    |> Path.join("**/*")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.reduce_while({:ok, 0}, &add_entry_size/2)
+  end
+
+  defp add_entry_size(entry, {:ok, total}) do
+    case File.stat(entry) do
+      {:ok, %{type: :regular, size: bytes}} -> {:cont, {:ok, total + bytes}}
+      {:ok, _stat} -> {:cont, {:ok, total}}
+      {:error, reason} -> {:halt, {:error, reason}}
     end
   end
 

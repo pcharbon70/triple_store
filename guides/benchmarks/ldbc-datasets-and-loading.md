@@ -87,3 +87,29 @@ to a sibling staging directory, atomically exchanges directories, reopens the
 store, and checks manifest counts plus any caller-supplied answer probes. Finish
 with `StoreFixture.teardown/2` to release the run lock; pass `delete: true` to
 remove both mutable and pristine copies.
+
+## Reproducing external generator inputs
+
+The automated Phase 2 tests use only checked-in smoke inputs. They do not run
+Java, Spark, Hadoop, Docker, or network acquisition. The last verified upstream
+pins recorded by the manifests are:
+
+- SPB 2.0.2: `ce6323c0936306729408233dc70d26f2389b34c6`
+- SNB BI Datagen 0.5.1: `2459f4e45834c78902a50511fc64a05c48dd4029`
+- SNB Interactive v1 Datagen 1.0.0:
+  `37d35f40f5023fcf1afd3b6d0984f71c202f4bca`
+
+After checking out the matching commit and installing its documented runtime,
+the exact TripleStore entry points are:
+
+```sh
+mix run -e 'alias TripleStore.Benchmark.LDBC.SPB.Pipeline; IO.inspect(Pipeline.run_external("/path/to/ldbc_spb_bm_2.0.2", "tmp/ldbc/spb", jar: "/path/to/spb-driver.jar", dataset_size: 1000000, seed: 42, parameter_count: 100000, allow_external: true))'
+
+mix run -e 'alias TripleStore.Benchmark.LDBC.SNB.Generator; IO.inspect(Generator.run(:snb_bi_smoke, "/path/to/ldbc_snb_datagen_spark", "tmp/ldbc/snb-bi", cores: 8, memory: "16G", allow_external: true))'
+
+mix run -e 'alias TripleStore.Benchmark.LDBC.SNB.Generator; IO.inspect(Generator.run(:snb_interactive_smoke, "/path/to/ldbc_snb_datagen_hadoop", "tmp/ldbc/snb-interactive", update_partitions: 1, allow_external: true))'
+```
+
+Each entry point verifies the pinned checkout before execution. The resulting
+SPB N-Quads or SNB CSV directories must then pass the same validation and
+conversion boundaries used by the smoke fixtures before store creation.

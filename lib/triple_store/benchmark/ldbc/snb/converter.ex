@@ -82,13 +82,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
              {:ok, manifest} <-
                build_manifest(
                  profile,
-                 output_path,
-                 scan,
-                 entity_stats,
-                 relationship_stats,
-                 updates,
-                 parameters,
-                 source_checksum,
+                 %{
+                   output_path: output_path,
+                   scan: scan,
+                   entity_stats: entity_stats,
+                   relationship_stats: relationship_stats,
+                   updates: updates,
+                   parameters: parameters,
+                   source_checksum: source_checksum
+                 },
                  opts
                ) do
           {:ok, manifest}
@@ -114,79 +116,83 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
   end
 
   defp convert_entities(profile, source_root, io) do
-    Enum.reduce_while(profile.entities, {:ok, %{rows: 0, statement_count: 0}}, fn spec,
-                                                                                  {:ok, stats} ->
-      path = Path.join(source_root, spec.path)
+    Enum.reduce_while(
+      profile.entities,
+      {:ok, %{rows: 0, statement_count: 0}},
+      &convert_entity_file(&1, &2, profile, source_root, io)
+    )
+  end
 
-      case reduce_rows(path, profile.delimiter, fn row, row_number ->
-             with {:ok, id} <- fetch_row(row, spec.id_column, path, row_number),
-                  :ok <- :dets.insert(@index_table, {{spec.type, id}, true}),
-                  mapped_row <- Map.put(row, "id", id),
-                  {:ok, quads} <-
-                    Mapping.entity_quads(
-                      spec.type,
-                      mapped_row,
-                      Mapping.graph_iri(profile.suite, :initial)
-                    ),
-                  :ok <- write_quads(io, quads) do
-               {:ok, length(quads)}
-             end
-           end) do
-        {:ok, rows, statements} ->
-          {:cont,
-           {:ok,
-            %{
-              rows: stats.rows + rows,
-              statement_count: stats.statement_count + statements
-            }}}
+  defp convert_entity_file(spec, {:ok, stats}, profile, source_root, io) do
+    path = Path.join(source_root, spec.path)
 
-        {:error, _} = error ->
-          {:halt, error}
-      end
-    end)
+    path
+    |> reduce_rows(profile.delimiter, &map_entity_row(&1, &2, profile, spec, path, io))
+    |> accumulate_file_stats(stats)
+  end
+
+  defp map_entity_row(row, row_number, profile, spec, path, io) do
+    with {:ok, id} <- fetch_row(row, spec.id_column, path, row_number),
+         :ok <- :dets.insert(@index_table, {{spec.type, id}, true}),
+         mapped_row <- Map.put(row, "id", id),
+         {:ok, quads} <-
+           Mapping.entity_quads(
+             spec.type,
+             mapped_row,
+             Mapping.graph_iri(profile.suite, :initial)
+           ),
+         :ok <- write_quads(io, quads) do
+      {:ok, length(quads)}
+    end
   end
 
   defp convert_relationships(profile, source_root, io) do
     Enum.reduce_while(
       profile.relationships,
       {:ok, %{rows: 0, statement_count: 0}},
-      fn spec, {:ok, stats} ->
-        path = Path.join(source_root, spec.path)
-
-        case reduce_rows(path, profile.delimiter, fn row, row_number ->
-               with {:ok, from_id} <- fetch_row(row, spec.from_column, path, row_number),
-                    {:ok, to_id} <- fetch_row(row, spec.to_column, path, row_number),
-                    :ok <- reference_exists(spec.from_type, from_id),
-                    :ok <- reference_exists(spec.to_type, to_id),
-                    properties <- Map.take(row, spec.properties),
-                    {:ok, quads} <-
-                      Mapping.relationship_quads(
-                        spec.type,
-                        spec.from_type,
-                        from_id,
-                        spec.to_type,
-                        to_id,
-                        properties,
-                        Mapping.graph_iri(profile.suite, :initial)
-                      ),
-                    :ok <- write_quads(io, quads) do
-                 {:ok, length(quads)}
-               end
-             end) do
-          {:ok, rows, statements} ->
-            {:cont,
-             {:ok,
-              %{
-                rows: stats.rows + rows,
-                statement_count: stats.statement_count + statements
-              }}}
-
-          {:error, _} = error ->
-            {:halt, error}
-        end
-      end
+      &convert_relationship_file(&1, &2, profile, source_root, io)
     )
   end
+
+  defp convert_relationship_file(spec, {:ok, stats}, profile, source_root, io) do
+    path = Path.join(source_root, spec.path)
+
+    path
+    |> reduce_rows(profile.delimiter, &map_relationship_row(&1, &2, profile, spec, path, io))
+    |> accumulate_file_stats(stats)
+  end
+
+  defp map_relationship_row(row, row_number, profile, spec, path, io) do
+    with {:ok, from_id} <- fetch_row(row, spec.from_column, path, row_number),
+         {:ok, to_id} <- fetch_row(row, spec.to_column, path, row_number),
+         :ok <- reference_exists(spec.from_type, from_id),
+         :ok <- reference_exists(spec.to_type, to_id),
+         properties <- Map.take(row, spec.properties),
+         {:ok, quads} <-
+           Mapping.relationship_quads(
+             spec.type,
+             spec.from_type,
+             from_id,
+             spec.to_type,
+             to_id,
+             properties,
+             Mapping.graph_iri(profile.suite, :initial)
+           ),
+         :ok <- write_quads(io, quads) do
+      {:ok, length(quads)}
+    end
+  end
+
+  defp accumulate_file_stats({:ok, rows, statements}, stats) do
+    {:cont,
+     {:ok,
+      %{
+        rows: stats.rows + rows,
+        statement_count: stats.statement_count + statements
+      }}}
+  end
+
+  defp accumulate_file_stats({:error, _} = error, _stats), do: {:halt, error}
 
   defp convert_updates(profile, source_root, output_dir) do
     Enum.reduce_while(profile.updates, {:ok, []}, fn spec, {:ok, components} ->
@@ -199,23 +205,28 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
           update_record(profile, spec, row, source, row_number)
         end)
 
-      case UpdateStream.write(destination, records) do
-        {:ok, count} ->
-          with {:ok, checksum} <- Artifact.checksum(destination) do
-            component = %{role: spec.role, path: destination, checksum: checksum, count: count}
-            {:cont, {:ok, components ++ [component]}}
-          else
-            {:error, _} = error -> {:halt, error}
-          end
-
-        {:error, _} = error ->
-          {:halt, error}
-      end
+      destination
+      |> UpdateStream.write(records)
+      |> update_component(spec, destination, components)
     end)
   rescue
     error in File.Error -> {:error, {:file_error, error.reason}}
     error in ArgumentError -> {:error, {:invalid_source_row, Exception.message(error)}}
   end
+
+  defp update_component({:ok, count}, spec, destination, components) do
+    case Artifact.checksum(destination) do
+      {:ok, checksum} ->
+        component = %{role: spec.role, path: destination, checksum: checksum, count: count}
+        {:cont, {:ok, components ++ [component]}}
+
+      {:error, _} = error ->
+        {:halt, error}
+    end
+  end
+
+  defp update_component({:error, _} = error, _spec, _destination, _components),
+    do: {:halt, error}
 
   defp update_record(profile, spec, row, source, row_number) do
     with {:ok, sequence_value} <- fetch_row(row, spec.sequence_column, source, row_number),
@@ -291,7 +302,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
 
   defp row_stream(path, delimiter) do
     path
-    |> File.stream!([], :line)
+    |> File.stream!(:line)
     |> Stream.with_index(1)
     |> Stream.transform(nil, fn
       {line, 1}, nil ->
@@ -320,12 +331,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
       encoded
       |> String.split("\n", trim: true)
       |> Enum.sort()
-      |> Enum.reduce_while(:ok, fn line, :ok ->
-        case IO.binwrite(io, line <> "\n") do
-          :ok -> {:cont, :ok}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
+      |> Enum.each(&IO.binwrite(io, &1 <> "\n"))
     end
   end
 
@@ -347,17 +353,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
   defp update_operation("delete"), do: {:ok, :delete}
   defp update_operation(operation), do: {:error, {:unknown_update_operation, operation}}
 
-  defp build_manifest(
-         profile,
-         output_path,
-         scan,
-         entity_stats,
-         relationship_stats,
-         updates,
-         parameters,
-         source_checksum,
-         opts
-       ) do
+  defp build_manifest(profile, data, opts) do
     DatasetManifest.new(%{
       dataset_id: profile.id,
       suite: profile.suite,
@@ -369,17 +365,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
         generator_settings: profile.generator_settings,
         seed: profile.seed,
         format: :csv,
-        checksum: source_checksum,
+        checksum: data.source_checksum,
         license: profile.license
       },
       transformation: %{
         version: @transformation_version,
         mapping_version: Mapping.version(),
-        output_checksum: scan.checksum,
-        statement_count: scan.statement_count,
-        entity_count: entity_stats.rows,
-        relationship_count: relationship_stats.rows,
-        update_streams: Enum.map(updates, & &1.path)
+        output_checksum: data.scan.checksum,
+        statement_count: data.scan.statement_count,
+        entity_count: data.entity_stats.rows,
+        relationship_count: data.relationship_stats.rows,
+        update_streams: Enum.map(data.updates, & &1.role)
       },
       store: %{
         schema: :quad,
@@ -394,11 +390,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
         [
           %{
             role: :initial,
-            path: output_path,
-            checksum: scan.checksum,
-            count: scan.statement_count
+            path: data.output_path,
+            checksum: data.scan.checksum,
+            count: data.scan.statement_count
           }
-        ] ++ updates ++ parameters
+        ] ++ data.updates ++ data.parameters
     })
   end
 

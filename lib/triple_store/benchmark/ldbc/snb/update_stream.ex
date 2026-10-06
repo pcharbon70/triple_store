@@ -44,7 +44,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
   @spec stream(Path.t()) :: Enumerable.t()
   def stream(path) do
     path
-    |> File.stream!([], :line)
+    |> File.stream!(:line)
     |> Stream.map(&decode_line/1)
   end
 
@@ -58,9 +58,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
   defp validate_record(_record, _previous), do: {:error, :invalid_update_record}
 
   defp decode_line(line) do
-    with {:ok, binary} <- Base.decode64(String.trim(line)) do
-      :erlang.binary_to_term(binary, [:safe])
-    else
+    case Base.decode64(String.trim(line)) do
+      {:ok, binary} -> :erlang.binary_to_term(binary, [:safe])
       :error -> {:error, :invalid_update_encoding}
     end
   rescue

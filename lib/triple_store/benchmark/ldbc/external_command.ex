@@ -53,19 +53,23 @@ defmodule TripleStore.Benchmark.LDBC.ExternalCommand do
   defp validate_checkout(directory, commit)
        when is_binary(directory) and is_binary(commit) and byte_size(commit) == 40 do
     if File.dir?(directory) do
-      case System.cmd("git", ["rev-parse", "HEAD"], cd: directory, stderr_to_stdout: true) do
-        {head, 0} ->
-          if String.trim(head) == commit, do: :ok, else: {:error, :source_pin_mismatch}
-
-        {_output, _status} ->
-          {:error, :invalid_source_checkout}
-      end
+      validate_checkout_head(directory, commit)
     else
       {:error, :source_checkout_missing}
     end
   end
 
   defp validate_checkout(_directory, _commit), do: {:error, :immutable_commit_required}
+
+  defp validate_checkout_head(directory, commit) do
+    case System.cmd("git", ["rev-parse", "HEAD"], cd: directory, stderr_to_stdout: true) do
+      {head, 0} -> validate_commit(String.trim(head), commit)
+      {_output, _status} -> {:error, :invalid_source_checkout}
+    end
+  end
+
+  defp validate_commit(commit, commit), do: :ok
+  defp validate_commit(_head, _commit), do: {:error, :source_pin_mismatch}
 
   defp validate_container_digest(image) when is_binary(image) do
     if String.match?(image, ~r/@sha256:[0-9a-f]{64}\z/) do

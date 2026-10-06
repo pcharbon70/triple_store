@@ -2,9 +2,9 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixtureTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Benchmark.LDBC.{StoreFixture, StreamLoader}
   alias TripleStore.Benchmark.LDBC.SNB.Converter
   alias TripleStore.Benchmark.LDBC.SPB.Pipeline
+  alias TripleStore.Benchmark.LDBC.{StoreFixture, StreamLoader}
 
   test "SPB loads through all quad indices, reopens, reports metrics, and locks its path", %{
     test: test
@@ -94,6 +94,28 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixtureTest do
     assert {:ok, verification} = StreamLoader.verify(fixture.store, 7)
     assert verification.schema == :quad
     assert :ok = StoreFixture.teardown(fixture, delete: true)
+  end
+
+  test "a stale fixture path is rejected without deleting its existing data", %{test: test} do
+    root = temp_root(test)
+    dataset = Path.join(root, "dataset")
+    fixture_root = Path.join(root, "fixture")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, manifest} = Pipeline.generate_smoke(dataset)
+    store = Path.join([fixture_root, "stores", manifest.store.path_identity])
+    pristine = Path.join([fixture_root, "pristine", manifest.store.path_identity])
+    File.mkdir_p!(store)
+    File.mkdir_p!(pristine)
+    File.write!(Path.join(store, "sentinel"), "store")
+    File.write!(Path.join(pristine, "sentinel"), "pristine")
+
+    assert {:error, :store_already_exists} = StoreFixture.setup(fixture_root, manifest)
+    assert File.read!(Path.join(store, "sentinel")) == "store"
+    assert File.read!(Path.join(pristine, "sentinel")) == "pristine"
+
+    lock = Path.join([fixture_root, "locks", manifest.store.path_identity <> ".lock"])
+    refute File.exists?(lock)
   end
 
   defp count_index(db, index) do

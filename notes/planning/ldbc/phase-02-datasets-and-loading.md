@@ -157,11 +157,11 @@ manifests, loading, reopen behavior, and reset behavior compose end to end.
 
 Description: Validate SPB generation and load behavior using the offline smoke fixture.
 
-- [ ] 2.5.1.1 Regenerate or validate the smoke dataset from pinned SPB inputs.
-- [ ] 2.5.1.2 Verify RDF terms, contexts, ontologies, counts, and checksums survive
+- [x] 2.5.1.1 Regenerate or validate the smoke dataset from pinned SPB inputs.
+- [x] 2.5.1.2 Verify RDF terms, contexts, ontologies, counts, and checksums survive
   load and reopen.
-- [ ] 2.5.1.3 Verify generated substitution parameters refer to terms present in the store.
-- [ ] 2.5.1.4 Verify malformed RDF, missing ontology inputs, and mismatched manifests
+- [x] 2.5.1.3 Verify generated substitution parameters refer to terms present in the store.
+- [x] 2.5.1.4 Verify malformed RDF, missing ontology inputs, and mismatched manifests
   fail before store promotion.
 
 ### Task 2.5.2: Exercise both SNB data pipelines
@@ -169,13 +169,13 @@ Description: Validate SPB generation and load behavior using the offline smoke f
 Description: Validate the shared RDF mapping against distinct BI and Interactive
 dataset layouts and update inputs.
 
-- [ ] 2.5.2.1 Convert and load smoke-scale BI and Interactive source files.
-- [ ] 2.5.2.2 Compare mapped RDF entity, relationship, datatype, and statement counts
+- [x] 2.5.2.1 Convert and load smoke-scale BI and Interactive source files.
+- [x] 2.5.2.2 Compare mapped RDF entity, relationship, datatype, and statement counts
   with source counts.
-- [ ] 2.5.2.3 Verify representative parameter files bind to existing mapped values.
-- [ ] 2.5.2.4 Apply representative BI batches and Interactive update events, restore
+- [x] 2.5.2.3 Verify representative parameter files bind to existing mapped values.
+- [x] 2.5.2.4 Apply representative BI batches and Interactive update events, restore
   pristine state, and confirm exact pre-run answers return.
-- [ ] 2.5.2.5 Run repeated load, reopen, reset, and teardown cycles and assert no
+- [x] 2.5.2.5 Run repeated load, reopen, reset, and teardown cycles and assert no
   leaked processes, iterators, snapshots, or filesystem locks.
 
 ### Task 2.5.3: Pass the Phase 2 reproducibility gate
@@ -183,10 +183,10 @@ dataset layouts and update inputs.
 Description: Establish that identical inputs produce identical benchmark-ready
 stores and that different profiles cannot be confused.
 
-- [ ] 2.5.3.1 Build each smoke fixture twice and compare manifests and RDF checksums.
-- [ ] 2.5.3.2 Verify BI and Interactive manifests cannot be interchanged despite
+- [x] 2.5.3.1 Build each smoke fixture twice and compare manifests and RDF checksums.
+- [x] 2.5.3.2 Verify BI and Interactive manifests cannot be interchanged despite
   sharing the SNB ontology mapping.
-- [ ] 2.5.3.3 Run formatting, strict compilation, focused loader tests, and the new
+- [x] 2.5.3.3 Run formatting, strict compilation, focused loader tests, and the new
   LDBC data-pipeline integration tests.
-- [ ] 2.5.3.4 Record external generators not executed in CI, their last verified
+- [x] 2.5.3.4 Record external generators not executed in CI, their last verified
   pins, and the exact reproduction commands in the phase pull request.
