@@ -88,26 +88,26 @@ suite-specific rules.
 Description: Execute reads and writes with complete error accounting and prevent
 invalid samples from entering performance calculations.
 
-- [ ] 3.3.1.1 Separate setup, parse, plan, execute, materialize, validation, and
+- [x] 3.3.1.1 Separate setup, parse, plan, execute, materialize, validation, and
   teardown timings where the API exposes those boundaries.
-- [ ] 3.3.1.2 Apply per-operation and per-phase timeouts, including lazy stream consumption.
-- [ ] 3.3.1.3 Mark an operation successful only after its complete result has been
+- [x] 3.3.1.2 Apply per-operation and per-phase timeouts, including lazy stream consumption.
+- [x] 3.3.1.3 Mark an operation successful only after its complete result has been
   materialized or its update effect has been validated as required.
-- [ ] 3.3.1.4 Exclude errors, timeouts, cancellations, and incorrect answers from
+- [x] 3.3.1.4 Exclude errors, timeouts, cancellations, and incorrect answers from
   latency samples and invalidate any enclosing official-style score.
-- [ ] 3.3.1.5 Preserve warmup samples separately and prevent them from entering measured output.
+- [x] 3.3.1.5 Preserve warmup samples separately and prevent them from entering measured output.
 
 ### Task 3.3.2: Capture reproducible environment and engine state
 
 Description: Record enough runtime state to explain and reproduce benchmark differences.
 
-- [ ] 3.3.2.1 Capture git SHA, dirty state, Elixir, OTP, Rust, RocksDB, dependency,
+- [x] 3.3.2.1 Capture git SHA, dirty state, Elixir, OTP, Rust, RocksDB, dependency,
   OS, kernel, CPU, memory, filesystem, and storage-device metadata.
-- [ ] 3.3.2.2 Capture TripleStore schema, configuration, cache settings, statistics
+- [x] 3.3.2.2 Capture TripleStore schema, configuration, cache settings, statistics
   state, reasoning profile, timeout limits, and benchmark adapter version.
-- [ ] 3.3.2.3 Capture driver process configuration, concurrency, scheduling, warmup,
+- [x] 3.3.2.3 Capture driver process configuration, concurrency, scheduling, warmup,
   duration, random seeds, and scale factor.
-- [ ] 3.3.2.4 Capture CPU, memory high-water mark, disk use, I/O counters, completion
+- [x] 3.3.2.4 Capture CPU, memory high-water mark, disk use, I/O counters, completion
   rate, and per-operation latency distributions where available.
 
 ## Section 3.4: Correctness Baselines and Artifact Schemas
