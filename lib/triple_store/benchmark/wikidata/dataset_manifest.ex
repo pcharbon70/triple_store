@@ -13,6 +13,7 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
 
   alias TripleStore.Benchmark.Wikidata.Contract
+  alias TripleStore.Benchmark.Artifact
 
   @enforce_keys [
     :dataset_id,
@@ -185,20 +186,7 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec statement_count(Path.t()) :: {:ok, non_neg_integer()} | {:error, term()}
   def statement_count(path) when is_binary(path) do
-    with {:ok, file} <- File.open(path, [:read]) do
-      count =
-        try do
-          file
-          |> IO.stream(:line)
-          |> Enum.reduce(0, fn line, acc ->
-            if statement_line?(line), do: acc + 1, else: acc
-          end)
-        after
-          File.close(file)
-        end
-
-      {:ok, count}
-    end
+    Artifact.statement_count(path)
   end
 
   @doc """
@@ -206,22 +194,7 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec checksum(Path.t()) :: {:ok, String.t()} | {:error, term()}
   def checksum(path) when is_binary(path) do
-    with {:ok, file} <- File.open(path, [:read]) do
-      digest =
-        try do
-          file
-          |> IO.binstream(2048)
-          |> Enum.reduce(:crypto.hash_init(:sha256), fn chunk, acc ->
-            :crypto.hash_update(acc, chunk)
-          end)
-          |> :crypto.hash_final()
-          |> Base.encode16(case: :lower)
-        after
-          File.close(file)
-        end
-
-      {:ok, "sha256:#{digest}"}
-    end
+    Artifact.checksum(path)
   end
 
   @doc """
@@ -229,14 +202,7 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec infer_format(Path.t()) :: {:ok, atom()} | {:error, :unknown_format}
   def infer_format(path) when is_binary(path) do
-    case Path.extname(path) do
-      ".nt" -> {:ok, :ntriples}
-      ".nq" -> {:ok, :nquads}
-      ".ttl" -> {:ok, :turtle}
-      ".trig" -> {:ok, :trig}
-      ".rdf" -> {:ok, :rdfxml}
-      _ -> {:error, :unknown_format}
-    end
+    Artifact.infer_rdf_format(path)
   end
 
   @doc """
@@ -244,8 +210,7 @@ defmodule TripleStore.Benchmark.Wikidata.DatasetManifest do
   """
   @spec statement_line?(String.t()) :: boolean()
   def statement_line?(line) when is_binary(line) do
-    trimmed = String.trim(line)
-    trimmed != "" and not String.starts_with?(trimmed, "#")
+    Artifact.statement_line?(line)
   end
 
   defp ensure_source_exists(source_path) do

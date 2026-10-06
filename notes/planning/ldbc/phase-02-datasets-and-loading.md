@@ -20,15 +20,15 @@ generated outputs, transformations, and local cache state.
 Description: Define the machine-readable record that connects an upstream source
 to the exact RDF fixture and store image used in a benchmark run.
 
-- [ ] 2.1.1.1 Record suite, profile, scale factor, generator pin, generator settings,
+- [x] 2.1.1.1 Record suite, profile, scale factor, generator pin, generator settings,
   seed, source format, source checksum, and license metadata.
-- [ ] 2.1.1.2 Record transformation version, RDF mapping version, output checksum,
+- [x] 2.1.1.2 Record transformation version, RDF mapping version, output checksum,
   triple count, entity and relationship counts, and expected update-stream files.
-- [ ] 2.1.1.3 Record storage schema, loader settings, store path identity, and
+- [x] 2.1.1.3 Record storage schema, loader settings, store path identity, and
   post-load store statistics separately from source metadata.
-- [ ] 2.1.1.4 Version the manifest schema and provide explicit errors for newer or
+- [x] 2.1.1.4 Version the manifest schema and provide explicit errors for newer or
   incompatible versions.
-- [ ] 2.1.1.5 Reuse suite-neutral provenance primitives from the Wikidata benchmark
+- [x] 2.1.1.5 Reuse suite-neutral provenance primitives from the Wikidata benchmark
   only after removing Wikidata-specific assumptions.
 
 ### Task 2.1.2: Implement acquisition and cache controls
@@ -36,12 +36,12 @@ to the exact RDF fixture and store image used in a benchmark run.
 Description: Provide deterministic local handling of generated and downloaded
 artifacts without committing large benchmark datasets to Git.
 
-- [ ] 2.1.2.1 Implement checksum-verified registration of pre-generated official datasets.
-- [ ] 2.1.2.2 Implement generator invocation from pinned source or a pinned container image.
-- [ ] 2.1.2.3 Use resumable acquisition for large external datasets and atomic promotion
+- [x] 2.1.2.1 Implement checksum-verified registration of pre-generated official datasets.
+- [x] 2.1.2.2 Implement generator invocation from pinned source or a pinned container image.
+- [x] 2.1.2.3 Use resumable acquisition for large external datasets and atomic promotion
   from partial downloads into the artifact cache.
-- [ ] 2.1.2.4 Reject stale, partial, mismatched, or unmanifested cached artifacts.
-- [ ] 2.1.2.5 Keep network acquisition out of tests and require explicit user commands
+- [x] 2.1.2.4 Reject stale, partial, mismatched, or unmanifested cached artifacts.
+- [x] 2.1.2.5 Keep network acquisition out of tests and require explicit user commands
   for large downloads or generation jobs.
 
 ## Section 2.2: SPB RDF Dataset Pipeline
