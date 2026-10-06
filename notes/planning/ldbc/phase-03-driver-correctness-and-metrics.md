@@ -19,13 +19,13 @@ suite-specific semantics such as result ordering, update dependencies, or scorin
 Description: Represent canonical reads, writes, batches, validation actions, and
 resilience actions as immutable definitions connected to the Phase 1 catalogs.
 
-- [ ] 3.1.1.1 Define operation identity, suite profile, upstream ID, kind, parameter
+- [x] 3.1.1.1 Define operation identity, suite profile, upstream ID, kind, parameter
   schema, result schema, ordering, limit, timeout class, and tags.
-- [ ] 3.1.1.2 Support SPARQL text, native benchmark extensions, update batches, and
+- [x] 3.1.1.2 Support SPARQL text, native benchmark extensions, update batches, and
   driver callbacks as explicit execution strategies.
-- [ ] 3.1.1.3 Record the exact source artifact and transformation version for every
+- [x] 3.1.1.3 Record the exact source artifact and transformation version for every
   translated operation.
-- [ ] 3.1.1.4 Reject duplicate IDs, unknown parameters, missing result columns, and
+- [x] 3.1.1.4 Reject duplicate IDs, unknown parameters, missing result columns, and
   unclassified execution strategies during catalog loading.
 
 ### Task 3.1.2: Implement typed parameter and result codecs
@@ -33,13 +33,13 @@ resilience actions as immutable definitions connected to the Phase 1 catalogs.
 Description: Preserve benchmark datatypes and ordering across Java driver frames,
 Elixir execution, RDF conversion, and correctness artifacts.
 
-- [ ] 3.1.2.1 Define codecs for IDs, signed integer widths, floating values, dates,
+- [x] 3.1.2.1 Define codecs for IDs, signed integer widths, floating values, dates,
   timestamps, booleans, strings, lists, optional values, and RDF terms.
-- [ ] 3.1.2.2 Keep parameter substitution separate from raw query text and prevent
+- [x] 3.1.2.2 Keep parameter substitution separate from raw query text and prevent
   injection through string interpolation.
-- [ ] 3.1.2.3 Define canonical result rows with explicit column order and type metadata.
-- [ ] 3.1.2.4 Apply canonical sorting only when the benchmark result contract permits it.
-- [ ] 3.1.2.5 Detect overflow, precision loss, timezone drift, invalid UTF-8, and
+- [x] 3.1.2.3 Define canonical result rows with explicit column order and type metadata.
+- [x] 3.1.2.4 Apply canonical sorting only when the benchmark result contract permits it.
+- [x] 3.1.2.5 Detect overflow, precision loss, timezone drift, invalid UTF-8, and
   unbound-versus-null mismatches as correctness failures.
 
 ## Section 3.2: Benchmark-Only Driver Bridge and Lifecycle
