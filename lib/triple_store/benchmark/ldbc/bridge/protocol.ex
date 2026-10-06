@@ -16,9 +16,18 @@ defmodule TripleStore.Benchmark.LDBC.Bridge.Protocol do
   @doc "Encodes a frame with a four-byte unsigned network-order length prefix."
   @spec encode(map(), pos_integer()) :: {:ok, binary()} | {:error, term()}
   def encode(frame, max_bytes) when is_map(frame) and is_integer(max_bytes) and max_bytes > 0 do
-    with {:ok, payload} <- Jason.encode(frame),
+    with {:ok, payload} <- encode_payload(frame, max_bytes),
          :ok <- ensure_size(byte_size(payload), max_bytes) do
       {:ok, <<byte_size(payload)::unsigned-big-32, payload::binary>>}
+    end
+  end
+
+  @doc "Encodes one JSON payload for an Erlang Port configured with `{:packet, 4}`."
+  @spec encode_payload(map(), pos_integer()) :: {:ok, binary()} | {:error, term()}
+  def encode_payload(frame, max_bytes) when is_map(frame) do
+    with {:ok, payload} <- Jason.encode(frame),
+         :ok <- ensure_size(byte_size(payload), max_bytes) do
+      {:ok, payload}
     end
   end
 
@@ -38,6 +47,19 @@ defmodule TripleStore.Benchmark.LDBC.Bridge.Protocol do
   end
 
   def decode(_frame, _max_bytes), do: {:error, :malformed_frame}
+
+  @doc "Decodes one JSON payload supplied by an Erlang Port packet driver."
+  @spec decode_payload(binary(), pos_integer()) :: {:ok, map()} | {:error, term()}
+  def decode_payload(payload, max_bytes) when is_binary(payload) do
+    with :ok <- ensure_size(byte_size(payload), max_bytes),
+         {:ok, frame} when is_map(frame) <- Jason.decode(payload),
+         :ok <- validate(frame) do
+      {:ok, frame}
+    else
+      {:ok, _other} -> {:error, :frame_must_be_an_object}
+      {:error, _reason} = error -> error
+    end
+  end
 
   @doc "Validates the common request envelope."
   @spec validate(map()) :: :ok | {:error, term()}

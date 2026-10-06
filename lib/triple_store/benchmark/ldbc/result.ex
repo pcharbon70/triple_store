@@ -63,17 +63,15 @@ defmodule TripleStore.Benchmark.LDBC.Result do
   defp decode_row(row, schema) when is_map(row) do
     expected = MapSet.new(Enum.map(schema, & &1.name))
     actual = MapSet.new(Map.keys(row))
+    missing = MapSet.difference(expected, actual)
+    unexpected = MapSet.difference(actual, expected)
 
     cond do
-      MapSet.difference(expected, actual) != MapSet.new() ->
-        {:error,
-         {:missing_columns,
-          MapSet.difference(expected, actual) |> MapSet.to_list() |> Enum.sort()}}
+      MapSet.size(missing) > 0 ->
+        {:error, {:missing_columns, missing |> MapSet.to_list() |> Enum.sort()}}
 
-      MapSet.difference(actual, expected) != MapSet.new() ->
-        {:error,
-         {:unexpected_columns,
-          MapSet.difference(actual, expected) |> MapSet.to_list() |> Enum.sort()}}
+      MapSet.size(unexpected) > 0 ->
+        {:error, {:unexpected_columns, unexpected |> MapSet.to_list() |> Enum.sort()}}
 
       true ->
         schema

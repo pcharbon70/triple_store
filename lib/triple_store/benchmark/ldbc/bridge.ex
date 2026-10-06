@@ -137,9 +137,8 @@ defmodule TripleStore.Benchmark.LDBC.Bridge do
   defp validate_request(frame, state) when is_map(frame) do
     with :ok <- Protocol.validate(frame),
          :ok <- unique_id(frame, state),
-         :ok <- parameter_limit(frame, state.limits.parameter_bytes),
-         :ok <- operation_limit(frame, state.limits.operations) do
-      :ok
+         :ok <- parameter_limit(frame, state.limits.parameter_bytes) do
+      operation_limit(frame, state.limits.operations)
     end
   end
 

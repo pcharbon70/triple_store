@@ -44,19 +44,23 @@ defmodule TripleStore.Benchmark.LDBC.Execution do
 
   defp run_phases(operation, opts, timeout) do
     Enum.reduce_while(@phases, {{:ok, nil}, %{}}, fn phase, {{:ok, value}, timings} ->
-      fun = phase_fun(phase, opts)
-      phase_timeout = Keyword.get(opts, :phase_timeouts, %{}) |> Map.get(phase, timeout)
-
-      case timed_timeout(fn -> invoke(fun, value) end, phase_timeout) do
-        {{:ok, next}, duration} ->
-          {:cont, {{:ok, next}, Map.put(timings, phase, duration)}}
-
-        {{:error, reason}, duration} ->
-          error = {:error, %{class: error_class(phase, reason), phase: phase, reason: reason}}
-          {:halt, {error, Map.put(timings, phase, duration)}}
-      end
+      run_phase(phase, value, timings, opts, timeout)
     end)
     |> ensure_validation(operation)
+  end
+
+  defp run_phase(phase, value, timings, opts, timeout) do
+    fun = phase_fun(phase, opts)
+    phase_timeout = Keyword.get(opts, :phase_timeouts, %{}) |> Map.get(phase, timeout)
+
+    case timed_timeout(fn -> invoke(fun, value) end, phase_timeout) do
+      {{:ok, next}, duration} ->
+        {:cont, {{:ok, next}, Map.put(timings, phase, duration)}}
+
+      {{:error, reason}, duration} ->
+        error = {:error, %{class: error_class(phase, reason), phase: phase, reason: reason}}
+        {:halt, {error, Map.put(timings, phase, duration)}}
+    end
   end
 
   defp phase_fun(phase, opts) do

@@ -67,23 +67,7 @@ defmodule TripleStore.Benchmark.LDBC.Codec do
     unknown = MapSet.difference(supplied, expected) |> MapSet.to_list() |> Enum.sort()
 
     if unknown == [] do
-      Enum.reduce_while(schema, {:ok, %{}}, fn field, {:ok, decoded} ->
-        required? = Map.get(field, :required, true)
-
-        case Map.fetch(parameters, field.name) do
-          {:ok, value} ->
-            case decode(field.type, value) do
-              {:ok, canonical} -> {:cont, {:ok, Map.put(decoded, field.name, canonical)}}
-              {:error, reason} -> {:halt, {:error, {:invalid_parameter, field.name, reason}}}
-            end
-
-          :error when required? ->
-            {:halt, {:error, {:missing_parameter, field.name}}}
-
-          :error ->
-            {:cont, {:ok, Map.put(decoded, field.name, :unbound)}}
-        end
-      end)
+      decode_schema(schema, parameters)
     else
       {:error, {:unknown_parameters, unknown}}
     end
@@ -123,7 +107,38 @@ defmodule TripleStore.Benchmark.LDBC.Codec do
 
   defp decode_float(_value, _width), do: {:error, :type_mismatch}
 
-  defp finite?(value), do: value == value and abs(value) <= 1.7976931348623157e308
+  defp finite?(value) do
+    <<_sign::1, exponent::11, _fraction::52>> = <<value::float-64>>
+    exponent != 0x7FF
+  end
+
+  defp decode_schema(schema, parameters) do
+    Enum.reduce_while(schema, {:ok, %{}}, fn field, {:ok, decoded} ->
+      case decode_parameter(field, parameters) do
+        {:ok, canonical} -> {:cont, {:ok, Map.put(decoded, field.name, canonical)}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp decode_parameter(field, parameters) do
+    case Map.fetch(parameters, field.name) do
+      {:ok, value} -> decode_parameter_value(field, value)
+      :error -> missing_parameter(field)
+    end
+  end
+
+  defp decode_parameter_value(field, value) do
+    case decode(field.type, value) do
+      {:ok, canonical} -> {:ok, canonical}
+      {:error, reason} -> {:error, {:invalid_parameter, field.name, reason}}
+    end
+  end
+
+  defp missing_parameter(%{required: false}), do: {:ok, :unbound}
+
+  defp missing_parameter(%{name: name}) when is_binary(name),
+    do: {:error, {:missing_parameter, name}}
 
   defp traverse(values, fun) do
     Enum.reduce_while(values, {:ok, []}, fn value, {:ok, acc} ->

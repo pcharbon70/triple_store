@@ -154,35 +154,35 @@ suite depends on it for performance claims.
 Description: Drive representative read, write, reset, cancellation, and failure
 operations through the real external-process boundary and embedded store.
 
-- [ ] 3.5.1.1 Execute one representative operation from each suite through the bridge.
-- [ ] 3.5.1.2 Verify concurrent request correlation and deterministic ordered responses
+- [x] 3.5.1.1 Execute one representative operation from each suite through the bridge.
+- [x] 3.5.1.2 Verify concurrent request correlation and deterministic ordered responses
   where the upstream driver requires them.
-- [ ] 3.5.1.3 Verify cancellation and timeout close streams, iterators, snapshots,
+- [x] 3.5.1.3 Verify cancellation and timeout close streams, iterators, snapshots,
   tasks, ports, and store processes.
-- [ ] 3.5.1.4 Verify driver crash, BEAM crash simulation, malformed frames, and early
+- [x] 3.5.1.4 Verify driver crash, BEAM crash simulation, malformed frames, and early
   disconnect leave the fixture recoverable.
 
 ### Task 3.5.2: Exercise correctness and artifact gating
 
 Description: Prove that only complete and correct runs can produce comparable scores.
 
-- [ ] 3.5.2.1 Compare representative ordered, unordered, duplicate-bearing, empty,
+- [x] 3.5.2.1 Compare representative ordered, unordered, duplicate-bearing, empty,
   numeric, and timestamp results with known answers.
-- [ ] 3.5.2.2 Inject parse, execution, timeout, and wrong-answer failures and verify
+- [x] 3.5.2.2 Inject parse, execution, timeout, and wrong-answer failures and verify
   no invalid sample contributes to a score.
-- [ ] 3.5.2.3 Verify JSON, CSV, and Markdown artifacts agree on operation counts,
+- [x] 3.5.2.3 Verify JSON, CSV, and Markdown artifacts agree on operation counts,
   timing samples, errors, correctness, and environment metadata.
-- [ ] 3.5.2.4 Verify baseline acceptance requires an explicit command and leaves an
+- [x] 3.5.2.4 Verify baseline acceptance requires an explicit command and leaves an
   auditable change.
 
 ### Task 3.5.3: Pass the Phase 3 common-runner gate
 
 Description: Establish a clean shared foundation for the three suite implementations.
 
-- [ ] 3.5.3.1 Run strict compilation, formatting, focused resource-lifetime tests,
+- [x] 3.5.3.1 Run strict compilation, formatting, focused resource-lifetime tests,
   bridge protocol tests, and artifact schema tests.
-- [ ] 3.5.3.2 Run repeated smoke lifecycles under concurrency and verify stable store
+- [x] 3.5.3.2 Run repeated smoke lifecycles under concurrency and verify stable store
   checksums after reset.
-- [ ] 3.5.3.3 Confirm the legacy generic runner is not used for LDBC score generation.
-- [ ] 3.5.3.4 Record test commands, counts, excluded large profiles, and remaining
+- [x] 3.5.3.3 Confirm the legacy generic runner is not used for LDBC score generation.
+- [x] 3.5.3.4 Record test commands, counts, excluded large profiles, and remaining
   engine-capability blockers in the phase pull request.
