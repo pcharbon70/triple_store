@@ -37,3 +37,22 @@ Large datasets, generator checkouts, store images, and partial downloads belong
 in an external cache and must not be committed. Small license-compatible smoke
 inputs and their expected provenance may be committed under
 `priv/benchmarks/ldbc/`.
+
+## SPB pipeline
+
+`TripleStore.Benchmark.LDBC.SPB.Pipeline` registers the reference datasets,
+ontologies, rule configuration, generator definitions, graph identities,
+editorial inputs, and optional text and geospatial inputs from the pinned SPB
+2.0.2 source. The deterministic smoke generator emits the same N-Quads boundary
+used by external runs.
+
+SPB normalization validates one N-Quads statement at a time and copies accepted
+bytes unchanged. It does not rewrite IRIs, blank nodes, language tags,
+datatypes, graph names, or statement direction. A malformed line aborts with
+its line number. Substitution parameters are generated only after the complete
+dataset passes syntax validation and are bound to its output checksum.
+
+For external generation, `SPB.Pipeline.external_generator_spec/3` creates a
+properties file containing the explicit dataset size, seed, N-Quads syntax,
+output path, and parameter count. `run_external/3` additionally verifies that
+the checkout is at the pinned commit and requires `allow_external: true`.

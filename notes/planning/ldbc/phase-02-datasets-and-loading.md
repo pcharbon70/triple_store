@@ -54,12 +54,12 @@ creative-work generation, and update inputs using the pinned SPB driver and gene
 Description: Register every input needed to recreate the SPB dataset and query
 parameter population.
 
-- [ ] 2.2.1.1 Register the pinned reference datasets, ontologies, rule configuration,
+- [x] 2.2.1.1 Register the pinned reference datasets, ontologies, rule configuration,
   generator definitions, and scale settings.
-- [ ] 2.2.1.2 Preserve graph or context identity when the SPB source distinguishes contexts.
-- [ ] 2.2.1.3 Record optional text and geospatial source inputs separately from the
+- [x] 2.2.1.2 Preserve graph or context identity when the SPB source distinguishes contexts.
+- [x] 2.2.1.3 Record optional text and geospatial source inputs separately from the
   core RDF profile.
-- [ ] 2.2.1.4 Add a minimal smoke fixture derived through the same generator path as
+- [x] 2.2.1.4 Add a minimal smoke fixture derived through the same generator path as
   larger SPB datasets.
 
 ### Task 2.2.2: Generate and normalize SPB datasets
@@ -67,14 +67,14 @@ parameter population.
 Description: Run the upstream generator reproducibly and normalize only the
 transport details needed by TripleStore's RDF loader.
 
-- [ ] 2.2.2.1 Invoke the pinned SPB generator with explicit scale, seed, and output paths.
-- [ ] 2.2.2.2 Stream-validate RDF syntax and count statements without materializing
+- [x] 2.2.2.1 Invoke the pinned SPB generator with explicit scale, seed, and output paths.
+- [x] 2.2.2.2 Stream-validate RDF syntax and count statements without materializing
   the complete dataset in BEAM memory.
-- [ ] 2.2.2.3 Preserve IRIs, blank nodes, language tags, datatypes, named graphs,
+- [x] 2.2.2.3 Preserve IRIs, blank nodes, language tags, datatypes, named graphs,
   and statement direction byte-for-byte where format permits.
-- [ ] 2.2.2.4 Generate query substitution parameters only after the corresponding
+- [x] 2.2.2.4 Generate query substitution parameters only after the corresponding
   dataset has passed validation.
-- [ ] 2.2.2.5 Record normalization steps and reject silent repairs of malformed RDF.
+- [x] 2.2.2.5 Record normalization steps and reject silent repairs of malformed RDF.
 
 ## Section 2.3: SNB-to-RDF Mapping and Generation
 
