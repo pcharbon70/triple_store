@@ -36,6 +36,7 @@ Normative language in this directory uses RFC-2119 terms: **MUST**, **MUST NOT**
 ## ADRs
 
 - [adr/ADR-0001-control-plane-authority.md](adr/ADR-0001-control-plane-authority.md)
+- [adr/ADR-0002-ldbc-benchmark-boundary.md](adr/ADR-0002-ldbc-benchmark-boundary.md)
 
 ## Conformance
 
