@@ -86,17 +86,17 @@ used by both SNB suites while retaining each suite's distinct data and update fi
 Description: Map the SNB property-graph schema into stable RDF terms with explicit
 rules for identity, labels, properties, relationships, datatypes, and ordering.
 
-- [ ] 2.3.1.1 Define stable IRIs for every entity type and ID without depending on
+- [x] 2.3.1.1 Define stable IRIs for every entity type and ID without depending on
   load order or dictionary IDs.
-- [ ] 2.3.1.2 Define RDF classes and predicates for entity labels, scalar properties,
+- [x] 2.3.1.2 Define RDF classes and predicates for entity labels, scalar properties,
   and relationship types.
-- [ ] 2.3.1.3 Define exact mappings for dates, timestamps, integers, strings, arrays,
+- [x] 2.3.1.3 Define exact mappings for dates, timestamps, integers, strings, arrays,
   country and language values, and optional properties.
-- [ ] 2.3.1.4 Define relationship-property representation where an SNB edge carries
+- [x] 2.3.1.4 Define relationship-property representation where an SNB edge carries
   data not representable as a single RDF triple.
-- [ ] 2.3.1.5 Define message, place, organisation, and other subtype handling without
+- [x] 2.3.1.5 Define message, place, organisation, and other subtype handling without
   changing canonical operation semantics.
-- [ ] 2.3.1.6 Define whether benchmark data uses the triple schema or a documented
+- [x] 2.3.1.6 Define whether benchmark data uses the triple schema or a documented
   quad partitioning; prohibit switching mappings between runs.
 
 ### Task 2.3.2: Integrate SNB data generation and conversion
@@ -104,16 +104,16 @@ rules for identity, labels, properties, relationships, datatypes, and ordering.
 Description: Produce BI and Interactive RDF datasets from the pinned Datagen
 outputs while preserving their required initial data, parameters, and update streams.
 
-- [ ] 2.3.2.1 Invoke pinned SNB Datagen profiles for BI and Interactive with exact
+- [x] 2.3.2.1 Invoke pinned SNB Datagen profiles for BI and Interactive with exact
   scale-factor and serializer settings.
-- [ ] 2.3.2.2 Convert CSV or Parquet entity files to RDF as bounded streams.
-- [ ] 2.3.2.3 Convert relationship files and relationship properties using the
+- [x] 2.3.2.2 Convert CSV or Parquet entity files to RDF as bounded streams.
+- [x] 2.3.2.3 Convert relationship files and relationship properties using the
   approved mapping.
-- [ ] 2.3.2.4 Preserve the BI initial/update-batch split and the Interactive
+- [x] 2.3.2.4 Preserve the BI initial/update-batch split and the Interactive
   initial/update-stream split as separate manifest components.
-- [ ] 2.3.2.5 Integrate official parameter generators and bind their output to the
+- [x] 2.3.2.5 Integrate official parameter generators and bind their output to the
   dataset manifest checksum and scale factor.
-- [ ] 2.3.2.6 Validate source row counts, mapped statement counts, referential
+- [x] 2.3.2.6 Validate source row counts, mapped statement counts, referential
   integrity, update ordering, and deterministic output checksums.
 
 ## Section 2.4: TripleStore Load and Store-Fixture Lifecycle

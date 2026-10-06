@@ -1,0 +1,2 @@
+sequence|operation|id|firstName|lastName|gender|birthday|creationDate|locationIP|browserUsed|languages|email
+1|insert|3|Carol|Clark|female|1990-01-03|1262304010000|192.0.2.3|Firefox|en;de|carol@example.test

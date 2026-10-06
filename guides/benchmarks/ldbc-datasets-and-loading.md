@@ -56,3 +56,12 @@ For external generation, `SPB.Pipeline.external_generator_spec/3` creates a
 properties file containing the explicit dataset size, seed, N-Quads syntax,
 output path, and parameter count. `run_external/3` additionally verifies that
 the checkout is at the pinned commit and requires `allow_external: true`.
+
+## SNB pipeline
+
+The [canonical SNB RDF mapping](ldbc-snb-rdf-mapping.md) is shared by BI and
+Interactive. `SNB.Converter` streams the suites' distinct CSV layouts into
+N-Quads, validates relationship endpoints with a disk-backed index, preserves
+relationship properties, and emits separate initial, parameter, and ordered
+update components. Every component is checksum-addressed in its dataset
+manifest.
