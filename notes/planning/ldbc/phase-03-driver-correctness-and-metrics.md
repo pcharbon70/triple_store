@@ -52,30 +52,30 @@ keeping network or process integration out of the product's public embedded API.
 Description: Build the Phase 1-selected local transport with bounded frames,
 request correlation, cancellation, health checks, and deterministic shutdown.
 
-- [ ] 3.2.1.1 Implement handshake negotiation for protocol version, suite profile,
+- [x] 3.2.1.1 Implement handshake negotiation for protocol version, suite profile,
   dataset manifest, and operation catalog checksum.
-- [ ] 3.2.1.2 Implement typed execute, batch, reset, checkpoint, health, cancel, and
+- [x] 3.2.1.2 Implement typed execute, batch, reset, checkpoint, health, cancel, and
   shutdown frames.
-- [ ] 3.2.1.3 Enforce frame-size, operation-count, parameter-size, concurrency, and
+- [x] 3.2.1.3 Enforce frame-size, operation-count, parameter-size, concurrency, and
   timeout limits.
-- [ ] 3.2.1.4 Return structured parse, validation, execution, timeout, cancellation,
+- [x] 3.2.1.4 Return structured parse, validation, execution, timeout, cancellation,
   storage, reasoning, and bridge errors.
-- [ ] 3.2.1.5 Prevent bridge startup under normal application supervision or release use.
+- [x] 3.2.1.5 Prevent bridge startup under normal application supervision or release use.
 
 ### Task 3.2.2: Implement store and service ownership
 
 Description: Make one component responsible for every resource used by a benchmark
 run so reset and teardown do not rely on garbage collection.
 
-- [ ] 3.2.2.1 Open the selected store schema and own its dictionary manager and
+- [x] 3.2.2.1 Open the selected store schema and own its dictionary manager and
   store transaction coordinator.
-- [ ] 3.2.2.2 Start optional statistics, result-cache, metrics, and reasoning helpers
+- [x] 3.2.2.2 Start optional statistics, result-cache, metrics, and reasoning helpers
   only when the selected profile declares them.
-- [ ] 3.2.2.3 Route stateful benchmark reads and writes through the coordination path
+- [x] 3.2.2.3 Route stateful benchmark reads and writes through the coordination path
   approved in Phase 1.
-- [ ] 3.2.2.4 Release lazy result streams, iterators, snapshots, tasks, ports, and
+- [x] 3.2.2.4 Release lazy result streams, iterators, snapshots, tasks, ports, and
   external driver processes on every exit.
-- [ ] 3.2.2.5 Emit a final resource-accounting record before store teardown.
+- [x] 3.2.2.5 Emit a final resource-accounting record before store teardown.
 
 ## Section 3.3: Execution Protocol and Measurement
 
