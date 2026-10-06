@@ -120,14 +120,14 @@ and emits stable artifacts shared by all suites.
 Description: Compare results according to each operation's ordered or unordered
 semantics without hiding datatype or duplicate errors.
 
-- [ ] 3.4.1.1 Normalize typed result rows, RDF terms, timestamps, numeric precision,
+- [x] 3.4.1.1 Normalize typed result rows, RDF terms, timestamps, numeric precision,
   and optional values using suite-specific rules.
-- [ ] 3.4.1.2 Preserve duplicate multiplicity and ordering when required by the operation.
-- [ ] 3.4.1.3 Compare small answers in full and large answers using row counts plus
+- [x] 3.4.1.2 Preserve duplicate multiplicity and ordering when required by the operation.
+- [x] 3.4.1.3 Compare small answers in full and large answers using row counts plus
   collision-resistant ordered or multiset hashes.
-- [ ] 3.4.1.4 Record missing, unexpected, misordered, mistyped, and numerically
+- [x] 3.4.1.4 Record missing, unexpected, misordered, mistyped, and numerically
   divergent values separately.
-- [ ] 3.4.1.5 Support accepted-divergence files only when the specification permits
+- [x] 3.4.1.5 Support accepted-divergence files only when the specification permits
   implementation-defined behavior and require a documented reason and source version.
 
 ### Task 3.4.2: Implement run artifacts and score gating
@@ -135,13 +135,13 @@ semantics without hiding datatype or duplicate errors.
 Description: Produce machine-readable and human-readable evidence whose schema
 distinguishes diagnostic metrics from protocol-defined scores.
 
-- [ ] 3.4.2.1 Emit manifest, environment, operation catalog, raw samples, errors,
+- [x] 3.4.2.1 Emit manifest, environment, operation catalog, raw samples, errors,
   correctness, resource, and run-summary JSON files.
-- [ ] 3.4.2.2 Emit normalized CSV tables and a Markdown report linked to raw evidence.
-- [ ] 3.4.2.3 Version artifact schemas and include checksums for every referenced input.
-- [ ] 3.4.2.4 Emit official score fields only when profile, correctness, scheduling,
+- [x] 3.4.2.2 Emit normalized CSV tables and a Markdown report linked to raw evidence.
+- [x] 3.4.2.3 Version artifact schemas and include checksums for every referenced input.
+- [x] 3.4.2.4 Emit official score fields only when profile, correctness, scheduling,
   duration, and completeness gates all pass.
-- [ ] 3.4.2.5 Make baseline acceptance a separate explicit command that never runs as
+- [x] 3.4.2.5 Make baseline acceptance a separate explicit command that never runs as
   an automatic side effect of measurement.
 
 ## Section 3.5: Integration Tests
