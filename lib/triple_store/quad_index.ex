@@ -97,6 +97,12 @@ defmodule TripleStore.QuadIndex do
       needs_filter: true,
       filter_positions: [:p]
     },
+    {:bound, :var, :bound, :bound} => %{
+      index: :gspo,
+      prefix_len: 16,
+      needs_filter: true,
+      filter_positions: [:o]
+    },
     {:bound, :var, :var, :bound} => %{
       index: :gspo,
       prefix_len: 8,
@@ -127,6 +133,12 @@ defmodule TripleStore.QuadIndex do
       needs_filter: false,
       filter_positions: []
     },
+    {:bound, :var, :bound, :var} => %{
+      index: :spog,
+      prefix_len: 8,
+      needs_filter: true,
+      filter_positions: [:o]
+    },
     {:bound, :var, :var, :var} => %{
       index: :spog,
       prefix_len: 8,
@@ -136,6 +148,12 @@ defmodule TripleStore.QuadIndex do
     {:var, :bound, :var, :var} => %{
       index: :posg,
       prefix_len: 8,
+      needs_filter: false,
+      filter_positions: []
+    },
+    {:var, :bound, :bound, :var} => %{
+      index: :posg,
+      prefix_len: 16,
       needs_filter: false,
       filter_positions: []
     },

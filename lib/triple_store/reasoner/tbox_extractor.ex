@@ -22,7 +22,7 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   """
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Dictionary.IdToString
+  alias TripleStore.Dictionary.StringToId
   alias TripleStore.QuadIndex
   alias TripleStore.Reasoner.Namespaces
 
@@ -60,9 +60,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
                      Namespaces.owl_all_values_from(),
                      Namespaces.owl_on_property()
                    ])
-
-  # Cache for predicate ID -> IRI mappings to avoid repeated lookups
-  @predicate_cache_table :tbox_predicate_cache
 
   # ============================================================================
   # Types
@@ -104,10 +101,8 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   """
   @spec extract_tbox(db_ref(), graph_id()) :: {:ok, tbox_facts()} | {:error, term()}
   def extract_tbox(db, graph_id) do
-    # Initialize predicate cache for this extraction
-    cache_ref = :ets.new(@predicate_cache_table, [:set, :private])
-
     try do
+      predicate_ids = tbox_predicate_ids(db)
       # Use fold to iterate over the graph's quads and filter TBox predicates
       graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
@@ -115,9 +110,9 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
         ErlangAdapter.fold(db, @gspo_cf, graph_prefix, MapSet.new(), fn
           {key, _value}, acc ->
             case QuadIndex.key_to_quad(:gspo, key) do
-              {_g, _s, p, _o} = quad ->
-                if tbox_predicate?(db, p, cache_ref) do
-                  MapSet.put(acc, quad)
+              {s, p, o, g} ->
+                if MapSet.member?(predicate_ids, p) do
+                  MapSet.put(acc, {g, s, p, o})
                 else
                   acc
                 end
@@ -129,9 +124,6 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       e ->
         Logger.error("Failed to extract TBox from graph #{graph_id}: #{inspect(e)}")
         {:error, {:tbox_extraction_failed, graph_id, e}}
-    after
-      # Clean up the cache
-      :ets.delete(cache_ref)
     end
   end
 
@@ -153,10 +145,8 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   """
   @spec tbox_fingerprint(db_ref(), graph_id()) :: {:ok, String.t()} | {:error, term()}
   def tbox_fingerprint(db, graph_id) do
-    # Initialize predicate cache for this operation
-    cache_ref = :ets.new(@predicate_cache_table, [:set, :private])
-
     try do
+      predicate_ids = tbox_predicate_ids(db)
       # Collect all TBox predicate IRIs in the graph
       graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
@@ -164,9 +154,9 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
         ErlangAdapter.fold(db, @gspo_cf, graph_prefix, [], fn
           {key, _value}, acc ->
             case QuadIndex.key_to_quad(:gspo, key) do
-              {_g, _s, p, _o} = quad ->
-                if tbox_predicate?(db, p, cache_ref) do
-                  [quad | acc]
+              {s, p, o, g} ->
+                if MapSet.member?(predicate_ids, p) do
+                  [{g, s, p, o} | acc]
                 else
                   acc
                 end
@@ -184,49 +174,16 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
       e ->
         Logger.error("Failed to compute TBox fingerprint for graph #{graph_id}: #{inspect(e)}")
         {:error, {:fingerprint_failed, graph_id, e}}
-    after
-      # Clean up the cache
-      :ets.delete(cache_ref)
     end
   end
 
-  # Checks if a predicate ID is a TBox (schema) predicate.
-  #
-  # This function performs a dictionary lookup to get the predicate IRI,
-  # then checks if it's in the built-in TBox predicate set. Results are
-  # cached in an ETS table to avoid repeated lookups.
-  #
-  # Parameters:
-  # - `db` - Database reference
-  # - `predicate_id` - Predicate term ID to check
-  # - `cache_ref` - ETS table reference for caching results
-  #
-  # Returns:
-  # - `true` if the predicate is a TBox predicate
-  # - `false` otherwise
-  @spec tbox_predicate?(db_ref(), integer(), :ets.tid()) :: boolean()
-  defp tbox_predicate?(db, predicate_id, cache_ref) do
-    case :ets.lookup(cache_ref, predicate_id) do
-      [{^predicate_id, result}] ->
-        result
-
-      [] ->
-        result = do_check_tbox_predicate(db, predicate_id)
-        :ets.insert(cache_ref, {predicate_id, result})
-        result
-    end
-  end
-
-  @spec do_check_tbox_predicate(db_ref(), integer()) :: boolean()
-  defp do_check_tbox_predicate(db, predicate_id) when is_integer(predicate_id) do
-    case IdToString.lookup_term(db, predicate_id) do
-      {:ok, %RDF.IRI{value: iri}} ->
-        tbox_predicate_by_iri?(iri)
-
-      _ ->
-        # Not a URI or not found, can't be a TBox predicate
-        false
-    end
+  defp tbox_predicate_ids(db) do
+    Enum.reduce(@tbox_predicates, MapSet.new(), fn iri, ids ->
+      case StringToId.lookup_id(db, RDF.iri(iri)) do
+        {:ok, id} -> MapSet.put(ids, id)
+        _ -> ids
+      end
+    end)
   end
 
   @doc """
@@ -237,9 +194,4 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   # ============================================================================
   # Private Functions
   # ============================================================================
-
-  # Check if a predicate is a TBox predicate by IRI
-  defp tbox_predicate_by_iri?(predicate_iri) do
-    MapSet.member?(@tbox_predicates, predicate_iri)
-  end
 end
