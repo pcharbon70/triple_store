@@ -45,6 +45,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Semantics do
       union_default_graph: true,
       include_derived: true,
       authorization: :disabled,
+      permit_all: true,
       user: :public
     }
   end
