@@ -1281,9 +1281,6 @@ defmodule TripleStore.SPARQL.Executor do
           # deliberate and documented by the profile; explicit named graphs are
           # still scanned by QuadOperations above.
           derived_for_graph(db, 0, pattern, values)
-
-        _ ->
-          []
       end
 
     Enum.uniq(explicit ++ derived)

@@ -1,8 +1,9 @@
 defmodule TripleStore.Benchmark.LDBC.SPB.SemanticsTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Benchmark.LDBC.{SPB.Pipeline, StoreFixture}
-  alias TripleStore.Benchmark.LDBC.SPB.{Semantics, Workload}
+  alias TripleStore.Benchmark.LDBC.SPB.{Pipeline, Semantics, Workload}
+  alias TripleStore.Benchmark.LDBC.StoreFixture
+  alias TripleStore.Dictionary.Manager
   alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.SPARQL.Query
 
@@ -23,7 +24,8 @@ defmodule TripleStore.Benchmark.LDBC.SPB.SemanticsTest do
     context = Semantics.execution_context(store)
     assert context.union_default_graph
     assert context.include_derived
-    assert context.authorization == :disabled
+    assert context.permit_all
+    assert is_nil(context.user)
   end
 
   test "quad union default graph includes explicit named graphs and graph-zero derived facts",
@@ -60,7 +62,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.SemanticsTest do
     assert length(inferred_rows) == 1
 
     {:ok, [subject_id, predicate_id, object_id]} =
-      TripleStore.Dictionary.Manager.get_or_create_ids(fixture.store.dict_manager, [
+      Manager.get_or_create_ids(fixture.store.dict_manager, [
         RDF.iri("urn:derived:subject"),
         RDF.iri("urn:derived:predicate"),
         RDF.iri("urn:derived:object")

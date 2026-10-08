@@ -113,22 +113,23 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Editorial do
 
   defp expand_sections(template, parameters) do
     Enum.reduce_while(@list_sections, {:ok, template}, fn {section, spec}, {:ok, source} ->
-      values = Map.get(parameters, section, [])
-
-      if is_list(values) do
-        pattern = ~r/\{\{##{section}\}\}([\s\S]*?)\{\{\/#{section}\}\}/
-
-        replacement =
-          Regex.replace(pattern, source, fn _match, body ->
-            Enum.map_join(values, "", &render_section(body, spec, &1))
-          end)
-
-        {:cont, {:ok, replacement}}
-      else
-        {:halt, {:error, {:invalid_list_parameter, section}}}
-      end
+      expand_section(source, section, spec, Map.get(parameters, section, []))
     end)
   end
+
+  defp expand_section(source, section, spec, values) when is_list(values) do
+    pattern = ~r/\{\{##{section}\}\}([\s\S]*?)\{\{\/#{section}\}\}/
+
+    replacement =
+      Regex.replace(pattern, source, fn _match, body ->
+        Enum.map_join(values, "", &render_section(body, spec, &1))
+      end)
+
+    {:cont, {:ok, replacement}}
+  end
+
+  defp expand_section(_source, section, _spec, _values),
+    do: {:halt, {:error, {:invalid_list_parameter, section}}}
 
   defp render_section(body, {:primary_content, :map}, value) when is_map(value) do
     body

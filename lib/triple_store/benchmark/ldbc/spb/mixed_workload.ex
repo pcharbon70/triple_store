@@ -5,7 +5,9 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkload do
   Agents submit concurrently, while one scheduler establishes the accepted
   embedded-store isolation boundary. Operations from each editorial agent must
   arrive in sequence; the scheduler rejects gaps before invoking a handler.
-  Warmup and measured records are accounted separately.
+  Warmup and measured records are accounted separately. Rates remain suppressed
+  unless the caller explicitly supplies `score_qualified?: true` after all
+  external correctness and conformance gates have passed.
   """
 
   use GenServer
@@ -106,6 +108,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkload do
          handlers: handlers,
          max_queue: Keyword.get(opts, :max_queue, 1_000),
          retries: Keyword.get(opts, :retries, 0),
+         score_qualified?: Keyword.get(opts, :score_qualified?, false),
          editorial_sequences: %{},
          records: []
        }}
@@ -152,7 +155,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkload do
     measured = Enum.filter(records, &(&1.phase == :measured))
     warmup = Enum.filter(records, &(&1.phase == :warmup))
     failures = Enum.filter(measured, &(&1.status == :error))
-    valid? = measured != [] and failures == []
+    valid? = measured != [] and failures == [] and state.score_qualified?
     duration_s = measured_duration_seconds(measured)
 
     rates =
@@ -169,6 +172,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkload do
       measured_count: length(measured),
       failures: failures,
       score_eligible?: valid?,
+      score_qualified?: state.score_qualified?,
       rates_per_second: rates,
       agents: agent_metrics(records),
       records: records

@@ -82,7 +82,9 @@ defmodule TripleStore.SPARQL.Query do
           required(:db) => TripleStore.db_ref(),
           required(:dict_manager) => TripleStore.manager(),
           optional(:user) => map() | nil,
-          optional(:permit_all) => boolean()
+          optional(:permit_all) => boolean(),
+          optional(:union_default_graph) => boolean(),
+          optional(:include_derived) => boolean()
         }
 
   @typedoc "SELECT query result - list of variable bindings"

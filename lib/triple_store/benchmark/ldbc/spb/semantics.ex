@@ -20,6 +20,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Semantics do
   }
 
   alias TripleStore.Benchmark.LDBC.SPB.Workload
+  alias TripleStore.SPARQL.Query
 
   @required_rules [
     :scm_sco,
@@ -36,17 +37,15 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Semantics do
   ]
 
   @doc "Returns the explicit SPB query context with ACLs disabled."
-  @spec execution_context(TripleStore.store()) :: map()
+  @spec execution_context(TripleStore.store()) :: Query.context()
   def execution_context(store) do
     %{
       db: store.db,
       dict_manager: store.dict_manager,
-      schema: :quad,
       union_default_graph: true,
       include_derived: true,
-      authorization: :disabled,
       permit_all: true,
-      user: :public
+      user: nil
     }
   end
 
@@ -77,17 +76,21 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Semantics do
   def configuration(store) do
     ontology = Workload.graph_contract().ontology
 
-    with {:ok, tbox_graph} <- Manager.lookup_id(store.dict_manager, RDF.iri(ontology)) do
-      ReasoningConfig.new(
-        profile: :owl2rl,
-        mode: :materialized,
-        scope: :global,
-        tbox_graph: tbox_graph,
-        storage_strategy: :per_graph_cf
-      )
-    else
-      :not_found -> {:error, {:graph_not_loaded, ontology}}
-      {:error, _reason} = error -> error
+    case Manager.lookup_id(store.dict_manager, RDF.iri(ontology)) do
+      {:ok, tbox_graph} ->
+        ReasoningConfig.new(
+          profile: :owl2rl,
+          mode: :materialized,
+          scope: :global,
+          tbox_graph: tbox_graph,
+          storage_strategy: :per_graph_cf
+        )
+
+      :not_found ->
+        {:error, {:graph_not_loaded, ontology}}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 

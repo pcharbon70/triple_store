@@ -1,8 +1,8 @@
 defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkloadTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Benchmark.LDBC.{SPB.Pipeline, StoreFixture}
-  alias TripleStore.Benchmark.LDBC.SPB.{Editorial, MixedWorkload, Semantics}
+  alias TripleStore.Benchmark.LDBC.SPB.{Editorial, MixedWorkload, Pipeline, Semantics}
+  alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.SPARQL.Query
 
   test "multiple agents preserve editorial order and separate warmup from measured rates",
@@ -25,7 +25,12 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkloadTest do
       end
     }
 
-    assert {:ok, scheduler} = MixedWorkload.start_link(handlers: handlers, max_queue: 20)
+    assert {:ok, scheduler} =
+             MixedWorkload.start_link(
+               handlers: handlers,
+               max_queue: 20,
+               score_qualified?: true
+             )
 
     warmup = [
       %{
@@ -100,6 +105,20 @@ defmodule TripleStore.Benchmark.LDBC.SPB.MixedWorkloadTest do
                :measured,
                %{operation_id: "update"}
              )
+  end
+
+  test "suppresses rates until the workload has passed its external qualification gate" do
+    handlers = %{
+      aggregation: fn payload -> {:ok, payload} end,
+      editorial: fn payload -> {:ok, payload} end
+    }
+
+    assert {:ok, scheduler} = MixedWorkload.start_link(handlers: handlers)
+    agents = [%{id: "read", type: :aggregation, operations: [%{operation_id: "q1"}]}]
+    assert {:ok, report} = MixedWorkload.run_agents(scheduler, agents, :measured)
+    refute report.score_eligible?
+    refute report.score_qualified?
+    assert report.rates_per_second == %{}
   end
 
   defp aggregation_payload(id) do

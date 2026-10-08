@@ -99,6 +99,7 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
       raw_samples: [sample],
       errors: [],
       correctness: [%{operation_id: "read-1", status: :correct}],
+      disclosure: %{supported_profiles: ["smoke"], unsupported_profiles: ["failover"]},
       resources: %{store_bytes: 10},
       summary: %{measured_count: 1, valid_sample_count: 1, invalid_sample_count: 0},
       gates: %{
@@ -112,8 +113,9 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
     }
 
     assert {:ok, artifact} = Artifacts.write(directory, run)
-    assert map_size(artifact.paths) == 10
-    assert map_size(artifact.checksums) == 10
+    assert map_size(artifact.paths) == 11
+    assert map_size(artifact.checksums) == 11
+    assert File.exists?(artifact.paths.disclosure)
 
     assert {:ok, summary} = artifact.paths.summary |> File.read!() |> Jason.decode()
     assert summary["official_score"] == 123.4

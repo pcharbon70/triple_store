@@ -1,8 +1,8 @@
 defmodule TripleStore.Benchmark.LDBC.SPB.EditorialTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Benchmark.LDBC.{SPB.Pipeline, StoreFixture}
-  alias TripleStore.Benchmark.LDBC.SPB.{Editorial, Semantics}
+  alias TripleStore.Benchmark.LDBC.SPB.{Editorial, Pipeline, Semantics}
+  alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.Exporter
 
   test "create, alter, and delete are ordered graph-aware validated transitions", %{test: test} do

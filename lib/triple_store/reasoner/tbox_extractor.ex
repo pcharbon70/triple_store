@@ -101,30 +101,19 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   """
   @spec extract_tbox(db_ref(), graph_id()) :: {:ok, tbox_facts()} | {:error, term()}
   def extract_tbox(db, graph_id) do
-    try do
-      predicate_ids = tbox_predicate_ids(db)
-      # Use fold to iterate over the graph's quads and filter TBox predicates
-      graph_prefix = QuadIndex.gspo_prefix(graph_id)
+    predicate_ids = tbox_predicate_ids(db)
+    graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
-      tbox_quads =
-        ErlangAdapter.fold(db, @gspo_cf, graph_prefix, MapSet.new(), fn
-          {key, _value}, acc ->
-            case QuadIndex.key_to_quad(:gspo, key) do
-              {s, p, o, g} ->
-                if MapSet.member?(predicate_ids, p) do
-                  MapSet.put(acc, {g, s, p, o})
-                else
-                  acc
-                end
-            end
-        end)
+    tbox_quads =
+      ErlangAdapter.fold(db, @gspo_cf, graph_prefix, MapSet.new(), fn entry, acc ->
+        maybe_collect_tbox_quad(entry, acc, predicate_ids)
+      end)
 
-      {:ok, tbox_quads}
-    rescue
-      e ->
-        Logger.error("Failed to extract TBox from graph #{graph_id}: #{inspect(e)}")
-        {:error, {:tbox_extraction_failed, graph_id, e}}
-    end
+    {:ok, tbox_quads}
+  rescue
+    e ->
+      Logger.error("Failed to extract TBox from graph #{graph_id}: #{inspect(e)}")
+      {:error, {:tbox_extraction_failed, graph_id, e}}
   end
 
   @doc """
@@ -145,36 +134,34 @@ defmodule TripleStore.Reasoner.TBoxExtractor do
   """
   @spec tbox_fingerprint(db_ref(), graph_id()) :: {:ok, String.t()} | {:error, term()}
   def tbox_fingerprint(db, graph_id) do
-    try do
-      predicate_ids = tbox_predicate_ids(db)
-      # Collect all TBox predicate IRIs in the graph
-      graph_prefix = QuadIndex.gspo_prefix(graph_id)
+    predicate_ids = tbox_predicate_ids(db)
+    graph_prefix = QuadIndex.gspo_prefix(graph_id)
 
-      tbox_data =
-        ErlangAdapter.fold(db, @gspo_cf, graph_prefix, [], fn
-          {key, _value}, acc ->
-            case QuadIndex.key_to_quad(:gspo, key) do
-              {s, p, o, g} ->
-                if MapSet.member?(predicate_ids, p) do
-                  [{g, s, p, o} | acc]
-                else
-                  acc
-                end
-            end
-        end)
-        |> Enum.sort()
+    tbox_data =
+      ErlangAdapter.fold(db, @gspo_cf, graph_prefix, [], fn entry, acc ->
+        maybe_collect_tbox_list(entry, acc, predicate_ids)
+      end)
+      |> Enum.sort()
 
-      # Compute hash of sorted TBox quads
-      fingerprint =
-        :crypto.hash(:sha256, :erlang.term_to_binary(tbox_data))
-        |> Base.encode16(case: :lower)
+    fingerprint =
+      :crypto.hash(:sha256, :erlang.term_to_binary(tbox_data))
+      |> Base.encode16(case: :lower)
 
-      {:ok, fingerprint}
-    rescue
-      e ->
-        Logger.error("Failed to compute TBox fingerprint for graph #{graph_id}: #{inspect(e)}")
-        {:error, {:fingerprint_failed, graph_id, e}}
-    end
+    {:ok, fingerprint}
+  rescue
+    e ->
+      Logger.error("Failed to compute TBox fingerprint for graph #{graph_id}: #{inspect(e)}")
+      {:error, {:fingerprint_failed, graph_id, e}}
+  end
+
+  defp maybe_collect_tbox_quad({key, _value}, acc, predicate_ids) do
+    {s, p, o, g} = QuadIndex.key_to_quad(:gspo, key)
+    if MapSet.member?(predicate_ids, p), do: MapSet.put(acc, {g, s, p, o}), else: acc
+  end
+
+  defp maybe_collect_tbox_list({key, _value}, acc, predicate_ids) do
+    {s, p, o, g} = QuadIndex.key_to_quad(:gspo, key)
+    if MapSet.member?(predicate_ids, p), do: [{g, s, p, o} | acc], else: acc
   end
 
   defp tbox_predicate_ids(db) do

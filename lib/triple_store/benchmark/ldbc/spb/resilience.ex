@@ -12,6 +12,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Resilience do
   alias TripleStore.Benchmark.LDBC.DatasetManifest
   alias TripleStore.Benchmark.LDBC.SPB.{Aggregation, Semantics}
   alias TripleStore.Reasoner.DerivedStore
+  alias TripleStore.SPARQL.Query
 
   @source_commit "ce6323c0936306729408233dc70d26f2389b34c6"
   @unsupported_profiles [:online_replication, :failover]
@@ -168,7 +169,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Resilience do
   end
 
   defp default_probe(store) do
-    TripleStore.SPARQL.Query.query(
+    Query.query(
       Semantics.execution_context(store),
       "SELECT ?work WHERE { ?work <http://schema.org/about> ?entity }"
     )

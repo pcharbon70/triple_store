@@ -1,8 +1,8 @@
 defmodule TripleStore.Benchmark.LDBC.SPB.AggregationTest do
   use ExUnit.Case, async: false
 
-  alias TripleStore.Benchmark.LDBC.{SPB.Pipeline, StoreFixture}
-  alias TripleStore.Benchmark.LDBC.SPB.{Aggregation, Semantics, Workload}
+  alias TripleStore.Benchmark.LDBC.SPB.{Aggregation, Pipeline, Semantics, Workload}
+  alias TripleStore.Benchmark.LDBC.StoreFixture
 
   test "preserves duplicate and unbound rows while canonicalizing unordered results" do
     rows = [%{"x" => :unbound}, %{"x" => 2}, %{"x" => 2}]
