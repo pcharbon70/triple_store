@@ -14,8 +14,8 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     assert length(capability_ids) == 119
 
     assert CapabilityMatrix.summary(matrix) == %{
-             supported: 0,
-             requires_fix: 96,
+             supported: 42,
+             requires_fix: 54,
              requires_extension: 6,
              profile_exclusion: 17
            }
@@ -25,8 +25,9 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     {:ok, matrix} = CapabilityMatrix.load()
 
     spb = find_operation(matrix, "ldbc/spb/aggregation-01@v2.0.2")
-    assert spb.parse_support == :template_requires_binding
-    assert spb.execution_support == :unverified
+    assert spb.status == :supported
+    assert spb.parse_support == :verified
+    assert spb.execution_support == :verified
 
     bi_path = find_operation(matrix, "ldbc/snb-bi/read-19@v1.0.3")
     assert bi_path.status == :requires_extension

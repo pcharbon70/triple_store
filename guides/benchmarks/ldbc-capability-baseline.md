@@ -15,10 +15,12 @@ not considered implemented until its typed, ordered result matches accepted answ
 - `TripleStore.query/3` does not enter the store transaction coordinator. Direct
   insert, delete, and loader paths also remain outside its queue. Interactive must
   use one benchmark-owned read/write visibility boundary.
-- SPB needs quad-schema context preservation. Local `materialize/2` does not persist
-  inferred facts, so SPB reasoning must use or extend the persistent graph-aware path.
-- Backup and restore exist but need SPB milestone integration. Online replication
-  and failover are excluded because TripleStore has no such product surface.
+- SPB now uses quad-schema context preservation and a persistent graph-aware
+  materialization path for its selected reasoning profile. The ten separately
+  catalogued inference conformance actions remain unqualified.
+- Coordinated backup and fresh-path restore are integrated with the SPB smoke
+  workflow. Online replication and failover remain excluded because TripleStore
+  has no such product surface.
 - Text and geospatial SPB options are excluded from current profiles.
 - The generic benchmark runner is not eligible for LDBC scoring because its error
   handling is not the Phase 3 fail-fast measurement contract.

@@ -15,6 +15,7 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
     :raw_samples,
     :errors,
     :correctness,
+    :disclosure,
     :resources,
     :summary
   ]
@@ -58,6 +59,7 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
     |> Map.put_new(:raw_samples, [])
     |> Map.put_new(:errors, [])
     |> Map.put_new(:correctness, [])
+    |> Map.put_new(:disclosure, %{})
     |> Map.put_new(:resources, %{})
   end
 
@@ -139,6 +141,7 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
 
   defp json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
   defp json_safe(value) when is_tuple(value), do: value |> Tuple.to_list() |> json_safe()
+  defp json_safe(value) when is_boolean(value) or is_nil(value), do: value
   defp json_safe(value) when is_atom(value), do: Atom.to_string(value)
   defp json_safe(value), do: value
 

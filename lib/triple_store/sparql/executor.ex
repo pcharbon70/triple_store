@@ -163,6 +163,7 @@ defmodule TripleStore.SPARQL.Executor do
   alias TripleStore.Index.NumericRange
   alias TripleStore.Index.SubjectCache
   alias TripleStore.QuadOperations
+  alias TripleStore.Reasoner.DerivedStore
   alias TripleStore.SPARQL.Authorization
   alias TripleStore.SPARQL.Expression
   alias TripleStore.SPARQL.Leapfrog.QuadLeapfrog
@@ -947,11 +948,15 @@ defmodule TripleStore.SPARQL.Executor do
   # Extends each binding in the stream by matching a triple pattern
   @doc false
   def extend_bindings(ctx, binding_stream, {:triple, s, p, o}) do
-    # For quad stores, convert triple pattern to quad pattern with default graph
-    # This enables WHERE clauses in MODIFY operations to work with quad stores
+    # Quad stores normally use SPARQL's default graph (ID 0). A benchmark or
+    # application may explicitly configure a union default graph; the anonymous
+    # graph variable keeps graph identity out of solution bindings.
     case ErlangAdapter.is_quad_store?(ctx.db) do
       {:ok, true} ->
-        extend_bindings(ctx, binding_stream, {:quad, s, p, o, :default_graph})
+        graph =
+          if Map.get(ctx, :union_default_graph, false), do: {:variable, "_"}, else: :default_graph
+
+        extend_bindings(ctx, binding_stream, {:quad, s, p, o, graph})
 
       {:ok, false} ->
         extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx,
@@ -1045,11 +1050,12 @@ defmodule TripleStore.SPARQL.Executor do
 
   # Determine if a quad pattern should use multi-iterator execution
   defp should_use_multi_iterator?(ctx, quad_pattern) do
-    # Get stats for cost estimation
-    stats = get_statistics(ctx)
-
-    # Use QuadPatternRecognition to make decision
-    QuadPatternRecognition.should_use_multi_iterator?(quad_pattern, stats)
+    if Map.get(ctx, :include_derived, false) do
+      false
+    else
+      stats = get_statistics(ctx)
+      QuadPatternRecognition.should_use_multi_iterator?(quad_pattern, stats)
+    end
   end
 
   # Execute quad pattern using multi-iterator (QuadLeapfrog)
@@ -1235,7 +1241,8 @@ defmodule TripleStore.SPARQL.Executor do
       }
 
       # Use QuadOperations for quad lookup
-      quads = QuadOperations.lookup_quads(db, quad_pattern, values)
+      explicit = QuadOperations.lookup_quads(db, quad_pattern, values)
+      quads = maybe_include_derived(ctx, explicit, quad_pattern, values)
 
       case quads do
         [] ->
@@ -1262,6 +1269,37 @@ defmodule TripleStore.SPARQL.Executor do
   # Extract value from bound pattern, return nil for var
   defp value_from_pattern({:bound, id}), do: id
   defp value_from_pattern(:var), do: nil
+
+  defp maybe_include_derived(%{include_derived: true, db: db}, explicit, pattern, values) do
+    derived =
+      case {elem(pattern, 3), values.g} do
+        {:bound, graph_id} when is_integer(graph_id) ->
+          derived_for_graph(db, graph_id, pattern, values)
+
+        {:var, _} ->
+          # Global SPB materialization stores inferred facts in graph 0. This is
+          # deliberate and documented by the profile; explicit named graphs are
+          # still scanned by QuadOperations above.
+          derived_for_graph(db, 0, pattern, values)
+      end
+
+    Enum.uniq(explicit ++ derived)
+  end
+
+  defp maybe_include_derived(_ctx, explicit, _pattern, _values), do: explicit
+
+  defp derived_for_graph(db, graph_id, pattern, values) do
+    triple_pattern =
+      {derived_component(elem(pattern, 0), values.s),
+       derived_component(elem(pattern, 1), values.p),
+       derived_component(elem(pattern, 2), values.o)}
+
+    {:ok, quads} = DerivedStore.lookup_derived_quads_fold(db, graph_id, triple_pattern)
+    Enum.map(quads, fn {g, s, p, o} -> {s, p, o, g} end)
+  end
+
+  defp derived_component(:bound, value), do: {:bound, value}
+  defp derived_component(:var, _value), do: :var
 
   # Fallback for multi-iterator failures - uses simpler single-iterator approach
   defp execute_quad_with_single_iterator_fallback(ctx, binding, s, p, o, g) do

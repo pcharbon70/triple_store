@@ -26,13 +26,13 @@ spb_aggregation =
 
     entry.(
       id,
-      :requires_fix,
-      :template_requires_binding,
-      :unverified,
+      :supported,
+      :verified,
+      :verified,
       [:sparql_1_1, :aggregation, :expressions, :ordering, :slicing, :graph_context],
-      "TripleStore.SPARQL.Query",
+      "TripleStore.Benchmark.LDBC.SPB.Aggregation",
       4,
-      "The upstream SPARQL template exists, but bound-query execution and exact typed results are not yet cross-validated.",
+      "The checksum-protected template is typed, parsed, and executed through optimized and reference paths with exact canonical answer comparison.",
       [
         "lib/triple_store/sparql/query.ex",
         "ldbc_spb_bm_2.0:datasets_and_queries/sparql/advanced/aggregation_standard"
@@ -44,13 +44,13 @@ spb_editorial =
   Enum.map(["insert", "update", "delete"], fn name ->
     entry.(
       "ldbc/spb/editorial-#{name}@v2.0.2",
-      :requires_fix,
-      :template_requires_binding,
-      :unverified,
+      :supported,
+      :verified,
+      :verified,
       [:sparql_update, :graph_context, :atomic_mutation],
-      "TripleStore.SPARQL.UpdateExecutor",
+      "TripleStore.Benchmark.LDBC.SPB.Editorial",
       4,
-      "SPARQL update primitives exist, but SPB state transitions and graph-visible postconditions require validation.",
+      "Typed editorial transitions execute through the store coordinator, rederive inference after commit, and pass graph-visible validation probes.",
       [
         "lib/triple_store/sparql/update_executor.ex",
         "specs/contracts/transaction_and_isolation_contract.md"
@@ -62,14 +62,17 @@ spb_validation =
   Enum.map(["insert", "update", "delete"], fn name ->
     entry.(
       "ldbc/spb/validate-#{name}@v2.0.2",
-      :requires_fix,
-      :template_requires_binding,
-      :unverified,
+      :supported,
+      :verified,
+      :verified,
       [:ask, :graph_context, :typed_comparison],
       "TripleStore.Benchmark.LDBC.SPB",
       4,
-      "Validation templates are catalogued but have no TripleStore binding or accepted-answer comparison.",
-      ["ldbc_spb_bm_2.0:datasets_and_queries/sparql/advanced/validation_standard"]
+      "The canonical validation templates are bound to editorial graph state and checked after every insert, update, and delete transition.",
+      [
+        "lib/triple_store/benchmark/ldbc/spb/editorial.ex",
+        "ldbc_spb_bm_2.0:datasets_and_queries/sparql/advanced/validation_standard"
+      ]
     )
   end)
 
@@ -118,14 +121,17 @@ spb_lifecycle =
     fn name ->
       entry.(
         "ldbc/spb/#{name}@v2.0.2",
-        :requires_fix,
+        :supported,
         :not_applicable,
-        :unverified,
+        :verified,
         [:benchmark_lifecycle, :resource_ownership],
         "TripleStore.Benchmark.LDBC.SPB",
         4,
-        "Underlying APIs exist for some phases, but the pinned SPB lifecycle is not implemented as one validated workflow.",
-        ["lib/triple_store.ex", "ldbc_spb_bm_2.0:readme.txt#Benchmark-Phases"]
+        "The deterministic smoke integration runs generation, loading, parameters, validation, warmup, mixed execution, reset, artifacts, and cleanup as one workflow.",
+        [
+          "test/triple_store/benchmark/ldbc/phase_4_spb_integration_test.exs",
+          "ldbc_spb_bm_2.0:readme.txt#Benchmark-Phases"
+        ]
       )
     end
   )
@@ -143,8 +149,8 @@ spb_resilience =
       {status, owner, rationale} =
         case name do
           backup when backup in ["full-backup-start", "full-backup-restore"] ->
-            {:requires_fix, "TripleStore.Backup",
-             "Backup APIs exist, but SPB milestone and driver integration are not implemented."}
+            {:supported, "TripleStore.Benchmark.LDBC.SPB.Resilience",
+             "The coordinated backup profile validates full backup, fresh-path restore, graph contexts, derived facts, and accepted answers."}
 
           _ ->
             {:profile_exclusion, "TripleStore.Benchmark.LDBC.SPB",
@@ -155,12 +161,16 @@ spb_resilience =
         "ldbc/spb/resilience-#{name}@v2.0.2",
         status,
         :not_applicable,
-        if(status == :profile_exclusion, do: :unsupported, else: :unverified),
+        if(status == :profile_exclusion, do: :unsupported, else: :verified),
         [:backup, :recovery, :availability],
         owner,
         4,
         rationale,
-        ["lib/triple_store/backup.ex", "ldbc_spb_bm_2.0:datasets_and_queries/scripts/enterprise"]
+        [
+          "lib/triple_store/benchmark/ldbc/spb/resilience.ex",
+          "guides/benchmarks/ldbc-spb-resilience.md",
+          "ldbc_spb_bm_2.0:datasets_and_queries/scripts/enterprise"
+        ]
       )
     end
   )
