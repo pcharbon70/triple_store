@@ -143,8 +143,8 @@ spb_resilience =
       {status, owner, rationale} =
         case name do
           backup when backup in ["full-backup-start", "full-backup-restore"] ->
-            {:requires_fix, "TripleStore.Backup",
-             "Backup APIs exist, but SPB milestone and driver integration are not implemented."}
+            {:supported, "TripleStore.Benchmark.LDBC.SPB.Resilience",
+             "The coordinated backup profile validates full backup, fresh-path restore, graph contexts, derived facts, and accepted answers."}
 
           _ ->
             {:profile_exclusion, "TripleStore.Benchmark.LDBC.SPB",
@@ -155,12 +155,16 @@ spb_resilience =
         "ldbc/spb/resilience-#{name}@v2.0.2",
         status,
         :not_applicable,
-        if(status == :profile_exclusion, do: :unsupported, else: :unverified),
+        if(status == :profile_exclusion, do: :unsupported, else: :verified),
         [:backup, :recovery, :availability],
         owner,
         4,
         rationale,
-        ["lib/triple_store/backup.ex", "ldbc_spb_bm_2.0:datasets_and_queries/scripts/enterprise"]
+        [
+          "lib/triple_store/benchmark/ldbc/spb/resilience.ex",
+          "guides/benchmarks/ldbc-spb-resilience.md",
+          "ldbc_spb_bm_2.0:datasets_and_queries/scripts/enterprise"
+        ]
       )
     end
   )

@@ -14,8 +14,8 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     assert length(capability_ids) == 119
 
     assert CapabilityMatrix.summary(matrix) == %{
-             supported: 0,
-             requires_fix: 96,
+             supported: 2,
+             requires_fix: 94,
              requires_extension: 6,
              profile_exclusion: 17
            }
