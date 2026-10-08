@@ -15,7 +15,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ResultContract do
 
     with {:ok, typed} <- decode_rows(rows, schema) do
       ordered = order(typed, definition.ordering)
-      limited = if is_integer(definition.limit), do: Enum.take(ordered, definition.limit), else: ordered
+
+      limited =
+        if is_integer(definition.limit), do: Enum.take(ordered, definition.limit), else: ordered
 
       {:ok,
        %{
@@ -47,19 +49,22 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ResultContract do
     expected = schema |> Enum.map(& &1.name) |> MapSet.new()
     actual = row |> Map.keys() |> MapSet.new()
 
-    if expected == actual do
-      Enum.reduce_while(schema, {:ok, %{}}, fn field, {:ok, typed} ->
-        case Codec.decode(field.type, Map.fetch!(row, field.name)) do
-          {:ok, value} -> {:cont, {:ok, Map.put(typed, field.name, value)}}
-          {:error, reason} -> {:halt, {:error, {field.name, reason}}}
-        end
-      end)
-    else
-      {:error, {:column_mismatch, MapSet.to_list(expected), MapSet.to_list(actual)}}
-    end
+    decode_matching_row(expected == actual, row, schema, expected, actual)
   end
 
   defp decode_row(_row, _schema), do: {:error, :row_must_be_map}
+
+  defp decode_matching_row(true, row, schema, _expected, _actual) do
+    Enum.reduce_while(schema, {:ok, %{}}, fn field, {:ok, typed} ->
+      case Codec.decode(field.type, Map.fetch!(row, field.name)) do
+        {:ok, value} -> {:cont, {:ok, Map.put(typed, field.name, value)}}
+        {:error, reason} -> {:halt, {:error, {field.name, reason}}}
+      end
+    end)
+  end
+
+  defp decode_matching_row(false, _row, _schema, expected, actual),
+    do: {:error, {:column_mismatch, MapSet.to_list(expected), MapSet.to_list(actual)}}
 
   defp order(rows, ordering) do
     Enum.sort(rows, fn left, right -> compare(left, right, ordering) end)

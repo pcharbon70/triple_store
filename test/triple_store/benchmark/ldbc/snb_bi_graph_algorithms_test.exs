@@ -39,12 +39,21 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIGraphAlgorithmsTest do
                timeout: 1_000
              )
 
-    assert result.rows ==
-             [
-               %{source: :a, target: :z, cost: 4},
-               %{source: :b, target: :z, cost: 3}
-             ]
-             |> Enum.filter(&(&1.cost == 3))
+    assert result.rows == [%{source: :b, target: :z, cost: 3}]
+  end
+
+  test "weighted traversal supports fractional BI interaction costs" do
+    graph = %{
+      a: [{:b, 0.5}, {:c, 0.25}],
+      b: [{:d, 0.5}],
+      c: [{:d, 0.25}],
+      d: []
+    }
+
+    assert {:ok, result} =
+             GraphAlgorithms.cheapest_pairs([:a], [:d], neighbors: &{:ok, Map.fetch!(graph, &1)})
+
+    assert result.rows == [%{source: :a, target: :d, cost: 0.5}]
   end
 
   test "traversal fails on cancellation and memory bounds" do

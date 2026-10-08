@@ -7,8 +7,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Checkpoint do
   fixture verifier, and carries update position into subsequent run artifacts.
   """
 
-  alias TripleStore.Benchmark.Artifact
   alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.Benchmark.Artifact
   alias TripleStore.Benchmark.LDBC.StoreFixture
 
   @names [:initial_load, :post_validation, :pre_power, :pre_throughput]

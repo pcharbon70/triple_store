@@ -39,9 +39,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
   def write(path, bundle) do
     with :ok <- validate_shape(bundle),
          :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(path, :erlang.term_to_binary(bundle, [:deterministic]), [:binary]),
-         {:ok, checksum} <- Artifact.checksum(path) do
-      {:ok, checksum}
+         :ok <- File.write(path, :erlang.term_to_binary(bundle, [:deterministic]), [:binary]) do
+      Artifact.checksum(path)
     end
   end
 
@@ -92,20 +91,23 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
       if expected == actual, do: [], else: [{:sequence_coverage, expected, actual}]
 
     coverage_errors ++
-      Enum.flat_map(definitions, fn definition ->
-        label = label(definition)
-        rows = Map.get(sequences, label, [])
+      Enum.flat_map(definitions, &definition_sequence_errors(&1, sequences, reference_validator))
+  end
 
-        if rows == [] do
-          [{label, :empty_sequence}]
-        else
-          rows
-          |> Enum.with_index()
-          |> Enum.flat_map(fn {row, index} ->
-            row_errors(row, index, definition, reference_validator)
-          end)
-        end
-      end)
+  defp definition_sequence_errors(definition, sequences, reference_validator) do
+    operation_label = label(definition)
+
+    case Map.get(sequences, operation_label, []) do
+      [] ->
+        [{operation_label, :empty_sequence}]
+
+      rows ->
+        rows
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {row, index} ->
+          row_errors(row, index, definition, reference_validator)
+        end)
+    end
   end
 
   defp row_errors(row, index, definition, reference_validator) when is_map(row) do
@@ -118,24 +120,30 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
         else: [{label(definition), index, :parameter_names, expected_names, actual_names}]
 
     name_errors ++
-      Enum.flat_map(definition.parameters, fn field ->
-        value = Map.get(row, field.name)
-
-        case validate_value(field.type, value) do
-          :ok ->
-            case reference_validator.(field.name, value) do
-              :ok -> []
-              {:error, reason} -> [{label(definition), index, field.name, reason}]
-            end
-
-          {:error, reason} ->
-            [{label(definition), index, field.name, reason}]
-        end
-      end)
+      Enum.flat_map(
+        definition.parameters,
+        &field_errors(&1, row, index, definition, reference_validator)
+      )
   end
 
   defp row_errors(_row, index, definition, _reference_validator),
     do: [{label(definition), index, :invalid_row}]
+
+  defp field_errors(field, row, index, definition, reference_validator) do
+    value = Map.get(row, field.name)
+
+    case validate_value(field.type, value) do
+      :ok -> reference_errors(reference_validator, field, value, index, definition)
+      {:error, reason} -> [{label(definition), index, field.name, reason}]
+    end
+  end
+
+  defp reference_errors(reference_validator, field, value, index, definition) do
+    case reference_validator.(field.name, value) do
+      :ok -> []
+      {:error, reason} -> [{label(definition), index, field.name, reason}]
+    end
+  end
 
   defp validate_value("ID", value), do: positive_integer(value)
   defp validate_value("32-bit Integer", value), do: integer(value, -2_147_483_648, 2_147_483_647)

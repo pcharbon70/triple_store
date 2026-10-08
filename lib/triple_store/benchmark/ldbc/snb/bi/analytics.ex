@@ -16,9 +16,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Analytics do
 
     case Map.fetch(handlers, {definition.number, definition.variant}) do
       {:ok, handler} when is_function(handler, 3) ->
-        with {:ok, rows} <- handler.(context, parameters, opts),
-             {:ok, result} <- ResultContract.materialize(definition, rows) do
-          {:ok, result}
+        with {:ok, rows} <- handler.(context, parameters, opts) do
+          ResultContract.materialize(definition, rows)
         end
 
       _other ->

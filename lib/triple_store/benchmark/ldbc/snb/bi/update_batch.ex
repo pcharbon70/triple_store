@@ -39,8 +39,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     path
     |> UpdateStream.stream()
     |> Enum.reduce_while({:ok, [], -1}, fn
-      %{sequence: sequence, operation: operation, quads: quads} = record,
-      {:ok, records, previous}
+      %{sequence: sequence, operation: operation, quads: quads} = record, {:ok, records, previous}
       when is_integer(sequence) and sequence > previous and operation in [:insert, :delete] and
              is_list(quads) ->
         {:cont, {:ok, [record | records], sequence}}

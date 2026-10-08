@@ -2,8 +2,9 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Benchmark.LDBC.{StoreFixture, SNB.Converter}
   alias TripleStore.Benchmark.LDBC.SNB.{BI.Checkpoint, BI.UpdateBatch, Mapping, UpdateStream}
+  alias TripleStore.Benchmark.LDBC.SNB.Converter
+  alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.QuadOperations
 
   test "mixed quad mutations commit atomically in caller order", %{test: test} do

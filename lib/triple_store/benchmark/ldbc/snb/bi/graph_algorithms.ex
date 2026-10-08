@@ -10,7 +10,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
 
   @telemetry_prefix [:triple_store, :benchmark, :ldbc, :snb_bi, :traversal]
 
-  @type provider :: (term() -> {:ok, [{term(), pos_integer()}]} | {:error, term()})
+  @type provider :: (term() -> {:ok, [{term(), number()}]} | {:error, term()})
 
   @doc "Returns all vertices at a shortest unweighted distance within an inclusive range."
   @spec shortest_path_range(term(), non_neg_integer(), non_neg_integer(), keyword()) ::
@@ -33,22 +33,30 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
 
         sources
         |> stable_sort()
-        |> Enum.reduce_while({:ok, [], state}, fn source, {:ok, pairs, current} ->
-          case dijkstra(source, target_set, current) do
-            {:ok, costs, next} ->
-              source_pairs = Enum.map(costs, fn {target, cost} -> {source, target, cost} end)
-              {:cont, {:ok, pairs ++ source_pairs, next}}
-
-            {:error, _} = error ->
-              {:halt, error}
-          end
-        end)
+        |> traverse_sources(target_set, state)
         |> case do
           {:ok, [], final} -> {:ok, %{rows: [], state: final}}
           {:ok, pairs, final} -> {:ok, %{rows: globally_cheapest(pairs), state: final}}
           {:error, _} = error -> error
         end
       end)
+    end
+  end
+
+  defp traverse_sources(sources, target_set, state) do
+    Enum.reduce_while(sources, {:ok, [], state}, fn source, {:ok, pairs, current} ->
+      traverse_source(source, target_set, pairs, current)
+    end)
+  end
+
+  defp traverse_source(source, target_set, pairs, state) do
+    case dijkstra(source, target_set, state) do
+      {:ok, costs, next} ->
+        source_pairs = Enum.map(costs, fn {target, cost} -> {source, target, cost} end)
+        {:cont, {:ok, pairs ++ source_pairs, next}}
+
+      {:error, _} = error ->
+        {:halt, error}
     end
   end
 
@@ -64,6 +72,42 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
       deterministic_ties: true,
       driver_side_graph_materialization: false
     }
+  end
+
+  @doc "Builds an index-backed undirected neighbour provider for one predicate."
+  @spec index_provider(pid(), non_neg_integer(), [non_neg_integer()] | :all, keyword()) ::
+          provider()
+  def index_provider(db, predicate_id, graphs \\ :all, opts \\ [])
+      when is_pid(db) and is_integer(predicate_id) and predicate_id >= 0 do
+    weight = Keyword.get(opts, :weight, fn _left, _right, _graph -> 1 end)
+
+    fn vertex ->
+      outgoing =
+        TripleStore.QuadOperations.lookup_quads(
+          db,
+          {:bound, :bound, :var, :var},
+          %{s: vertex, p: predicate_id}
+        )
+
+      incoming =
+        TripleStore.QuadOperations.lookup_quads(
+          db,
+          {:var, :bound, :bound, :var},
+          %{p: predicate_id, o: vertex}
+        )
+
+      neighbours =
+        outgoing
+        |> Enum.map(fn {_subject, _predicate, object, graph} -> {object, graph} end)
+        |> Kernel.++(
+          Enum.map(incoming, fn {subject, _predicate, _object, graph} -> {subject, graph} end)
+        )
+        |> Enum.filter(fn {_neighbour, graph} -> graphs == :all or graph in graphs end)
+        |> Enum.map(fn {neighbour, graph} -> {neighbour, weight.(vertex, neighbour, graph)} end)
+        |> Enum.uniq()
+
+      {:ok, neighbours}
+    end
   end
 
   defp runtime(opts) do
@@ -121,26 +165,36 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
       if distance == maximum do
         finish_bfs(rest, visited, minimum, state)
       else
-        case state.provider.(vertex) do
-          {:ok, neighbours} ->
-            {next_queue, next_visited} =
-              neighbours
-              |> stable_neighbours()
-              |> Enum.reduce({rest, visited}, fn {neighbour, _weight}, {pending, seen} ->
-                if Map.has_key?(seen, neighbour) do
-                  {pending, seen}
-                else
-                  {pending ++ [{neighbour, distance + 1}], Map.put(seen, neighbour, distance + 1)}
-                end
-              end)
-
-            next_state = bump(state, length(neighbours), length(next_queue))
-            bfs(next_queue, next_visited, minimum, maximum, next_state)
-
-          {:error, reason} ->
-            {:error, {:neighbour_lookup_failed, vertex, reason}}
-        end
+        expand_bfs(vertex, distance, rest, visited, minimum, maximum, state)
       end
+    end
+  end
+
+  defp expand_bfs(vertex, distance, rest, visited, minimum, maximum, state) do
+    case state.provider.(vertex) do
+      {:ok, neighbours} ->
+        {next_queue, next_visited} = enqueue_unseen(neighbours, rest, visited, distance + 1)
+        next_state = bump(state, length(neighbours), length(next_queue))
+        bfs(next_queue, next_visited, minimum, maximum, next_state)
+
+      {:error, reason} ->
+        {:error, {:neighbour_lookup_failed, vertex, reason}}
+    end
+  end
+
+  defp enqueue_unseen(neighbours, queue, visited, distance) do
+    neighbours
+    |> stable_neighbours()
+    |> Enum.reduce({queue, visited}, fn {neighbour, _weight}, {pending, seen} ->
+      enqueue_neighbour(neighbour, distance, pending, seen)
+    end)
+  end
+
+  defp enqueue_neighbour(neighbour, distance, pending, seen) do
+    if Map.has_key?(seen, neighbour) do
+      {pending, seen}
+    else
+      {pending ++ [{neighbour, distance}], Map.put(seen, neighbour, distance)}
     end
   end
 
@@ -177,7 +231,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
           {:ok, stable_costs(found), state}
 
         true ->
-          next_found = if MapSet.member?(targets, vertex), do: Map.put(found, vertex, cost), else: found
+          next_found =
+            if MapSet.member?(targets, vertex), do: Map.put(found, vertex, cost), else: found
 
           case state.provider.(vertex) do
             {:ok, neighbours} ->
@@ -196,7 +251,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
 
   defp relax(neighbours, cost, frontier, distances) do
     Enum.reduce(stable_neighbours(neighbours), {frontier, distances}, fn
-      {_vertex, weight}, _acc when not is_integer(weight) or weight <= 0 ->
+      {_vertex, weight}, _acc when not is_number(weight) or weight <= 0 ->
         throw({:invalid_edge_weight, weight})
 
       {vertex, weight}, {pending, known} ->
@@ -242,8 +297,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
   defp complete_at_lower_cost?(found, cost),
     do: found != %{} and found |> Map.values() |> Enum.min() < cost
 
-  defp stable_costs(costs), do: Enum.sort_by(costs, fn {vertex, cost} -> {cost, stable_key(vertex)} end)
-  defp stable_neighbours(neighbours), do: Enum.sort_by(neighbours, fn {vertex, _} -> stable_key(vertex) end)
+  defp stable_costs(costs),
+    do: Enum.sort_by(costs, fn {vertex, cost} -> {cost, stable_key(vertex)} end)
+
+  defp stable_neighbours(neighbours),
+    do: Enum.sort_by(neighbours, fn {vertex, _} -> stable_key(vertex) end)
+
   defp stable_sort(values), do: Enum.sort_by(values, &stable_key/1)
   defp stable_key(value), do: :erlang.term_to_binary(value, [:deterministic])
   defp pop_front([head | tail]), do: {head, tail}
