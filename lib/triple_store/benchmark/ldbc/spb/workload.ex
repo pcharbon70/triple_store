@@ -8,7 +8,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Workload do
   """
 
   alias TripleStore.Benchmark.LDBC.{Catalog, DatasetManifest, Operation, SourceManifest}
-  alias TripleStore.Benchmark.LDBC.SPB.Template
+  alias TripleStore.Benchmark.LDBC.SPB.{Compatibility, Template}
   alias TripleStore.SPARQL.{Algebra, Parser}
 
   @source_id "spb-2.0.2"
@@ -143,6 +143,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Workload do
            dependencies: catalog.dependencies,
            frequency: catalog.frequency,
            inference: inference_expectation(template),
+           compatibility: Compatibility.disclosures(catalog.upstream_id),
            template: template,
            template_sha256: checksum,
            local_path: local_path
@@ -179,6 +180,7 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Workload do
          dependencies: catalog.dependencies,
          frequency: catalog.frequency,
          inference: :not_applicable,
+         compatibility: [],
          template: nil,
          template_sha256: nil,
          local_path: nil
@@ -191,8 +193,10 @@ defmodule TripleStore.Benchmark.LDBC.SPB.Workload do
   def execute(_context, _parameters), do: {:error, :spb_execution_context_required}
 
   defp validate_query(entry, binding) do
-    with {:ok, parameters} <- Template.defaults(entry.template, binding.values),
-         {:ok, query} <- Template.render(entry.template, parameters),
+    with {:ok, executable} <-
+           Compatibility.executable_text(entry.operation.upstream_id, entry.template),
+         {:ok, parameters} <- Template.defaults(executable, binding.values),
+         {:ok, query} <- Template.render(executable, parameters),
          {:ok, ast} <- Parser.parse(query),
          {:ok, _algebra} <- Algebra.from_ast(ast) do
       []

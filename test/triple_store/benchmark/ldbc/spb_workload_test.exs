@@ -1,7 +1,7 @@
 defmodule TripleStore.Benchmark.LDBC.SPB.WorkloadTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.Benchmark.LDBC.SPB.{Pipeline, Template, Workload}
+  alias TripleStore.Benchmark.LDBC.SPB.{Compatibility, Pipeline, Template, Workload}
 
   test "loads the complete pinned profile with separate capability classes" do
     assert {:ok, package} = Workload.load()
@@ -64,15 +64,14 @@ defmodule TripleStore.Benchmark.LDBC.SPB.WorkloadTest do
   test "every aggregation template is audited through parser and algebra" do
     assert {:ok, package} = Workload.load()
 
-    assert {:error, failures} =
+    assert :ok =
              Workload.validate_aggregation_queries(package, %{
                values: ["urn:ldbc:spb:entity:smoke"]
              })
 
-    assert Enum.map(failures, &elem(&1, 0)) == [
-             "ldbc/spb/aggregation-11@v2.0.2",
-             "ldbc/spb/aggregation-12@v2.0.2",
-             "ldbc/spb/aggregation-20@v2.0.2"
-           ]
+    query20 = Enum.find(package.operations, &(&1.operation.upstream_id == "query20"))
+    assert File.read!(query20.local_path) =~ "  cWork cwork:dateModified"
+    assert [%{id: :missing_variable_marker}] = query20.compatibility
+    assert Compatibility.version() == "spb-2.0.2-compat-v1"
   end
 end
