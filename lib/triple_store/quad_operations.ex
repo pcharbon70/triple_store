@@ -264,6 +264,53 @@ defmodule TripleStore.QuadOperations do
     end)
   end
 
+  @doc """
+  Applies ordered quad inserts and deletes in one atomic RocksDB write batch.
+
+  Mutations are tuples of `{:insert, quad}` or `{:delete, quad}`. Each quad is
+  expanded to all four v2 indices while retaining the caller's mutation order.
+  This is the batch boundary used by stateful benchmark microbatches.
+  """
+  @spec apply_mutations(
+          ErlangAdapter.db_ref(),
+          [{:insert | :delete, quad()}],
+          keyword()
+        ) :: :ok | {:error, term()}
+  def apply_mutations(_db, [], _opts), do: :ok
+
+  def apply_mutations(db, mutations, opts) when is_list(mutations) do
+    sync = Keyword.get(opts, :sync, true)
+
+    with {:ok, operations} <- mutation_operations(mutations) do
+      ErlangAdapter.mixed_batch(db, operations, sync)
+    end
+  end
+
+  defp mutation_operations(mutations) do
+    Enum.reduce_while(mutations, {:ok, []}, fn
+      {:insert, {subject, predicate, object, graph}}, {:ok, operations}
+      when valid_quad?(subject, predicate, object, graph) ->
+        puts =
+          subject
+          |> build_insert_operations(predicate, object, graph)
+          |> Enum.map(fn {cf, key, value} -> {:put, cf, key, value} end)
+
+        {:cont, {:ok, operations ++ puts}}
+
+      {:delete, {subject, predicate, object, graph}}, {:ok, operations}
+      when valid_quad?(subject, predicate, object, graph) ->
+        deletes =
+          subject
+          |> build_delete_keys(predicate, object, graph)
+          |> Enum.map(fn {cf, key} -> {:delete, cf, key} end)
+
+        {:cont, {:ok, operations ++ deletes}}
+
+      mutation, _acc ->
+        {:halt, {:error, {:invalid_quad_mutation, mutation}}}
+    end)
+  end
+
   # ===========================================================================
   # Quad Existence Check
   # ===========================================================================
