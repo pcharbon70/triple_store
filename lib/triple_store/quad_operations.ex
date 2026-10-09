@@ -78,6 +78,14 @@ defmodule TripleStore.QuadOperations do
   @typedoc "Quad pattern: {s_pat, p_pat, o_pat, g_pat} where each is :bound or :var"
   @type quad_pattern :: {:bound | :var, :bound | :var, :bound | :var, :bound | :var}
 
+  @typedoc "Term IDs supplied for the bound positions in a quad pattern"
+  @type quad_values :: %{
+          optional(:s) => term_id(),
+          optional(:p) => term_id(),
+          optional(:o) => term_id(),
+          optional(:g) => term_id()
+        }
+
   # ===========================================================================
   # Guards
   # ===========================================================================
@@ -380,12 +388,7 @@ defmodule TripleStore.QuadOperations do
       QuadOperations.lookup_quads(db, {:bound, :bound, :var, :bound}, %{s: 1, p: 2, g: 0})
 
   """
-  @spec lookup_quads(ErlangAdapter.db_ref(), quad_pattern(), %{
-          s: term_id(),
-          p: term_id(),
-          o: term_id(),
-          g: term_id()
-        }) ::
+  @spec lookup_quads(ErlangAdapter.db_ref(), quad_pattern(), quad_values()) ::
           [quad()]
   def lookup_quads(db, pattern, values) do
     Telemetry.span(:quad, :lookup, %{pattern: pattern}, fn ->
@@ -450,12 +453,7 @@ defmodule TripleStore.QuadOperations do
   - Suitable for queries returning millions of quads
 
   """
-  @spec lookup_quads_stream(ErlangAdapter.db_ref(), quad_pattern(), %{
-          s: term_id(),
-          p: term_id(),
-          o: term_id(),
-          g: term_id()
-        }) ::
+  @spec lookup_quads_stream(ErlangAdapter.db_ref(), quad_pattern(), quad_values()) ::
           Enumerable.t()
   def lookup_quads_stream(db, pattern, values) do
     # Build the prefix scan parameters outside the stream
