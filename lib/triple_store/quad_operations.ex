@@ -78,6 +78,14 @@ defmodule TripleStore.QuadOperations do
   @typedoc "Quad pattern: {s_pat, p_pat, o_pat, g_pat} where each is :bound or :var"
   @type quad_pattern :: {:bound | :var, :bound | :var, :bound | :var, :bound | :var}
 
+  @typedoc "Term IDs supplied for the bound positions in a quad pattern"
+  @type quad_values :: %{
+          optional(:s) => term_id(),
+          optional(:p) => term_id(),
+          optional(:o) => term_id(),
+          optional(:g) => term_id()
+        }
+
   # ===========================================================================
   # Guards
   # ===========================================================================
@@ -264,6 +272,53 @@ defmodule TripleStore.QuadOperations do
     end)
   end
 
+  @doc """
+  Applies ordered quad inserts and deletes in one atomic RocksDB write batch.
+
+  Mutations are tuples of `{:insert, quad}` or `{:delete, quad}`. Each quad is
+  expanded to all four v2 indices while retaining the caller's mutation order.
+  This is the batch boundary used by stateful benchmark microbatches.
+  """
+  @spec apply_mutations(
+          ErlangAdapter.db_ref(),
+          [{:insert | :delete, quad()}],
+          keyword()
+        ) :: :ok | {:error, term()}
+  def apply_mutations(_db, [], _opts), do: :ok
+
+  def apply_mutations(db, mutations, opts) when is_list(mutations) do
+    sync = Keyword.get(opts, :sync, true)
+
+    with {:ok, operations} <- mutation_operations(mutations) do
+      ErlangAdapter.mixed_batch(db, operations, sync)
+    end
+  end
+
+  defp mutation_operations(mutations) do
+    Enum.reduce_while(mutations, {:ok, []}, fn
+      {:insert, {subject, predicate, object, graph}}, {:ok, operations}
+      when valid_quad?(subject, predicate, object, graph) ->
+        puts =
+          subject
+          |> build_insert_operations(predicate, object, graph)
+          |> Enum.map(fn {cf, key, value} -> {:put, cf, key, value} end)
+
+        {:cont, {:ok, operations ++ puts}}
+
+      {:delete, {subject, predicate, object, graph}}, {:ok, operations}
+      when valid_quad?(subject, predicate, object, graph) ->
+        deletes =
+          subject
+          |> build_delete_keys(predicate, object, graph)
+          |> Enum.map(fn {cf, key} -> {:delete, cf, key} end)
+
+        {:cont, {:ok, operations ++ deletes}}
+
+      mutation, _acc ->
+        {:halt, {:error, {:invalid_quad_mutation, mutation}}}
+    end)
+  end
+
   # ===========================================================================
   # Quad Existence Check
   # ===========================================================================
@@ -333,12 +388,7 @@ defmodule TripleStore.QuadOperations do
       QuadOperations.lookup_quads(db, {:bound, :bound, :var, :bound}, %{s: 1, p: 2, g: 0})
 
   """
-  @spec lookup_quads(ErlangAdapter.db_ref(), quad_pattern(), %{
-          s: term_id(),
-          p: term_id(),
-          o: term_id(),
-          g: term_id()
-        }) ::
+  @spec lookup_quads(ErlangAdapter.db_ref(), quad_pattern(), quad_values()) ::
           [quad()]
   def lookup_quads(db, pattern, values) do
     Telemetry.span(:quad, :lookup, %{pattern: pattern}, fn ->
@@ -403,12 +453,7 @@ defmodule TripleStore.QuadOperations do
   - Suitable for queries returning millions of quads
 
   """
-  @spec lookup_quads_stream(ErlangAdapter.db_ref(), quad_pattern(), %{
-          s: term_id(),
-          p: term_id(),
-          o: term_id(),
-          g: term_id()
-        }) ::
+  @spec lookup_quads_stream(ErlangAdapter.db_ref(), quad_pattern(), quad_values()) ::
           Enumerable.t()
   def lookup_quads_stream(db, pattern, values) do
     # Build the prefix scan parameters outside the stream

@@ -8,11 +8,9 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   the mutable store while all database resources are closed.
   """
 
-  alias TripleStore.Adapter
   alias TripleStore.Benchmark.Artifact
   alias TripleStore.Benchmark.LDBC.{DatasetManifest, StreamLoader}
-  alias TripleStore.Benchmark.LDBC.SNB.UpdateStream
-  alias TripleStore.QuadOperations
+  alias TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch
 
   defstruct manifest: nil,
             fixture_root: nil,
@@ -72,22 +70,13 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   @doc "Applies one ordered SNB update component through normal dictionary and quad batches."
   @spec apply_updates(t(), Path.t()) :: {:ok, t(), map()} | {:error, term()}
   def apply_updates(%__MODULE__{store: store} = fixture, path) when not is_nil(store) do
-    result =
-      path
-      |> UpdateStream.stream()
-      |> Enum.reduce_while({:ok, 0, -1}, fn record, {:ok, count, previous} ->
-        case apply_record(store, record, previous) do
-          :ok -> {:cont, {:ok, count + 1, record.sequence}}
-          {:error, reason} -> {:halt, {:error, {:update_failed, reason}}}
-        end
-      end)
+    case UpdateBatch.apply(store, path) do
+      {:ok, receipt} ->
+        {:ok, fixture, %{records: receipt.records, last_sequence: receipt.last_sequence}}
 
-    case result do
-      {:ok, count, sequence} -> {:ok, fixture, %{records: count, last_sequence: sequence}}
-      {:error, _} = error -> error
+      {:error, reason} ->
+        {:error, {:update_failed, reason}}
     end
-  rescue
-    error in File.Error -> {:error, {:update_stream_failed, error.reason}}
   end
 
   def apply_updates(%__MODULE__{}, _path), do: {:error, :store_closed}
@@ -212,7 +201,7 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   end
 
   defp verify_state(store, manifest, opts) do
-    expected = initial_component_count(manifest)
+    expected = Keyword.get(opts, :expected_statement_count, initial_component_count(manifest))
 
     with {:ok, verification} <- StreamLoader.verify(store, expected),
          :ok <- run_probes(store, Keyword.get(opts, :probes, [])) do
@@ -240,20 +229,6 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   end
 
   defp run_probes(_store, _probes), do: {:error, :invalid_reset_probes}
-
-  defp apply_record(store, %{sequence: sequence, operation: operation, quads: quads}, previous)
-       when is_integer(sequence) and sequence > previous and operation in [:insert, :delete] and
-              is_list(quads) do
-    with {:ok, encoded} <- Adapter.from_rdf_quads(store.dict_manager, quads) do
-      case operation do
-        :insert -> QuadOperations.insert_quads(store.db, encoded, sync: true)
-        :delete -> QuadOperations.delete_quads(store.db, encoded, sync: true)
-      end
-    end
-  end
-
-  defp apply_record(_store, {:error, reason}, _previous), do: {:error, reason}
-  defp apply_record(_store, _record, _previous), do: {:error, :invalid_update_record}
 
   defp acquire_lock(path, manifest) do
     case File.open(path, [:write, :exclusive]) do
