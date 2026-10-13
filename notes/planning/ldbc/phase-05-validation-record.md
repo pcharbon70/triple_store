@@ -109,8 +109,9 @@ evidence.
 
 ## Executed checks
 
-- Final Phase 5B focused regression set: 107 tests, 0 failures
-- Final default suite: 25 doctests, 10 properties, 6,896 tests, 0 failures,
+- Final Phase 5B focused regression set after review remediation: 166 tests,
+  0 failures, 4 excluded by the default test configuration
+- Final default suite: 25 doctests, 10 properties, 6,901 tests, 0 failures,
   53 skipped, 345 excluded by the default test configuration
 - Phase 5B `mix dialyzer --format short`: 0 errors and 0 skipped warnings
 - Phase 5B contextual qualification and adjacent SNB BI regressions: 61 tests,
