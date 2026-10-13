@@ -30,6 +30,20 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
                numeric_tolerance: 0.001
              )
 
+    assert %{status: :correct} =
+             Correctness.compare(
+               result([[1.0], [1.0], [2.0]], %{mode: :unordered}, [:float64]),
+               result([[2.0001], [1.0001], [0.9999]], %{mode: :unordered}, [:float64]),
+               numeric_tolerance: 0.001
+             )
+
+    assert %{status: :correct} =
+             Correctness.compare(
+               result([[0.1], [0.0]], %{mode: :unordered}, [:float64]),
+               result([[0.05], [0.15]], %{mode: :unordered}, [:float64]),
+               numeric_tolerance: 0.1
+             )
+
     timestamp = DateTime.from_iso8601("2025-01-01T00:00:00Z") |> elem(1)
 
     assert %{status: :correct} =
@@ -54,6 +68,19 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
                result([[2], [1]], %{mode: :ordered}, [:id]),
                full_comparison_limit: 1
              )
+
+    assert %{
+             status: :correct,
+             comparison: {:tolerant_hash, :multiset, 0.001, expected_hash, actual_hash}
+           } =
+             Correctness.compare(
+               result([[1.0], [2.0]], %{mode: :unordered}, [:float64]),
+               result([[2.0001], [1.0001]], %{mode: :unordered}, [:float64]),
+               full_comparison_limit: 1,
+               numeric_tolerance: 0.001
+             )
+
+    refute expected_hash == actual_hash
   end
 
   test "accepted divergences require explicit permission, reason, and pinned version" do

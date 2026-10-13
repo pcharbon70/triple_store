@@ -39,6 +39,10 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
           optional(:translation) => TranslationCorpus.entry()
         }
 
+  @doc "Returns the immutable upstream catalog identity for this workload."
+  @spec catalog_id() :: String.t()
+  def catalog_id, do: @catalog_id
+
   @doc "Loads and validates every BI read and canonical variant in stable order."
   @spec load() :: {:ok, [definition()]} | {:error, term()}
   def load do
