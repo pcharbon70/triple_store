@@ -34,6 +34,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
           required(:strategy) => {:native, module(), atom()} | {:extension, String.t(), module()},
           required(:source) => map(),
           required(:transformation_version) => String.t(),
+          required(:parameter_references) => %{String.t() => TranslationCorpus.reference_rule()},
+          required(:reference_profiles) => %{atom() => map()},
           optional(:translation) => TranslationCorpus.entry()
         }
 
@@ -44,8 +46,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
          {:ok, catalog} <- fetch_catalog(catalogs),
          definitions <- build_definitions(catalog),
          :ok <- validate(definitions, catalog),
-         {:ok, corpus} <- TranslationCorpus.load(definitions) do
-      {:ok, bind_translations(definitions, corpus)}
+         {:ok, corpus} <- TranslationCorpus.load(definitions),
+         {:ok, references} <- TranslationCorpus.reference_metadata(definitions) do
+      {:ok, definitions |> bind_translations(corpus) |> bind_references(references)}
     end
   end
 
@@ -138,6 +141,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
         {:ok, translation} -> Map.put(definition, :translation, translation)
         :error -> definition
       end
+    end)
+  end
+
+  defp bind_references(definitions, %{rules: rules, profiles: profiles}) do
+    Enum.map(definitions, fn definition ->
+      definition
+      |> Map.put(:parameter_references, Map.fetch!(rules, definition.number))
+      |> Map.put(:reference_profiles, profiles)
     end)
   end
 

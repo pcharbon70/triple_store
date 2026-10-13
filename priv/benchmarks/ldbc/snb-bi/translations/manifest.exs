@@ -6,6 +6,94 @@
   upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
   transformation_version: "triplestore-snb-bi-v1",
   mapping_version: "snb-rdf-v1",
+  parameter_references: %{
+    1 => %{"datetime" => %{kind: :scalar}},
+    2 => %{
+      "date" => %{kind: :scalar},
+      "tagClass" => %{kind: :entity_name, entity: "TagClass"}
+    },
+    3 => %{
+      "tagClass" => %{kind: :entity_name, entity: "TagClass"},
+      "country" => %{kind: :entity_name, entity: "Place"}
+    },
+    4 => %{"date" => %{kind: :scalar}},
+    5 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
+    6 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
+    7 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
+    8 => %{
+      "tag" => %{kind: :entity_name, entity: "Tag"},
+      "startDate" => %{kind: :scalar},
+      "endDate" => %{kind: :scalar}
+    },
+    9 => %{"startDate" => %{kind: :scalar}, "endDate" => %{kind: :scalar}},
+    10 => %{
+      "personId" => %{kind: :entity_id, entity: "Person"},
+      "country" => %{kind: :entity_name, entity: "Place"},
+      "tagClass" => %{kind: :entity_name, entity: "TagClass"},
+      "minPathDistance" => %{kind: :scalar},
+      "maxPathDistance" => %{kind: :scalar}
+    },
+    11 => %{
+      "country" => %{kind: :entity_name, entity: "Place"},
+      "startDate" => %{kind: :scalar},
+      "endDate" => %{kind: :scalar}
+    },
+    12 => %{
+      "startDate" => %{kind: :scalar},
+      "lengthThreshold" => %{kind: :scalar},
+      "languages" => %{kind: :scalar}
+    },
+    13 => %{
+      "country" => %{kind: :entity_name, entity: "Place"},
+      "endDate" => %{kind: :scalar}
+    },
+    14 => %{
+      "country1" => %{kind: :entity_name, entity: "Place"},
+      "country2" => %{kind: :entity_name, entity: "Place"}
+    },
+    15 => %{
+      "person1Id" => %{kind: :entity_id, entity: "Person"},
+      "person2Id" => %{kind: :entity_id, entity: "Person"},
+      "startDate" => %{kind: :scalar},
+      "endDate" => %{kind: :scalar}
+    },
+    16 => %{
+      "tagA" => %{kind: :entity_name, entity: "Tag"},
+      "dateA" => %{kind: :scalar},
+      "tagB" => %{kind: :entity_name, entity: "Tag"},
+      "dateB" => %{kind: :scalar},
+      "maxKnowsLimit" => %{kind: :scalar}
+    },
+    17 => %{
+      "tag" => %{kind: :entity_name, entity: "Tag"},
+      "delta" => %{kind: :scalar}
+    },
+    18 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
+    19 => %{
+      "city1Id" => %{kind: :entity_id, entity: "Place"},
+      "city2Id" => %{kind: :entity_id, entity: "Place"}
+    },
+    20 => %{
+      "company" => %{kind: :entity_name, entity: "Organisation"},
+      "person2Id" => %{kind: :entity_id, entity: "Person"}
+    }
+  },
+  reference_profiles: %{
+    official: %{
+      provenance: :official,
+      manifest_profile: :any,
+      fields: :all
+    },
+    snb_bi_smoke: %{
+      provenance: :smoke,
+      manifest_profile: "snb_bi_smoke",
+      fields: %{
+        10 => ["personId"],
+        15 => ["person1Id", "person2Id"],
+        20 => ["person2Id"]
+      }
+    }
+  },
   translations: [
     %{
       operation_id: "ldbc/snb-bi/read-01@v1.0.3",

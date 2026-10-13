@@ -44,6 +44,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
   @type validation_error ::
           {:translation, String.t() | nil, String.t() | nil, String.t() | nil, atom(), term()}
 
+  @type reference_rule ::
+          %{required(:kind) => :scalar}
+          | %{required(:kind) => :entity_id | :entity_name, required(:entity) => String.t()}
+
+  @type reference_metadata :: %{
+          required(:rules) => %{pos_integer() => %{String.t() => reference_rule()}},
+          required(:profiles) => %{atom() => map()}
+        }
+
   @doc "Returns the repository-owned translation corpus root."
   @spec default_root() :: Path.t()
   def default_root do
@@ -73,12 +82,37 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
   def load(_definitions, _opts),
     do: {:error, [error(nil, nil, nil, :definitions, :must_be_a_list)]}
 
+  @doc "Loads the parameter-reference rules and reduced-fixture profiles."
+  @spec reference_metadata([map()], keyword()) ::
+          {:ok, reference_metadata()} | {:error, [validation_error()]}
+  def reference_metadata(definitions, opts \\ [])
+
+  def reference_metadata(definitions, opts) when is_list(definitions) do
+    root = Keyword.get(opts, :root, default_root())
+
+    with {:ok, manifest} <- read_manifest(root),
+         [] <- reference_metadata_errors(manifest, definitions) do
+      {:ok,
+       %{
+         rules: Map.fetch!(manifest, :parameter_references),
+         profiles: Map.fetch!(manifest, :reference_profiles)
+       }}
+    else
+      {:error, reason} -> {:error, [error(nil, nil, "manifest.exs", :manifest, reason)]}
+      errors when is_list(errors) -> {:error, errors}
+    end
+  end
+
+  def reference_metadata(_definitions, _opts),
+    do: {:error, [error(nil, nil, nil, :definitions, :must_be_a_list)]}
+
   defp validate_and_load(manifest, definitions, root) when is_map(manifest) do
     expected = expected_definitions(definitions)
     entries = Map.get(manifest, :translations, [])
 
     errors =
       manifest_errors(manifest, entries)
+      |> Kernel.++(reference_metadata_errors(manifest, definitions))
       |> Kernel.++(coverage_errors(entries, expected))
       |> Kernel.++(unmanifested_errors(entries, root))
 
@@ -136,6 +170,156 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
       Map.get(manifest, :transformation_version)
     )
   end
+
+  defp reference_metadata_errors(manifest, definitions) do
+    rules = Map.get(manifest, :parameter_references)
+    profiles = Map.get(manifest, :reference_profiles)
+
+    []
+    |> validate_reference_rules(rules, definitions)
+    |> validate_reference_profiles(profiles, rules)
+  end
+
+  defp validate_reference_rules(errors, rules, definitions) when is_map(rules) do
+    expected_numbers = definitions |> Enum.map(& &1.number) |> MapSet.new()
+    actual_numbers = rules |> Map.keys() |> MapSet.new()
+
+    coverage_errors =
+      if expected_numbers == actual_numbers do
+        []
+      else
+        [
+          error(nil, nil, "manifest.exs", :parameter_reference_coverage, %{
+            expected: expected_numbers,
+            actual: actual_numbers
+          })
+        ]
+      end
+
+    rule_errors =
+      definitions
+      |> Enum.group_by(& &1.number)
+      |> Enum.flat_map(fn {number, variants} ->
+        case Map.get(rules, number) do
+          operation_rules when is_map(operation_rules) ->
+            variants
+            |> Enum.flat_map(fn definition ->
+              expected = definition.parameters |> Enum.map(& &1.name) |> MapSet.new()
+              actual = operation_rules |> Map.keys() |> MapSet.new()
+
+              name_errors =
+                if expected == actual do
+                  []
+                else
+                  [
+                    error(
+                      definition.id,
+                      definition.variant,
+                      "manifest.exs",
+                      :parameter_reference_names,
+                      %{expected: expected, actual: actual}
+                    )
+                  ]
+                end
+
+              value_errors =
+                Enum.flat_map(operation_rules, fn {name, rule} ->
+                  if valid_reference_rule?(rule) do
+                    []
+                  else
+                    [
+                      error(
+                        definition.id,
+                        definition.variant,
+                        "manifest.exs",
+                        :parameter_reference_rule,
+                        %{parameter: name, rule: rule}
+                      )
+                    ]
+                  end
+                end)
+
+              name_errors ++ value_errors
+            end)
+
+          invalid ->
+            Enum.map(variants, fn definition ->
+              error(
+                definition.id,
+                definition.variant,
+                "manifest.exs",
+                :parameter_reference_rule,
+                %{operation: number, rules: invalid}
+              )
+            end)
+        end
+      end)
+
+    errors ++ coverage_errors ++ rule_errors
+  end
+
+  defp validate_reference_rules(errors, _rules, _definitions),
+    do:
+      errors ++
+        [error(nil, nil, "manifest.exs", :parameter_references, :must_be_a_map)]
+
+  defp validate_reference_profiles(errors, profiles, rules)
+       when is_map(profiles) and is_map(rules) do
+    required = MapSet.new([:official, :snb_bi_smoke])
+
+    coverage_errors =
+      if MapSet.subset?(required, Map.keys(profiles) |> MapSet.new()) do
+        []
+      else
+        [error(nil, nil, "manifest.exs", :reference_profiles, :missing_required_profile)]
+      end
+
+    profile_errors =
+      Enum.flat_map(profiles, fn
+        {:official, %{provenance: :official, manifest_profile: :any, fields: :all}} ->
+          []
+
+        {:snb_bi_smoke, %{provenance: :smoke, manifest_profile: profile, fields: fields}}
+        when is_binary(profile) and is_map(fields) ->
+          validate_smoke_fields(fields, rules)
+
+        {name, profile} ->
+          [error(nil, nil, "manifest.exs", :reference_profile, %{name: name, profile: profile})]
+      end)
+
+    errors ++ coverage_errors ++ profile_errors
+  end
+
+  defp validate_reference_profiles(errors, _profiles, _rules),
+    do: errors ++ [error(nil, nil, "manifest.exs", :reference_profiles, :must_be_a_map)]
+
+  defp validate_smoke_fields(fields, rules) do
+    Enum.flat_map(fields, fn {number, names} ->
+      operation_rules = Map.get(rules, number, %{})
+
+      if is_list(names) and
+           Enum.all?(names, fn name ->
+             match?(%{kind: kind} when kind in [:entity_id, :entity_name], operation_rules[name])
+           end) do
+        []
+      else
+        [
+          error(nil, nil, "manifest.exs", :smoke_reference_fields, %{
+            operation: number,
+            fields: names
+          })
+        ]
+      end
+    end)
+  end
+
+  defp valid_reference_rule?(%{kind: :scalar}), do: true
+
+  defp valid_reference_rule?(%{kind: kind, entity: entity})
+       when kind in [:entity_id, :entity_name] and is_binary(entity),
+       do: entity in Mapping.entity_types()
+
+  defp valid_reference_rule?(_rule), do: false
 
   defp coverage_errors(entries, expected) when is_list(entries) do
     keys = Enum.map(entries, &entry_key/1)

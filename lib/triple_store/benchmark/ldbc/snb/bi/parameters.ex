@@ -8,7 +8,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
   """
 
   alias TripleStore.Benchmark.Artifact
-  alias TripleStore.Benchmark.LDBC.SNB.BI.Workload
+  alias TripleStore.Benchmark.LDBC.{DatasetManifest, StoreFixture}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{ParameterReferences, Workload}
 
   @parameter_source_id "snb-bi-1.0.3"
   @parameter_generator_pin "5f7967235593eefa98b336e240039780b6a76a9a"
@@ -19,6 +20,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
           required(:source_id) => String.t(),
           required(:generator_pin) => String.t(),
           required(:provenance) => :official | :smoke,
+          required(:dataset_identity) => map(),
           required(:sequences) => %{String.t() => [map()]}
         }
 
@@ -53,6 +55,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
       source_id: Keyword.get(opts, :source_id, @parameter_source_id),
       generator_pin: Keyword.get(opts, :generator_pin, @parameter_generator_pin),
       provenance: Keyword.get(opts, :provenance, :official),
+      dataset_identity: dataset_identity(manifest),
       sequences: sequences
     }
 
@@ -60,10 +63,55 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
   end
 
   @doc "Validates identity, row schemas, ordering, and comparable-run provenance."
-  @spec validate(bundle(), map(), [Workload.definition()], keyword()) :: :ok | {:error, [term()]}
-  def validate(bundle, manifest, definitions, opts \\ []) do
+  @spec validate(bundle(), map() | StoreFixture.t(), [Workload.definition()], keyword()) ::
+          :ok | {:error, [term()]}
+  def validate(bundle, manifest_or_fixture, definitions, opts \\ [])
+
+  def validate(bundle, %StoreFixture{} = fixture, definitions, opts) do
+    manifest = fixture.manifest
     comparable? = Keyword.get(opts, :comparable, false)
-    reference_validator = Keyword.get(opts, :reference_validator, fn _name, _value -> :ok end)
+    reference_profile = Keyword.get(opts, :reference_profile, :official)
+
+    identity_errors =
+      []
+      |> require(
+        bundle.dataset_checksum == manifest.transformation.output_checksum,
+        :dataset_checksum
+      )
+      |> require(bundle.scale_factor == manifest.scale_factor, :scale_factor)
+      |> require(not comparable? or bundle.provenance == :official, :official_provenance)
+      |> require(not comparable? or bundle.source_id == @parameter_source_id, :parameter_source)
+      |> require(
+        not comparable? or bundle.generator_pin == @parameter_generator_pin,
+        :generator_pin
+      )
+      |> require(bundle.dataset_identity == dataset_identity(manifest), :dataset_identity)
+      |> Kernel.++(store_identity_errors(fixture))
+
+    errors =
+      if identity_errors == [] do
+        case ParameterReferences.validate_profile(
+               definitions,
+               reference_profile,
+               manifest,
+               bundle
+             ) do
+          :ok ->
+            sequence_errors(bundle.sequences, definitions, {reference_profile, fixture.store})
+
+          {:error, reason} ->
+            [reason]
+        end
+      else
+        identity_errors
+      end
+
+    if errors == [], do: :ok, else: {:error, errors}
+  end
+
+  def validate(bundle, manifest, definitions, opts) when is_map(manifest) do
+    comparable? = Keyword.get(opts, :comparable, false)
+    reference_profile = Keyword.get(opts, :reference_profile)
 
     errors =
       []
@@ -78,12 +126,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
         not comparable? or bundle.generator_pin == @parameter_generator_pin,
         :generator_pin
       )
-      |> Kernel.++(sequence_errors(bundle.sequences, definitions, reference_validator))
+      |> require(bundle.dataset_identity == dataset_identity(manifest), :dataset_identity)
+      |> require(not comparable? and is_nil(reference_profile), :reference_store_required)
+      |> Kernel.++(sequence_errors(bundle.sequences, definitions, nil))
 
     if errors == [], do: :ok, else: {:error, errors}
   end
 
-  defp sequence_errors(sequences, definitions, reference_validator) do
+  defp sequence_errors(sequences, definitions, reference_context) do
     expected = MapSet.new(Workload.variant_labels(definitions))
     actual = sequences |> Map.keys() |> MapSet.new()
 
@@ -91,10 +141,10 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
       if expected == actual, do: [], else: [{:sequence_coverage, expected, actual}]
 
     coverage_errors ++
-      Enum.flat_map(definitions, &definition_sequence_errors(&1, sequences, reference_validator))
+      Enum.flat_map(definitions, &definition_sequence_errors(&1, sequences, reference_context))
   end
 
-  defp definition_sequence_errors(definition, sequences, reference_validator) do
+  defp definition_sequence_errors(definition, sequences, reference_context) do
     operation_label = label(definition)
 
     case Map.get(sequences, operation_label, []) do
@@ -105,12 +155,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
         rows
         |> Enum.with_index()
         |> Enum.flat_map(fn {row, index} ->
-          row_errors(row, index, definition, reference_validator)
+          row_errors(row, index, definition, reference_context)
         end)
     end
   end
 
-  defp row_errors(row, index, definition, reference_validator) when is_map(row) do
+  defp row_errors(row, index, definition, reference_context) when is_map(row) do
     expected_names = Enum.map(definition.parameters, & &1.name)
     actual_names = row |> Map.keys() |> Enum.sort()
 
@@ -122,26 +172,34 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
     name_errors ++
       Enum.flat_map(
         definition.parameters,
-        &field_errors(&1, row, index, definition, reference_validator)
+        &field_errors(&1, row, index, definition, reference_context)
       )
   end
 
-  defp row_errors(_row, index, definition, _reference_validator),
+  defp row_errors(_row, index, definition, _reference_context),
     do: [{label(definition), index, :invalid_row}]
 
-  defp field_errors(field, row, index, definition, reference_validator) do
+  defp field_errors(field, row, index, definition, reference_context) do
     value = Map.get(row, field.name)
 
     case validate_value(field.type, value) do
-      :ok -> reference_errors(reference_validator, field, value, index, definition)
+      :ok -> reference_errors(reference_context, field, value, index, definition)
       {:error, reason} -> [{label(definition), index, field.name, reason}]
     end
   end
 
-  defp reference_errors(reference_validator, field, value, index, definition) do
-    case reference_validator.(field.name, value) do
-      :ok -> []
-      {:error, reason} -> [{label(definition), index, field.name, reason}]
+  defp reference_errors(nil, _field, _value, _index, _definition), do: []
+
+  defp reference_errors({profile, store}, field, value, index, definition) do
+    if ParameterReferences.selected?(definition, profile, field.name) do
+      rule = Map.fetch!(definition.parameter_references, field.name)
+
+      case ParameterReferences.validate_rule(rule, value, store) do
+        :ok -> []
+        {:error, reason} -> [{label(definition), index, field.name, reason}]
+      end
+    else
+      []
     end
   end
 
@@ -210,10 +268,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
          source_id: source_id,
          generator_pin: generator_pin,
          provenance: provenance,
+         dataset_identity: dataset_identity,
          sequences: sequences
        })
        when is_binary(checksum) and is_binary(scale_factor) and is_binary(source_id) and
-              is_binary(generator_pin) and provenance in [:official, :smoke] and is_map(sequences),
+              is_binary(generator_pin) and provenance in [:official, :smoke] and
+              is_map(dataset_identity) and is_map(sequences),
        do: :ok
 
   defp validate_shape(_bundle), do: {:error, :invalid_parameter_bundle}
@@ -222,6 +282,38 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Parameters do
     suffix = if definition.variant == "default", do: "", else: definition.variant
     Integer.to_string(definition.number) <> suffix
   end
+
+  defp dataset_identity(%DatasetManifest{} = manifest), do: DatasetManifest.identity(manifest)
+
+  defp dataset_identity(manifest) when is_map(manifest) do
+    %{
+      dataset_id: Map.get(manifest, :dataset_id),
+      suite: Map.get(manifest, :suite),
+      profile: Map.get(manifest, :profile),
+      scale_factor: manifest.scale_factor,
+      output_checksum: manifest.transformation.output_checksum,
+      mapping_version: get_in(manifest, [:transformation, :mapping_version]),
+      store_path_identity: get_in(manifest, [:store, :path_identity])
+    }
+  end
+
+  defp store_identity_errors(%StoreFixture{store: nil}), do: [:reference_store_closed]
+
+  defp store_identity_errors(%StoreFixture{} = fixture) do
+    manifest = fixture.manifest
+    store = fixture.store
+
+    []
+    |> require(live_process?(store.db), :reference_store_closed)
+    |> require(live_process?(store.dict_manager), :reference_store_closed)
+    |> require(store.path == fixture.store_path, :store_identity)
+    |> require(Path.basename(store.path) == manifest.store.path_identity, :store_identity)
+    |> require(store.schema == manifest.store.schema, :store_schema)
+    |> Enum.uniq()
+  end
+
+  defp live_process?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp live_process?(_pid), do: false
 
   defp require(errors, true, _error), do: errors
   defp require(errors, false, error), do: errors ++ [error]

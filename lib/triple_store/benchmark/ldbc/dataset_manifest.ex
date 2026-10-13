@@ -141,7 +141,8 @@ defmodule TripleStore.Benchmark.LDBC.DatasetManifest do
       profile: manifest.profile,
       scale_factor: manifest.scale_factor,
       output_checksum: manifest.transformation.output_checksum,
-      mapping_version: manifest.transformation.mapping_version
+      mapping_version: manifest.transformation.mapping_version,
+      store_path_identity: manifest.store.path_identity
     }
   end
 

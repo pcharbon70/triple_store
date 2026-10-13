@@ -185,8 +185,19 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   defp validate_parameters(bundle, opts, definitions) do
     manifest = Keyword.fetch!(opts, :manifest)
     comparable? = Keyword.get(opts, :comparable, false)
-    Parameters.validate(bundle, manifest, definitions, comparable: comparable?)
+    validation_target = Keyword.get(opts, :fixture, manifest)
+
+    validation_opts =
+      [comparable: comparable?]
+      |> maybe_put_reference_profile(Keyword.get(opts, :reference_profile))
+
+    Parameters.validate(bundle, validation_target, definitions, validation_opts)
   end
+
+  defp maybe_put_reference_profile(opts, nil), do: opts
+
+  defp maybe_put_reference_profile(opts, profile),
+    do: Keyword.put(opts, :reference_profile, profile)
 
   defp default_batches(:validation), do: 1
   defp default_batches(:power), do: 1

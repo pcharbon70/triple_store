@@ -31,8 +31,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     assert {:ok, bundle} =
              Parameters.new(manifest, parameter_sequences(definitions), provenance: :smoke)
 
-    assert :ok = Parameters.validate(bundle, manifest, definitions)
     assert {:ok, fixture} = StoreFixture.setup(Path.join(root, "fixture"), manifest)
+
+    assert :ok =
+             Parameters.validate(bundle, fixture, definitions, reference_profile: :snb_bi_smoke)
 
     assert {:ok, fixture, checkpoint} =
              Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), %{
@@ -47,6 +49,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     assert {:ok, run} =
              Protocol.run(schedule, bundle,
                manifest: manifest,
+               fixture: fixture,
+               reference_profile: :snb_bi_smoke,
                apply_update: fn block ->
                  with {:ok, receipt} <- UpdateBatch.apply(fixture.store, update.path) do
                    {:ok, Map.put(receipt, :position, block.position)}
@@ -93,7 +97,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
              )
 
     assert_artifacts(artifacts)
-    assert_fail_closed_protocol(bundle, manifest)
+    assert_fail_closed_protocol(bundle, restored)
     assert_fail_closed_scoring(records)
     assert :ok = StoreFixture.teardown(restored, delete: true)
   end
@@ -115,12 +119,14 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
              )
   end
 
-  defp assert_fail_closed_protocol(bundle, manifest) do
+  defp assert_fail_closed_protocol(bundle, fixture) do
     assert {:ok, schedule} = Protocol.schedule(:validation)
 
     assert {:error, %{stage: :reads, score_eligible?: false}} =
              Protocol.run(schedule, bundle,
-               manifest: manifest,
+               manifest: fixture.manifest,
+               fixture: fixture,
+               reference_profile: :snb_bi_smoke,
                apply_update: fn _block -> {:ok, %{}} end,
                precompute: fn _block -> {:ok, %{}} end,
                execute_read: fn %{variant: variant} ->
@@ -130,7 +136,9 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
 
     assert {:error, %{stage: :updates, score_eligible?: false}} =
              Protocol.run(schedule, bundle,
-               manifest: manifest,
+               manifest: fixture.manifest,
+               fixture: fixture,
+               reference_profile: :snb_bi_smoke,
                apply_update: fn _block -> {:error, :injected} end,
                precompute: fn _block -> {:ok, %{}} end,
                execute_read: fn _operation -> {:ok, %{}} end
