@@ -269,6 +269,22 @@ defmodule TripleStore.Backend.RocksDB.IteratorTest do
       assert [] = Enum.to_list(stream)
     end
 
+    test "full consumption flushes the iterator monitor", %{db: db} do
+      ErlangAdapter.put(db, :spo, "key1", "value1")
+      ErlangAdapter.put(db, :spo, "key2", "value2")
+
+      assert [_, _] = db |> ErlangAdapter.prefix_stream(:spo, "key") |> Enum.to_list()
+      refute_receive {:DOWN, _ref, :process, _pid, _reason}, 20
+    end
+
+    test "early halt flushes the iterator monitor", %{db: db} do
+      ErlangAdapter.put(db, :spo, "key1", "value1")
+      ErlangAdapter.put(db, :spo, "key2", "value2")
+
+      assert [_] = db |> ErlangAdapter.prefix_stream(:spo, "key") |> Enum.take(1)
+      refute_receive {:DOWN, _ref, :process, _pid, _reason}, 20
+    end
+
     test "returns error for invalid column family", %{db: db} do
       stream = ErlangAdapter.prefix_stream(db, :nonexistent, "")
       # Stream fails when consumed, not when created

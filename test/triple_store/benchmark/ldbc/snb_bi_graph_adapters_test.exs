@@ -7,6 +7,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIGraphAdaptersTest do
   alias TripleStore.Benchmark.LDBC.SNB.BI.{
     Analytics,
     GraphAdapterRegistry,
+    IndexAccess,
     Workload
   }
 
@@ -33,6 +34,49 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIGraphAdaptersTest do
       assert {:module, ^adapter} = Code.ensure_loaded(adapter)
       assert function_exported?(adapter, :execute, 4)
     end
+  end
+
+  test "index scans observe cancellation and deadlines during enumeration", %{test: test} do
+    with_store(test, fn store ->
+      insert_entities(store, [{"Person", 1, %{}}, {"Person", 2, %{}}])
+      insert_relationships(store, [{"knows", "Person", 1, "Person", 2, %{}}])
+
+      cancel_key = {__MODULE__, :cancel_checks}
+      Process.put(cancel_key, 0)
+
+      cancelled? = fn ->
+        checks = Process.get(cancel_key, 0)
+        Process.put(cancel_key, checks + 1)
+        checks >= 1
+      end
+
+      assert {:ok, cancelled_access} =
+               store
+               |> trusted_context()
+               |> Map.put(:cancelled?, cancelled?)
+               |> IndexAccess.new(timeout: 1_000)
+
+      assert {:ok, person} = IndexAccess.entity(cancelled_access, "Person", 1)
+      assert {:error, :cancelled} = IndexAccess.objects(cancelled_access, person, "knows")
+
+      timeout_key = {__MODULE__, :timeout_checks}
+      Process.put(timeout_key, 0)
+
+      delay_after_open = fn ->
+        checks = Process.get(timeout_key, 0)
+        Process.put(timeout_key, checks + 1)
+        if checks >= 1, do: Process.sleep(120)
+        false
+      end
+
+      assert {:ok, timed_access} =
+               store
+               |> trusted_context()
+               |> Map.put(:cancelled?, delay_after_open)
+               |> IndexAccess.new(timeout: 100)
+
+      assert {:error, :timeout} = IndexAccess.objects(timed_access, person, "knows")
+    end)
   end
 
   test "BI 10 applies path bounds, country and tag-class filters, and distinct message counts",

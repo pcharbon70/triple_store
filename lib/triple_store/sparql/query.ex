@@ -464,7 +464,7 @@ defmodule TripleStore.SPARQL.Query do
   Parameter values can be:
   - URIs as strings: `"http://example.org/resource"`
   - Literal tuples: `{:literal, :simple, "value"}`
-  - Typed literals: `{:literal, {:typed, "xsd:integer"}, "42"}`
+  - Typed literals: `{:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}`
 
   ## Returns
 
@@ -769,6 +769,9 @@ defmodule TripleStore.SPARQL.Query do
       {:literal, :simple, value}
     end
   end
+
+  defp convert_param_value({:literal, kind, _, _} = literal) when kind in [:typed, :lang],
+    do: literal
 
   defp convert_param_value({:literal, _, _} = literal), do: literal
   defp convert_param_value({:named_node, _} = node), do: node

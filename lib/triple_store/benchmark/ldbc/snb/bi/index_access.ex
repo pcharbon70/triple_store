@@ -339,17 +339,37 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.IndexAccess do
   end
 
   defp collect(access, stream, mapper) do
-    values =
-      stream
-      |> Stream.filter(fn {_s, _p, _o, graph} -> MapSet.member?(access.graphs, graph) end)
-      |> Stream.map(mapper)
-      |> Stream.uniq()
-      |> Enum.take(access.max_intermediate + 1)
+    stream
+    |> Enum.reduce_while({:ok, [], MapSet.new(), 0}, fn quad, {:ok, values, seen, count} ->
+      case checkpoint(access) do
+        :ok -> collect_quad(access, quad, mapper, values, seen, count)
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, values, _seen, _count} -> {:ok, Enum.reverse(values)}
+      {:error, _} = error -> error
+    end
+  end
 
-    if length(values) > access.max_intermediate do
-      {:error, {:intermediate_bound_exceeded, access.max_intermediate}}
+  defp collect_quad(access, {_s, _p, _o, graph} = quad, mapper, values, seen, count) do
+    if MapSet.member?(access.graphs, graph) do
+      collect_value(access, mapper.(quad), values, seen, count)
     else
-      {:ok, values}
+      {:cont, {:ok, values, seen, count}}
+    end
+  end
+
+  defp collect_value(access, value, values, seen, count) do
+    cond do
+      MapSet.member?(seen, value) ->
+        {:cont, {:ok, values, seen, count}}
+
+      count >= access.max_intermediate ->
+        {:halt, {:error, {:intermediate_bound_exceeded, access.max_intermediate}}}
+
+      true ->
+        {:cont, {:ok, [value | values], MapSet.put(seen, value), count + 1}}
     end
   end
 
