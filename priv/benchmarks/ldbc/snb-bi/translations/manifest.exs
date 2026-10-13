@@ -14,7 +14,7 @@
     },
     3 => %{
       "tagClass" => %{kind: :entity_name, entity: "TagClass"},
-      "country" => %{kind: :entity_name, entity: "Place"}
+      "country" => %{kind: :entity_name, entity: "Place", subtype: "Country"}
     },
     4 => %{"date" => %{kind: :scalar}},
     5 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
@@ -28,13 +28,13 @@
     9 => %{"startDate" => %{kind: :scalar}, "endDate" => %{kind: :scalar}},
     10 => %{
       "personId" => %{kind: :entity_id, entity: "Person"},
-      "country" => %{kind: :entity_name, entity: "Place"},
+      "country" => %{kind: :entity_name, entity: "Place", subtype: "Country"},
       "tagClass" => %{kind: :entity_name, entity: "TagClass"},
       "minPathDistance" => %{kind: :scalar},
       "maxPathDistance" => %{kind: :scalar}
     },
     11 => %{
-      "country" => %{kind: :entity_name, entity: "Place"},
+      "country" => %{kind: :entity_name, entity: "Place", subtype: "Country"},
       "startDate" => %{kind: :scalar},
       "endDate" => %{kind: :scalar}
     },
@@ -44,12 +44,12 @@
       "languages" => %{kind: :scalar}
     },
     13 => %{
-      "country" => %{kind: :entity_name, entity: "Place"},
+      "country" => %{kind: :entity_name, entity: "Place", subtype: "Country"},
       "endDate" => %{kind: :scalar}
     },
     14 => %{
-      "country1" => %{kind: :entity_name, entity: "Place"},
-      "country2" => %{kind: :entity_name, entity: "Place"}
+      "country1" => %{kind: :entity_name, entity: "Place", subtype: "Country"},
+      "country2" => %{kind: :entity_name, entity: "Place", subtype: "Country"}
     },
     15 => %{
       "person1Id" => %{kind: :entity_id, entity: "Person"},
@@ -70,11 +70,11 @@
     },
     18 => %{"tag" => %{kind: :entity_name, entity: "Tag"}},
     19 => %{
-      "city1Id" => %{kind: :entity_id, entity: "Place"},
-      "city2Id" => %{kind: :entity_id, entity: "Place"}
+      "city1Id" => %{kind: :entity_id, entity: "Place", subtype: "City"},
+      "city2Id" => %{kind: :entity_id, entity: "Place", subtype: "City"}
     },
     20 => %{
-      "company" => %{kind: :entity_name, entity: "Organisation"},
+      "company" => %{kind: :entity_name, entity: "Organisation", subtype: "Company"},
       "person2Id" => %{kind: :entity_id, entity: "Person"}
     }
   },
@@ -158,7 +158,7 @@
       upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
       transformation_version: "triplestore-snb-bi-v1",
       mapping_version: "snb-rdf-v1",
-      checksum: "sha256:2962e30009c36ad6c54a3e906b4e01290cca31e83626dbc39e67afbc2039799f"
+      checksum: "sha256:90d937d4a60d96516c667af730cd2b903967df2e4ca6931e65e03e2e8c91ff3e"
     },
     %{
       operation_id: "ldbc/snb-bi/read-04@v1.0.3",
@@ -275,7 +275,7 @@
       upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
       transformation_version: "triplestore-snb-bi-v1",
       mapping_version: "snb-rdf-v1",
-      checksum: "sha256:b78d7f6ce788cf267582f65f407a3e0885032574db4d44121e897ffda3a3db2b"
+      checksum: "sha256:f2c9c814f3240491fb194bf02cc62253b01af03891b14fa9e6196a7c0bd5d099"
     },
     %{
       operation_id: "ldbc/snb-bi/read-12@v1.0.3",
@@ -301,7 +301,7 @@
       upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
       transformation_version: "triplestore-snb-bi-v1",
       mapping_version: "snb-rdf-v1",
-      checksum: "sha256:947996391ecd044c22f490bee9703ec9ba22337f4c6149c302e72edb7c43ee75"
+      checksum: "sha256:d07bcbe5f3e00d2e18762cd935d201e50273c903bce54b8a2c0916e8dc468b39"
     },
     %{
       operation_id: "ldbc/snb-bi/read-14@v1.0.3",
@@ -314,7 +314,7 @@
       upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
       transformation_version: "triplestore-snb-bi-v1",
       mapping_version: "snb-rdf-v1",
-      checksum: "sha256:227790e29f747e7763225426fec0f50c69bf905ada39850e45b412594ceb7f90"
+      checksum: "sha256:2e4540dc238422340d70e51bce2920fd07fd59c5d7cdec7f7c742204589cecbd"
     },
     %{
       operation_id: "ldbc/snb-bi/read-14@v1.0.3",
@@ -327,7 +327,7 @@
       upstream_commit: "5f7967235593eefa98b336e240039780b6a76a9a",
       transformation_version: "triplestore-snb-bi-v1",
       mapping_version: "snb-rdf-v1",
-      checksum: "sha256:227790e29f747e7763225426fec0f50c69bf905ada39850e45b412594ceb7f90"
+      checksum: "sha256:2e4540dc238422340d70e51bce2920fd07fd59c5d7cdec7f7c742204589cecbd"
     },
     %{
       operation_id: "ldbc/snb-bi/read-16@v1.0.3",

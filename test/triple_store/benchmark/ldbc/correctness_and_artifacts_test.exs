@@ -70,8 +70,9 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
              )
 
     assert %{
-             status: :correct,
-             comparison: {:tolerant_hash, :multiset, 0.001, expected_hash, actual_hash}
+             status: :incorrect,
+             category: :tolerant_comparison_too_large,
+             details: %{expected_hash: expected_hash, actual_hash: actual_hash}
            } =
              Correctness.compare(
                result([[1.0], [2.0]], %{mode: :unordered}, [:float64]),

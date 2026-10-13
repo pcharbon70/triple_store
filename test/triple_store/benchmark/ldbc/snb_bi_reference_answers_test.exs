@@ -40,9 +40,9 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     {definition, dataset, parameters} = context()
 
     rows = [
-      read_1_row(2011, 4_294_967_296, 1.5),
       read_1_row(2012, 7, 2.5),
-      read_1_row(2012, 7, 2.5)
+      read_1_row(2012, 7, 2.5),
+      read_1_row(2011, 4_294_967_296, 1.5)
     ]
 
     root = write_reference_root(test, definition, dataset, parameters, rows)
@@ -70,6 +70,31 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     assert answer.result.duplicate_semantics == :bag
     assert answer.identity.parameter.row_index == 0
     assert String.starts_with?(answer.content_checksum, "sha256:")
+  end
+
+  test "rejects accepted answers that violate canonical order or the operation limit", %{
+    test: test
+  } do
+    {definition, dataset, parameters} = context()
+
+    misordered = [read_1_row(2011, 1, 1.0), read_1_row(2012, 2, 2.0)]
+    root = write_reference_root({test, :order}, definition, dataset, parameters, misordered)
+
+    assert {:error, {:malformed_reference_answer, :noncanonical_result_order}} =
+             load(root, definition, dataset, parameters)
+
+    limited_definition = %{definition | limit: 1}
+    excessive = List.duplicate(read_1_row(2012, 1, 1.0), limited_definition.limit + 1)
+
+    root =
+      write_reference_root({test, :limit}, limited_definition, dataset, parameters, excessive)
+
+    assert {:error,
+            {:malformed_reference_answer, {:result_limit_exceeded, expected_limit, actual_count}}} =
+             load(root, limited_definition, dataset, parameters)
+
+    assert expected_limit == limited_definition.limit
+    assert actual_count == limited_definition.limit + 1
   end
 
   test "decodes reference timestamps without losing UTC identity", %{test: test} do
@@ -232,6 +257,32 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     assert first.status == :correct
     assert {:hash, :ordered, digest} = first.comparison
     assert digest == elem(second.comparison, 2)
+  end
+
+  test "accepted divergences must match the loaded reference source version", %{test: test} do
+    {definition, dataset, parameters} = context()
+    root = write_reference_root(test, definition, dataset, parameters, [read_1_row(2012, 1, 1.0)])
+    assert {:ok, actual} = ResultContract.materialize(definition, [read_1_row(2011, 1, 1.0)])
+
+    divergence = %{
+      permitted?: true,
+      reason: "Pinned reference-engine exception",
+      source_version: "different-version"
+    }
+
+    assert {:error, :invalid_accepted_divergence} =
+             ReferenceAnswers.compare(definition, 0, actual, dataset, parameters,
+               root: root,
+               reference_source: @reference_source,
+               accepted_divergence: divergence
+             )
+
+    assert {:ok, %{status: :accepted_divergence}} =
+             ReferenceAnswers.compare(definition, 0, actual, dataset, parameters,
+               root: root,
+               reference_source: @reference_source,
+               accepted_divergence: %{divergence | source_version: @reference_source.version}
+             )
   end
 
   defp load(root, definition, dataset, parameters) do

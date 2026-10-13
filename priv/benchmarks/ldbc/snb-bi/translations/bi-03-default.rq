@@ -7,8 +7,8 @@ SELECT ?forum__id ?forum__title ?forum__creationDate ?person__id (COUNT(DISTINCT
 FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
 FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
 WHERE {
-  ?country rdf:type snb:Place ; snb:name {{country}} .
-  ?city snb:isPartOf ?country .
+  ?country rdf:type snb:Place ; snb:type "Country" ; snb:name {{country}} .
+  ?city rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?country .
   ?person rdf:type snb:Person ; snb:isLocatedIn ?city .
   ?forum rdf:type snb:Forum ; snb:hasModerator ?person ;
          snb:title ?forum__title ; snb:creationDate ?forum__creationDate ;

@@ -30,6 +30,18 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ResultContract do
     end
   end
 
+  @doc "Decodes an accepted answer without repairing its order or applying its limit."
+  @spec decode_reference(map(), [map()]) :: {:ok, Result.t()} | {:error, term()}
+  def decode_reference(definition, rows) when is_list(rows) do
+    schema = Enum.map(definition.result, &Map.put(&1, :type, canonical_type(&1.type)))
+
+    with :ok <- validate_reference_limit(rows, definition.limit),
+         {:ok, typed} <- decode_rows(rows, schema),
+         :ok <- validate_reference_order(typed, definition.ordering) do
+      {:ok, build_result(schema, typed, definition.ordering)}
+    end
+  end
+
   @doc "Adapts a materialized BI result to the shared LDBC result contract."
   @spec to_result(map(), Result.t() | map()) :: {:ok, Result.t()} | {:error, term()}
   def to_result(_definition, %Result{} = result), do: {:ok, result}
@@ -69,6 +81,27 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ResultContract do
       {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
       error -> error
     end
+  end
+
+  defp validate_reference_limit(rows, limit) when is_integer(limit) and length(rows) > limit,
+    do: {:error, {:result_limit_exceeded, limit, length(rows)}}
+
+  defp validate_reference_limit(_rows, _limit), do: :ok
+
+  defp validate_reference_order(_rows, []), do: :ok
+
+  defp validate_reference_order(rows, ordering) do
+    if rows == order(rows, ordering), do: :ok, else: {:error, :noncanonical_result_order}
+  end
+
+  defp build_result(schema, rows, ordering) do
+    %Result{
+      columns: Enum.map(schema, & &1.name),
+      types: Enum.map(schema, & &1.type),
+      rows: Enum.map(rows, fn row -> Enum.map(schema, &Map.fetch!(row, &1.name)) end),
+      ordering: ordering_contract(ordering),
+      duplicate_semantics: :bag
+    }
   end
 
   defp decode_row(row, schema) when is_map(row) do

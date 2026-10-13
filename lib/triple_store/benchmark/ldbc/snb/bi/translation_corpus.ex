@@ -23,6 +23,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
   @allowed_graphs MapSet.new([@initial_graph, @updates_graph])
   @placeholder_regex ~r/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/
   @dataset_clause_regex ~r/(?:FROM(?:\s+NAMED)?|GRAPH)\s*<([^>]+)>/i
+  @dynamic_graph_clause_regex ~r/\bGRAPH\s+(?!<)/i
 
   @type entry :: %{
           required(:operation_id) => String.t(),
@@ -718,6 +719,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
         String.contains?(sparql, "FROM <#{@initial_graph}>") and
         String.contains?(sparql, "FROM <#{@updates_graph}>") and
         MapSet.subset?(referenced_graphs, @allowed_graphs) and
+        not String.match?(sparql, @dynamic_graph_clause_regex) and
         not String.match?(sparql, ~r/\bSERVICE\b/i) and
         not String.contains?(sparql, "translationAnchor")
 

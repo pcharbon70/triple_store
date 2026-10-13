@@ -111,27 +111,31 @@ defmodule TripleStore.Benchmark.LDBC.Correctness do
     expected_hash = digest(expected.rows, mode)
     actual_hash = digest(actual.rows, mode)
 
-    equal? =
-      if mode == :ordered do
-        pairwise_equal?(expected.rows, actual.rows, tolerance)
-      else
-        unordered_pairwise_equal?(expected.rows, actual.rows, tolerance)
-      end
+    cond do
+      mode == :multiset ->
+        failure(:tolerant_comparison_too_large, expected, actual, %{
+          comparison: :hash,
+          mode: mode,
+          numeric_tolerance: tolerance,
+          expected_hash: expected_hash,
+          actual_hash: actual_hash
+        })
 
-    if equal? do
-      success(
-        expected,
-        actual,
-        {:tolerant_hash, mode, tolerance, expected_hash, actual_hash}
-      )
-    else
-      failure(:hash_mismatch, expected, actual, %{
-        comparison: :hash,
-        mode: mode,
-        numeric_tolerance: tolerance,
-        expected_hash: expected_hash,
-        actual_hash: actual_hash
-      })
+      pairwise_equal?(expected.rows, actual.rows, tolerance) ->
+        success(
+          expected,
+          actual,
+          {:tolerant_hash, mode, tolerance, expected_hash, actual_hash}
+        )
+
+      true ->
+        failure(:hash_mismatch, expected, actual, %{
+          comparison: :hash,
+          mode: mode,
+          numeric_tolerance: tolerance,
+          expected_hash: expected_hash,
+          actual_hash: actual_hash
+        })
     end
   end
 

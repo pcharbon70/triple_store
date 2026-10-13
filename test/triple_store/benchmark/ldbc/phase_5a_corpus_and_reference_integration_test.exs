@@ -236,9 +236,9 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
     assert {:ok, definition} = Workload.fetch(definitions, 1)
 
     rows = [
-      read_1_row(2011, 4_294_967_296, 1.5),
       read_1_row(2012, 7, 2.5),
-      read_1_row(2012, 7, 2.5)
+      read_1_row(2012, 7, 2.5),
+      read_1_row(2011, 4_294_967_296, 1.5)
     ]
 
     root = write_reference_root({test, :typed}, definition, dataset, parameters, rows)

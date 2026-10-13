@@ -14,6 +14,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
 
   @rdf_type RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
   @name RDF.iri("https://ldbcouncil.org/snb/ontology/name")
+  @source_type RDF.iri("https://ldbcouncil.org/snb/ontology/type")
   @ontology "https://ldbcouncil.org/snb/ontology/"
   @entity_kinds %{
     "Person" => :person,
@@ -25,10 +26,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
     "Tag" => :tag,
     "TagClass" => :tag_class
   }
+  @subtype_kinds %{"Country" => :country, "City" => :city, "Company" => :company}
 
   @type rule ::
           %{required(:kind) => :scalar}
-          | %{required(:kind) => :entity_id | :entity_name, required(:entity) => String.t()}
+          | %{
+              required(:kind) => :entity_id | :entity_name,
+              required(:entity) => String.t(),
+              optional(:subtype) => String.t()
+            }
 
   @doc "Validates one mapped-store reference using read-only dictionary and index lookups."
   @spec validate_rule(rule(), term(), TripleStore.store()) :: :ok | {:error, term()}
@@ -55,12 +61,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
           o: value_id
         })
         |> Enum.filter(fn {subject_id, _predicate_id, _object_id, graph_id} ->
-          QuadOperations.quad_exists?(store.db, {
-            subject_id,
-            context.type_id,
-            context.class_id,
-            graph_id
-          })
+          subject_matches?(store.db, subject_id, graph_id, context)
         end)
 
       validate_matches(matches, context.graph_ids, rule, value)
@@ -104,6 +105,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
         {:bound, :bound, :bound, :var},
         %{s: subject_id, p: context.type_id, o: context.class_id}
       )
+      |> Enum.filter(fn {_subject_id, _predicate_id, _object_id, graph_id} ->
+        subject_matches?(context.db, subject_id, graph_id, context)
+      end)
 
     validate_matches(matches, context.graph_ids, rule, value)
   end
@@ -130,25 +134,61 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
   defp lookup_context(%{db: db}, entity, rule, value) when is_binary(entity) do
     with {:ok, type_id} <- lookup_context_term(db, @rdf_type),
          {:ok, class_id} <- lookup_term(db, RDF.iri(@ontology <> entity), rule, value),
+         {:ok, subtype} <- lookup_subtype(db, rule, value),
          {:ok, graph_ids} <- expected_graph_ids(db) do
-      {:ok, %{db: db, type_id: type_id, class_id: class_id, graph_ids: graph_ids}}
+      {:ok,
+       %{db: db, type_id: type_id, class_id: class_id, subtype: subtype, graph_ids: graph_ids}}
     end
   end
 
   defp lookup_context(_store, _entity, _rule, _value), do: {:error, :invalid_reference_store}
 
   defp expected_graph_ids(db) do
-    graph_ids =
-      [:initial, :updates]
-      |> Enum.flat_map(fn component ->
+    result =
+      Enum.reduce_while([:initial, :updates], {:ok, []}, fn component, {:ok, ids} ->
         case StringToId.lookup_id(db, Mapping.graph_iri(:snb_bi, component)) do
-          {:ok, id} -> [id]
-          :not_found -> []
-          {:error, _reason} -> []
+          {:ok, id} -> {:cont, {:ok, [id | ids]}}
+          :not_found -> {:cont, {:ok, ids}}
+          {:error, reason} -> {:halt, {:error, {:reference_lookup_failed, reason}}}
         end
       end)
 
-    if graph_ids == [], do: {:error, :snb_bi_graphs_missing}, else: {:ok, graph_ids}
+    case result do
+      {:ok, []} -> {:error, :snb_bi_graphs_missing}
+      {:ok, graph_ids} -> {:ok, Enum.reverse(graph_ids)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp lookup_subtype(_db, %{subtype: nil}, _value), do: {:ok, nil}
+  defp lookup_subtype(_db, rule, _value) when not is_map_key(rule, :subtype), do: {:ok, nil}
+
+  defp lookup_subtype(db, %{subtype: subtype} = rule, value) when is_binary(subtype) do
+    with {:ok, predicate_id} <- lookup_context_term(db, @source_type),
+         {:ok, value_id} <- lookup_term(db, RDF.literal(subtype), rule, value) do
+      {:ok, {predicate_id, value_id}}
+    end
+  end
+
+  defp subject_matches?(db, subject_id, graph_id, context) do
+    class_match? =
+      QuadOperations.quad_exists?(db, {
+        subject_id,
+        context.type_id,
+        context.class_id,
+        graph_id
+      })
+
+    subtype_match? =
+      case context.subtype do
+        nil ->
+          true
+
+        {predicate_id, value_id} ->
+          QuadOperations.quad_exists?(db, {subject_id, predicate_id, value_id, graph_id})
+      end
+
+    class_match? and subtype_match?
   end
 
   defp lookup_context_term(db, term) do
@@ -178,6 +218,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
 
   defp normalize_id(value), do: {:error, {:invalid_reference_id, value}}
 
+  defp reference_kind(%{subtype: subtype}), do: Map.fetch!(@subtype_kinds, subtype)
   defp reference_kind(%{entity: entity}), do: Map.fetch!(@entity_kinds, entity)
 
   defp require_provenance(%{provenance: provenance}, %{provenance: provenance}), do: :ok

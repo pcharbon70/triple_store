@@ -8,9 +8,10 @@ FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
 FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
 WHERE {
   { SELECT ?candidate WHERE {
-      ?zCountry rdf:type snb:Place ; snb:name {{country}} .
-      ?candidate rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?zCountry ;
+      ?zCountry rdf:type snb:Place ; snb:type "Country" ; snb:name {{country}} .
+      ?candidate rdf:type snb:Person ; snb:isLocatedIn ?candidateCity ;
                  snb:creationDate ?candidateCreation .
+      ?candidateCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?zCountry .
       FILTER(?candidateCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
       OPTIONAL {
         ?candidateMessage rdf:type snb:Message ; snb:hasCreator ?candidate ; snb:creationDate ?candidateMessageDate .
@@ -28,9 +29,10 @@ WHERE {
     FILTER(?likerCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
     OPTIONAL {
       { SELECT ?likerCandidate WHERE {
-      ?zCountry rdf:type snb:Place ; snb:name {{country}} .
-      ?likerCandidate rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?zCountry ;
+      ?zCountry rdf:type snb:Place ; snb:type "Country" ; snb:name {{country}} .
+      ?likerCandidate rdf:type snb:Person ; snb:isLocatedIn ?likerCandidateCity ;
                  snb:creationDate ?likerCandidateCreation .
+      ?likerCandidateCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?zCountry .
       FILTER(?likerCandidateCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
       OPTIONAL {
         ?likerCandidateMessage rdf:type snb:Message ; snb:hasCreator ?likerCandidate ; snb:creationDate ?likerCandidateMessageDate .

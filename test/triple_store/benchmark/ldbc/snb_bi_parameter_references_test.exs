@@ -32,12 +32,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIParameterReferencesTest do
 
     assert reference_rule(definitions, 14, "b", "country2") == %{
              kind: :entity_name,
-             entity: "Place"
+             entity: "Place",
+             subtype: "Country"
            }
 
     assert reference_rule(definitions, 20, "m", "company") == %{
              kind: :entity_name,
-             entity: "Organisation"
+             entity: "Organisation",
+             subtype: "Company"
            }
   end
 
@@ -131,6 +133,51 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIParameterReferencesTest do
 
     assert {:error, {:ambiguous_reference, :tag, "duplicate"}} =
              ParameterReferences.validate_rule(rule, "duplicate", fixture.store)
+
+    assert :ok = StoreFixture.teardown(fixture, delete: true)
+  end
+
+  test "source subtype discriminators distinguish countries, cities, and companies", %{test: test} do
+    root = tmp_dir(test)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, manifest} =
+             Converter.convert(:snb_bi_smoke, fixture_root(), Path.join(root, "converted"))
+
+    assert {:ok, fixture} = StoreFixture.setup(Path.join(root, "fixture"), manifest)
+
+    assert :ok =
+             insert_entity(fixture.store, :snb_bi, "Place", 100, %{
+               "name" => "Shared Place",
+               "type" => "Country"
+             })
+
+    assert :ok =
+             insert_entity(fixture.store, :snb_bi, "Place", 101, %{
+               "name" => "Shared Place",
+               "type" => "City"
+             })
+
+    country = %{kind: :entity_name, entity: "Place", subtype: "Country"}
+    city_id = %{kind: :entity_id, entity: "Place", subtype: "City"}
+    country_id = %{kind: :entity_id, entity: "Place", subtype: "Country"}
+
+    assert :ok = ParameterReferences.validate_rule(country, "Shared Place", fixture.store)
+    assert :ok = ParameterReferences.validate_rule(city_id, 101, fixture.store)
+
+    assert {:error, {:unknown_reference, :country, 101}} =
+             ParameterReferences.validate_rule(country_id, 101, fixture.store)
+
+    assert :ok =
+             insert_entity(fixture.store, :snb_bi, "Organisation", 200, %{
+               "name" => "University Only",
+               "type" => "University"
+             })
+
+    company = %{kind: :entity_name, entity: "Organisation", subtype: "Company"}
+
+    assert {:error, {:unknown_reference, :company, "University Only"}} =
+             ParameterReferences.validate_rule(company, "University Only", fixture.store)
 
     assert :ok = StoreFixture.teardown(fixture, delete: true)
   end

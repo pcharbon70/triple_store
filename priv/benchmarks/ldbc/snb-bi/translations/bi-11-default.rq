@@ -7,20 +7,23 @@ SELECT (COUNT(*) AS ?count)
 FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
 FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
 WHERE {
-  ?country rdf:type snb:Place ; snb:name {{country}} .
-  ?a rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?country .
+  ?country rdf:type snb:Place ; snb:type "Country" ; snb:name {{country}} .
+  ?a rdf:type snb:Person ; snb:isLocatedIn ?aCity .
+  ?aCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?country .
   {
     ?k1 rdf:type snb:Relationship ; rdf:predicate snb:knows ; rdf:subject ?a ; rdf:object ?b ; snb:creationDate ?k1Date .
   } UNION {
     ?k1 rdf:type snb:Relationship ; rdf:predicate snb:knows ; rdf:subject ?b ; rdf:object ?a ; snb:creationDate ?k1Date .
   }
-  ?b snb:isLocatedIn/snb:isPartOf ?country .
+  ?b snb:isLocatedIn ?bCity .
+  ?bCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?country .
   {
     ?k2 rdf:type snb:Relationship ; rdf:predicate snb:knows ; rdf:subject ?b ; rdf:object ?c ; snb:creationDate ?k2Date .
   } UNION {
     ?k2 rdf:type snb:Relationship ; rdf:predicate snb:knows ; rdf:subject ?c ; rdf:object ?b ; snb:creationDate ?k2Date .
   }
-  ?c snb:isLocatedIn/snb:isPartOf ?country .
+  ?c snb:isLocatedIn ?cCity .
+  ?cCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?country .
   {
     ?k3 rdf:type snb:Relationship ; rdf:predicate snb:knows ; rdf:subject ?c ; rdf:object ?a ; snb:creationDate ?k3Date .
   } UNION {

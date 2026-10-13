@@ -111,6 +111,13 @@ defmodule TripleStore.Benchmark.LDBC.SNBBITranslationCorpusTest do
              "https://ldbcouncil.org/snb/graph/snb_bi/initial",
              "https://example.test/wrong-graph"
            ), :mapping_assumptions},
+          {:dynamic_graph, "ldbc/snb-bi/read-01@v1.0.3",
+           &String.replace(
+             &1,
+             "WHERE {",
+             "WHERE { GRAPH ?unexpectedGraph { ?dynamicS ?dynamicP ?dynamicO . }",
+             global: false
+           ), :mapping_assumptions},
           {:structural_shell, "ldbc/snb-bi/read-01@v1.0.3", &structural_shell/1,
            :mapping_assumptions},
           {:ordering, "ldbc/snb-bi/read-01@v1.0.3",

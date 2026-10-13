@@ -56,6 +56,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
           {:ok, map()} | {:error, term()}
   def compare(definition, parameter_row_index, actual, dataset, parameters, opts \\ []) do
     with {:ok, answer} <- load(definition, parameter_row_index, dataset, parameters, opts),
+         :ok <- validate_divergence(opts, answer.reference_source.version),
          {:ok, actual_result} <- ResultContract.to_result(definition, actual) do
       comparison_opts =
         Keyword.take(opts, [:full_comparison_limit, :numeric_tolerance, :accepted_divergence])
@@ -258,9 +259,16 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
   end
 
   defp materialize_payload(definition, %{"rows" => rows}) do
-    case ResultContract.materialize(definition, rows) do
+    case ResultContract.decode_reference(definition, rows) do
       {:ok, %Result{} = result} -> {:ok, result}
       {:error, reason} -> {:error, {:malformed_reference_answer, reason}}
+    end
+  end
+
+  defp validate_divergence(opts, reference_version) do
+    case Keyword.fetch(opts, :accepted_divergence) do
+      {:ok, divergence} -> Correctness.validate_divergence(divergence, reference_version)
+      :error -> :ok
     end
   end
 

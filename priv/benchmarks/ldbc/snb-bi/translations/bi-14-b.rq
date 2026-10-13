@@ -11,10 +11,10 @@ WHERE {
            (MAX(IF(BOUND(?case1), 4, 0)) + MAX(IF(BOUND(?case2), 1, 0)) +
             MAX(IF(BOUND(?case3), 10, 0)) + MAX(IF(BOUND(?case4), 1, 0)) AS ?candidateScore)
     WHERE {
-      ?c1 rdf:type snb:Place ; snb:name {{country1}} .
-      ?candidateCity snb:isPartOf ?c1 ; snb:name ?candidateCityName .
+      ?c1 rdf:type snb:Place ; snb:type "Country" ; snb:name {{country1}} .
+      ?candidateCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?c1 ; snb:name ?candidateCityName .
       ?p1 rdf:type snb:Person ; snb:isLocatedIn ?candidateCity ; (snb:knows|^snb:knows) ?p2 .
-      ?c2 rdf:type snb:Place ; snb:name {{country2}} .
+      ?c2 rdf:type snb:Place ; snb:type "Country" ; snb:name {{country2}} .
       ?p2 rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?c2 .
       OPTIONAL { ?case1 rdf:type snb:Comment ; snb:hasCreator ?p1 ; snb:replyOf/snb:hasCreator ?p2 . }
       OPTIONAL { ?case2 rdf:type snb:Message ; snb:hasCreator ?p1 . ?reply2 rdf:type snb:Comment ; snb:replyOf ?case2 ; snb:hasCreator ?p2 . }
@@ -29,10 +29,10 @@ WHERE {
            (MAX(IF(BOUND(?otherCase1), 4, 0)) + MAX(IF(BOUND(?otherCase2), 1, 0)) +
             MAX(IF(BOUND(?otherCase3), 10, 0)) + MAX(IF(BOUND(?otherCase4), 1, 0)) AS ?otherScore)
     WHERE {
-      ?otherCountry1 rdf:type snb:Place ; snb:name {{country1}} .
-      ?otherCity snb:isPartOf ?otherCountry1 ; snb:name ?otherCityName .
+      ?otherCountry1 rdf:type snb:Place ; snb:type "Country" ; snb:name {{country1}} .
+      ?otherCity rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?otherCountry1 ; snb:name ?otherCityName .
       ?other1 rdf:type snb:Person ; snb:isLocatedIn ?otherCity ; (snb:knows|^snb:knows) ?other2 .
-      ?otherCountry2 rdf:type snb:Place ; snb:name {{country2}} .
+      ?otherCountry2 rdf:type snb:Place ; snb:type "Country" ; snb:name {{country2}} .
       ?other2 rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?otherCountry2 .
       OPTIONAL { ?otherCase1 rdf:type snb:Comment ; snb:hasCreator ?other1 ; snb:replyOf/snb:hasCreator ?other2 . }
       OPTIONAL { ?otherCase2 rdf:type snb:Message ; snb:hasCreator ?other1 . ?otherReply2 rdf:type snb:Comment ; snb:replyOf ?otherCase2 ; snb:hasCreator ?other2 . }
