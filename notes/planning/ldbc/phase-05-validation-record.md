@@ -72,6 +72,34 @@ and the reduced workflow exposes only diagnostic scores.
 No claim of official, certified, audited, or comparable SNB BI performance is
 made by this phase record.
 
+## Phase 5B semantic-gap baseline
+
+The generated qualification matrix now records all 31 canonical variants with
+separate parse, algebra, optimized-plan, execution, typed-result, and expected
+answer evidence. The checked-in SPARQL artifacts for all 22 standard variants
+parse, while typed prepared-query probing produces deterministic algebra and
+optimized-plan evidence for 21. BI 12 is a parser-stage gap because its string
+set parameter occupies a `VALUES` data position that cannot accept the current
+single-variable prepared binding. The remaining standard variants stay
+classified as execution gaps because no standard BI handler is registered. The
+nine graph variants remain grouped by their four registered extension contracts
+and fail closed as extension-adapter gaps. Result-contract evaluation is blocked
+whenever execution is unavailable.
+
+A focused quad-store regression confirms that the current property-path path
+opens a triple-schema column family and exits with `invalid_column_family`.
+Thirteen canonical variants require those paths; BI 12 reaches its parameter
+binding gap first, while BI 3, 4, 8, 9, 14, 16, 17, and 18 expose the execution
+failure directly with their respective variants.
+
+The matrix inventories one embedded smoke answer and 30 missing answers. The
+embedded BI 1 answer remains a contract fixture rather than proof of a complete
+reference-engine run. Semantic requirements such as date/time operations,
+expression coercion, aggregation, subqueries, HAVING, ordering, limits, and
+numeric result conversion are linked to the variants that require them without
+claiming a semantic failure before an executable handler and accepted oracle
+make that comparison possible.
+
 ## Executed checks
 
 - Phase 5A corpus/reference integration and adjacent correctness tests: 27

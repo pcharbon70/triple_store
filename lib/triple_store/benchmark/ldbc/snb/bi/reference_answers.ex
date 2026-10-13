@@ -27,6 +27,30 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
     end
   end
 
+  @doc "Returns the validated reference-answer inventory without loading answer payloads."
+  @spec inventory(keyword()) :: {:ok, [map()]} | {:error, term()}
+  def inventory(opts \\ []) do
+    root = Keyword.get(opts, :root, default_root())
+
+    with {:ok, manifest} <- read_manifest(root),
+         :ok <- validate_manifest(manifest) do
+      entries =
+        manifest.answers
+        |> Enum.map(fn entry ->
+          %{
+            operation_id: entry.operation_id,
+            variant: entry.variant,
+            parameter_row_index: entry.parameter.row_index,
+            artifact: entry.artifact,
+            reference_source: entry.reference_source
+          }
+        end)
+        |> Enum.sort_by(&{&1.operation_id, &1.variant, &1.parameter_row_index})
+
+      {:ok, entries}
+    end
+  end
+
   @doc "Loads one reference answer after validating every active-run identity."
   @spec load(map(), non_neg_integer(), map(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}

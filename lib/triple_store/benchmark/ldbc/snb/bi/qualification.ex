@@ -1,0 +1,286 @@
+defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
+  @moduledoc """
+  Generates the fail-closed SNB BI correctness qualification matrix.
+
+  The matrix records evidence independently for parsing, algebra extraction,
+  optimization, execution, the typed result contract, and the accepted answer
+  bundle. A stage is never inferred from a later stage. In particular, parser
+  and plan readiness do not make an operation executable, and an executable
+  operation does not pass correctness qualification without an accepted answer.
+
+  This baseline intentionally probes the registered BI execution boundary. It
+  does not substitute diagnostic SPARQL execution for a missing operation
+  handler or graph adapter.
+  """
+
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{Analytics, ReferenceAnswers}
+  alias TripleStore.SPARQL.Query
+
+  @graph_operations MapSet.new([10, 15, 19, 20])
+  @numeric_types ["ID", "32-bit Integer", "64-bit Integer", "32-bit Float", "64-bit Float"]
+
+  @type stage_status :: :pass | :fail | :blocked | :not_applicable
+  @type stage_evidence :: %{
+          required(:status) => stage_status(),
+          optional(:digest) => String.t(),
+          optional(:reason) => term()
+        }
+
+  @doc "Generates a stable qualification matrix for every supplied BI variant."
+  @spec matrix([map()], keyword()) :: {:ok, map()} | {:error, term()}
+  def matrix(definitions, opts \\ [])
+
+  def matrix(definitions, opts) when is_list(definitions) do
+    with {:ok, inventory} <- ReferenceAnswers.inventory(Keyword.take(opts, [:root])) do
+      reference_index = Map.new(inventory, &{{&1.operation_id, &1.variant}, &1})
+
+      entries =
+        definitions
+        |> Enum.map(&entry(&1, reference_index))
+        |> Enum.sort_by(&{&1.number, variant_order(&1.variant)})
+
+      {:ok,
+       %{
+         entries: entries,
+         groups: Enum.frequencies_by(entries, & &1.gap_group),
+         classifications: Enum.frequencies_by(entries, & &1.classification),
+         reference_coverage: Enum.frequencies_by(entries, & &1.expected_result.status)
+       }}
+    end
+  end
+
+  def matrix(_definitions, _opts), do: {:error, :invalid_bi_definitions}
+
+  @doc "Classifies one complete stage-evidence set without weakening failed stages."
+  @spec classify(map(), boolean()) :: atom()
+  def classify(stages, extension?) when is_map(stages) and is_boolean(extension?) do
+    statuses =
+      {
+        status(stages, :parse),
+        status(stages, :algebra),
+        status(stages, :optimized_plan),
+        status(stages, :execution),
+        status(stages, :result_contract)
+      }
+
+    classify_statuses(statuses, extension?, reason(stages, :result_contract))
+  end
+
+  defp entry(definition, reference_index) do
+    extension? = MapSet.member?(@graph_operations, definition.number)
+    stages = if extension?, do: extension_stages(definition), else: standard_stages(definition)
+
+    %{
+      operation_id: definition.catalog_id,
+      execution_id: definition.id,
+      number: definition.number,
+      variant: definition.variant,
+      strategy: definition.strategy,
+      classification: classify(stages, extension?),
+      gap_group: gap_group(stages, extension?),
+      confirmed_gaps: confirmed_gaps(definition),
+      semantic_requirements: semantic_requirements(definition),
+      stages: stages,
+      expected_result: expected_result(definition, reference_index)
+    }
+  end
+
+  defp standard_stages(definition) do
+    parse = pass(definition, :parse, definition.translation.ast)
+
+    case Query.prepare(probe_query(definition)) do
+      {:ok, prepared} ->
+        execution = execution_evidence(definition)
+
+        %{
+          parse: parse,
+          algebra: pass(definition, :algebra, prepared.pattern),
+          optimized_plan: pass(definition, :optimized_plan, prepared.optimized_pattern),
+          execution: execution,
+          result_contract: blocked(:execution_not_available)
+        }
+
+      {:error, {:parse_error, _reason} = reason} ->
+        %{
+          parse: fail(reason),
+          algebra: blocked(:parse_failed),
+          optimized_plan: blocked(:parse_failed),
+          execution: blocked(:parse_failed),
+          result_contract: blocked(:parse_failed)
+        }
+
+      {:error, reason} ->
+        %{
+          parse: parse,
+          algebra: fail(reason),
+          optimized_plan: blocked(:algebra_failed),
+          execution: blocked(:algebra_failed),
+          result_contract: blocked(:algebra_failed)
+        }
+    end
+  end
+
+  defp extension_stages(definition) do
+    {:extension, extension_id, _module} = definition.strategy
+
+    %{
+      parse: not_applicable(:graph_extension),
+      algebra: not_applicable(:graph_extension),
+      optimized_plan: not_applicable(:graph_extension),
+      execution: fail({:extension_adapter_not_implemented, extension_id}),
+      result_contract: blocked(:execution_not_available)
+    }
+  end
+
+  defp execution_evidence(definition) do
+    case Analytics.execute(definition, %{}, %{}) do
+      {:ok, result} -> pass(definition, :execution, result)
+      {:error, reason} -> fail(reason)
+    end
+  end
+
+  defp expected_result(definition, reference_index) do
+    case Map.fetch(reference_index, {definition.catalog_id, definition.variant}) do
+      {:ok, entry} ->
+        %{
+          status: entry.artifact.kind,
+          parameter_row_index: entry.parameter_row_index,
+          checksum: entry.artifact.checksum,
+          reference_source: entry.reference_source
+        }
+
+      :error ->
+        %{status: :missing, parameter_row_index: 0}
+    end
+  end
+
+  defp gap_group(stages, extension?) do
+    case {classify(stages, extension?), reason(stages, :execution)} do
+      {:extension_adapter_gap, {:extension_adapter_not_implemented, id}} ->
+        {:extension_adapter, id}
+
+      {:execution_gap, {:bi_operation_not_implemented, _number, _variant}} ->
+        :standard_handler_registry
+
+      {classification, _reason} ->
+        classification
+    end
+  end
+
+  defp semantic_requirements(%{strategy: {:extension, id, _module}}),
+    do: [{:graph_extension, id}, :typed_result_conversion]
+
+  defp semantic_requirements(definition) do
+    query = definition.translation.sparql
+
+    []
+    |> maybe_add(String.match?(query, ~r/xsd:date|dateTime|Duration|YEAR|MONTH/), :date_time)
+    |> maybe_add(
+      String.match?(query, ~r/\b(?:CONCAT|STR|COALESCE|IF|ABS|BOUND)\s*\(/),
+      :expression_coercion
+    )
+    |> maybe_add(String.match?(query, ~r/\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(/), :aggregation)
+    |> maybe_add(String.match?(query, ~r/\{\s*SELECT\b/), :subquery)
+    |> maybe_add(String.contains?(query, "HAVING"), :having)
+    |> maybe_add(definition.ordering != [], :canonical_ordering)
+    |> maybe_add(is_integer(definition.limit), :limit)
+    |> maybe_add(
+      Enum.any?(definition.result, &(&1.type in @numeric_types)),
+      :typed_numeric_result
+    )
+    |> Enum.reverse()
+  end
+
+  defp confirmed_gaps(%{strategy: {:extension, id, _module}}),
+    do: [{:missing_extension_adapter, id}]
+
+  defp confirmed_gaps(definition) do
+    query = definition.translation.sparql
+
+    []
+    |> maybe_add(property_path?(query), :quad_property_path_column_family)
+    |> maybe_add(definition.number == 12, :typed_list_parameter_values)
+    |> maybe_add(true, :standard_handler_registry)
+    |> Enum.reverse()
+  end
+
+  defp probe_query(definition) do
+    Regex.replace(
+      ~r/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/,
+      definition.translation.sparql,
+      "$\\1"
+    )
+  end
+
+  defp pass(definition, stage, term) do
+    evidence = {definition.translation.checksum, stage, structural_signature(term)}
+    %{status: :pass, digest: digest(evidence)}
+  end
+
+  defp fail(reason), do: %{status: :fail, reason: reason}
+  defp blocked(reason), do: %{status: :blocked, reason: reason}
+  defp not_applicable(reason), do: %{status: :not_applicable, reason: reason}
+
+  defp classify_statuses({:fail, _, _, _, _}, _extension?, _reason), do: :parser_gap
+  defp classify_statuses({_, :fail, _, _, _}, _extension?, _reason), do: :algebra_gap
+  defp classify_statuses({_, _, :fail, _, _}, _extension?, _reason), do: :algebra_gap
+
+  defp classify_statuses({_, _, _, :fail, _}, true, _reason),
+    do: :extension_adapter_gap
+
+  defp classify_statuses({_, _, _, :fail, _}, false, _reason), do: :execution_gap
+
+  defp classify_statuses({_, _, _, _, :fail}, _extension?, :ordering_mismatch),
+    do: :ordering_mismatch
+
+  defp classify_statuses({_, _, _, _, :fail}, _extension?, _reason), do: :type_mismatch
+  defp classify_statuses({_, _, _, _, :pass}, _extension?, _reason), do: :passing
+  defp classify_statuses(_statuses, true, _reason), do: :extension_adapter_gap
+  defp classify_statuses(_statuses, false, _reason), do: :execution_gap
+
+  defp status(stages, stage), do: get_in(stages, [stage, :status])
+  defp reason(stages, stage), do: get_in(stages, [stage, :reason])
+
+  defp digest(term) do
+    "sha256:" <>
+      (term
+       |> :erlang.term_to_binary([:deterministic])
+       |> then(&:crypto.hash(:sha256, &1))
+       |> Base.encode16(case: :lower))
+  end
+
+  defp structural_signature(tuple) when is_tuple(tuple) do
+    {:tuple, tuple |> Tuple.to_list() |> Enum.map(&structural_signature/1)}
+  end
+
+  defp structural_signature(list) when is_list(list),
+    do: {:list, Enum.map(list, &structural_signature/1)}
+
+  defp structural_signature(map) when is_map(map) do
+    entries =
+      map
+      |> Enum.map(fn {key, value} -> {structural_signature(key), structural_signature(value)} end)
+      |> Enum.sort()
+
+    {:map, entries}
+  end
+
+  defp structural_signature(value) when is_atom(value), do: value
+  defp structural_signature(value) when is_integer(value), do: :integer
+  defp structural_signature(value) when is_float(value), do: :float
+  defp structural_signature(value) when is_binary(value), do: :binary
+  defp structural_signature(value) when is_function(value), do: :function
+  defp structural_signature(value) when is_reference(value), do: :reference
+  defp structural_signature(value) when is_pid(value), do: :pid
+  defp structural_signature(_value), do: :other
+
+  defp property_path?(query) do
+    String.match?(query, ~r/\w+:\w+[+*]|\([^)]*(?:\||(?<!\^)\^(?!\^))[^)]*\)/)
+  end
+
+  defp maybe_add(values, true, value), do: [value | values]
+  defp maybe_add(values, false, _value), do: values
+
+  defp variant_order("default"), do: {0, ""}
+  defp variant_order(variant), do: {1, variant}
+end
