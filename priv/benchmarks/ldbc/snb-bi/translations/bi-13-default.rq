@@ -1,0 +1,52 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-13.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?zombie__id (COUNT(?zombieLiker) AS ?zombieLikeCount) (COUNT(?liker) AS ?totalLikeCount) (IF(COUNT(?liker) = 0, 0.0, COUNT(?zombieLiker) / COUNT(?liker)) AS ?zombieScore)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?candidate WHERE {
+      ?zCountry rdf:type snb:Place ; snb:name {{country}} .
+      ?candidate rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?zCountry ;
+                 snb:creationDate ?candidateCreation .
+      FILTER(?candidateCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+      OPTIONAL {
+        ?candidateMessage rdf:type snb:Message ; snb:hasCreator ?candidate ; snb:creationDate ?candidateMessageDate .
+        FILTER(?candidateMessageDate < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+      }
+    }
+    GROUP BY ?candidate ?candidateCreation
+    HAVING(COUNT(?candidateMessage) /
+      (12 * (YEAR(xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z"))) - YEAR(?candidateCreation)) +
+       MONTH(xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z"))) - MONTH(?candidateCreation) + 1) < 1) }
+  BIND(?candidate AS ?zombie)
+  OPTIONAL {
+    ?zombieMessage rdf:type snb:Message ; snb:hasCreator ?zombie .
+    ?liker snb:likes ?zombieMessage ; snb:creationDate ?likerCreation .
+    FILTER(?likerCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+    OPTIONAL {
+      { SELECT ?likerCandidate WHERE {
+      ?zCountry rdf:type snb:Place ; snb:name {{country}} .
+      ?likerCandidate rdf:type snb:Person ; snb:isLocatedIn/snb:isPartOf ?zCountry ;
+                 snb:creationDate ?likerCandidateCreation .
+      FILTER(?likerCandidateCreation < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+      OPTIONAL {
+        ?likerCandidateMessage rdf:type snb:Message ; snb:hasCreator ?likerCandidate ; snb:creationDate ?likerCandidateMessageDate .
+        FILTER(?likerCandidateMessageDate < xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+      }
+    }
+    GROUP BY ?likerCandidate ?likerCandidateCreation
+    HAVING(COUNT(?likerCandidateMessage) /
+      (12 * (YEAR(xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z"))) - YEAR(?likerCandidateCreation)) +
+       MONTH(xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z"))) - MONTH(?likerCandidateCreation) + 1) < 1) }
+      FILTER(?likerCandidate = ?liker)
+      BIND(?liker AS ?zombieLiker)
+    }
+  }
+  BIND(xsd:integer(STRAFTER(STR(?zombie), "/Person/")) AS ?zombie__id)
+}
+GROUP BY ?zombie ?zombie__id
+ORDER BY DESC(?zombieScore) ASC(?zombie__id)
+LIMIT 100

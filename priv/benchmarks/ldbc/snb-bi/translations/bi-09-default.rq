@@ -1,0 +1,21 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-9.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person__id ?person__firstName ?person__lastName (COUNT(DISTINCT ?post) AS ?threadCount) (COUNT(DISTINCT ?reply) AS ?messageCount)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?post rdf:type snb:Post ; snb:hasCreator ?person ; snb:creationDate ?postDate .
+  ?person snb:firstName ?person__firstName ; snb:lastName ?person__lastName .
+  ?reply rdf:type snb:Message ; snb:replyOf* ?post ; snb:creationDate ?replyDate .
+  FILTER(?postDate >= xsd:dateTime(CONCAT(STR({{startDate}}), "T00:00:00Z")) &&
+         ?postDate <= xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")) &&
+         ?replyDate >= xsd:dateTime(CONCAT(STR({{startDate}}), "T00:00:00Z")) &&
+         ?replyDate <= xsd:dateTime(CONCAT(STR({{endDate}}), "T00:00:00Z")))
+  BIND(xsd:integer(STRAFTER(STR(?person), "/Person/")) AS ?person__id)
+}
+GROUP BY ?person ?person__id ?person__firstName ?person__lastName
+ORDER BY DESC(?messageCount) ASC(?person__id)
+LIMIT 100

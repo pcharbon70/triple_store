@@ -10,7 +10,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
   """
 
   alias TripleStore.Benchmark.LDBC.Catalog
-  alias TripleStore.Benchmark.LDBC.SNB.BI.Analytics
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{Analytics, TranslationCorpus}
 
   @catalog_id "ldbc-snb-bi-v1.0.3"
   @translation_version "triplestore-snb-bi-v1"
@@ -33,7 +33,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
           required(:limit) => non_neg_integer() | nil,
           required(:strategy) => {:native, module(), atom()} | {:extension, String.t(), module()},
           required(:source) => map(),
-          required(:transformation_version) => String.t()
+          required(:transformation_version) => String.t(),
+          optional(:translation) => TranslationCorpus.entry()
         }
 
   @doc "Loads and validates every BI read and canonical variant in stable order."
@@ -42,8 +43,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
     with {:ok, catalogs} <- Catalog.load_all(),
          {:ok, catalog} <- fetch_catalog(catalogs),
          definitions <- build_definitions(catalog),
-         :ok <- validate(definitions, catalog) do
-      {:ok, definitions}
+         :ok <- validate(definitions, catalog),
+         {:ok, corpus} <- TranslationCorpus.load(definitions) do
+      {:ok, bind_translations(definitions, corpus)}
     end
   end
 
@@ -126,6 +128,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Workload do
       {:ok, extension_id} -> {:extension, extension_id, Analytics}
       :error -> {:native, Analytics, :execute}
     end
+  end
+
+  defp bind_translations(definitions, corpus) do
+    translations = Map.new(corpus, &{{&1.operation_id, &1.variant}, &1})
+
+    Enum.map(definitions, fn definition ->
+      case Map.fetch(translations, {definition.catalog_id, definition.variant}) do
+        {:ok, translation} -> Map.put(definition, :translation, translation)
+        :error -> definition
+      end
+    end)
   end
 
   defp expected_keys(reads) do

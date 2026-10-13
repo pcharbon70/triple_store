@@ -1,0 +1,66 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-4.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT DISTINCT ?person__id ?person__firstName ?person__lastName ?person__creationDate ?messageCount
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?selectedForum WHERE {
+      { SELECT ?selectedForum ?memberCountry (COUNT(?member) AS ?memberCount) WHERE {
+          ?selectedForum rdf:type snb:Forum ; snb:creationDate ?forumDate ; snb:hasMember ?member .
+          ?member snb:isLocatedIn ?memberCity .
+          ?memberCity snb:isPartOf ?memberCountry .
+          FILTER(?forumDate > xsd:dateTime(CONCAT(STR({{date}}), "T00:00:00Z")))
+        }
+        GROUP BY ?selectedForum ?memberCountry
+      }
+      BIND(xsd:integer(STRAFTER(STR(?selectedForum), "/Forum/")) AS ?selectedForumId)
+    }
+    GROUP BY ?selectedForum ?selectedForumId
+    ORDER BY DESC(MAX(?memberCount)) ASC(?selectedForumId)
+    LIMIT 100 }
+  ?selectedForum snb:hasMember ?person .
+  ?person snb:firstName ?person__firstName ; snb:lastName ?person__lastName ; snb:creationDate ?person__creationDate .
+  OPTIONAL {
+    { SELECT ?person (COUNT(DISTINCT ?message) AS ?countedMessages) WHERE {
+        { SELECT ?selectedForum WHERE {
+      { SELECT ?selectedForum ?memberCountry (COUNT(?member) AS ?memberCount) WHERE {
+          ?selectedForum rdf:type snb:Forum ; snb:creationDate ?forumDate ; snb:hasMember ?member .
+          ?member snb:isLocatedIn ?memberCity .
+          ?memberCity snb:isPartOf ?memberCountry .
+          FILTER(?forumDate > xsd:dateTime(CONCAT(STR({{date}}), "T00:00:00Z")))
+        }
+        GROUP BY ?selectedForum ?memberCountry
+      }
+      BIND(xsd:integer(STRAFTER(STR(?selectedForum), "/Forum/")) AS ?selectedForumId)
+    }
+    GROUP BY ?selectedForum ?selectedForumId
+    ORDER BY DESC(MAX(?memberCount)) ASC(?selectedForumId)
+    LIMIT 100 }
+        ?selectedForum snb:containerOf ?post .
+        ?message snb:replyOf* ?post ; snb:hasCreator ?person .
+        { SELECT ?membershipForum WHERE {
+      { SELECT ?membershipForum ?memberCountry (COUNT(?member) AS ?memberCount) WHERE {
+          ?membershipForum rdf:type snb:Forum ; snb:creationDate ?forumDate ; snb:hasMember ?member .
+          ?member snb:isLocatedIn ?memberCity .
+          ?memberCity snb:isPartOf ?memberCountry .
+          FILTER(?forumDate > xsd:dateTime(CONCAT(STR({{date}}), "T00:00:00Z")))
+        }
+        GROUP BY ?membershipForum ?memberCountry
+      }
+      BIND(xsd:integer(STRAFTER(STR(?membershipForum), "/Forum/")) AS ?membershipForumId)
+    }
+    GROUP BY ?membershipForum ?membershipForumId
+    ORDER BY DESC(MAX(?memberCount)) ASC(?membershipForumId)
+    LIMIT 100 }
+        ?membershipForum snb:hasMember ?person .
+      } GROUP BY ?person
+    }
+  }
+  BIND(COALESCE(?countedMessages, 0) AS ?messageCount)
+  BIND(xsd:integer(STRAFTER(STR(?person), "/Person/")) AS ?person__id)
+}
+ORDER BY DESC(?messageCount) ASC(?person__id)
+LIMIT 100
