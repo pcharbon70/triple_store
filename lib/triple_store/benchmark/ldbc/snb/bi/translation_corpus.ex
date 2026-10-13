@@ -72,9 +72,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
   def load(definitions, opts) when is_list(definitions) do
     root = Keyword.get(opts, :root, default_root())
 
-    with {:ok, manifest} <- read_manifest(root) do
-      validate_and_load(manifest, definitions, root)
-    else
+    case read_manifest(root) do
+      {:ok, manifest} -> validate_and_load(manifest, definitions, root)
       {:error, reason} -> {:error, [error(nil, nil, "manifest.exs", :manifest, reason)]}
     end
   end
@@ -199,61 +198,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
     rule_errors =
       definitions
       |> Enum.group_by(& &1.number)
-      |> Enum.flat_map(fn {number, variants} ->
-        case Map.get(rules, number) do
-          operation_rules when is_map(operation_rules) ->
-            variants
-            |> Enum.flat_map(fn definition ->
-              expected = definition.parameters |> Enum.map(& &1.name) |> MapSet.new()
-              actual = operation_rules |> Map.keys() |> MapSet.new()
-
-              name_errors =
-                if expected == actual do
-                  []
-                else
-                  [
-                    error(
-                      definition.id,
-                      definition.variant,
-                      "manifest.exs",
-                      :parameter_reference_names,
-                      %{expected: expected, actual: actual}
-                    )
-                  ]
-                end
-
-              value_errors =
-                Enum.flat_map(operation_rules, fn {name, rule} ->
-                  if valid_reference_rule?(rule) do
-                    []
-                  else
-                    [
-                      error(
-                        definition.id,
-                        definition.variant,
-                        "manifest.exs",
-                        :parameter_reference_rule,
-                        %{parameter: name, rule: rule}
-                      )
-                    ]
-                  end
-                end)
-
-              name_errors ++ value_errors
-            end)
-
-          invalid ->
-            Enum.map(variants, fn definition ->
-              error(
-                definition.id,
-                definition.variant,
-                "manifest.exs",
-                :parameter_reference_rule,
-                %{operation: number, rules: invalid}
-              )
-            end)
-        end
-      end)
+      |> Enum.flat_map(&operation_reference_errors(&1, rules))
 
     errors ++ coverage_errors ++ rule_errors
   end
@@ -262,6 +207,64 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
     do:
       errors ++
         [error(nil, nil, "manifest.exs", :parameter_references, :must_be_a_map)]
+
+  defp operation_reference_errors({number, variants}, rules) do
+    case Map.get(rules, number) do
+      operation_rules when is_map(operation_rules) ->
+        Enum.flat_map(variants, &definition_reference_errors(&1, operation_rules))
+
+      invalid ->
+        Enum.map(variants, fn definition ->
+          error(
+            definition.id,
+            definition.variant,
+            "manifest.exs",
+            :parameter_reference_rule,
+            %{operation: number, rules: invalid}
+          )
+        end)
+    end
+  end
+
+  defp definition_reference_errors(definition, operation_rules) do
+    expected = definition.parameters |> Enum.map(& &1.name) |> MapSet.new()
+    actual = operation_rules |> Map.keys() |> MapSet.new()
+
+    reference_name_errors(definition, expected, actual) ++
+      invalid_reference_rule_errors(definition, operation_rules)
+  end
+
+  defp reference_name_errors(_definition, expected, expected), do: []
+
+  defp reference_name_errors(definition, expected, actual) do
+    [
+      error(
+        definition.id,
+        definition.variant,
+        "manifest.exs",
+        :parameter_reference_names,
+        %{expected: expected, actual: actual}
+      )
+    ]
+  end
+
+  defp invalid_reference_rule_errors(definition, operation_rules) do
+    Enum.flat_map(operation_rules, fn {name, rule} ->
+      if valid_reference_rule?(rule) do
+        []
+      else
+        [
+          error(
+            definition.id,
+            definition.variant,
+            "manifest.exs",
+            :parameter_reference_rule,
+            %{parameter: name, rule: rule}
+          )
+        ]
+      end
+    end)
+  end
 
   defp validate_reference_profiles(errors, profiles, rules)
        when is_map(profiles) and is_map(rules) do
@@ -294,24 +297,31 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
     do: errors ++ [error(nil, nil, "manifest.exs", :reference_profiles, :must_be_a_map)]
 
   defp validate_smoke_fields(fields, rules) do
-    Enum.flat_map(fields, fn {number, names} ->
-      operation_rules = Map.get(rules, number, %{})
-
-      if is_list(names) and
-           Enum.all?(names, fn name ->
-             match?(%{kind: kind} when kind in [:entity_id, :entity_name], operation_rules[name])
-           end) do
-        []
-      else
-        [
-          error(nil, nil, "manifest.exs", :smoke_reference_fields, %{
-            operation: number,
-            fields: names
-          })
-        ]
-      end
-    end)
+    Enum.flat_map(fields, &smoke_field_errors(&1, rules))
   end
+
+  defp smoke_field_errors({number, names}, rules) do
+    operation_rules = Map.get(rules, number, %{})
+
+    if valid_smoke_fields?(names, operation_rules) do
+      []
+    else
+      [
+        error(nil, nil, "manifest.exs", :smoke_reference_fields, %{
+          operation: number,
+          fields: names
+        })
+      ]
+    end
+  end
+
+  defp valid_smoke_fields?(names, operation_rules) when is_list(names),
+    do:
+      Enum.all?(names, fn name ->
+        match?(%{kind: kind} when kind in [:entity_id, :entity_name], operation_rules[name])
+      end)
+
+  defp valid_smoke_fields?(_names, _operation_rules), do: false
 
   defp valid_reference_rule?(%{kind: :scalar}), do: true
 
@@ -381,21 +391,26 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
   defp load_entries(entries, expected, root) when is_list(entries) do
     entries
     |> Enum.uniq_by(&entry_key/1)
-    |> Enum.reduce({[], []}, fn entry, {loaded, errors} ->
-      case Map.fetch(expected, entry_key(entry)) do
-        {:ok, definition} ->
-          case load_entry(entry, definition, root) do
-            {:ok, translation} -> {[translation | loaded], errors}
-            {:error, entry_errors} -> {loaded, errors ++ entry_errors}
-          end
-
-        :error ->
-          {loaded, errors}
-      end
-    end)
+    |> Enum.reduce({[], []}, &load_manifest_entry(&1, &2, expected, root))
   end
 
   defp load_entries(_entries, _expected, _root), do: {[], []}
+
+  defp load_manifest_entry(entry, {loaded, errors}, expected, root) do
+    case Map.fetch(expected, entry_key(entry)) do
+      {:ok, definition} ->
+        collect_loaded_entry(load_entry(entry, definition, root), loaded, errors)
+
+      :error ->
+        {loaded, errors}
+    end
+  end
+
+  defp collect_loaded_entry({:ok, translation}, loaded, errors),
+    do: {[translation | loaded], errors}
+
+  defp collect_loaded_entry({:error, entry_errors}, loaded, errors),
+    do: {loaded, errors ++ entry_errors}
 
   defp load_entry(entry, definition, root) when is_map(entry) do
     operation_id = Map.get(entry, :operation_id)

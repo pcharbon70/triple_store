@@ -148,7 +148,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
 
     coverage = reference_coverage(definitions, manifest.answers)
     assert Enum.count(coverage, &(&1.status == :checked_in)) == 1
-    assert Enum.count(coverage, &(&1.status == :external)) == 0
+    refute Enum.any?(coverage, &(&1.status == :external))
     assert Enum.count(coverage, &(&1.status == :missing)) == 30
 
     assert [%{number: 1, variant: "default", status: :checked_in}] =

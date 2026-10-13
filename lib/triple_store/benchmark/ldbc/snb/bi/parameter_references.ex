@@ -90,9 +90,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ParameterReferences do
 
       profile_metadata ->
         with :ok <- require_provenance(profile_metadata, bundle),
-             :ok <- require_manifest_profile(profile_metadata, manifest) do
-          :ok
-        end
+             do: require_manifest_profile(profile_metadata, manifest)
     end
   end
 
