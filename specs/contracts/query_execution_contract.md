@@ -15,3 +15,5 @@ This contract defines the normative query behavior for `TripleStore`.
 - `REQ-QRY-009`: Query and update paths MUST return tagged errors for parse, execution, timeout, authorization, and validation failures.
 - `REQ-QRY-010`: Advanced join strategies such as Leapfrog Triejoin and parallel execution MUST remain optimizer-selected execution choices, not caller-visible API modes.
 - `REQ-QRY-011`: Lower-level query and update contexts MAY support actor-aware graph authorization, but facade-level APIs MUST document when that actor context is not surfaced. Update templates with variable graph terms MUST authorize every resolved target before the first explicit write.
+- `REQ-QRY-012`: Prepared parameters MUST bind typed values in the algebra rather than interpolate caller values into query text. Set-valued bindings used by `VALUES` MUST expand to typed rows, and parameter names MUST NOT alias ordinary query variables.
+- `REQ-QRY-013`: `FROM` clauses MUST define the active default graph on quad stores for triple patterns and property paths; execution MUST restrict scans to the declared graph set and release underlying iterators through managed lookup boundaries.

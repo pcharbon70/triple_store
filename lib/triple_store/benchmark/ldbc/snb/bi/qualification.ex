@@ -162,6 +162,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
       {:execution_gap, {:bi_operation_not_implemented, _number, _variant}} ->
         :standard_handler_registry
 
+      {:execution_gap, :bi_query_context_required} ->
+        :query_context_required
+
       {classification, _reason} ->
         classification
     end
@@ -194,15 +197,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
   defp confirmed_gaps(%{strategy: {:extension, id, _module}}),
     do: [{:missing_extension_adapter, id}]
 
-  defp confirmed_gaps(definition) do
-    query = definition.translation.sparql
-
-    []
-    |> maybe_add(property_path?(query), :quad_property_path_column_family)
-    |> maybe_add(definition.number == 12, :typed_list_parameter_values)
-    |> maybe_add(true, :standard_handler_registry)
-    |> Enum.reverse()
-  end
+  defp confirmed_gaps(_definition), do: []
 
   defp probe_query(definition) do
     Regex.replace(
@@ -273,10 +268,6 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
   defp structural_signature(value) when is_reference(value), do: :reference
   defp structural_signature(value) when is_pid(value), do: :pid
   defp structural_signature(_value), do: :other
-
-  defp property_path?(query) do
-    String.match?(query, ~r/\w+:\w+[+*]|\([^)]*(?:\||(?<!\^)\^(?!\^))[^)]*\)/)
-  end
 
   defp maybe_add(values, true, value), do: [value | values]
   defp maybe_add(values, false, _value), do: values

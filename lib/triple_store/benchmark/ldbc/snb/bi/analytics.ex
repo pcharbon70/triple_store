@@ -7,7 +7,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Analytics do
   answers that could be mistaken for validated results.
   """
 
-  alias TripleStore.Benchmark.LDBC.SNB.BI.ResultContract
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{HandlerRegistry, ResultContract}
 
   @doc "Runs a registered engine handler and enforces the operation's typed result contract."
   @spec execute(map(), map(), map(), keyword()) ::
@@ -21,8 +21,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Analytics do
           ResultContract.materialize(definition, rows)
         end
 
-      _other ->
-        {:error, {:bi_operation_not_implemented, definition.number, definition.variant}}
+      :error ->
+        with {:ok, entry} <- HandlerRegistry.fetch(definition),
+             {:ok, rows} <- entry.adapter.execute(definition, context, parameters, opts) do
+          ResultContract.materialize(definition, rows)
+        end
+
+      {:ok, _invalid_handler} ->
+        {:error, {:invalid_bi_handler, definition.number, definition.variant}}
     end
   end
 end

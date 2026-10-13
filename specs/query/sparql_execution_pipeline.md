@@ -61,6 +61,13 @@ graph TD
   error instead of returning protected rows or treating corruption as no ACL.
 - `TripleStore.query/3` and `TripleStore.update/2` do not currently expose actor context, so user-aware authorization is a lower-level expert capability rather than a facade feature.
 - Streaming queries are lazy; the current timeout contract applies to setup and eager execution, not to the full duration of stream consumption.
+- Prepared scalar and set-valued parameters are bound after parsing in the typed
+  algebra. Reserved internal variables prevent an external parameter name from
+  colliding with a query variable, and `VALUES ?v { $items }` expands a typed
+  list binding without interpolating values into SPARQL text.
+- Parsed `FROM` clauses are propagated into execution as the active default
+  graph. Triple-pattern and property-path scans on quad stores use only those
+  graph IDs and merge duplicate triples across the declared graphs.
 
 ### Quad Leapfrog Boundary Contract
 
@@ -93,7 +100,11 @@ graph TD
 | `AC-QRY-09` | Property-path, validation, error handling, and other bounded query operations expose typed limit and failure behavior instead of silent truncation. | `test/triple_store/sparql/property_path_test.exs`, `test/triple_store/sparql/property_path_integration_test.exs`, `test/triple_store/sparql/error_handler_test.exs`, `test/triple_store/sparql/executor_error_test.exs` |
 | `AC-QRY-17` | Quad Leapfrog execution preserves binary variable names, uses contiguous physical-index prefixes, returns results compatible with outer bindings, and releases iterators on every stream exit. | `test/triple_store/sparql/leapfrog/phase_6_quad_execution_contract_test.exs`, `test/triple_store/sparql/leapfrog/quad_scan_plan_test.exs`, `test/triple_store/sparql/leapfrog/quad_scan_reference_integration_test.exs`, `test/triple_store/sparql/leapfrog/quad_iterator_cleanup_test.exs`, `test/triple_store/sparql/executor_quad_integration_test.exs` |
 | `AC-QRY-18` | ACL records are safe-decoded and completely validated; corrupt policies block named-graph reads and mutations without overwriting the persisted bytes. | `test/triple_store/sparql/authorization_test.exs`, `test/triple_store/phase_3_persisted_state_safety_integration_test.exs` |
+| `AC-QRY-19` | Prepared scalar/list bindings remain typed and collision-free, and `FROM` graph sets govern both triple patterns and property paths on quad stores. | `test/triple_store/sparql/query_test.exs`, `test/triple_store/sparql/query_dataset_property_path_test.exs` |
 
 Traceability: `AC-QRY-17` provides executable evidence for `REQ-QRY-004`,
 `REQ-QRY-006`, `REQ-QRY-009`, and `REQ-QRY-010` through `SCN-005` and
 `SCN-017`.
+
+`AC-QRY-19` provides executable evidence for `REQ-QRY-002`, `REQ-QRY-004`,
+`REQ-QRY-006`, `REQ-QRY-012`, and `REQ-QRY-013` through `SCN-018`.

@@ -448,7 +448,7 @@ defmodule TripleStore.QuadOperations do
 
   ## Performance Notes
 
-  - The stream uses RocksDB iterator internally via `fold_keys`
+  - The stream uses a managed RocksDB iterator internally
   - Memory usage is O(1) with respect to result set size
   - Suitable for queries returning millions of quads
 
@@ -460,50 +460,36 @@ defmodule TripleStore.QuadOperations do
     selection = QuadIndex.build_quad_prefix(pattern, values)
     column_family = selection.index
     prefix = selection.prefix
-    prefix_len = byte_size(prefix)
 
-    # Create a stream that executes the fold when consumed
-    Stream.resource(
+    db
+    |> ErlangAdapter.prefix_stream(column_family, prefix)
+    |> Stream.transform(
       fn ->
-        # Start time for telemetry
         start_time = System.monotonic_time()
         Telemetry.emit_start([:triple_store, :quad, :lookup], %{pattern: pattern})
-        {db, column_family, prefix, prefix_len, selection.index, pattern, values, start_time}
+        {start_time, 0}
       end,
-      fn {db, cf, prefix, prefix_len, index, pattern, values, start_time} ->
-        # Perform the scan and emit results
-        result = perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values)
+      fn {key, _value}, {start_time, count} ->
+        quad = decode_key_to_quad(key, selection.index)
 
-        case result do
-          {:halt, []} ->
-            # No more results, emit stop event
-            duration = System.monotonic_time() - start_time
-
-            Telemetry.emit_stop([:triple_store, :quad, :lookup], duration, %{
-              pattern: pattern,
-              result_count: 0
-            })
-
-            {:halt, []}
-
-          {:cont, []} ->
-            # No more results in this batch
-            {:halt, []}
-
-          {:cont, results} ->
-            # Emit results
-            {results, {db, cf, prefix, prefix_len, index, pattern, values, start_time}}
+        if apply_post_filter(quad, pattern, values) do
+          {[quad], {start_time, count + 1}}
+        else
+          {[], {start_time, count}}
         end
       end,
-      fn {_db, _cf, _prefix, _prefix_len, _index, _pattern, _values, _start_time} ->
-        # Emit stop event if stream halted early (no results case handled above)
-        # For streams that consume all results, the final batch emits the event
-        :ok
+      fn {start_time, count} ->
+        duration = System.monotonic_time() - start_time
+
+        Telemetry.emit_stop([:triple_store, :quad, :lookup], duration, %{
+          pattern: pattern,
+          result_count: count
+        })
       end
     )
   end
 
-  # Performs prefix scan and returns results as a list
+  # Performs prefix scan and returns results as a list.
   defp perform_prefix_scan(db, cf, prefix, prefix_len, index, pattern, values) do
     ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
       handle_prefix_scan_key(key, prefix, prefix_len, index, pattern, values, acc, acc)
@@ -511,19 +497,6 @@ defmodule TripleStore.QuadOperations do
     |> Enum.reverse()
   catch
     {:halt, acc} -> Enum.reverse(acc)
-  end
-
-  # Performs a single iteration of prefix scan for streaming
-  # Returns {:cont, results} or {:halt, []}
-  defp perform_prefix_scan_once(db, cf, prefix, prefix_len, index, pattern, values) do
-    results =
-      ErlangAdapter.fold_keys(db, cf, prefix, [], fn key, acc ->
-        handle_prefix_scan_key(key, prefix, prefix_len, index, pattern, values, acc, :done)
-      end)
-
-    {:cont, Enum.reverse(results)}
-  catch
-    {:halt, :done} -> {:halt, []}
   end
 
   # ===========================================================================

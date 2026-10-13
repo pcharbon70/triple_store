@@ -16,18 +16,17 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     assert length(first.entries) == 31
 
     assert first.classifications == %{
-             execution_gap: 21,
-             extension_adapter_gap: 9,
-             parser_gap: 1
+             execution_gap: 22,
+             extension_adapter_gap: 9
            }
 
     assert first.reference_coverage == %{embedded: 1, missing: 30}
-    assert first.groups[:standard_handler_registry] == 21
+    assert first.groups[:query_context_required] == 22
 
     standard =
       Enum.reject(
         first.entries,
-        &(match?({:extension, _, _}, &1.strategy) or &1.number == 12)
+        &match?({:extension, _, _}, &1.strategy)
       )
 
     assert Enum.all?(standard, fn entry ->
@@ -42,10 +41,12 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
            end)
 
     [read_12] = entries_for(first, 12)
-    assert read_12.classification == :parser_gap
-    assert read_12.stages.parse.status == :fail
-    assert match?({:parse_error, _reason}, read_12.stages.parse.reason)
-    assert :typed_list_parameter_values in read_12.confirmed_gaps
+    assert read_12.classification == :execution_gap
+    assert read_12.stages.parse.status == :pass
+    assert read_12.stages.algebra.status == :pass
+    assert read_12.stages.optimized_plan.status == :pass
+    assert read_12.stages.execution.reason == :bi_query_context_required
+    assert read_12.confirmed_gaps == []
 
     extensions = Enum.filter(first.entries, &match?({:extension, _, _}, &1.strategy))
 
@@ -94,7 +95,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
            )
   end
 
-  test "canonical quad property paths retain the confirmed column-family execution regression",
+  test "canonical quad property paths execute through the active BI dataset",
        %{test: test} do
     root = tmp_dir(test)
     on_exit(fn -> File.rm_rf!(root) end)
@@ -106,22 +107,19 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     on_exit(fn -> StoreFixture.teardown(fixture, delete: true) end)
 
     assert {:ok, definitions} = Workload.load()
-    assert {:ok, read_3} = Workload.fetch(definitions, 3)
-    sparql = String.replace(read_3.translation.sparql, "{{country}}", ~S["value"])
-    sparql = String.replace(sparql, "{{tagClass}}", ~S["value"])
 
-    previous_trap_exit = Process.flag(:trap_exit, true)
+    sparql = """
+    PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+    SELECT ?message ?post
+    FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+    FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+    WHERE { ?message snb:replyOf* ?post }
+    """
 
-    result =
-      try do
-        Query.query(fixture.store, sparql, timeout: 2_000)
-      after
-        Process.flag(:trap_exit, previous_trap_exit)
-      end
+    assert {:ok, rows} =
+             Query.query(Map.put(fixture.store, :permit_all, true), sparql, timeout: 2_000)
 
-    assert {:error, {:task_exit, {%RuntimeError{message: message}, _stacktrace}}} = result
-
-    assert message =~ "invalid_column_family"
+    assert is_list(rows)
 
     assert {:ok, matrix} = Qualification.matrix(definitions)
 
@@ -130,21 +128,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
       |> Enum.filter(&(:quad_property_path_column_family in &1.confirmed_gaps))
       |> Enum.map(&variant_label/1)
 
-    assert affected == [
-             "3",
-             "4",
-             "8a",
-             "8b",
-             "8m",
-             "9",
-             "12",
-             "14a",
-             "14b",
-             "16a",
-             "16b",
-             "17",
-             "18"
-           ]
+    assert affected == []
   end
 
   test "classifies parser algebra execution type and ordering failures independently" do
