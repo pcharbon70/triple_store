@@ -60,14 +60,16 @@ test-only contract fixtures prove empty, duplicate-bearing, ordered, timestamp,
 unexpected-row, ordering, type, provenance, and deterministic-hash failures.
 They are not accepted benchmark answers.
 
-## Qualification boundary
+## Phase 5A qualification boundary
 
 The checked-in smoke fixture is not an official scale-factor dataset and has no
 accepted answer corpus for all BI operations. Thirty canonical variants still
-lack registered reference answers. Exact analytical handlers for BI
-1-9, 11-14, and 16-18 and operation-specific graph adapters for BI 10, 15, 19,
-and 20 remain open. The current capability matrix is intentionally unchanged,
-and the reduced workflow exposes only diagnostic scores.
+lack registered reference answers. At the end of Phase 5A, exact analytical
+handlers for BI 1-9, 11-14, and 16-18 and operation-specific graph adapters for
+BI 10, 15, 19, and 20 remained open. Phase 5B implements those handlers, as
+recorded below. The capability matrix remains intentionally unchanged because
+implementation availability alone does not establish accepted-answer
+correctness, and the reduced workflow exposes only diagnostic scores.
 
 No claim of official, certified, audited, or comparable SNB BI performance is
 made by this phase record.
@@ -107,6 +109,10 @@ evidence.
 
 ## Executed checks
 
+- Final Phase 5B focused regression set: 107 tests, 0 failures
+- Final default suite: 25 doctests, 10 properties, 6,896 tests, 0 failures,
+  53 skipped, 345 excluded by the default test configuration
+- Phase 5B `mix dialyzer --format short`: 0 errors and 0 skipped warnings
 - Phase 5B contextual qualification and adjacent SNB BI regressions: 61 tests,
   0 failures
 - Phase 5B reduced smoke qualification: 31 execution passes, 1 ineligible
