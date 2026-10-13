@@ -1,5 +1,5 @@
 %{
-  schema_version: 1,
+  schema_version: 2,
   layout_version: "snb-bi-reference-answers-v1",
   catalog_id: "ldbc-snb-bi-v1.0.3",
   external_layout: %{
@@ -11,6 +11,7 @@
     %{
       operation_id: "ldbc/snb-bi/read-01@v1.0.3",
       variant: "default",
+      purpose: :contract_fixture,
       parameter: %{
         sequence: "1",
         row_index: 0,

@@ -12,7 +12,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
   alias TripleStore.Benchmark.LDBC.{Correctness, Result}
   alias TripleStore.Benchmark.LDBC.SNB.BI.{ResultContract, Workload}
 
-  @schema_version 1
+  @manifest_schema_version 2
+  @payload_schema_version 1
   @layout_version "snb-bi-reference-answers-v1"
 
   @doc "Returns the checked-in reference-answer root."
@@ -41,6 +42,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
             operation_id: entry.operation_id,
             variant: entry.variant,
             parameter_row_index: entry.parameter.row_index,
+            purpose: entry.purpose,
             artifact: entry.artifact,
             reference_source: entry.reference_source
           }
@@ -68,6 +70,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
        %{
          result: result,
          identity: Map.take(entry, [:operation_id, :variant, :parameter, :dataset]),
+         purpose: entry.purpose,
          reference_source: entry.reference_source,
          operation_source: entry.operation_source,
          content_checksum: checksum
@@ -110,7 +113,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
   end
 
   defp validate_manifest(%{
-         schema_version: @schema_version,
+         schema_version: @manifest_schema_version,
          layout_version: @layout_version,
          catalog_id: catalog_id,
          answers: answers
@@ -125,7 +128,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
     if errors == [], do: :ok, else: {:error, {:invalid_reference_answer_manifest, errors}}
   end
 
-  defp validate_manifest(%{schema_version: version}) when version != @schema_version,
+  defp validate_manifest(%{schema_version: version}) when version != @manifest_schema_version,
     do: {:error, {:unsupported_reference_answer_schema, version}}
 
   defp validate_manifest(_manifest), do: {:error, :invalid_reference_answer_manifest}
@@ -134,6 +137,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
     []
     |> require(non_empty?(entry[:operation_id]), {index, :operation_id})
     |> require(non_empty?(entry[:variant]), {index, :variant})
+    |> require(entry[:purpose] in [:accepted_answer, :contract_fixture], {index, :purpose})
     |> require(valid_parameter?(entry[:parameter]), {index, :parameter})
     |> require(valid_dataset?(entry[:dataset]), {index, :dataset})
     |> require(valid_source?(entry[:operation_source]), {index, :operation_source})
@@ -270,7 +274,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
 
   defp decode_payload(binary) do
     case Jason.decode(binary) do
-      {:ok, %{"schema_version" => @schema_version, "rows" => rows} = payload}
+      {:ok, %{"schema_version" => @payload_schema_version, "rows" => rows} = payload}
       when is_list(rows) and map_size(payload) == 2 ->
         {:ok, payload}
 

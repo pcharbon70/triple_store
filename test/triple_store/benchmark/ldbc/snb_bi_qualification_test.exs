@@ -20,8 +20,9 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
              extension_adapter_gap: 9
            }
 
-    assert first.reference_coverage == %{embedded: 1, missing: 30}
-    assert first.groups[:query_context_required] == 22
+    assert first.reference_coverage == %{contract_fixture: 1, missing: 30}
+    assert first.groups[:qualification_context_required] == 22
+    assert first.groups[:graph_qualification_context_required] == 9
 
     standard =
       Enum.reject(
@@ -33,7 +34,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
              entry.stages.parse.status == :pass and
                entry.stages.algebra.status == :pass and
                entry.stages.optimized_plan.status == :pass and
-               entry.stages.execution.status == :fail and
+               entry.stages.implementation.status == :pass and
+               entry.stages.execution.status == :blocked and
                entry.stages.result_contract.status == :blocked and
                String.starts_with?(entry.stages.parse.digest, "sha256:") and
                String.starts_with?(entry.stages.algebra.digest, "sha256:") and
@@ -45,7 +47,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     assert read_12.stages.parse.status == :pass
     assert read_12.stages.algebra.status == :pass
     assert read_12.stages.optimized_plan.status == :pass
-    assert read_12.stages.execution.reason == :bi_query_context_required
+    assert read_12.stages.implementation.status == :pass
+    assert read_12.stages.execution.reason == :qualification_context_required
     assert read_12.confirmed_gaps == []
 
     extensions = Enum.filter(first.entries, &match?({:extension, _, _}, &1.strategy))
@@ -54,25 +57,28 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
              entry.stages.parse.status == :not_applicable and
                entry.stages.algebra.status == :not_applicable and
                entry.stages.optimized_plan.status == :not_applicable and
-               entry.stages.execution.status == :fail
+               entry.stages.implementation.status == :pass and
+               entry.stages.execution.status == :blocked
            end)
   end
 
-  test "groups the nine graph variants by their registered extension contract" do
+  test "records registered implementations without promoting unqualified operations" do
     assert {:ok, definitions} = Workload.load()
     assert {:ok, matrix} = Qualification.matrix(definitions)
 
-    graph_groups =
-      matrix.entries
-      |> Enum.filter(&(&1.classification == :extension_adapter_gap))
-      |> Enum.frequencies_by(& &1.gap_group)
+    assert length(matrix.operations) == 20
+    assert Enum.all?(matrix.operations, & &1.implementation_available?)
+    refute Enum.any?(matrix.operations, & &1.qualified?)
 
-    assert graph_groups == %{
-             {:extension_adapter, "ldbc.snb.bi.shortest-path-range.v1"} => 2,
-             {:extension_adapter, "ldbc.snb.bi-bounded-path.v1"} => 2,
-             {:extension_adapter, "ldbc.snb.bi-weighted-interaction-path.v1"} => 2,
-             {:extension_adapter, "ldbc.snb.bi-weighted-tag-path.v1"} => 3
-           }
+    assert Enum.all?(matrix.operations, fn operation ->
+             :execution_incomplete in operation.blockers and
+               :accepted_answers_incomplete in operation.blockers and
+               :result_comparison_incomplete in operation.blockers
+           end)
+
+    read_1 = Enum.find(matrix.operations, &String.contains?(&1.operation_id, "read-01@"))
+    assert read_1.variants == ["default"]
+    refute read_1.accepted_answers_complete?
   end
 
   test "records shared semantic requirements without claiming they already fail" do

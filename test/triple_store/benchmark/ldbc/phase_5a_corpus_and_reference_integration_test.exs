@@ -482,13 +482,14 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
     parameter_row = parameters.sequences[sequence_label(definition)] |> hd()
 
     manifest = %{
-      schema_version: 1,
+      schema_version: 2,
       layout_version: "snb-bi-reference-answers-v1",
       catalog_id: Workload.catalog_id(),
       answers: [
         %{
           operation_id: definition.catalog_id,
           variant: definition.variant,
+          purpose: :accepted_answer,
           parameter: %{
             sequence: sequence_label(definition),
             row_index: 0,

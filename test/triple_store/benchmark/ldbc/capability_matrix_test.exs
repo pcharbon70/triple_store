@@ -2,6 +2,7 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
   use ExUnit.Case, async: true
 
   alias TripleStore.Benchmark.LDBC.{CapabilityMatrix, Catalog}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{Qualification, Workload}
 
   test "classifies every catalog operation exactly once" do
     assert {:ok, matrix} = CapabilityMatrix.load()
@@ -13,12 +14,7 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     assert capability_ids == operation_ids
     assert length(capability_ids) == 119
 
-    assert CapabilityMatrix.summary(matrix) == %{
-             supported: 42,
-             requires_fix: 54,
-             requires_extension: 6,
-             profile_exclusion: 17
-           }
+    assert CapabilityMatrix.summary(matrix) == expected_summary(matrix)
   end
 
   test "keeps parser support distinct from verified execution" do
@@ -31,7 +27,14 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
 
     bi_path = find_operation(matrix, "ldbc/snb-bi/read-19@v1.0.3")
     assert bi_path.status == :requires_extension
+    assert bi_path.parse_support == :not_applicable
+    assert bi_path.execution_support == :unverified
     assert :path_cost in bi_path.features
+
+    bi_standard = find_operation(matrix, "ldbc/snb-bi/read-12@v1.0.3")
+    assert bi_standard.status == :requires_fix
+    assert bi_standard.parse_support == :verified
+    assert bi_standard.execution_support == :unverified
 
     interactive_path = find_operation(matrix, "ldbc/snb-interactive/complex-read-14@v1.2.0")
     assert interactive_path.status == :requires_extension
@@ -71,4 +74,50 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
 
   defp find_operation(matrix, id), do: Enum.find(matrix.operations, &(&1.operation_id == id))
   defp find_finding(matrix, id), do: Enum.find(matrix.system_findings, &(&1.id == id))
+
+  defp expected_summary(matrix) do
+    assert {:ok, definitions} = Workload.load()
+    assert {:ok, qualification} = Qualification.matrix(definitions)
+
+    bi_evidence =
+      Map.new(qualification.operations, &{&1.operation_id, &1})
+
+    bi_statuses =
+      Map.new(qualification.operations, fn evidence ->
+        status =
+          cond do
+            evidence.qualified? -> :supported
+            evidence.extension? -> :requires_extension
+            true -> :requires_fix
+          end
+
+        {evidence.operation_id, status}
+      end)
+
+    statuses = Enum.map(matrix.operations, &expected_status(&1, bi_statuses, bi_evidence))
+
+    counts = Enum.frequencies(statuses)
+
+    Map.new(
+      [:supported, :requires_fix, :requires_extension, :profile_exclusion],
+      &{&1, Map.get(counts, &1, 0)}
+    )
+  end
+
+  defp expected_status(operation, bi_statuses, bi_evidence) do
+    case Map.fetch(bi_statuses, operation.operation_id) do
+      {:ok, expected} ->
+        assert operation.status == expected
+        assert_supported_is_qualified(operation, bi_evidence[operation.operation_id])
+        expected
+
+      :error ->
+        operation.status
+    end
+  end
+
+  defp assert_supported_is_qualified(%{status: :supported}, evidence),
+    do: assert(evidence.qualified?)
+
+  defp assert_supported_is_qualified(_operation, _evidence), do: :ok
 end

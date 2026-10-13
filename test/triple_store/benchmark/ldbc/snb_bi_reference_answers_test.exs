@@ -31,9 +31,16 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
              )
 
     assert answer.result.rows == []
+    assert answer.purpose == :contract_fixture
 
     assert answer.content_checksum ==
              "sha256:bd349c43a8039831620a4df23fb14c83577447ba6170596357bce8762d9ebfe4"
+  end
+
+  test "inventory distinguishes contract fixtures from accepted answers" do
+    assert {:ok, [entry]} = ReferenceAnswers.inventory()
+    assert entry.purpose == :contract_fixture
+    assert entry.artifact.kind == :embedded
   end
 
   test "loads typed duplicate-bearing rows and preserves the BI ordering contract", %{test: test} do
@@ -336,13 +343,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     parameter_row = parameters.sequences[sequence] |> Enum.at(0)
 
     manifest = %{
-      schema_version: 1,
+      schema_version: 2,
       layout_version: "snb-bi-reference-answers-v1",
       catalog_id: @catalog_id,
       answers: [
         %{
           operation_id: definition.catalog_id,
           variant: definition.variant,
+          purpose: :accepted_answer,
           parameter: %{
             sequence: sequence,
             row_index: 0,

@@ -8,12 +8,18 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
   and plan readiness do not make an operation executable, and an executable
   operation does not pass correctness qualification without an accepted answer.
 
-  This baseline intentionally probes the registered BI execution boundary. It
-  does not substitute diagnostic SPARQL execution for a missing operation
-  handler or graph adapter.
+  Structural evidence and contextual execution evidence remain separate. The
+  matrix can prove that a handler is registered without claiming that it ran,
+  and it can inventory a contract fixture without treating it as an accepted
+  correctness oracle.
   """
 
-  alias TripleStore.Benchmark.LDBC.SNB.BI.{Analytics, ReferenceAnswers}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{
+    GraphAdapterRegistry,
+    HandlerRegistry,
+    ReferenceAnswers
+  }
+
   alias TripleStore.SPARQL.Query
 
   @graph_operations MapSet.new([10, 15, 19, 20])
@@ -39,9 +45,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
         |> Enum.map(&entry(&1, reference_index))
         |> Enum.sort_by(&{&1.number, variant_order(&1.variant)})
 
+      operations = operation_evidence(entries)
+
       {:ok,
        %{
          entries: entries,
+         operations: operations,
          groups: Enum.frequencies_by(entries, & &1.gap_group),
          classifications: Enum.frequencies_by(entries, & &1.classification),
          reference_coverage: Enum.frequencies_by(entries, & &1.expected_result.status)
@@ -90,13 +99,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
     case Query.prepare(probe_query(definition)) do
       {:ok, prepared} ->
-        execution = execution_evidence(definition)
-
         %{
           parse: parse,
           algebra: pass(definition, :algebra, prepared.pattern),
           optimized_plan: pass(definition, :optimized_plan, prepared.optimized_pattern),
-          execution: execution,
+          implementation: implementation_evidence(definition, HandlerRegistry),
+          execution: blocked(:qualification_context_required),
           result_contract: blocked(:execution_not_available)
         }
 
@@ -105,6 +113,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
           parse: fail(reason),
           algebra: blocked(:parse_failed),
           optimized_plan: blocked(:parse_failed),
+          implementation: implementation_evidence(definition, HandlerRegistry),
           execution: blocked(:parse_failed),
           result_contract: blocked(:parse_failed)
         }
@@ -114,6 +123,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
           parse: parse,
           algebra: fail(reason),
           optimized_plan: blocked(:algebra_failed),
+          implementation: implementation_evidence(definition, HandlerRegistry),
           execution: blocked(:algebra_failed),
           result_contract: blocked(:algebra_failed)
         }
@@ -127,15 +137,19 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
       parse: not_applicable(:graph_extension),
       algebra: not_applicable(:graph_extension),
       optimized_plan: not_applicable(:graph_extension),
-      execution: fail({:extension_adapter_not_implemented, extension_id}),
+      implementation: implementation_evidence(definition, GraphAdapterRegistry),
+      execution: blocked({:qualification_context_required, extension_id}),
       result_contract: blocked(:execution_not_available)
     }
   end
 
-  defp execution_evidence(definition) do
-    case Analytics.execute(definition, %{}, %{}) do
-      {:ok, result} -> pass(definition, :execution, result)
-      {:error, reason} -> fail(reason)
+  defp implementation_evidence(definition, registry) do
+    case registry.fetch(definition) do
+      {:ok, entry} ->
+        %{status: :pass, digest: digest({entry.version, entry.adapter, entry.key})}
+
+      {:error, reason} ->
+        fail(reason)
     end
   end
 
@@ -143,29 +157,28 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
     case Map.fetch(reference_index, {definition.catalog_id, definition.variant}) do
       {:ok, entry} ->
         %{
-          status: entry.artifact.kind,
+          status: entry.purpose,
+          purpose: entry.purpose,
+          artifact_kind: entry.artifact.kind,
           parameter_row_index: entry.parameter_row_index,
           checksum: entry.artifact.checksum,
           reference_source: entry.reference_source
         }
 
       :error ->
-        %{status: :missing, parameter_row_index: 0}
+        %{status: :missing, purpose: :missing, parameter_row_index: 0}
     end
   end
 
   defp gap_group(stages, extension?) do
-    case {classify(stages, extension?), reason(stages, :execution)} do
-      {:extension_adapter_gap, {:extension_adapter_not_implemented, id}} ->
-        {:extension_adapter, id}
+    case {classify(stages, extension?), status(stages, :implementation)} do
+      {:extension_adapter_gap, :pass} ->
+        :graph_qualification_context_required
 
-      {:execution_gap, {:bi_operation_not_implemented, _number, _variant}} ->
-        :standard_handler_registry
+      {:execution_gap, :pass} ->
+        :qualification_context_required
 
-      {:execution_gap, :bi_query_context_required} ->
-        :query_context_required
-
-      {classification, _reason} ->
+      {classification, _implementation} ->
         classification
     end
   end
@@ -194,10 +207,56 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
     |> Enum.reverse()
   end
 
-  defp confirmed_gaps(%{strategy: {:extension, id, _module}}),
-    do: [{:missing_extension_adapter, id}]
-
   defp confirmed_gaps(_definition), do: []
+
+  defp operation_evidence(entries) do
+    entries
+    |> Enum.group_by(& &1.operation_id)
+    |> Enum.map(fn {operation_id, variants} -> summarize_operation(operation_id, variants) end)
+    |> Enum.sort_by(& &1.operation_id)
+  end
+
+  defp summarize_operation(operation_id, variants) do
+    extension? = Enum.all?(variants, &match?({:extension, _, _}, &1.strategy))
+    parse_complete? = Enum.all?(variants, &parse_ready?/1)
+
+    implementation_available? =
+      Enum.all?(variants, &(status(&1.stages, :implementation) == :pass))
+
+    execution_complete? = Enum.all?(variants, &(status(&1.stages, :execution) == :pass))
+
+    accepted_answers_complete? =
+      Enum.all?(variants, &(&1.expected_result.purpose == :accepted_answer))
+
+    result_comparison_complete? =
+      Enum.all?(variants, &(Map.get(&1.expected_result, :comparison_status) == :pass))
+
+    blockers =
+      []
+      |> maybe_add(not parse_complete?, :parse_incomplete)
+      |> maybe_add(not implementation_available?, :implementation_missing)
+      |> maybe_add(not execution_complete?, :execution_incomplete)
+      |> maybe_add(not accepted_answers_complete?, :accepted_answers_incomplete)
+      |> maybe_add(not result_comparison_complete?, :result_comparison_incomplete)
+      |> Enum.reverse()
+
+    %{
+      operation_id: operation_id,
+      extension?: extension?,
+      variants: Enum.map(variants, & &1.variant),
+      parse_complete?: parse_complete?,
+      implementation_available?: implementation_available?,
+      execution_complete?: execution_complete?,
+      accepted_answers_complete?: accepted_answers_complete?,
+      result_comparison_complete?: result_comparison_complete?,
+      qualified?: blockers == [],
+      blockers: blockers
+    }
+  end
+
+  defp parse_ready?(entry) do
+    status(entry.stages, :parse) in [:pass, :not_applicable]
+  end
 
   defp probe_query(definition) do
     Regex.replace(
