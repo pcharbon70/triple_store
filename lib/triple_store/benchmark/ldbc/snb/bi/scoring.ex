@@ -51,7 +51,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Scoring do
 
     []
     |> require(Enum.all?(records, &eligible?/1), :incorrect_or_incomplete_operation)
-    |> require(power_labels == MapSet.new(@power_labels), :incomplete_power_block)
+    |> require(MapSet.equal?(power_labels, MapSet.new(@power_labels)), :incomplete_power_block)
     |> require(
       is_number(load_time_s) and load_time_s >= 0 and load_time_s < 86_400,
       :invalid_load_time
