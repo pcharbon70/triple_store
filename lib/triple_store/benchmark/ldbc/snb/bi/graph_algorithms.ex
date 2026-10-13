@@ -88,32 +88,36 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAlgorithms do
       when is_pid(db) and is_integer(predicate_id) and predicate_id >= 0 do
     weight = Keyword.get(opts, :weight, fn _left, _right, _graph -> 1 end)
 
-    fn vertex ->
-      incoming =
-        TripleStore.QuadOperations.lookup_quads_stream(
-          db,
-          {:var, :bound, :bound, :var},
-          %{p: predicate_id, o: vertex}
-        )
+    fn
+      vertex when is_integer(vertex) and vertex >= 0 ->
+        incoming =
+          TripleStore.QuadOperations.lookup_quads_stream(
+            db,
+            {:var, :bound, :bound, :var},
+            %{p: predicate_id, o: vertex}
+          )
 
-      outgoing =
-        TripleStore.QuadOperations.lookup_quads_stream(
-          db,
-          {:bound, :bound, :var, :var},
-          %{s: vertex, p: predicate_id}
-        )
+        outgoing =
+          TripleStore.QuadOperations.lookup_quads_stream(
+            db,
+            {:bound, :bound, :var, :var},
+            %{s: vertex, p: predicate_id}
+          )
 
-      neighbours =
-        outgoing
-        |> Enum.map(fn {_subject, _predicate, object, graph} -> {object, graph} end)
-        |> Kernel.++(
-          Enum.map(incoming, fn {subject, _predicate, _object, graph} -> {subject, graph} end)
-        )
-        |> Enum.filter(fn {_neighbour, graph} -> graphs == :all or graph in graphs end)
-        |> Enum.map(fn {neighbour, graph} -> {neighbour, weight.(vertex, neighbour, graph)} end)
-        |> Enum.uniq()
+        neighbours =
+          outgoing
+          |> Enum.map(fn {_subject, _predicate, object, graph} -> {object, graph} end)
+          |> Kernel.++(
+            Enum.map(incoming, fn {subject, _predicate, _object, graph} -> {subject, graph} end)
+          )
+          |> Enum.filter(fn {_neighbour, graph} -> graphs == :all or graph in graphs end)
+          |> Enum.map(fn {neighbour, graph} -> {neighbour, weight.(vertex, neighbour, graph)} end)
+          |> Enum.uniq()
 
-      {:ok, neighbours}
+        {:ok, neighbours}
+
+      vertex ->
+        {:error, {:invalid_vertex, vertex}}
     end
   end
 

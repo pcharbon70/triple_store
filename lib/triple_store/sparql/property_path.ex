@@ -1529,12 +1529,13 @@ defmodule TripleStore.SPARQL.PropertyPath do
   defp quad_lookup(db, {s, p, o}, graph_pattern, graph_value) do
     quad_pattern = {pattern_type(s), pattern_type(p), pattern_type(o), graph_pattern}
 
-    values = %{
-      s: pattern_value(s),
-      p: pattern_value(p),
-      o: pattern_value(o),
-      g: graph_value
-    }
+    values =
+      [{:s, s}, {:p, p}, {:o, o}]
+      |> Enum.reduce(%{}, fn
+        {key, {:bound, id}}, values -> Map.put(values, key, id)
+        {_key, :var}, values -> values
+      end)
+      |> maybe_put_graph(graph_pattern, graph_value)
 
     db
     |> QuadOperations.lookup_quads_stream(quad_pattern, values)
@@ -1546,8 +1547,8 @@ defmodule TripleStore.SPARQL.PropertyPath do
   defp pattern_type({:bound, _id}), do: :bound
   defp pattern_type(:var), do: :var
 
-  defp pattern_value({:bound, id}), do: id
-  defp pattern_value(:var), do: nil
+  defp maybe_put_graph(values, :bound, graph), do: Map.put(values, :g, graph)
+  defp maybe_put_graph(values, :var, _graph), do: values
 
   # Empty stream helper
   defp empty_stream, do: Stream.map([], & &1)

@@ -21,7 +21,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.IndexAccess do
 
   defstruct [:db, :manager, :graphs, :deadline, :cancelled?, :max_visited, :max_intermediate]
 
-  @type t :: %__MODULE__{}
+  @type t :: %__MODULE__{
+          db: pid(),
+          manager: pid(),
+          graphs: MapSet.t(non_neg_integer()),
+          deadline: integer(),
+          cancelled?: (-> boolean()),
+          max_visited: pos_integer(),
+          max_intermediate: pos_integer()
+        }
 
   @doc "Builds an access context from an open quad store."
   @spec new(map(), keyword()) :: {:ok, t()} | {:error, term()}
@@ -212,18 +220,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.IndexAccess do
          {:ok, rdf_object_id} <- term_id(access, @rdf_object),
          {:ok, relationship_predicate_id} <- predicate_id(access, predicate),
          {:ok, relationships} <-
-           lookup_subjects(access, rdf_subject_id, from) do
-      relationships
-      |> Enum.filter(fn relationship ->
-        quad?(access, relationship, rdf_predicate_id, relationship_predicate_id) and
-          quad?(access, relationship, rdf_object_id, to)
-      end)
-      |> Enum.reduce_while({:ok, []}, fn relationship, {:ok, values} ->
-        case property_values(access, relationship, property) do
-          {:ok, found} -> {:cont, {:ok, values ++ found}}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
+           lookup_subjects(access, rdf_subject_id, from),
+         {:ok, matching} <-
+           matching_relationships(
+             access,
+             relationships,
+             rdf_predicate_id,
+             relationship_predicate_id,
+             rdf_object_id,
+             to
+           ) do
+      relationship_values(access, matching, property)
     else
       :not_found -> {:ok, []}
       {:error, _} = error -> error
@@ -292,11 +299,43 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.IndexAccess do
     )
   end
 
+  defp matching_relationships(access, relationships, rdf_predicate, predicate, rdf_object, to) do
+    Enum.reduce_while(relationships, {:ok, []}, fn relationship, {:ok, matching} ->
+      case relationship_matches?(access, relationship, rdf_predicate, predicate, rdf_object, to) do
+        {:ok, true} -> {:cont, {:ok, [relationship | matching]}}
+        {:ok, false} -> {:cont, {:ok, matching}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> reverse_result()
+  end
+
+  defp relationship_matches?(access, relationship, rdf_predicate, predicate, rdf_object, to) do
+    with {:ok, true} <- quad?(access, relationship, rdf_predicate, predicate),
+         {:ok, true} <- quad?(access, relationship, rdf_object, to) do
+      {:ok, true}
+    else
+      {:ok, false} -> {:ok, false}
+      {:error, _} = error -> error
+    end
+  end
+
   defp quad?(access, subject, predicate, object) do
-    Enum.any?(
-      access.graphs,
-      &QuadOperations.quad_exists?(access.db, {subject, predicate, object, &1})
-    )
+    Enum.reduce_while(access.graphs, {:ok, false}, fn graph, {:ok, false} ->
+      case QuadOperations.quad_exists?(access.db, {subject, predicate, object, graph}) do
+        true -> {:halt, {:ok, true}}
+        false -> {:cont, {:ok, false}}
+      end
+    end)
+  end
+
+  defp relationship_values(access, relationships, property) do
+    Enum.reduce_while(relationships, {:ok, []}, fn relationship, {:ok, values} ->
+      case property_values(access, relationship, property) do
+        {:ok, found} -> {:cont, {:ok, values ++ found}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
   end
 
   defp collect(access, stream, mapper) do

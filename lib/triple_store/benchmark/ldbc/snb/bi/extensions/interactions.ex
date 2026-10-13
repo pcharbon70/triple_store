@@ -29,27 +29,29 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Extensions.Interactions do
   @spec posts(IndexAccess.t(), non_neg_integer()) ::
           {:ok, [non_neg_integer()]} | {:error, term()}
   def posts(access, message) do
-    posts(access, [message], MapSet.new(), [])
+    posts(access, [message], %{}, [])
   end
 
+  @spec posts(IndexAccess.t(), [non_neg_integer()], map(), [non_neg_integer()]) ::
+          {:ok, [non_neg_integer()]} | {:error, term()}
   defp posts(_access, [], _visited, found), do: {:ok, Enum.uniq(found)}
 
   defp posts(access, [message | pending], visited, found) do
     cond do
-      MapSet.member?(visited, message) ->
+      Map.has_key?(visited, message) ->
         posts(access, pending, visited, found)
 
-      MapSet.size(visited) >= access.max_intermediate ->
+      map_size(visited) >= access.max_intermediate ->
         {:error, {:intermediate_bound_exceeded, access.max_intermediate}}
 
       true ->
         with :ok <- IndexAccess.checkpoint(access),
              {:ok, post?} <- IndexAccess.entity_type(access, message, "Post") do
           if post? do
-            posts(access, pending, MapSet.put(visited, message), [message | found])
+            posts(access, pending, Map.put(visited, message, true), [message | found])
           else
             with {:ok, parents} <- IndexAccess.objects(access, message, "replyOf") do
-              posts(access, pending ++ parents, MapSet.put(visited, message), found)
+              posts(access, pending ++ parents, Map.put(visited, message, true), found)
             end
           end
         end

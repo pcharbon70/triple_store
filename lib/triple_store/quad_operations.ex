@@ -75,8 +75,12 @@ defmodule TripleStore.QuadOperations do
   @typedoc "A quad as a tuple of four term IDs: {subject, predicate, object, graph}"
   @type quad :: {term_id(), term_id(), term_id(), term_id()}
 
+  @typedoc "One bound or variable position in a quad pattern"
+  @type pattern_position :: :bound | :var
+
   @typedoc "Quad pattern: {s_pat, p_pat, o_pat, g_pat} where each is :bound or :var"
-  @type quad_pattern :: {:bound | :var, :bound | :var, :bound | :var, :bound | :var}
+  @type quad_pattern ::
+          {pattern_position(), pattern_position(), pattern_position(), pattern_position()}
 
   @typedoc "Term IDs supplied for the bound positions in a quad pattern"
   @type quad_values :: %{
