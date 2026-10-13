@@ -1,0 +1,39 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-16.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person__id ?messageCountA ?messageCountB
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?person (COUNT(DISTINCT ?message) AS ?messageCountA)
+    WHERE {
+      ?tag rdf:type snb:Tag ; snb:name {{tagA}} .
+      ?message rdf:type snb:Message ; snb:hasCreator ?person ; snb:hasTag ?tag ; snb:creationDate ?messageDate .
+      FILTER(xsd:date(?messageDate) = {{dateA}})
+      OPTIONAL {
+        ?person (snb:knows|^snb:knows) ?friend .
+        ?friendMessage rdf:type snb:Message ; snb:hasCreator ?friend ; snb:hasTag ?tag ; snb:creationDate ?friendDate .
+        FILTER(xsd:date(?friendDate) = {{dateA}})
+      }
+    }
+    GROUP BY ?person
+    HAVING(COUNT(DISTINCT ?friend) <= {{maxKnowsLimit}}) }
+  { SELECT ?person (COUNT(DISTINCT ?message) AS ?messageCountB)
+    WHERE {
+      ?tag rdf:type snb:Tag ; snb:name {{tagB}} .
+      ?message rdf:type snb:Message ; snb:hasCreator ?person ; snb:hasTag ?tag ; snb:creationDate ?messageDate .
+      FILTER(xsd:date(?messageDate) = {{dateB}})
+      OPTIONAL {
+        ?person (snb:knows|^snb:knows) ?friend .
+        ?friendMessage rdf:type snb:Message ; snb:hasCreator ?friend ; snb:hasTag ?tag ; snb:creationDate ?friendDate .
+        FILTER(xsd:date(?friendDate) = {{dateB}})
+      }
+    }
+    GROUP BY ?person
+    HAVING(COUNT(DISTINCT ?friend) <= {{maxKnowsLimit}}) }
+  BIND(xsd:integer(STRAFTER(STR(?person), "/Person/")) AS ?person__id)
+}
+ORDER BY DESC(?messageCountA + ?messageCountB) ASC(?person__id)
+LIMIT 20

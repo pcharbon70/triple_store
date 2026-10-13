@@ -1,0 +1,24 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-3.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?forum__id ?forum__title ?forum__creationDate ?person__id (COUNT(DISTINCT ?message) AS ?messageCount)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?country rdf:type snb:Place ; snb:type "Country" ; snb:name {{country}} .
+  ?city rdf:type snb:Place ; snb:type "City" ; snb:isPartOf ?country .
+  ?person rdf:type snb:Person ; snb:isLocatedIn ?city .
+  ?forum rdf:type snb:Forum ; snb:hasModerator ?person ;
+         snb:title ?forum__title ; snb:creationDate ?forum__creationDate ;
+         snb:containerOf ?post .
+  ?message snb:replyOf* ?post ; snb:hasTag ?tag .
+  ?tag snb:hasType ?tagClass .
+  ?tagClass snb:name {{tagClass}} .
+  BIND(xsd:integer(STRAFTER(STR(?forum), "/Forum/")) AS ?forum__id)
+  BIND(xsd:integer(STRAFTER(STR(?person), "/Person/")) AS ?person__id)
+}
+GROUP BY ?forum ?forum__id ?forum__title ?forum__creationDate ?person__id
+ORDER BY DESC(?messageCount) ASC(?forum__id)
+LIMIT 20

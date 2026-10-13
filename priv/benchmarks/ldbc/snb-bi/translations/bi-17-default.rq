@@ -1,0 +1,27 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-17.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person1__id (COUNT(DISTINCT ?message2) AS ?messageCount)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?tag rdf:type snb:Tag ; snb:name {{tag}} .
+  ?message1 rdf:type snb:Message ; snb:hasCreator ?person1 ; snb:hasTag ?tag ;
+            snb:creationDate ?message1Date ; snb:replyOf* ?post1 .
+  ?forum1 rdf:type snb:Forum ; snb:containerOf ?post1 ; snb:hasMember ?person2 ; snb:hasMember ?person3 .
+  FILTER(?person2 != ?person3)
+  ?comment rdf:type snb:Comment ; snb:hasCreator ?person2 ; snb:hasTag ?tag ; snb:replyOf ?message2 .
+  ?message2 rdf:type snb:Message ; snb:hasCreator ?person3 ; snb:hasTag ?tag ;
+            snb:creationDate ?message2Date ; snb:replyOf* ?post2 .
+  ?forum2 rdf:type snb:Forum ; snb:containerOf ?post2 .
+  FILTER(?forum1 != ?forum2)
+  BIND(STRDT(CONCAT("PT", STR({{delta}}), "H"), xsd:dayTimeDuration) AS ?minimumDelay)
+  FILTER(?message2Date > ?message1Date + ?minimumDelay)
+  FILTER NOT EXISTS { ?forum2 snb:hasMember ?person1 }
+  BIND(xsd:integer(STRAFTER(STR(?person1), "/Person/")) AS ?person1__id)
+}
+GROUP BY ?person1 ?person1__id
+ORDER BY DESC(?messageCount) ASC(?person1__id)
+LIMIT 10

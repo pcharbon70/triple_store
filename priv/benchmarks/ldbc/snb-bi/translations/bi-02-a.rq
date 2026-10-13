@@ -1,0 +1,25 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-2.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?tag__name ?countWindow1 ?countWindow2 ?diff
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?tag ?tag__name
+            (SUM(IF(BOUND(?creationDate) && ?creationDate >= ?window1Start && ?creationDate < ?window2Start, 1, 0)) AS ?countWindow1)
+            (SUM(IF(BOUND(?creationDate) && ?creationDate >= ?window2Start && ?creationDate < ?windowEnd, 1, 0)) AS ?countWindow2)
+     WHERE {
+       BIND(xsd:dateTime(CONCAT(STR({{date}}), "T00:00:00Z")) AS ?window1Start)
+       BIND(?window1Start + "P100D"^^xsd:dayTimeDuration AS ?window2Start)
+       BIND(?window1Start + "P200D"^^xsd:dayTimeDuration AS ?windowEnd)
+       ?tag rdf:type snb:Tag ; snb:name ?tag__name ; snb:hasType ?tagClass .
+       ?tagClass snb:name {{tagClass}} .
+       OPTIONAL { ?message snb:hasTag ?tag ; snb:creationDate ?creationDate . }
+     } GROUP BY ?tag ?tag__name ?window1Start ?window2Start ?windowEnd
+  }
+  BIND(ABS(?countWindow1 - ?countWindow2) AS ?diff)
+}
+ORDER BY DESC(?diff) ASC(?tag__name)
+LIMIT 100

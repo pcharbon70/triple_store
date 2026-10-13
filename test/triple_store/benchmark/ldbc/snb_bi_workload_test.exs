@@ -64,8 +64,12 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIWorkloadTest do
     assert {:ok, definitions} = Workload.load()
 
     manifest = %{
+      dataset_id: "test-dataset",
+      suite: :snb_bi,
+      profile: "test",
       scale_factor: "1",
-      transformation: %{output_checksum: "sha256:dataset"}
+      transformation: %{output_checksum: "sha256:dataset", mapping_version: "snb-rdf-v1"},
+      store: %{path_identity: "test-store"}
     }
 
     sequences =
@@ -79,9 +83,12 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIWorkloadTest do
       end)
 
     assert {:ok, bundle} = Parameters.new(manifest, sequences)
-    assert :ok = Parameters.validate(bundle, manifest, definitions, comparable: true)
+    assert :ok = Parameters.validate(bundle, manifest, definitions)
 
-    assert {:error, [:official_provenance]} =
+    assert {:error, [:reference_store_required]} =
+             Parameters.validate(bundle, manifest, definitions, comparable: true)
+
+    assert {:error, [:official_provenance, :reference_store_required]} =
              bundle
              |> Map.put(:provenance, :smoke)
              |> Parameters.validate(manifest, definitions, comparable: true)

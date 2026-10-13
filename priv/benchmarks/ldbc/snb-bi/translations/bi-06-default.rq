@@ -1,0 +1,21 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-6.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person1__id (COUNT(DISTINCT ?like) AS ?authorityScore)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?tag rdf:type snb:Tag ; snb:name {{tag}} .
+  ?message1 rdf:type snb:Message ; snb:hasTag ?tag ; snb:hasCreator ?person1 .
+  OPTIONAL {
+    ?person2 snb:likes ?message1 .
+    ?message2 rdf:type snb:Message ; snb:hasCreator ?person2 .
+    ?like rdf:type snb:Relationship ; rdf:subject ?person3 ; rdf:predicate snb:likes ; rdf:object ?message2 .
+  }
+  BIND(xsd:integer(STRAFTER(STR(?person1), "/Person/")) AS ?person1__id)
+}
+GROUP BY ?person1 ?person1__id
+ORDER BY DESC(?authorityScore) ASC(?person1__id)
+LIMIT 100

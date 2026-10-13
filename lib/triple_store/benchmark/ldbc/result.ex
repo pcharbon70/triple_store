@@ -9,13 +9,14 @@ defmodule TripleStore.Benchmark.LDBC.Result do
   alias TripleStore.Benchmark.LDBC.{Codec, Operation}
 
   @enforce_keys [:columns, :types, :rows, :ordering]
-  defstruct [:columns, :types, :rows, :ordering]
+  defstruct [:columns, :types, :rows, :ordering, duplicate_semantics: :bag]
 
   @type t :: %__MODULE__{
           columns: [String.t()],
           types: [Codec.canonical_type()],
           rows: [[term()]],
-          ordering: map()
+          ordering: map(),
+          duplicate_semantics: :bag
         }
 
   @doc "Converts result maps into canonical typed rows and checks every declared column."

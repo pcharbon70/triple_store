@@ -1,0 +1,320 @@
+defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
+  @moduledoc """
+  Loads provenance-bound SNB BI reference answers and compares them canonically.
+
+  Every answer is tied to an exact catalog operation and variant, dataset and
+  mapping checksum, parameter row, operation source, and reference-engine
+  version. Embedded smoke answers are checksummed JSON. Large answer bundles
+  remain external, addressed by an immutable URI and checksum, and must be
+  supplied explicitly before a run can be validated.
+  """
+
+  alias TripleStore.Benchmark.LDBC.{Correctness, Result}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{ResultContract, Workload}
+
+  @schema_version 1
+  @layout_version "snb-bi-reference-answers-v1"
+
+  @doc "Returns the checked-in reference-answer root."
+  @spec default_root() :: Path.t()
+  def default_root do
+    case :code.priv_dir(:triple_store) do
+      {:error, _reason} ->
+        Path.expand("../../../../../../priv/benchmarks/ldbc/snb-bi/reference", __DIR__)
+
+      priv_dir ->
+        Path.join(to_string(priv_dir), "benchmarks/ldbc/snb-bi/reference")
+    end
+  end
+
+  @doc "Loads one reference answer after validating every active-run identity."
+  @spec load(map(), non_neg_integer(), map(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def load(definition, parameter_row_index, dataset, parameters, opts \\ [])
+      when is_map(definition) and is_integer(parameter_row_index) and parameter_row_index >= 0 do
+    root = Keyword.get(opts, :root, default_root())
+
+    with {:ok, manifest} <- read_manifest(root),
+         :ok <- validate_manifest(manifest),
+         {:ok, entry} <- find_entry(manifest, definition, parameter_row_index),
+         :ok <- validate_identity(manifest, entry, definition, dataset, parameters, opts),
+         {:ok, payload, checksum} <- read_artifact(root, entry.artifact),
+         {:ok, result} <- materialize_payload(definition, payload) do
+      {:ok,
+       %{
+         result: result,
+         identity: Map.take(entry, [:operation_id, :variant, :parameter, :dataset]),
+         reference_source: entry.reference_source,
+         operation_source: entry.operation_source,
+         content_checksum: checksum
+       }}
+    end
+  end
+
+  @doc "Loads the expected answer and compares an actual BI result through `Correctness`."
+  @spec compare(map(), non_neg_integer(), Result.t() | map(), map(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def compare(definition, parameter_row_index, actual, dataset, parameters, opts \\ []) do
+    with {:ok, answer} <- load(definition, parameter_row_index, dataset, parameters, opts),
+         :ok <- validate_divergence(opts, answer.reference_source.version),
+         {:ok, actual_result} <- ResultContract.to_result(definition, actual) do
+      comparison_opts =
+        Keyword.take(opts, [:full_comparison_limit, :numeric_tolerance, :accepted_divergence])
+
+      comparison = Correctness.compare(answer.result, actual_result, comparison_opts)
+
+      {:ok,
+       Map.put(comparison, :reference_answer, %{
+         content_checksum: answer.content_checksum,
+         parameter: answer.identity.parameter,
+         reference_source: answer.reference_source
+       })}
+    end
+  end
+
+  defp read_manifest(root) do
+    path = Path.join(root, "manifest.exs")
+
+    if File.regular?(path) do
+      {manifest, _binding} = Code.eval_file(path)
+      {:ok, manifest}
+    else
+      {:error, {:reference_answer_manifest_missing, path}}
+    end
+  rescue
+    error -> {:error, {:invalid_reference_answer_manifest, Exception.message(error)}}
+  end
+
+  defp validate_manifest(%{
+         schema_version: @schema_version,
+         layout_version: @layout_version,
+         catalog_id: catalog_id,
+         answers: answers
+       })
+       when is_binary(catalog_id) and is_list(answers) do
+    errors =
+      answers
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {entry, index} -> entry_errors(entry, index) end)
+      |> Kernel.++(duplicate_errors(answers))
+
+    if errors == [], do: :ok, else: {:error, {:invalid_reference_answer_manifest, errors}}
+  end
+
+  defp validate_manifest(%{schema_version: version}) when version != @schema_version,
+    do: {:error, {:unsupported_reference_answer_schema, version}}
+
+  defp validate_manifest(_manifest), do: {:error, :invalid_reference_answer_manifest}
+
+  defp entry_errors(entry, index) when is_map(entry) do
+    []
+    |> require(non_empty?(entry[:operation_id]), {index, :operation_id})
+    |> require(non_empty?(entry[:variant]), {index, :variant})
+    |> require(valid_parameter?(entry[:parameter]), {index, :parameter})
+    |> require(valid_dataset?(entry[:dataset]), {index, :dataset})
+    |> require(valid_source?(entry[:operation_source]), {index, :operation_source})
+    |> require(valid_source?(entry[:reference_source]), {index, :reference_source})
+    |> require(valid_artifact?(entry[:artifact]), {index, :artifact})
+  end
+
+  defp entry_errors(_entry, index), do: [{index, :entry}]
+
+  defp duplicate_errors(answers) do
+    answers
+    |> Enum.filter(&is_map/1)
+    |> Enum.frequencies_by(fn entry ->
+      parameter_index =
+        case entry[:parameter] do
+          %{row_index: index} -> index
+          _parameter -> nil
+        end
+
+      {entry[:operation_id], entry[:variant], parameter_index}
+    end)
+    |> Enum.flat_map(fn
+      {identity, count} when count > 1 -> [{:duplicate_reference_answer, identity}]
+      _entry -> []
+    end)
+  end
+
+  defp find_entry(manifest, definition, parameter_row_index) do
+    matches =
+      Enum.filter(manifest.answers, fn entry ->
+        entry.operation_id == definition.catalog_id and entry.variant == definition.variant and
+          entry.parameter.row_index == parameter_row_index
+      end)
+
+    case matches do
+      [entry] ->
+        {:ok, entry}
+
+      [] ->
+        {:error,
+         {:reference_answer_not_found, definition.catalog_id, definition.variant,
+          parameter_row_index}}
+    end
+  end
+
+  defp validate_identity(manifest, entry, definition, dataset, parameters, opts) do
+    reference_source = Keyword.get(opts, :reference_source)
+    dataset_checksum = get_in(dataset, [:transformation, :output_checksum])
+    mapping_version = get_in(dataset, [:transformation, :mapping_version])
+    parameter_row = parameter_row(parameters, entry.parameter)
+
+    errors =
+      []
+      |> require(manifest.catalog_id == Workload.catalog_id(), :catalog)
+      |> require(entry.operation_id == definition.catalog_id, :operation)
+      |> require(entry.variant == definition.variant, :variant)
+      |> require(entry.dataset.id == Map.get(dataset, :dataset_id), :dataset_id)
+      |> require(entry.dataset.checksum == dataset_checksum, :dataset_checksum)
+      |> require(entry.dataset.mapping_version == mapping_version, :mapping_version)
+      |> require(Map.get(parameters, :dataset_checksum) == dataset_checksum, :parameter_dataset)
+      |> require(entry.parameter.source_id == Map.get(parameters, :source_id), :parameter_source)
+      |> require(
+        entry.parameter.generator_pin == Map.get(parameters, :generator_pin),
+        :parameter_generator
+      )
+      |> require(match?({:ok, _row}, parameter_row), :parameter_row)
+      |> require(
+        parameter_checksum_matches?(parameter_row, entry.parameter.checksum),
+        :parameter_checksum
+      )
+      |> require(entry.operation_source == operation_source(definition), :operation_source)
+      |> require(
+        not is_nil(reference_source) and entry.reference_source == reference_source,
+        :reference_source
+      )
+
+    if errors == [], do: :ok, else: {:error, {:invalid_reference_answer, errors}}
+  end
+
+  defp parameter_row(parameters, parameter) do
+    with sequences when is_map(sequences) <- Map.get(parameters, :sequences),
+         rows when is_list(rows) <- Map.get(sequences, parameter.sequence),
+         row when not is_nil(row) <- Enum.at(rows, parameter.row_index) do
+      {:ok, row}
+    else
+      _other -> :error
+    end
+  end
+
+  defp parameter_checksum_matches?({:ok, row}, expected), do: term_checksum(row) == expected
+  defp parameter_checksum_matches?(:error, _expected), do: false
+
+  defp operation_source(definition) do
+    definition.source
+    |> Map.take([:source_id, :path, :commit, :reference])
+  end
+
+  defp read_artifact(root, %{kind: :embedded, path: relative, checksum: expected}) do
+    with {:ok, path} <- resolve_embedded_path(root, relative),
+         {:ok, binary} <- read_answer_file(path),
+         actual <- binary_checksum(binary),
+         :ok <- verify_checksum(expected, actual),
+         {:ok, payload} <- decode_payload(binary) do
+      {:ok, payload, actual}
+    end
+  end
+
+  defp read_artifact(_root, %{kind: :external} = artifact),
+    do: {:error, {:external_reference_answer_required, artifact}}
+
+  defp resolve_embedded_path(root, relative) do
+    expanded_root = Path.expand(root)
+    path = Path.expand(relative, expanded_root)
+
+    if path != expanded_root and String.starts_with?(path, expanded_root <> "/") do
+      {:ok, path}
+    else
+      {:error, {:invalid_reference_answer_path, relative}}
+    end
+  end
+
+  defp read_answer_file(path) do
+    case File.read(path) do
+      {:ok, binary} -> {:ok, binary}
+      {:error, :enoent} -> {:error, {:reference_answer_missing, path}}
+      {:error, reason} -> {:error, {:reference_answer_read_failed, path, reason}}
+    end
+  end
+
+  defp verify_checksum(checksum, checksum), do: :ok
+
+  defp verify_checksum(expected, actual),
+    do: {:error, {:reference_answer_checksum_mismatch, expected, actual}}
+
+  defp decode_payload(binary) do
+    case Jason.decode(binary) do
+      {:ok, %{"schema_version" => @schema_version, "rows" => rows} = payload}
+      when is_list(rows) and map_size(payload) == 2 ->
+        {:ok, payload}
+
+      {:ok, _payload} ->
+        {:error, {:malformed_reference_answer, :invalid_payload}}
+
+      {:error, reason} ->
+        {:error, {:malformed_reference_answer, Exception.message(reason)}}
+    end
+  end
+
+  defp materialize_payload(definition, %{"rows" => rows}) do
+    case ResultContract.decode_reference(definition, rows) do
+      {:ok, %Result{} = result} -> {:ok, result}
+      {:error, reason} -> {:error, {:malformed_reference_answer, reason}}
+    end
+  end
+
+  defp validate_divergence(opts, reference_version) do
+    case Keyword.fetch(opts, :accepted_divergence) do
+      {:ok, divergence} -> Correctness.validate_divergence(divergence, reference_version)
+      :error -> :ok
+    end
+  end
+
+  defp valid_parameter?(%{
+         sequence: sequence,
+         row_index: index,
+         checksum: checksum,
+         source_id: source_id,
+         generator_pin: generator_pin
+       }) do
+    non_empty?(sequence) and is_integer(index) and index >= 0 and checksum?(checksum) and
+      non_empty?(source_id) and non_empty?(generator_pin)
+  end
+
+  defp valid_parameter?(_parameter), do: false
+
+  defp valid_dataset?(%{id: id, checksum: checksum, mapping_version: mapping_version}),
+    do: non_empty?(id) and checksum?(checksum) and non_empty?(mapping_version)
+
+  defp valid_dataset?(_dataset), do: false
+
+  defp valid_source?(source) when is_map(source),
+    do: map_size(source) > 0 and Enum.all?(source, fn {_key, value} -> non_empty?(value) end)
+
+  defp valid_source?(_source), do: false
+
+  defp valid_artifact?(%{kind: :embedded, path: path, checksum: checksum}),
+    do: non_empty?(path) and checksum?(checksum)
+
+  defp valid_artifact?(%{kind: :external, uri: uri, checksum: checksum}),
+    do: non_empty?(uri) and checksum?(checksum)
+
+  defp valid_artifact?(_artifact), do: false
+
+  defp term_checksum(term),
+    do: term |> :erlang.term_to_binary([:deterministic]) |> binary_checksum()
+
+  defp binary_checksum(binary),
+    do: "sha256:" <> (:crypto.hash(:sha256, binary) |> Base.encode16(case: :lower))
+
+  defp checksum?("sha256:" <> digest),
+    do: byte_size(digest) == 64 and String.match?(digest, ~r/\A[0-9a-f]+\z/)
+
+  defp checksum?(_checksum), do: false
+  defp non_empty?(value), do: is_binary(value) and value != ""
+
+  defp require(errors, true, _error), do: errors
+  defp require(errors, false, error), do: errors ++ [error]
+end

@@ -1,0 +1,18 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-7.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?relatedTag__name (COUNT(DISTINCT ?comment) AS ?count)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?tag rdf:type snb:Tag ; snb:name {{tag}} .
+  ?message snb:hasTag ?tag .
+  ?comment rdf:type snb:Comment ; snb:replyOf ?message ; snb:hasTag ?relatedTag .
+  ?relatedTag snb:name ?relatedTag__name .
+  FILTER NOT EXISTS { ?comment snb:hasTag ?tag }
+}
+GROUP BY ?relatedTag ?relatedTag__name
+ORDER BY DESC(?count) ASC(?relatedTag__name)
+LIMIT 100

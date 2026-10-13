@@ -1,0 +1,31 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-5.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person__id ?replyCount ?likeCount ?messageCount ?score
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?person
+            (SUM(?messageReplies) AS ?replyCount)
+            (SUM(?messageLikes) AS ?likeCount)
+            (COUNT(?message) AS ?messageCount)
+     WHERE {
+       { SELECT ?person ?message
+                 (COUNT(DISTINCT ?reply) AS ?messageReplies)
+                 (COUNT(DISTINCT ?liker) AS ?messageLikes)
+          WHERE {
+            ?tag rdf:type snb:Tag ; snb:name {{tag}} .
+            ?message rdf:type snb:Message ; snb:hasTag ?tag ; snb:hasCreator ?person .
+            OPTIONAL { ?reply rdf:type snb:Comment ; snb:replyOf ?message . }
+            OPTIONAL { ?liker snb:likes ?message . }
+          } GROUP BY ?person ?message
+       }
+     } GROUP BY ?person
+  }
+  BIND(?messageCount + 2 * ?replyCount + 10 * ?likeCount AS ?score)
+  BIND(xsd:integer(STRAFTER(STR(?person), "/Person/")) AS ?person__id)
+}
+ORDER BY DESC(?score) ASC(?person__id)
+LIMIT 100

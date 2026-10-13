@@ -1,0 +1,26 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-1.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?year ?isComment ?lengthCategory (COUNT(?message) AS ?messageCount) (AVG(?messageLength) AS ?averageMessageLength) (SUM(?messageLength) AS ?sumMessageLength) (COUNT(?message) / ?totalMessageCount AS ?percentageOfMessages)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT (COUNT(?allMessage) AS ?totalMessageCount) WHERE {
+      ?allMessage rdf:type snb:Message ; snb:creationDate ?allCreationDate .
+      FILTER(?allCreationDate < {{datetime}})
+    }
+  }
+  ?message rdf:type snb:Message ;
+           snb:creationDate ?creationDate ;
+           snb:content ?content ;
+           snb:length ?messageLength .
+  FILTER(?creationDate < {{datetime}})
+  OPTIONAL { ?message rdf:type snb:Comment . BIND(true AS ?commentMarker) }
+  BIND(YEAR(?creationDate) AS ?year)
+  BIND(BOUND(?commentMarker) AS ?isComment)
+  BIND(IF(?messageLength < 40, 0, IF(?messageLength < 80, 1, IF(?messageLength < 160, 2, 3))) AS ?lengthCategory)
+}
+GROUP BY ?year ?isComment ?lengthCategory ?totalMessageCount
+ORDER BY DESC(?year) ASC(?isComment) ASC(?lengthCategory)

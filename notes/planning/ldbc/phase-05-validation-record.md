@@ -26,10 +26,45 @@ calculates a diagnostic score, and validates the complete artifact set. It also
 injects an update failure, query timeout, incorrect answer, and incomplete power
 block; every case blocks score eligibility.
 
+## Phase 5A correctness qualification increment
+
+The executable corpus gate covers all 31 canonical variants. Twenty-two
+standard variants each resolve to one checksummed, semantically validated,
+parseable SPARQL artifact. The nine BI 10, 15, 19, and 20 variants each resolve
+to their operation's single registered extension identifier and have no SPARQL
+artifact. Missing artifacts, malformed SPARQL, changed checksums, and wrong
+placeholders all produce operation-scoped errors.
+
+All 31 smoke parameter rows pass their catalog type contracts. The mapped-store
+check validates every store-backed field selected by the `snb_bi_smoke`
+reference profile, including all nine variant-level person-ID references. A
+missing entity or dataset checksum mismatch invalidates the parameter bundle.
+The smoke fixture does not contain the complete entity-name vocabulary required
+by the `official` profile, so this evidence does not qualify official parameter
+coverage.
+
+Reference-answer coverage is recorded explicitly rather than inferred:
+
+| Coverage kind | Canonical variants | Evidence |
+| --- | ---: | --- |
+| Checked-in | 1 | BI 1 `default`, parameter row 0 |
+| External | 0 | No immutable external answer bundle is registered |
+| Missing | 30 | Lookup returns `reference_answer_not_found` |
+
+The checked-in BI 1 tuple is a deterministic contract fixture bound to the
+smoke dataset, parameter row, operation source, and pinned reference-source
+identity. It supplies the single deterministic tuple required by the Phase 5A
+exit gate; it is not represented as complete reference-engine output. Synthetic
+test-only contract fixtures prove empty, duplicate-bearing, ordered, timestamp,
+32/64-bit integer, and floating-point round trips, along with missing-row,
+unexpected-row, ordering, type, provenance, and deterministic-hash failures.
+They are not accepted benchmark answers.
+
 ## Qualification boundary
 
 The checked-in smoke fixture is not an official scale-factor dataset and has no
-accepted answer corpus for all BI operations. Exact analytical handlers for BI
+accepted answer corpus for all BI operations. Thirty canonical variants still
+lack registered reference answers. Exact analytical handlers for BI
 1-9, 11-14, and 16-18 and operation-specific graph adapters for BI 10, 15, 19,
 and 20 remain open. The current capability matrix is intentionally unchanged,
 and the reduced workflow exposes only diagnostic scores.
@@ -39,6 +74,8 @@ made by this phase record.
 
 ## Executed checks
 
+- Phase 5A corpus/reference integration and adjacent correctness tests: 27
+  tests, 0 failures
 - `mix format --check-formatted`
 - `./scripts/compile_strict.sh`
 - Phase 5 and affected fixture tests: 18 tests, 0 failures

@@ -10,7 +10,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Analytics do
   alias TripleStore.Benchmark.LDBC.SNB.BI.ResultContract
 
   @doc "Runs a registered engine handler and enforces the operation's typed result contract."
-  @spec execute(map(), map(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @spec execute(map(), map(), map(), keyword()) ::
+          {:ok, TripleStore.Benchmark.LDBC.Result.t()} | {:error, term()}
   def execute(definition, context, parameters, opts \\ []) do
     handlers = Map.get(context, :operation_handlers, %{})
 

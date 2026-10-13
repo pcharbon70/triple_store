@@ -11,7 +11,9 @@ Implementation status: the workload, parameter, traversal, atomic update,
 checkpoint, protocol, scoring, and artifact boundaries are implemented. Exact
 analytical handlers and accepted answers for every read remain open, so this
 phase is not yet correctness-qualified and cannot emit a comparable score. See
-[the validation record](phase-05-validation-record.md).
+[the validation record](phase-05-validation-record.md). The remaining work is
+sequenced in the
+[Phase 5 correctness qualification sub-plan](phase-05-correctness-qualification-sub-plan.md).
 
 ---
 

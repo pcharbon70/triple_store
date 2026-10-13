@@ -1,0 +1,21 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-18.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?person1__id ?person2__id (COUNT(DISTINCT ?mutualFriend) AS ?mutualFriendCount)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  ?tag rdf:type snb:Tag ; snb:name {{tag}} .
+  ?person1 rdf:type snb:Person ; snb:hasInterest ?tag ; (snb:knows|^snb:knows) ?mutualFriend .
+  ?mutualFriend (snb:knows|^snb:knows) ?person2 .
+  ?person2 rdf:type snb:Person ; snb:hasInterest ?tag .
+  FILTER(?person1 != ?person2)
+  FILTER NOT EXISTS { ?person1 (snb:knows|^snb:knows) ?person2 }
+  BIND(xsd:integer(STRAFTER(STR(?person1), "/Person/")) AS ?person1__id)
+  BIND(xsd:integer(STRAFTER(STR(?person2), "/Person/")) AS ?person2__id)
+}
+GROUP BY ?person1 ?person2 ?person1__id ?person2__id
+ORDER BY DESC(?mutualFriendCount) ASC(?person1__id) ASC(?person2__id)
+LIMIT 20

@@ -1,0 +1,24 @@
+# TripleStore SPARQL translation of ldbc_snb_bi:cypher/queries/bi-12.cypher
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX snb: <https://ldbcouncil.org/snb/ontology/>
+
+SELECT ?messageCount (COUNT(?person) AS ?personCount)
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/initial>
+FROM <https://ldbcouncil.org/snb/graph/snb_bi/updates>
+WHERE {
+  { SELECT ?person (COUNT(?message) AS ?messageCount) WHERE {
+      VALUES ?language { {{languages}} }
+      ?person rdf:type snb:Person .
+      OPTIONAL {
+        ?message rdf:type snb:Message ; snb:hasCreator ?person ; snb:content ?content ;
+                 snb:length ?messageLength ; snb:creationDate ?messageDate ; snb:replyOf* ?post .
+        ?post rdf:type snb:Post ; snb:language ?language .
+        FILTER(?messageLength < {{lengthThreshold}} &&
+               ?messageDate > xsd:dateTime(CONCAT(STR({{startDate}}), "T00:00:00Z")))
+      }
+    } GROUP BY ?person
+  }
+}
+GROUP BY ?messageCount
+ORDER BY DESC(?personCount) DESC(?messageCount)
