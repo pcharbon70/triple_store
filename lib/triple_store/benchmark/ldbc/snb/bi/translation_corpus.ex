@@ -269,10 +269,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.TranslationCorpus do
 
   defp validate_reference_profiles(errors, profiles, rules)
        when is_map(profiles) and is_map(rules) do
-    required = MapSet.new([:official, :snb_bi_smoke])
-
     coverage_errors =
-      if MapSet.subset?(required, Map.keys(profiles) |> MapSet.new()) do
+      if Enum.all?([:official, :snb_bi_smoke], &Map.has_key?(profiles, &1)) do
         []
       else
         [error(nil, nil, "manifest.exs", :reference_profiles, :missing_required_profile)]

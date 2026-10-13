@@ -159,7 +159,7 @@ defmodule TripleStore.Benchmark.LDBC.Correctness do
     expected
     |> Enum.with_index()
     |> Enum.reduce_while(%{}, fn {_row, expected_index}, matches ->
-      case augment_match(expected_index, MapSet.new(), matches, expected, actual, tolerance) do
+      case augment_match(expected_index, %{}, matches, expected, actual, tolerance) do
         {:ok, matches} -> {:cont, matches}
         :error -> {:halt, :error}
       end
@@ -209,12 +209,12 @@ defmodule TripleStore.Benchmark.LDBC.Correctness do
          matches,
          context
        ) do
-    if not MapSet.member?(seen, actual_index) and
+    if not Map.has_key?(seen, actual_index) and
          row_equal?(expected_row, actual_row, context.tolerance) do
       assign_match(
         expected_index,
         actual_index,
-        MapSet.put(seen, actual_index),
+        Map.put(seen, actual_index, true),
         matches,
         context
       )
