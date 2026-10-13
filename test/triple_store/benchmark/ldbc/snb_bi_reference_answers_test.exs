@@ -43,6 +43,27 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     assert entry.artifact.kind == :embedded
   end
 
+  test "contract fixtures cannot satisfy accepted-answer comparison" do
+    {definition, _dataset, parameters} = context()
+
+    dataset = %{
+      dataset_id: "snb-bi-smoke",
+      transformation: %{
+        output_checksum:
+          "sha256:90f9b6e38f2689be479c0d40b368db3e2f0542d503cb7d1ec9950b0e524ecf33",
+        mapping_version: "snb-rdf-v1"
+      }
+    }
+
+    parameters = %{parameters | dataset_checksum: dataset.transformation.output_checksum}
+    assert {:ok, actual} = ResultContract.materialize(definition, [])
+
+    assert {:error, {:reference_answer_not_accepted, :contract_fixture}} =
+             ReferenceAnswers.compare(definition, 0, actual, dataset, parameters,
+               reference_source: @reference_source
+             )
+  end
+
   test "loads typed duplicate-bearing rows and preserves the BI ordering contract", %{test: test} do
     {definition, dataset, parameters} = context()
 

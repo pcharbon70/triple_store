@@ -83,6 +83,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
           {:ok, map()} | {:error, term()}
   def compare(definition, parameter_row_index, actual, dataset, parameters, opts \\ []) do
     with {:ok, answer} <- load(definition, parameter_row_index, dataset, parameters, opts),
+         :ok <- validate_answer_purpose(answer.purpose),
          :ok <- validate_divergence(opts, answer.reference_source.version),
          {:ok, actual_result} <- ResultContract.to_result(definition, actual) do
       comparison_opts =
@@ -98,6 +99,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
        })}
     end
   end
+
+  defp validate_answer_purpose(:accepted_answer), do: :ok
+
+  defp validate_answer_purpose(purpose),
+    do: {:error, {:reference_answer_not_accepted, purpose}}
 
   defp read_manifest(root) do
     path = Path.join(root, "manifest.exs")

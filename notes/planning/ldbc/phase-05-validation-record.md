@@ -76,32 +76,46 @@ made by this phase record.
 
 The generated qualification matrix now records all 31 canonical variants with
 separate parse, algebra, optimized-plan, execution, typed-result, and expected
-answer evidence. The checked-in SPARQL artifacts for all 22 standard variants
-parse, while typed prepared-query probing produces deterministic algebra and
-optimized-plan evidence for 21. BI 12 is a parser-stage gap because its string
-set parameter occupies a `VALUES` data position that cannot accept the current
-single-variable prepared binding. The remaining standard variants stay
-classified as execution gaps because no standard BI handler is registered. The
-nine graph variants remain grouped by their four registered extension contracts
-and fail closed as extension-adapter gaps. Result-contract evaluation is blocked
-whenever execution is unavailable.
+answer evidence. All 22 standard translations parse and prepare, including the
+BI 12 list-valued `VALUES` parameter. Each standard variant resolves to the
+registered typed prepared-query handler. Quad default-dataset execution and
+property paths preserve the active named graphs and enforce their authorization
+boundary.
 
-A focused quad-store regression confirms that the current property-path path
-opens a triple-schema column family and exits with `invalid_column_family`.
-Thirteen canonical variants require those paths; BI 12 reaches its parameter
-binding gap first, while BI 3, 4, 8, 9, 14, 16, 17, and 18 expose the execution
-failure directly with their respective variants.
+All nine graph variants resolve to operation-specific BI 10, 15, 19, or 20
+adapters. The adapters perform lazy index-backed candidate and edge lookup,
+preserve the operation-specific unweighted or weighted semantics, retain global
+equal-cost ties, enforce timeout, cancellation, visited and intermediate bounds,
+and reject malformed or non-positive weights through tagged errors.
 
-The matrix inventories one embedded smoke answer and 30 missing answers. The
-embedded BI 1 answer remains a contract fixture rather than proof of a complete
-reference-engine run. Semantic requirements such as date/time operations,
-expression coercion, aggregation, subqueries, HAVING, ordering, limits, and
-numeric result conversion are linked to the variants that require them without
-claiming a semantic failure before an executable handler and accepted oracle
-make that comparison possible.
+The contextual qualification integration executes all 31 variants successfully
+against the reduced mapped smoke store and reproduces the same typed result
+digests after close and reopen. The ordered aggregate digest is
+`sha256:02cd4914ca255871dc36732eb406cc3b96ad09f92426ce62078fe112bbd9cfa1`.
+Timeout, cancellation, and result-contract
+failures remain per-variant evidence and prevent qualification without erasing
+the other results.
+
+The reference manifest uses schema version 2 to distinguish an
+`accepted_answer` from a `contract_fixture`. The one embedded BI 1 artifact is a
+contract fixture and is ineligible for accepted-answer comparison; 30 variants
+have no artifact. Consequently all 20 BI capability entries remain unpromoted,
+and the Sub-Phase 5B exit gate is blocked on a complete immutable accepted-answer
+bundle from the pinned reference implementation. The reduced smoke data and
+synthetic parameter rows also remain diagnostic rather than comparable-run
+evidence.
 
 ## Executed checks
 
+- Phase 5B contextual qualification and adjacent SNB BI regressions: 61 tests,
+  0 failures
+- Phase 5B reduced smoke qualification: 31 execution passes, 1 ineligible
+  contract fixture, 30 missing accepted answers, 0 capability promotions
+- Phase 5B `mix credo --strict`: no issues
+- Phase 5B strict application compilation: passed; warnings came from third-party
+  dependencies
+- Phase 5B specs, guides, and code-doc governance validators: passed; RFC
+  governance skipped because the repository has no `rfcs/` directory
 - Phase 5A corpus/reference integration and adjacent correctness tests: 27
   tests, 0 failures
 - `mix format --check-formatted`

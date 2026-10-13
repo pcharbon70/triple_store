@@ -18,10 +18,13 @@ rules. Hand-selected parameter rows are rejected for that profile.
 ## Execution boundaries
 
 - Standard analytical reads enter `SNB.BI.Analytics` through registered engine
-  handlers and are materialized through the strict result contract.
-- BI 10, 15, 19, and 20 use the named `GraphAlgorithms` extensions. Their
-  neighbour provider scans TripleStore indices lazily, and traversal enforces a
-  deadline, cancellation, a visited-vertex bound, and deterministic ties.
+  handlers, use typed prepared bindings, and are materialized through the strict
+  result contract.
+- BI 10, 15, 19, and 20 use registered operation-specific adapters over the
+  named `GraphAlgorithms` extensions. Their neighbour providers scan TripleStore
+  indices lazily, enforce named-graph authorization, and apply deadlines,
+  cancellation, visited-vertex and intermediate-result bounds, and deterministic
+  tie handling.
 - A BI microbatch is dictionary-encoded before one ordered mixed RocksDB batch.
   Result caches and statistics are invalidated after a successful commit.
 - Initial-load, post-validation, pre-power, and pre-throughput checkpoints are
@@ -29,17 +32,24 @@ rules. Hand-selected parameter rows are rejected for that profile.
 
 ## Current qualification boundary
 
-The Phase 5 infrastructure does not by itself qualify the 20 analytical query
-semantics. Each standard read still needs a registered exact engine handler and
-full ordered answer comparison against the pinned reference implementation.
-Likewise, the four graph extensions need operation-specific edge-weight and
-candidate-selection adapters over a generated SNB dataset. Capability entries
-therefore remain `requires_fix` or `requires_extension`; the code fails closed
-when a handler is absent.
+All 31 analytical variants now have a registered standard handler or graph
+adapter. The reduced smoke integration executes each variant, validates its
+typed result contract, and reproduces the same canonical answer digest after a
+store reopen. This establishes executable integration coverage, not SNB BI
+correctness qualification.
+
+The checked-in BI 1 answer is explicitly a `contract_fixture`, and the other 30
+variants have no checked-in answer artifact. A contract fixture cannot satisfy
+accepted-answer comparison. Capability entries therefore remain `requires_fix`
+or `requires_extension` until every variant is compared with an immutable answer
+from the pinned reference implementation. `SNB.BI.Qualification.run/4` records
+missing or ineligible answers per variant while preserving successful execution
+evidence.
 
 Run the focused validation with:
 
 ```sh
 mix test test/triple_store/benchmark/ldbc/phase_5_snb_bi_integration_test.exs
+mix test test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/snb_bi_*_test.exs
 ```

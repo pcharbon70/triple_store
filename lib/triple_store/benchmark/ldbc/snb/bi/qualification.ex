@@ -15,11 +15,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
   """
 
   alias TripleStore.Benchmark.LDBC.SNB.BI.{
+    Analytics,
     GraphAdapterRegistry,
     HandlerRegistry,
+    Parameters,
     ReferenceAnswers
   }
 
+  alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.SPARQL.Query
 
   @graph_operations MapSet.new([10, 15, 19, 20])
@@ -59,6 +62,42 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
   end
 
   def matrix(_definitions, _opts), do: {:error, :invalid_bi_definitions}
+
+  @doc "Executes every BI variant in a validated store context and records qualification evidence."
+  @spec run([map()], StoreFixture.t(), Parameters.bundle(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def run(definitions, fixture, parameter_bundle, opts \\ [])
+
+  def run(definitions, %StoreFixture{store: store} = fixture, parameter_bundle, opts)
+      when is_list(definitions) and is_map(store) and is_map(parameter_bundle) do
+    validation_opts = Keyword.take(opts, [:comparable, :reference_profile])
+    inventory_opts = reference_inventory_opts(opts)
+
+    with :ok <- Parameters.validate(parameter_bundle, fixture, definitions, validation_opts),
+         {:ok, inventory} <- ReferenceAnswers.inventory(inventory_opts) do
+      reference_index = Map.new(inventory, &{{&1.operation_id, &1.variant}, &1})
+      context = Keyword.get(opts, :context, Map.put(store, :permit_all, true))
+
+      entries =
+        definitions
+        |> Enum.map(
+          &execute_entry(&1, context, fixture.manifest, parameter_bundle, reference_index, opts)
+        )
+        |> Enum.sort_by(&{&1.number, variant_order(&1.variant)})
+
+      {:ok,
+       %{
+         entries: entries,
+         operations: runtime_operation_evidence(entries),
+         execution: Enum.frequencies_by(entries, & &1.execution.status),
+         comparisons: Enum.frequencies_by(entries, & &1.comparison.status),
+         qualified?: Enum.all?(entries, & &1.qualified?)
+       }}
+    end
+  end
+
+  def run(_definitions, _fixture, _parameter_bundle, _opts),
+    do: {:error, :invalid_qualification_context}
 
   @doc "Classifies one complete stage-evidence set without weakening failed stages."
   @spec classify(map(), boolean()) :: atom()
@@ -256,6 +295,119 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
   defp parse_ready?(entry) do
     status(entry.stages, :parse) in [:pass, :not_applicable]
+  end
+
+  defp execute_entry(definition, context, dataset, parameter_bundle, references, opts) do
+    parameters = parameter_row(parameter_bundle, definition)
+
+    case Analytics.execute(definition, context, parameters, execution_opts(opts)) do
+      {:ok, result} ->
+        comparison =
+          comparison_evidence(definition, result, dataset, parameter_bundle, references, opts)
+
+        %{
+          operation_id: definition.catalog_id,
+          execution_id: definition.id,
+          number: definition.number,
+          variant: definition.variant,
+          strategy: definition.strategy,
+          execution: %{
+            status: :pass,
+            digest: digest(result),
+            rows: length(result.rows),
+            columns: result.columns,
+            types: result.types
+          },
+          comparison: comparison,
+          qualified?: comparison.status == :pass
+        }
+
+      {:error, reason} ->
+        failed_execution_entry(definition, reason)
+    end
+  end
+
+  defp failed_execution_entry(definition, reason) do
+    %{
+      operation_id: definition.catalog_id,
+      execution_id: definition.id,
+      number: definition.number,
+      variant: definition.variant,
+      strategy: definition.strategy,
+      execution: fail(reason),
+      comparison: blocked(:execution_failed),
+      qualified?: false
+    }
+  end
+
+  defp comparison_evidence(definition, result, dataset, parameter_bundle, references, opts) do
+    case Map.fetch(references, {definition.catalog_id, definition.variant}) do
+      {:ok, %{purpose: :accepted_answer} = reference} ->
+        compare_accepted_answer(definition, result, dataset, parameter_bundle, reference, opts)
+
+      {:ok, %{purpose: purpose}} ->
+        blocked({:ineligible_reference_purpose, purpose})
+
+      :error ->
+        blocked(:accepted_answer_missing)
+    end
+  end
+
+  defp compare_accepted_answer(definition, result, dataset, parameter_bundle, reference, opts) do
+    compare_opts =
+      [reference_source: reference.reference_source]
+      |> Keyword.merge(reference_inventory_opts(opts))
+      |> Keyword.merge(
+        Keyword.take(opts, [:full_comparison_limit, :numeric_tolerance, :accepted_divergence])
+      )
+
+    case ReferenceAnswers.compare(definition, 0, result, dataset, parameter_bundle, compare_opts) do
+      {:ok, %{status: :correct} = comparison} ->
+        %{status: :pass, digest: digest(comparison.comparison)}
+
+      {:ok, comparison} ->
+        fail({:answer_mismatch, comparison.status, comparison.category})
+
+      {:error, reason} ->
+        fail(reason)
+    end
+  end
+
+  defp runtime_operation_evidence(entries) do
+    entries
+    |> Enum.group_by(& &1.operation_id)
+    |> Enum.map(fn {operation_id, variants} ->
+      %{
+        operation_id: operation_id,
+        variants: Enum.map(variants, & &1.variant),
+        execution_complete?: Enum.all?(variants, &(&1.execution.status == :pass)),
+        comparison_complete?: Enum.all?(variants, &(&1.comparison.status == :pass)),
+        qualified?: Enum.all?(variants, & &1.qualified?)
+      }
+    end)
+    |> Enum.sort_by(& &1.operation_id)
+  end
+
+  defp parameter_row(bundle, definition) do
+    bundle.sequences
+    |> Map.fetch!(variant_label(definition))
+    |> List.first()
+  end
+
+  defp execution_opts(opts) do
+    Keyword.take(opts, [:timeout, :max_visited, :max_intermediate, :cancelled?])
+  end
+
+  defp reference_inventory_opts(opts) do
+    case Keyword.fetch(opts, :reference_root) do
+      {:ok, root} -> [root: root]
+      :error -> []
+    end
+  end
+
+  defp variant_label(definition) do
+    suffix = if definition.variant == "default", do: "", else: definition.variant
+    Integer.to_string(definition.number) <> suffix
   end
 
   defp probe_query(definition) do

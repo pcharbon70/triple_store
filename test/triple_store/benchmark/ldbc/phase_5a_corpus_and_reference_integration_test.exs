@@ -147,12 +147,12 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
     manifest = read_manifest(ReferenceAnswers.default_root())
 
     coverage = reference_coverage(definitions, manifest.answers)
-    assert Enum.count(coverage, &(&1.status == :checked_in)) == 1
+    assert Enum.count(coverage, &(&1.status == :contract_fixture)) == 1
     refute Enum.any?(coverage, &(&1.status == :external))
     assert Enum.count(coverage, &(&1.status == :missing)) == 30
 
-    assert [%{number: 1, variant: "default", status: :checked_in}] =
-             Enum.filter(coverage, &(&1.status == :checked_in))
+    assert [%{number: 1, variant: "default", status: :contract_fixture}] =
+             Enum.filter(coverage, &(&1.status == :contract_fixture))
 
     {dataset, parameters} = checked_in_context()
     assert {:ok, definition} = Workload.fetch(definitions, 1)
@@ -171,12 +171,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
     assert first.content_checksum == second.content_checksum
     assert first.identity == second.identity
 
-    assert {:ok, comparison} =
+    assert {:error, {:reference_answer_not_accepted, :contract_fixture}} =
              ReferenceAnswers.compare(definition, 0, first.result, dataset, parameters,
                reference_source: @reference_source
              )
-
-    assert comparison.status == :correct
 
     assert {:ok, missing_definition} = Workload.fetch(definitions, 2, "a")
 
@@ -420,7 +418,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
 
       status =
         case entries do
-          [%{artifact: %{kind: :embedded}}] -> :checked_in
+          [%{purpose: :contract_fixture}] -> :contract_fixture
+          [%{purpose: :accepted_answer, artifact: %{kind: :embedded}}] -> :checked_in
           [%{artifact: %{kind: :external}}] -> :external
           [] -> :missing
         end
