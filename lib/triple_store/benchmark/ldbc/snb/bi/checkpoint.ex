@@ -146,7 +146,6 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Checkpoint do
     else
       false -> {:error, {:checkpoint_metadata_mismatch, name}}
       {:error, _reason} -> {:error, {:checkpoint_metadata_mismatch, name}}
-      _other -> {:error, {:checkpoint_metadata_mismatch, name}}
     end
   rescue
     ArgumentError -> {:error, {:checkpoint_metadata_mismatch, name}}

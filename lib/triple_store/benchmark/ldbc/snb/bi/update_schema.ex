@@ -45,7 +45,6 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
       {:ok, catalog}
     else
       {:error, _} = error -> error
-      _ -> {:error, :invalid_update_schema_catalog}
     end
   rescue
     error -> {:error, {:invalid_update_schema_catalog, Exception.message(error)}}

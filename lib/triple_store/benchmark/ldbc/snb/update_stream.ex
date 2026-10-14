@@ -20,15 +20,10 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
       result =
         try do
           records
-          |> Enum.reduce_while({:ok, 0, -1}, fn record, {:ok, count, previous} ->
-            with true <- record.sequence > previous,
-                 binary <- :erlang.term_to_binary(record, [:deterministic]),
-                 :ok <- IO.binwrite(io, Base.encode64(binary) <> "\n") do
-              {:cont, {:ok, count + 1, record.sequence}}
-            else
-              false -> {:halt, {:error, :invalid_update_record}}
-              {:error, _} = error -> {:halt, error}
-            end
+          |> Enum.reduce_while({:ok, 0, -1}, fn record, {:ok, count, _previous} ->
+            binary = :erlang.term_to_binary(record, [:deterministic])
+            :ok = IO.binwrite(io, Base.encode64(binary) <> "\n")
+            {:cont, {:ok, count + 1, record.sequence}}
           end)
         after
           File.close(io)

@@ -141,13 +141,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.StateProbe do
   @doc "Selects reads whose translated RDF vocabulary intersects mapped mutations."
   @spec affected_reads([map()], [map()]) :: [map()]
   def affected_reads(definitions, mutations) when is_list(definitions) and is_list(mutations) do
-    affected = affected_terms(mutations)
+    affected = mutations |> affected_terms() |> MapSet.to_list()
 
     Enum.filter(definitions, fn definition ->
       definition
       |> query_terms()
-      |> MapSet.disjoint?(affected)
-      |> Kernel.not()
+      |> Enum.any?(&(&1 in affected))
     end)
   end
 
@@ -417,10 +416,10 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.StateProbe do
          checkpoints: checkpoints
        })
        when is_map(checkpoints) do
-    required = MapSet.new([:initial, :after_person_batch])
+    required = [:initial, :after_person_batch]
 
     if mapping_version == Mapping.version() and
-         MapSet.subset?(required, MapSet.new(Map.keys(checkpoints))) and
+         Enum.all?(required, &Map.has_key?(checkpoints, &1)) and
          Enum.all?(checkpoints, fn {_name, probe} -> valid_expected_probe?(probe) end),
        do: :ok,
        else: {:error, :invalid_state_probe_fixture}
