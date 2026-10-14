@@ -9,7 +9,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
 
   alias TripleStore.Adapter
   alias TripleStore.Benchmark.Artifact
-  alias TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{StateProbe, UpdateSchema}
   alias TripleStore.Benchmark.LDBC.SNB.UpdateStream
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
@@ -22,14 +22,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
          {:ok, records} <- read_records(path),
          {:ok, mutations} <- encode_records(store, records),
          :ok <- write(store.db, mutations, opts),
-         :ok <- after_commit(store, opts) do
+         :ok <- after_commit(store, opts),
+         {:ok, state} <- capture_state(store, opts) do
       {:ok,
        %{
          checksum: checksum,
          records: length(records),
          mutations: length(mutations),
          first_sequence: records |> List.first() |> Map.fetch!(:sequence),
-         last_sequence: records |> List.last() |> Map.fetch!(:sequence)
+         last_sequence: records |> List.last() |> Map.fetch!(:sequence),
+         state_checksum: state.state_checksum,
+         state_counts: state.counts
        }}
     end
   rescue
@@ -150,6 +153,16 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
       {:ok, _value} -> :ok
       {:error, reason} -> {:error, {:post_commit_refresh_failed, reason}}
       other -> {:error, {:invalid_post_commit_result, other}}
+    end
+  end
+
+  defp capture_state(store, opts) do
+    opts
+    |> Keyword.take([:cache_observer, :statistics_observer])
+    |> then(&StateProbe.capture(store, &1))
+    |> case do
+      {:ok, state} -> {:ok, state}
+      {:error, reason} -> {:error, {:post_commit_state_probe_failed, reason}}
     end
   end
 end

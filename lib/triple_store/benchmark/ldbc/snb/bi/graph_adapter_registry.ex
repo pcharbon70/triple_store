@@ -10,18 +10,28 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAdapterRegistry do
   alias TripleStore.Benchmark.LDBC.SNB.BI.Extensions.{Read10, Read15, Read19, Read20}
 
   @version "triplestore-snb-bi-graph-adapters-v1"
+  @ontology "https://ldbcouncil.org/snb/ontology/"
   @operations %{
-    10 => {"ldbc.snb.bi.shortest-path-range.v1", Read10, ~w(a b)},
-    15 => {"ldbc.snb.bi-bounded-path.v1", Read15, ~w(a b)},
-    19 => {"ldbc.snb.bi-weighted-interaction-path.v1", Read19, ~w(a b)},
-    20 => {"ldbc.snb.bi-weighted-tag-path.v1", Read20, ~w(a b m)}
+    10 =>
+      {"ldbc.snb.bi.shortest-path-range.v1", Read10, ~w(a b),
+       ~w(Person knows isLocatedIn isPartOf hasCreator hasTag hasType name)},
+    15 =>
+      {"ldbc.snb.bi-bounded-path.v1", Read15, ~w(a b),
+       ~w(Person Post knows replyOf hasCreator containerOf creationDate)},
+    19 =>
+      {"ldbc.snb.bi-weighted-interaction-path.v1", Read19, ~w(a b),
+       ~w(Place City Person knows isLocatedIn replyOf hasCreator)},
+    20 =>
+      {"ldbc.snb.bi-weighted-tag-path.v1", Read20, ~w(a b m),
+       ~w(Company Organisation Person knows name workAt studyAt classYear)}
   }
 
   @type entry :: %{
           required(:key) => {pos_integer(), String.t()},
           required(:version) => String.t(),
           required(:extension_id) => String.t(),
-          required(:adapter) => module()
+          required(:adapter) => module(),
+          required(:affected_terms) => [String.t()]
         }
 
   @doc "Returns the immutable graph-adapter registry version."
@@ -32,7 +42,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAdapterRegistry do
   @spec keys() :: [{pos_integer(), String.t()}]
   def keys do
     @operations
-    |> Enum.flat_map(fn {number, {_id, _module, variants}} ->
+    |> Enum.flat_map(fn {number, {_id, _module, variants, _terms}} ->
       Enum.map(variants, &{number, &1})
     end)
     |> Enum.sort()
@@ -42,20 +52,21 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.GraphAdapterRegistry do
   @spec fetch(map()) :: {:ok, entry()} | {:error, term()}
   def fetch(%{number: number, variant: variant, strategy: {:extension, extension_id, _owner}}) do
     case Map.fetch(@operations, number) do
-      {:ok, {^extension_id, adapter, variants}} ->
+      {:ok, {^extension_id, adapter, variants, terms}} ->
         if variant in variants do
           {:ok,
            %{
              key: {number, variant},
              version: @version,
              extension_id: extension_id,
-             adapter: adapter
+             adapter: adapter,
+             affected_terms: Enum.map(terms, &(@ontology <> &1))
            }}
         else
           {:error, {:bi_operation_not_implemented, number, variant}}
         end
 
-      {:ok, {expected, _adapter, _variants}} ->
+      {:ok, {expected, _adapter, _variants, _terms}} ->
         {:error, {:invalid_bi_graph_extension, number, expected, extension_id}}
 
       :error ->

@@ -19,10 +19,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
     GraphAdapterRegistry,
     HandlerRegistry,
     Parameters,
-    ReferenceAnswers
+    ReferenceAnswers,
+    StateProbe
   }
 
-  alias TripleStore.Benchmark.LDBC.StoreFixture
+  alias TripleStore.Benchmark.LDBC.{Correctness, Result, StoreFixture}
   alias TripleStore.SPARQL.Query
 
   @graph_operations MapSet.new([10, 15, 19, 20])
@@ -98,6 +99,36 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
   def run(_definitions, _fixture, _parameter_bundle, _opts),
     do: {:error, :invalid_qualification_context}
+
+  @doc "Compares complete post-update answers for reads affected by mapped RDF mutations."
+  @spec post_update_evidence(
+          [map()],
+          [map()],
+          map(),
+          (map() -> {:ok, Result.t()} | {:error, term()}),
+          (map() -> {:ok, Result.t()} | {:error, term()})
+        ) :: {:ok, map()} | {:error, term()}
+  def post_update_evidence(definitions, mutations, receipt, actual_runner, reference_runner)
+      when is_list(definitions) and is_list(mutations) and is_map(receipt) and
+             is_function(actual_runner, 1) and is_function(reference_runner, 1) do
+    affected = StateProbe.affected_reads(definitions, mutations)
+
+    with {:ok, answers} <- compare_post_update_answers(affected, actual_runner, reference_runner),
+         {:ok, first} <- fetch_receipt(receipt, :first_sequence),
+         {:ok, last} <- fetch_receipt(receipt, :last_sequence),
+         {:ok, state_checksum} <- fetch_receipt(receipt, :state_checksum) do
+      {:ok,
+       %{
+         affected_operations: Enum.map(affected, & &1.catalog_id),
+         answers: answers,
+         batch_sequence: %{first: first, last: last},
+         state_checksum: state_checksum
+       }}
+    end
+  end
+
+  def post_update_evidence(_definitions, _mutations, _receipt, _actual, _reference),
+    do: {:error, :invalid_post_update_evidence_context}
 
   @doc "Classifies one complete stage-evidence set without weakening failed stages."
   @spec classify(map(), boolean()) :: atom()
@@ -392,6 +423,45 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
     bundle.sequences
     |> Map.fetch!(variant_label(definition))
     |> List.first()
+  end
+
+  defp compare_post_update_answers(definitions, actual_runner, reference_runner) do
+    Enum.reduce_while(definitions, {:ok, []}, fn definition, {:ok, evidence} ->
+      with {:ok, %Result{} = actual} <- actual_runner.(definition),
+           {:ok, %Result{} = expected} <- reference_runner.(definition) do
+        comparison =
+          Correctness.compare(expected, actual,
+            full_comparison_limit: max(length(expected.rows), length(actual.rows))
+          )
+
+        entry = %{
+          operation_id: definition.catalog_id,
+          variant: Map.get(definition, :variant, "default"),
+          comparison: comparison
+        }
+
+        if comparison.status == :correct,
+          do: {:cont, {:ok, [entry | evidence]}},
+          else: {:halt, {:error, {:post_update_answer_mismatch, entry}}}
+      else
+        {:error, reason} ->
+          {:halt, {:error, {:post_update_answer_failed, definition.catalog_id, reason}}}
+
+        other ->
+          {:halt, {:error, {:invalid_post_update_answer, definition.catalog_id, other}}}
+      end
+    end)
+    |> case do
+      {:ok, evidence} -> {:ok, Enum.reverse(evidence)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp fetch_receipt(receipt, field) do
+    case Map.fetch(receipt, field) do
+      {:ok, value} -> {:ok, value}
+      :error -> {:error, {:missing_correctness_evidence, field}}
+    end
   end
 
   defp execution_opts(opts) do
