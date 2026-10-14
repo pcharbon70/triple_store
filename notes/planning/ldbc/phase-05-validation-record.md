@@ -60,20 +60,69 @@ test-only contract fixtures prove empty, duplicate-bearing, ordered, timestamp,
 unexpected-row, ordering, type, provenance, and deterministic-hash failures.
 They are not accepted benchmark answers.
 
-## Qualification boundary
+## Phase 5A qualification boundary
 
 The checked-in smoke fixture is not an official scale-factor dataset and has no
 accepted answer corpus for all BI operations. Thirty canonical variants still
-lack registered reference answers. Exact analytical handlers for BI
-1-9, 11-14, and 16-18 and operation-specific graph adapters for BI 10, 15, 19,
-and 20 remain open. The current capability matrix is intentionally unchanged,
-and the reduced workflow exposes only diagnostic scores.
+lack registered reference answers. At the end of Phase 5A, exact analytical
+handlers for BI 1-9, 11-14, and 16-18 and operation-specific graph adapters for
+BI 10, 15, 19, and 20 remained open. Phase 5B implements those handlers, as
+recorded below. The capability matrix remains intentionally unchanged because
+implementation availability alone does not establish accepted-answer
+correctness, and the reduced workflow exposes only diagnostic scores.
 
 No claim of official, certified, audited, or comparable SNB BI performance is
 made by this phase record.
 
+## Phase 5B semantic-gap baseline
+
+The generated qualification matrix now records all 31 canonical variants with
+separate parse, algebra, optimized-plan, execution, typed-result, and expected
+answer evidence. All 22 standard translations parse and prepare, including the
+BI 12 list-valued `VALUES` parameter. Each standard variant resolves to the
+registered typed prepared-query handler. Quad default-dataset execution and
+property paths preserve the active named graphs and enforce their authorization
+boundary.
+
+All nine graph variants resolve to operation-specific BI 10, 15, 19, or 20
+adapters. The adapters perform lazy index-backed candidate and edge lookup,
+preserve the operation-specific unweighted or weighted semantics, retain global
+equal-cost ties, enforce timeout, cancellation, visited and intermediate bounds,
+and reject malformed or non-positive weights through tagged errors.
+
+The contextual qualification integration executes all 31 variants successfully
+against the reduced mapped smoke store and reproduces the same typed result
+digests after close and reopen. The ordered aggregate digest is
+`sha256:02cd4914ca255871dc36732eb406cc3b96ad09f92426ce62078fe112bbd9cfa1`.
+Timeout, cancellation, and result-contract
+failures remain per-variant evidence and prevent qualification without erasing
+the other results.
+
+The reference manifest uses schema version 2 to distinguish an
+`accepted_answer` from a `contract_fixture`. The one embedded BI 1 artifact is a
+contract fixture and is ineligible for accepted-answer comparison; 30 variants
+have no artifact. Consequently all 20 BI capability entries remain unpromoted,
+and the Sub-Phase 5B exit gate is blocked on a complete immutable accepted-answer
+bundle from the pinned reference implementation. The reduced smoke data and
+synthetic parameter rows also remain diagnostic rather than comparable-run
+evidence.
+
 ## Executed checks
 
+- Final Phase 5B focused regression set after review remediation: 166 tests,
+  0 failures, 4 excluded by the default test configuration
+- Final default suite: 25 doctests, 10 properties, 6,901 tests, 0 failures,
+  53 skipped, 345 excluded by the default test configuration
+- Phase 5B `mix dialyzer --format short`: 0 errors and 0 skipped warnings
+- Phase 5B contextual qualification and adjacent SNB BI regressions: 61 tests,
+  0 failures
+- Phase 5B reduced smoke qualification: 31 execution passes, 1 ineligible
+  contract fixture, 30 missing accepted answers, 0 capability promotions
+- Phase 5B `mix credo --strict`: no issues
+- Phase 5B strict application compilation: passed; warnings came from third-party
+  dependencies
+- Phase 5B specs, guides, and code-doc governance validators: passed; RFC
+  governance skipped because the repository has no `rfcs/` directory
 - Phase 5A corpus/reference integration and adjacent correctness tests: 27
   tests, 0 failures
 - `mix format --check-formatted`

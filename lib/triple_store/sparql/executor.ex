@@ -538,6 +538,29 @@ defmodule TripleStore.SPARQL.Executor do
     execute_with_graph_variable(ctx, pattern, var_name, initial_binding)
   end
 
+  @doc false
+  @spec authorize_active_dataset(context(), [term()]) :: :ok | {:error, term()}
+  def authorize_active_dataset(ctx, graph_terms) when is_list(graph_terms) do
+    user_or_public = Map.get(ctx, :user, :public)
+
+    Enum.reduce_while(graph_terms, :ok, fn graph_term, :ok ->
+      result =
+        with :ok <- validate_graph_term(graph_term),
+             {:ok, allowed?} <-
+               Authorization.can_access_graph?(ctx, graph_term, user_or_public, :read) do
+          if allowed?, do: :ok, else: unauthorized_active_graph(ctx, graph_term)
+        end
+
+      case result do
+        :ok -> {:cont, :ok}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  def authorize_active_dataset(_ctx, graph_terms),
+    do: {:error, {:invalid_active_dataset, graph_terms}}
+
   @doc """
   Executes a pattern in the context of a specific named graph.
 
@@ -644,6 +667,13 @@ defmodule TripleStore.SPARQL.Executor do
     case internal_to_rdf(graph_term) do
       {:ok, graph_iri} -> unauthorized_graph_result(ctx, graph_iri)
       :error -> {:ok, []}
+    end
+  end
+
+  defp unauthorized_active_graph(ctx, graph_term) do
+    case handle_unauthorized_graph_access(ctx, graph_term) do
+      {:ok, []} -> :ok
+      {:error, _reason} = error -> error
     end
   end
 
@@ -953,10 +983,7 @@ defmodule TripleStore.SPARQL.Executor do
     # graph variable keeps graph identity out of solution bindings.
     case ErlangAdapter.is_quad_store?(ctx.db) do
       {:ok, true} ->
-        graph =
-          if Map.get(ctx, :union_default_graph, false), do: {:variable, "_"}, else: :default_graph
-
-        extend_bindings(ctx, binding_stream, {:quad, s, p, o, graph})
+        extend_quad_store_bindings(ctx, binding_stream, {s, p, o})
 
       {:ok, false} ->
         extend_bindings_with(ctx, binding_stream, {:triple, s, p, o}, fn ctx,
@@ -986,6 +1013,38 @@ defmodule TripleStore.SPARQL.Executor do
                                                                       {:quad, s, p, o, g} ->
       execute_single_quad_pattern(ctx, binding, s, p, o, g)
     end)
+  end
+
+  defp extend_quad_store_bindings(ctx, binding_stream, {s, p, o}) do
+    case Map.fetch(ctx, :active_default_graphs) do
+      {:ok, graphs} when is_list(graphs) ->
+        extend_bindings_across_default_graphs(ctx, binding_stream, {s, p, o}, graphs)
+
+      :error ->
+        extend_bindings(ctx, binding_stream, {:quad, s, p, o, default_graph(ctx)})
+    end
+  end
+
+  defp default_graph(ctx) do
+    if Map.get(ctx, :union_default_graph, false), do: {:variable, "_"}, else: :default_graph
+  end
+
+  defp extend_bindings_across_default_graphs(ctx, binding_stream, {s, p, o}, graphs) do
+    result_stream =
+      Stream.flat_map(binding_stream, fn binding ->
+        graphs
+        |> Stream.flat_map(&execute_default_graph_matches(ctx, binding, {s, p, o}, &1))
+        |> Stream.uniq()
+      end)
+
+    {:ok, result_stream}
+  end
+
+  defp execute_default_graph_matches(ctx, binding, {s, p, o}, graph) do
+    case execute_single_quad_pattern(ctx, binding, s, p, o, graph) do
+      {:ok, matches} -> matches
+      {:error, _reason} -> []
+    end
   end
 
   # Execute a single triple pattern with a specific binding

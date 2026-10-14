@@ -23,3 +23,4 @@ These are validation targets, not a list of passing implementation checks. `mix 
 | `SCN-015` | Native boundary containment | Parser NIFs and RocksDB adapter-backed native calls stay bounded to native capability without taking over semantic control. |
 | `SCN-016` | Schema-aware RDF I/O behavior | Generic graph-oriented APIs, quad-aware loader/exporter APIs, and graph-scoped import/export preserve the documented graph-handling rules. |
 | `SCN-017` | Named-graph authorization and operations | Graph clauses, graph management, ACL checks, and graph-scoped storage semantics stay aligned across query, update, and storage layers. |
+| `SCN-018` | Prepared bindings and active dataset execution | Typed scalar and set-valued parameters bind without variable aliasing, while `FROM` graph sets constrain triple and property-path scans on quad stores. |

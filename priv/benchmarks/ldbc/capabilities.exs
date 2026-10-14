@@ -178,26 +178,50 @@ spb_resilience =
 bi_reads =
   Enum.map(1..20, fn number ->
     extension? = number in [10, 15, 19, 20]
+    padded = String.pad_leading(Integer.to_string(number), 2, "0")
+
+    owner =
+      if extension? do
+        "TripleStore.Benchmark.LDBC.SNB.BI.Extensions.Read#{number}"
+      else
+        "TripleStore.Benchmark.LDBC.SNB.BI.Handlers.StandardQuery"
+      end
+
+    implementation_evidence =
+      if extension? do
+        [
+          "lib/triple_store/benchmark/ldbc/snb/bi/extensions/read_#{number}.ex",
+          "test/triple_store/benchmark/ldbc/snb_bi_graph_adapters_test.exs"
+        ]
+      else
+        [
+          "lib/triple_store/benchmark/ldbc/snb/bi/handlers/standard_query.ex",
+          "test/triple_store/benchmark/ldbc/snb_bi_analytics_test.exs"
+        ]
+      end
 
     entry.(
-      "ldbc/snb-bi/read-#{String.pad_leading(Integer.to_string(number), 2, "0")}@v1.0.3",
+      "ldbc/snb-bi/read-#{padded}@v1.0.3",
       if(extension?, do: :requires_extension, else: :requires_fix),
-      :translation_required,
-      if(extension?, do: :unsupported, else: :unverified),
+      if(extension?, do: :not_applicable, else: :verified),
+      :unverified,
       if(extension?,
         do: [:graph_algorithm, :shortest_path, :path_cost],
         else: [:aggregation, :subquery, :expressions, :ordering, :slicing]
       ),
-      if(extension?, do: "TripleStore.SPARQL.GraphAlgorithms", else: "TripleStore.SPARQL.Query"),
+      owner,
       5,
       if(extension?,
         do:
-          "The operation returns distance or weighted path cost, which standard SPARQL 1.1 property paths do not expose.",
-        else: "An RDF/SPARQL translation and exact reference-answer validation are required."
+          "The operation-specific graph adapter is registered and tested, but every variant still lacks accepted-answer comparison evidence.",
+        else:
+          "The checked-in SPARQL translation and standard handler are registered and tested, but every variant still lacks accepted-answer comparison evidence."
       ),
       [
-        "ldbc_snb_docs:query-specifications/bi-read-#{String.pad_leading(Integer.to_string(number), 2, "0")}.yaml",
-        "lib/triple_store/sparql/query.ex"
+        "ldbc_snb_docs:query-specifications/bi-read-#{padded}.yaml",
+        "lib/triple_store/benchmark/ldbc/snb/bi/qualification.ex",
+        "notes/planning/ldbc/phase-05-validation-record.md"
+        | implementation_evidence
       ]
     )
   end)

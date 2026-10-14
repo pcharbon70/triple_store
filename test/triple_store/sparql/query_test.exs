@@ -1008,6 +1008,54 @@ defmodule TripleStore.SPARQL.QueryTest do
   end
 
   describe "execute/3" do
+    test "binds typed lists into VALUES without interpolating values", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      assert {:ok, prepared} =
+               Query.prepare("SELECT ?language WHERE { VALUES ?language { $languages } }")
+
+      assert prepared.parameters == ["languages"]
+
+      assert {:ok, rows} =
+               Query.execute(ctx, prepared, %{
+                 "languages" => [
+                   {:literal, :simple, "en"},
+                   {:literal, :simple, "fr"}
+                 ]
+               })
+
+      assert rows == [
+               %{"language" => {:literal, :simple, "en"}},
+               %{"language" => {:literal, :simple, "fr"}}
+             ]
+
+      assert {:error, {:invalid_parameter, "languages", :expected_list}} =
+               Query.execute(ctx, prepared, %{"languages" => {:literal, :simple, "en"}})
+
+      cleanup({db, manager})
+    end
+
+    test "prepared parameters do not alias query variables with the same external name", %{
+      tmp_dir: tmp_dir
+    } do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+
+      assert {:ok, prepared} =
+               Query.prepare("""
+               SELECT ?country WHERE {
+                 VALUES ?country { "Canada" "France" }
+                 FILTER(?country = $country)
+               }
+               """)
+
+      assert {:ok, [%{"country" => {:literal, :simple, "France"}}]} =
+               Query.execute(ctx, prepared, %{"country" => {:literal, :simple, "France"}})
+
+      cleanup({db, manager})
+    end
+
     test "executes prepared query without parameters", %{tmp_dir: tmp_dir} do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}
@@ -1279,6 +1327,45 @@ defmodule TripleStore.SPARQL.QueryTest do
   end
 
   describe "prepared query parameter value conversion" do
+    test "preserves a canonical typed scalar parameter", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+      integer_type = "http://www.w3.org/2001/XMLSchema#integer"
+      value = {:literal, :typed, "42", integer_type}
+
+      assert {:ok, prepared} =
+               Query.prepare(
+                 ~S[SELECT ?bound WHERE { VALUES ?seed { "seed" } BIND($value AS ?bound) }]
+               )
+
+      assert {:ok, [%{"bound" => ^value}]} =
+               Query.execute(ctx, prepared, %{"value" => value})
+
+      cleanup({db, manager})
+    end
+
+    test "preserves canonical typed list parameters", %{tmp_dir: tmp_dir} do
+      {db, manager} = setup_db(tmp_dir)
+      ctx = %{db: db, dict_manager: manager}
+      xsd = "http://www.w3.org/2001/XMLSchema#"
+
+      values = [
+        {:literal, :typed, "42", xsd <> "integer"},
+        {:literal, :typed, "3.5", xsd <> "double"},
+        {:literal, :typed, "true", xsd <> "boolean"},
+        {:literal, :typed, "2026-10-13", xsd <> "date"},
+        {:literal, :typed, "2026-10-13T14:30:00Z", xsd <> "dateTime"}
+      ]
+
+      assert {:ok, prepared} =
+               Query.prepare("SELECT ?value WHERE { VALUES ?value { $values } }")
+
+      assert {:ok, rows} = Query.execute(ctx, prepared, %{"values" => values})
+      assert rows == Enum.map(values, &%{"value" => &1})
+
+      cleanup({db, manager})
+    end
+
     test "integer parameter is converted correctly", %{tmp_dir: tmp_dir} do
       {db, manager} = setup_db(tmp_dir)
       ctx = %{db: db, dict_manager: manager}

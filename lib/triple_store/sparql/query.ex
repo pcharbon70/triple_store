@@ -158,13 +158,16 @@ defmodule TripleStore.SPARQL.Query do
           pattern: term(),
           optimized_pattern: term(),
           metadata: prepared_metadata(),
-          parameters: [String.t()]
+          parameters: [String.t()],
+          parameter_variables: %{String.t() => String.t()},
+          list_parameters: %{String.t() => String.t()}
         }
 
   @typedoc "Metadata stored in prepared queries"
   @type prepared_metadata :: %{
           variables: term() | nil,
           template: term() | nil,
+          dataset: term() | nil,
           modifiers: modifier_map(),
           props: keyword()
         }
@@ -214,7 +217,9 @@ defmodule TripleStore.SPARQL.Query do
       :pattern,
       :optimized_pattern,
       :metadata,
-      parameters: []
+      parameters: [],
+      parameter_variables: %{},
+      list_parameters: %{}
     ]
   end
 
@@ -396,10 +401,12 @@ defmodule TripleStore.SPARQL.Query do
         stats = Keyword.get(opts, :stats, %{})
 
         # Extract parameters from the query (variables starting with $)
-        {normalized_sparql, parameters} = extract_parameters(sparql)
+        {normalized_sparql, parameters, parameter_variables, list_parameters} =
+          extract_parameters(sparql)
 
         with {:ok, ast} <- parse_query(normalized_sparql),
              {:ok, query_type, pattern, metadata} <- extract_query_info(ast),
+             pattern <- mark_list_parameters(pattern, list_parameters),
              {:ok, optimized} <- maybe_optimize(pattern, optimize?, stats) do
           prepared = %Prepared{
             sparql: sparql,
@@ -407,7 +414,9 @@ defmodule TripleStore.SPARQL.Query do
             pattern: pattern,
             optimized_pattern: optimized,
             metadata: metadata,
-            parameters: parameters
+            parameters: parameters,
+            parameter_variables: parameter_variables,
+            list_parameters: list_parameters
           }
 
           {:ok, prepared}
@@ -455,7 +464,7 @@ defmodule TripleStore.SPARQL.Query do
   Parameter values can be:
   - URIs as strings: `"http://example.org/resource"`
   - Literal tuples: `{:literal, :simple, "value"}`
-  - Typed literals: `{:literal, {:typed, "xsd:integer"}, "42"}`
+  - Typed literals: `{:literal, :typed, "42", "http://www.w3.org/2001/XMLSchema#integer"}`
 
   ## Returns
 
@@ -495,7 +504,8 @@ defmodule TripleStore.SPARQL.Query do
   def execute(ctx, %Prepared{} = prepared, params, opts) when is_map(params) and is_list(opts) do
     # Validate options and parameters
     with :ok <- validate_opts(opts, @valid_execute_opts),
-         :ok <- validate_parameters(prepared.parameters, params) do
+         :ok <- validate_parameters(prepared.parameters, params),
+         :ok <- validate_parameter_values(prepared, params) do
       with_timeout(opts, fn -> execute_prepared(ctx, prepared, params) end)
     end
   end
@@ -521,6 +531,7 @@ defmodule TripleStore.SPARQL.Query do
   # Execute a prepared query with bound parameters
   defp execute_prepared(ctx, prepared, params) do
     # Substitute parameters in the optimized pattern
+    params = remap_parameter_variables(prepared, params)
     pattern = substitute_parameters(prepared.optimized_pattern, params)
 
     # Execute and serialize
@@ -529,14 +540,91 @@ defmodule TripleStore.SPARQL.Query do
 
   # Extract $param placeholders and convert to regular ?param variables
   defp extract_parameters(sparql) do
-    # Find all $param patterns (parameter names)
+    {normalized_values, list_parameters} = extract_list_parameters(sparql)
+
+    # Find all remaining $param patterns (parameter names)
     param_regex = ~r/\$([a-zA-Z_][a-zA-Z0-9_]*)/
-    params = Regex.scan(param_regex, sparql) |> Enum.map(fn [_, name] -> name end) |> Enum.uniq()
 
-    # Replace $param with ?param for the parser
-    normalized = Regex.replace(param_regex, sparql, "?\\1")
+    scalar_parameters =
+      Regex.scan(param_regex, normalized_values)
+      |> Enum.map(fn [_, name] -> name end)
+      |> Enum.uniq()
 
-    {normalized, params}
+    parameter_variables = Map.new(scalar_parameters, &{&1, internal_parameter_name(&1)})
+
+    # Replace scalar placeholders with reserved variables for the parser. The
+    # reserved name prevents `$country` from aliasing an unrelated `?country`
+    # query variable before AST-level binding occurs.
+    normalized =
+      Regex.replace(param_regex, normalized_values, fn _match, name ->
+        "?" <> Map.fetch!(parameter_variables, name)
+      end)
+
+    parameters = Enum.uniq(scalar_parameters ++ Map.values(list_parameters))
+    {normalized, parameters, parameter_variables, list_parameters}
+  end
+
+  defp extract_list_parameters(sparql) do
+    values_regex =
+      ~r/\bVALUES\s+\?([a-zA-Z_][a-zA-Z0-9_]*)\s*\{\s*\$([a-zA-Z_][a-zA-Z0-9_]*)\s*\}/i
+
+    list_parameters =
+      values_regex
+      |> Regex.scan(sparql)
+      |> Map.new(fn [_match, variable, parameter] -> {variable, parameter} end)
+
+    normalized =
+      Regex.replace(values_regex, sparql, fn _match, variable, _parameter ->
+        "VALUES ?#{variable} { UNDEF }"
+      end)
+
+    {normalized, list_parameters}
+  end
+
+  defp internal_parameter_name(name) do
+    digest = :crypto.hash(:sha256, name) |> Base.encode16(case: :lower) |> binary_part(0, 16)
+    "__triplestore_parameter_#{digest}"
+  end
+
+  defp mark_list_parameters(pattern, list_parameters) when map_size(list_parameters) == 0,
+    do: pattern
+
+  defp mark_list_parameters({:values, [{:variable, variable}], [[nil]]}, list_parameters) do
+    case Map.fetch(list_parameters, variable) do
+      {:ok, parameter} -> {:values, [{:variable, variable}], [[{:parameter_list, parameter}]]}
+      :error -> {:values, [{:variable, variable}], [[nil]]}
+    end
+  end
+
+  defp mark_list_parameters(term, list_parameters) when is_tuple(term) do
+    term
+    |> Tuple.to_list()
+    |> Enum.map(&mark_list_parameters(&1, list_parameters))
+    |> List.to_tuple()
+  end
+
+  defp mark_list_parameters(term, list_parameters) when is_list(term),
+    do: Enum.map(term, &mark_list_parameters(&1, list_parameters))
+
+  defp mark_list_parameters(term, _list_parameters), do: term
+
+  defp remap_parameter_variables(prepared, params) do
+    list_names = prepared.list_parameters |> Map.values() |> MapSet.new()
+
+    remapped =
+      params
+      |> Map.drop(
+        prepared.parameter_variables
+        |> Map.keys()
+        |> Enum.reject(&MapSet.member?(list_names, &1))
+      )
+
+    Enum.reduce(prepared.parameter_variables, remapped, fn {external, internal}, acc ->
+      case Map.fetch(params, external) do
+        {:ok, value} -> Map.put(acc, internal, value)
+        :error -> acc
+      end
+    end)
   end
 
   # Validate that all required parameters are provided
@@ -548,6 +636,15 @@ defmodule TripleStore.SPARQL.Query do
     else
       {:error, {:missing_parameters, missing}}
     end
+  end
+
+  defp validate_parameter_values(prepared, params) do
+    Enum.reduce_while(prepared.list_parameters, :ok, fn {_variable, name}, :ok ->
+      case Map.fetch!(params, name) do
+        values when is_list(values) -> {:cont, :ok}
+        _other -> {:halt, {:error, {:invalid_parameter, name, :expected_list}}}
+      end
+    end)
   end
 
   # Substitute parameter values into the pattern (C4: added is_map guard)
@@ -598,7 +695,7 @@ defmodule TripleStore.SPARQL.Query do
   end
 
   defp do_substitute({:order_by, inner, conditions}, params) do
-    {:order_by, do_substitute(inner, params), conditions}
+    {:order_by, do_substitute(inner, params), substitute_expr(conditions, params)}
   end
 
   defp do_substitute({:extend, inner, var, expr}, params) do
@@ -613,9 +710,37 @@ defmodule TripleStore.SPARQL.Query do
     {:graph, substitute_term(graph_name, params), do_substitute(inner, params)}
   end
 
+  defp do_substitute({:group, inner, vars, aggregates}, params) do
+    {:group, do_substitute(inner, params), vars, substitute_expr(aggregates, params)}
+  end
+
+  defp do_substitute({:service, endpoint, inner, silent}, params) do
+    {:service, substitute_term(endpoint, params), do_substitute(inner, params), silent}
+  end
+
+  defp do_substitute({:path, subject, path, object}, params) do
+    {:path, substitute_term(subject, params), path, substitute_term(object, params)}
+  end
+
+  defp do_substitute({:values, vars, rows}, params) do
+    {:values, vars, Enum.flat_map(rows, &expand_values_row(&1, params))}
+  end
+
   defp do_substitute(nil, _params), do: nil
 
   defp do_substitute(other, _params), do: other
+
+  defp expand_values_row(row, params) do
+    Enum.reduce(row, [[]], fn
+      {:parameter_list, name}, prefixes ->
+        for prefix <- prefixes, value <- Map.fetch!(params, name) do
+          prefix ++ [convert_param_value(value)]
+        end
+
+      value, prefixes ->
+        Enum.map(prefixes, &(&1 ++ [value]))
+    end)
+  end
 
   # Substitute parameters in a triple pattern
   defp substitute_triple({:triple, s, p, o}, params) do
@@ -644,6 +769,9 @@ defmodule TripleStore.SPARQL.Query do
       {:literal, :simple, value}
     end
   end
+
+  defp convert_param_value({:literal, kind, _, _} = literal) when kind in [:typed, :lang],
+    do: literal
 
   defp convert_param_value({:literal, _, _} = literal), do: literal
   defp convert_param_value({:named_node, _} = node), do: node
@@ -687,17 +815,15 @@ defmodule TripleStore.SPARQL.Query do
   defp substitute_expr(nil, _params), do: nil
   defp substitute_expr({:variable, name}, params), do: substitute_term({:variable, name}, params)
 
-  defp substitute_expr({op, args}, params) when is_list(args) do
-    {op, Enum.map(args, fn arg -> substitute_expr(arg, params) end)}
+  defp substitute_expr(expr, params) when is_tuple(expr) do
+    expr
+    |> Tuple.to_list()
+    |> Enum.map(&substitute_expr(&1, params))
+    |> List.to_tuple()
   end
 
-  defp substitute_expr({op, arg1, arg2}, params) do
-    {op, substitute_expr(arg1, params), substitute_expr(arg2, params)}
-  end
-
-  defp substitute_expr({op, arg}, params) when is_atom(op) do
-    {op, substitute_expr(arg, params)}
-  end
+  defp substitute_expr(expr, params) when is_list(expr),
+    do: Enum.map(expr, &substitute_expr(&1, params))
 
   defp substitute_expr(expr, _params), do: expr
 
@@ -1028,11 +1154,13 @@ defmodule TripleStore.SPARQL.Query do
     pattern = get_prop(props, "pattern")
     variables = get_prop(props, "variables")
     template = get_prop(props, "template")
+    dataset = get_prop(props, "dataset")
     modifiers = extract_modifiers(props)
 
     metadata = %{
       variables: variables,
       template: template,
+      dataset: dataset,
       modifiers: modifiers,
       props: props
     }
@@ -1087,19 +1215,37 @@ defmodule TripleStore.SPARQL.Query do
 
   # Execute query and serialize results based on query type
   defp execute_and_serialize(ctx, query_type, pattern, metadata) do
-    # Execute the pattern to get binding stream
-    case execute_pattern(ctx, pattern) do
-      {:ok, stream} ->
-        # Apply solution modifiers
-        stream = apply_modifiers(stream, metadata.modifiers)
+    with {:ok, active_ctx} <- apply_active_dataset(ctx, metadata.dataset) do
+      # Execute the pattern to get binding stream
+      case execute_pattern(active_ctx, pattern) do
+        {:ok, stream} ->
+          # Apply solution modifiers
+          stream = apply_modifiers(stream, metadata.modifiers)
 
-        # Serialize based on query type
-        serialize_results(ctx, query_type, stream, metadata)
+          # Serialize based on query type
+          serialize_results(active_ctx, query_type, stream, metadata)
 
-      {:error, _} = error ->
-        error
+        {:error, _} = error ->
+          error
+      end
     end
   end
+
+  defp apply_active_dataset(ctx, nil), do: {:ok, ctx}
+
+  defp apply_active_dataset(ctx, dataset) when is_list(dataset) do
+    default_graphs = get_prop(dataset, "default") || []
+    named_graphs = get_prop(dataset, "named") || []
+
+    with :ok <- Executor.authorize_active_dataset(ctx, default_graphs ++ named_graphs) do
+      {:ok,
+       ctx
+       |> Map.put(:active_default_graphs, default_graphs)
+       |> Map.put(:active_named_graphs, named_graphs)}
+    end
+  end
+
+  defp apply_active_dataset(_ctx, dataset), do: {:error, {:invalid_active_dataset, dataset}}
 
   # Execute a pattern and return a stream of bindings
   # Tracks recursion depth to prevent stack overflow from adversarial queries
@@ -1174,14 +1320,24 @@ defmodule TripleStore.SPARQL.Query do
     with_inner_pattern(ctx, inner, depth, &group_stream(&1, group_vars, aggregates))
   end
 
+  defp execute_pattern(_ctx, {:values, variables, rows}, _depth) do
+    names = extract_variable_names(variables)
+
+    bindings =
+      Stream.map(rows, fn row ->
+        names
+        |> Enum.zip(row)
+        |> Enum.reduce(%{}, fn
+          {_name, nil}, binding -> binding
+          {name, value}, binding -> Map.put(binding, name, value)
+        end)
+      end)
+
+    {:ok, bindings}
+  end
+
   defp execute_pattern(ctx, {:path, subject, path_expr, object}, _depth) do
-    PropertyPath.evaluate(
-      %{db: ctx.db, dict_manager: ctx.dict_manager},
-      %{},
-      subject,
-      path_expr,
-      object
-    )
+    PropertyPath.evaluate(ctx, %{}, subject, path_expr, object)
   end
 
   defp execute_pattern(ctx, {:graph, graph_spec, inner_pattern}, _depth) do
@@ -1203,14 +1359,12 @@ defmodule TripleStore.SPARQL.Query do
   # from adversarial queries that could produce billions of results.
   defp execute_bind_join_with_path(ctx, left, {:path, subject, path_expr, object}, depth) do
     with {:ok, left_stream} <- execute_pattern(ctx, left, depth + 1) do
-      path_ctx = %{db: ctx.db, dict_manager: ctx.dict_manager}
-
       # For each left binding, evaluate the path with that binding
       # Apply a limit to prevent memory exhaustion from adversarial queries
       result_stream =
         left_stream
         |> Stream.flat_map(fn left_binding ->
-          case PropertyPath.evaluate(path_ctx, left_binding, subject, path_expr, object) do
+          case PropertyPath.evaluate(ctx, left_binding, subject, path_expr, object) do
             {:ok, path_stream} ->
               # The path stream already has left_binding merged in
               Enum.to_list(path_stream)

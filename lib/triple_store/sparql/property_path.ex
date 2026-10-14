@@ -37,7 +37,8 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   """
 
-  alias TripleStore.Index
+  alias TripleStore.Backend.RocksDB.ErlangAdapter
+  alias TripleStore.{Index, QuadOperations}
   alias TripleStore.SPARQL.Term
 
   # Suppress MapSet opaque type warnings - these occur because Dialyzer traces
@@ -549,7 +550,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp evaluate_link(ctx, binding, subject, predicate, object) do
-    %{db: db, dict_manager: dict_manager} = ctx
+    %{dict_manager: dict_manager} = ctx
 
     # Resolve subject and object from binding
     s_resolved = resolve_term(subject, binding)
@@ -570,14 +571,14 @@ defmodule TripleStore.SPARQL.PropertyPath do
           wrap_bound(o_pattern)
         }
 
-        {:ok, triple_stream} = Index.lookup(db, index_pattern)
+        with {:ok, triple_stream} <- lookup_path_triples(ctx, index_pattern) do
+          binding_stream =
+            Stream.flat_map(triple_stream, fn {s_id, _p_id, o_id} ->
+              extend_path_match(binding, subject, object, s_id, o_id, dict_manager)
+            end)
 
-        binding_stream =
-          Stream.flat_map(triple_stream, fn {s_id, _p_id, o_id} ->
-            extend_path_match(binding, subject, object, s_id, o_id, dict_manager)
-          end)
-
-        {:ok, binding_stream}
+          {:ok, binding_stream}
+        end
       end
     end
   end
@@ -634,7 +635,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # ===========================================================================
 
   defp evaluate_negated_property_set(ctx, binding, subject, excluded_iris, object) do
-    %{db: db, dict_manager: dict_manager} = ctx
+    %{dict_manager: dict_manager} = ctx
 
     # Resolve subject and object
     s_resolved = resolve_term(subject, binding)
@@ -660,7 +661,7 @@ defmodule TripleStore.SPARQL.PropertyPath do
         # Query all triples matching subject and object (predicate is variable)
         index_pattern = {wrap_bound(s_pattern), :var, wrap_bound(o_pattern)}
 
-        case Index.lookup(db, index_pattern) do
+        case lookup_path_triples(ctx, index_pattern) do
           {:ok, triple_stream} ->
             {:ok,
              negated_property_binding_stream(
@@ -1265,11 +1266,11 @@ defmodule TripleStore.SPARQL.PropertyPath do
 
   # Get all nodes (subjects and objects) in the graph with limit protection
   @spec get_all_nodes(context(), TripleStore.db_ref()) :: MapSet.t()
-  defp get_all_nodes(ctx, db) do
+  defp get_all_nodes(ctx, _db) do
     max_nodes = max_all_nodes(ctx)
 
     # Query all triples with all variables
-    {:ok, stream} = Index.lookup(db, {:var, :var, :var})
+    {:ok, stream} = lookup_path_triples(ctx, {:var, :var, :var})
 
     # Use Stream.take to limit memory usage during collection
     nodes =
@@ -1483,6 +1484,71 @@ defmodule TripleStore.SPARQL.PropertyPath do
   # Wrap an ID in {:bound, id} for Index module, pass :var through
   defp wrap_bound(:var), do: :var
   defp wrap_bound(id) when is_integer(id), do: {:bound, id}
+
+  defp lookup_path_triples(ctx, {s, p, o} = triple_pattern) do
+    case ErlangAdapter.is_quad_store?(ctx.db) do
+      {:ok, false} ->
+        Index.lookup(ctx.db, triple_pattern)
+
+      {:ok, true} ->
+        quad_path_stream(ctx, {s, p, o})
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp quad_path_stream(ctx, {s, p, o}) do
+    graph_ids = active_graph_ids(ctx)
+
+    stream =
+      graph_ids
+      |> Stream.flat_map(fn
+        :all -> quad_lookup(ctx.db, {s, p, o}, :var, nil)
+        graph_id -> quad_lookup(ctx.db, {s, p, o}, :bound, graph_id)
+      end)
+      |> Stream.uniq()
+
+    {:ok, stream}
+  end
+
+  defp active_graph_ids(%{active_default_graphs: graphs, dict_manager: manager})
+       when is_list(graphs) do
+    Enum.flat_map(graphs, fn graph ->
+      case term_to_id(graph, manager) do
+        {:ok, id} when is_integer(id) -> [id]
+        _other -> []
+      end
+    end)
+  end
+
+  defp active_graph_ids(ctx) do
+    if Map.get(ctx, :union_default_graph, false), do: [:all], else: [0]
+  end
+
+  defp quad_lookup(db, {s, p, o}, graph_pattern, graph_value) do
+    quad_pattern = {pattern_type(s), pattern_type(p), pattern_type(o), graph_pattern}
+
+    values =
+      [{:s, s}, {:p, p}, {:o, o}]
+      |> Enum.reduce(%{}, fn
+        {key, {:bound, id}}, values -> Map.put(values, key, id)
+        {_key, :var}, values -> values
+      end)
+      |> maybe_put_graph(graph_pattern, graph_value)
+
+    db
+    |> QuadOperations.lookup_quads_stream(quad_pattern, values)
+    |> Stream.map(fn {subject, predicate, object, _graph} ->
+      {subject, predicate, object}
+    end)
+  end
+
+  defp pattern_type({:bound, _id}), do: :bound
+  defp pattern_type(:var), do: :var
+
+  defp maybe_put_graph(values, :bound, graph), do: Map.put(values, :g, graph)
+  defp maybe_put_graph(values, :var, _graph), do: values
 
   # Empty stream helper
   defp empty_stream, do: Stream.map([], & &1)

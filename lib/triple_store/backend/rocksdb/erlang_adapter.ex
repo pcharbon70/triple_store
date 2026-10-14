@@ -1157,13 +1157,13 @@ defmodule TripleStore.Backend.RocksDB.ErlangAdapter do
           {:halt, acc}
 
         # Next: get one entry
-        {iter_pid, _ref} ->
+        {iter_pid, ref} ->
           case Iterator.next(iter_pid) do
             {:ok, key, value} ->
-              {[{key, value}], {iter_pid, nil}}
+              {[{key, value}], {iter_pid, ref}}
 
             :iterator_end ->
-              {:halt, {iter_pid, nil}}
+              {:halt, {iter_pid, ref}}
           end
       end,
       fn

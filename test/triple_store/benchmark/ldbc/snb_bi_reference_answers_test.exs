@@ -31,9 +31,37 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
              )
 
     assert answer.result.rows == []
+    assert answer.purpose == :contract_fixture
 
     assert answer.content_checksum ==
              "sha256:bd349c43a8039831620a4df23fb14c83577447ba6170596357bce8762d9ebfe4"
+  end
+
+  test "inventory distinguishes contract fixtures from accepted answers" do
+    assert {:ok, [entry]} = ReferenceAnswers.inventory()
+    assert entry.purpose == :contract_fixture
+    assert entry.artifact.kind == :embedded
+  end
+
+  test "contract fixtures cannot satisfy accepted-answer comparison" do
+    {definition, _dataset, parameters} = context()
+
+    dataset = %{
+      dataset_id: "snb-bi-smoke",
+      transformation: %{
+        output_checksum:
+          "sha256:90f9b6e38f2689be479c0d40b368db3e2f0542d503cb7d1ec9950b0e524ecf33",
+        mapping_version: "snb-rdf-v1"
+      }
+    }
+
+    parameters = %{parameters | dataset_checksum: dataset.transformation.output_checksum}
+    assert {:ok, actual} = ResultContract.materialize(definition, [])
+
+    assert {:error, {:reference_answer_not_accepted, :contract_fixture}} =
+             ReferenceAnswers.compare(definition, 0, actual, dataset, parameters,
+               reference_source: @reference_source
+             )
   end
 
   test "loads typed duplicate-bearing rows and preserves the BI ordering contract", %{test: test} do
@@ -336,13 +364,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     parameter_row = parameters.sequences[sequence] |> Enum.at(0)
 
     manifest = %{
-      schema_version: 1,
+      schema_version: 2,
       layout_version: "snb-bi-reference-answers-v1",
       catalog_id: @catalog_id,
       answers: [
         %{
           operation_id: definition.catalog_id,
           variant: definition.variant,
+          purpose: :accepted_answer,
           parameter: %{
             sequence: sequence,
             row_index: 0,

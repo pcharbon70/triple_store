@@ -208,10 +208,10 @@ Description: This section determines which translated queries already execute co
 
 Description: Execute the complete smoke corpus against the current query engine and classify each variant as passing, parser gap, algebra gap, execution gap, type mismatch, ordering mismatch, or extension-adapter gap.
 
-- [ ] 5B.1.1.1 Produce a stable matrix covering all 31 variants and their expected result bundle.
-- [ ] 5B.1.1.2 Capture parse, algebra, optimized plan, execution, and result-contract evidence for each failure.
-- [ ] 5B.1.1.3 Group failures by shared engine capability instead of treating every query as an isolated special case.
-- [ ] 5B.1.1.4 Keep the matrix generated from test evidence so it cannot drift from operation coverage.
+- [x] 5B.1.1.1 Produce a stable matrix covering all 31 variants and their expected result bundle.
+- [x] 5B.1.1.2 Capture parse, algebra, optimized plan, execution, and result-contract evidence for each failure.
+- [x] 5B.1.1.3 Group failures by shared engine capability instead of treating every query as an isolated special case.
+- [x] 5B.1.1.4 Keep the matrix generated from test evidence so it cannot drift from operation coverage.
 
 Primary files:
 
@@ -223,11 +223,11 @@ Primary files:
 
 Description: Add the smallest query-engine regressions that reproduce each distinct BI semantic failure before modifying parser, algebra, optimizer, or executor behavior.
 
-- [ ] 5B.1.2.1 Cover required date and duration arithmetic and boundary dates.
-- [ ] 5B.1.2.2 Cover string, conditional, numeric-coercion, and aggregate null/empty-set behavior.
-- [ ] 5B.1.2.3 Cover nested aggregation, subqueries, grouping, HAVING, ordering, limits, and canonical tie breakers.
-- [ ] 5B.1.2.4 Cover numeric widths and RDF-to-BI result type conversion independently of lexical representation.
-- [ ] 5B.1.2.5 Link each regression to the affected BI variants and relevant query contract requirement.
+- [x] 5B.1.2.1 Cover required date and duration arithmetic and boundary dates.
+- [x] 5B.1.2.2 Cover string, conditional, numeric-coercion, and aggregate null/empty-set behavior.
+- [x] 5B.1.2.3 Cover nested aggregation, subqueries, grouping, HAVING, ordering, limits, and canonical tie breakers.
+- [x] 5B.1.2.4 Cover numeric widths and RDF-to-BI result type conversion independently of lexical representation.
+- [x] 5B.1.2.5 Link each regression to the affected BI variants and relevant query contract requirement.
 
 Primary files:
 
@@ -245,11 +245,11 @@ Description: This section implements auditable handlers for BI 1-9, 11-14, and 1
 
 Description: Replace caller-supplied ad hoc handler maps as the normal workload path with a versioned registry that resolves every standard operation and variant to its translation and execution adapter.
 
-- [ ] 5B.2.1.1 Register every standard variant exactly once and reject duplicate or missing handlers.
-- [ ] 5B.2.1.2 Bind parameters using typed query bindings rather than textual substitution.
-- [ ] 5B.2.1.3 Execute through `TripleStore.SPARQL.Query` and preserve timeout and tagged-error behavior.
-- [ ] 5B.2.1.4 Decode and materialize through the canonical BI result contract before correctness comparison.
-- [ ] 5B.2.1.5 Keep explicit handler injection available only as a test or expert override with clear precedence.
+- [x] 5B.2.1.1 Register every standard variant exactly once and reject duplicate or missing handlers.
+- [x] 5B.2.1.2 Bind parameters using typed query bindings rather than textual substitution.
+- [x] 5B.2.1.3 Execute through `TripleStore.SPARQL.Query` and preserve timeout and tagged-error behavior.
+- [x] 5B.2.1.4 Decode and materialize through the canonical BI result contract before correctness comparison.
+- [x] 5B.2.1.5 Keep explicit handler injection available only as a test or expert override with clear precedence.
 
 Primary files:
 
@@ -262,11 +262,11 @@ Primary files:
 
 Description: Make the smallest general query-engine changes required by the regression matrix and avoid benchmark-only shortcuts for behavior that belongs to SPARQL execution.
 
-- [ ] 5B.2.2.1 Implement each confirmed expression, datatype, aggregation, subquery, grouping, or ordering gap in its canonical engine module.
-- [ ] 5B.2.2.2 Preserve triple and quad schema behavior unless the query feature is explicitly graph-specific.
-- [ ] 5B.2.2.3 Return typed errors for unsupported or invalid operations instead of falling back to approximate answers.
-- [ ] 5B.2.2.4 Add contract, area-spec, acceptance-criterion, and conformance-scenario updates for every semantic behavior change.
-- [ ] 5B.2.2.5 Verify existing non-BI SPARQL tests remain unchanged in meaning.
+- [x] 5B.2.2.1 Implement each confirmed expression, datatype, aggregation, subquery, grouping, or ordering gap in its canonical engine module.
+- [x] 5B.2.2.2 Preserve triple and quad schema behavior unless the query feature is explicitly graph-specific.
+- [x] 5B.2.2.3 Return typed errors for unsupported or invalid operations instead of falling back to approximate answers.
+- [x] 5B.2.2.4 Add contract, area-spec, acceptance-criterion, and conformance-scenario updates for every semantic behavior change.
+- [x] 5B.2.2.5 Verify existing non-BI SPARQL tests remain unchanged in meaning.
 
 Primary files:
 
@@ -286,10 +286,10 @@ Description: This section turns the merged BFS and Dijkstra primitives into exac
 
 Description: Define candidate selection, edge filtering, path bounds, and result shaping for BI 10 and BI 15 over lazy index-backed neighbour providers.
 
-- [ ] 5B.3.1.1 Map operation parameters to source, target, predicate, graph, and bound inputs.
-- [ ] 5B.3.1.2 Preserve operation-specific reachability, distance, disconnected-result, and tie semantics.
-- [ ] 5B.3.1.3 Enforce timeout, cancellation, visited-vertex, and intermediate-result limits from the protocol context.
-- [ ] 5B.3.1.4 Emit explain and telemetry evidence with the canonical operation identity.
+- [x] 5B.3.1.1 Map operation parameters to source, target, predicate, graph, and bound inputs.
+- [x] 5B.3.1.2 Preserve operation-specific reachability, distance, disconnected-result, and tie semantics.
+- [x] 5B.3.1.3 Enforce timeout, cancellation, visited-vertex, and intermediate-result limits from the protocol context.
+- [x] 5B.3.1.4 Emit explain and telemetry evidence with the canonical operation identity.
 
 Primary files:
 
@@ -302,9 +302,9 @@ Primary files:
 
 Description: Define the exact interaction and tag edge weights, endpoint candidates, cost accumulation, and result shaping for BI 19 and BI 20.
 
-- [ ] 5B.3.2.1 Derive edge weights from mapped relationship and message facts without driver-side materialization.
-- [ ] 5B.3.2.2 Preserve fractional costs, equal-cost endpoint ties, unreachable pairs, and deterministic ordering.
-- [ ] 5B.3.2.3 Reject negative, non-finite, missing, or malformed weights before they enter Dijkstra execution.
+- [x] 5B.3.2.1 Derive edge weights from mapped relationship and message facts without driver-side materialization.
+- [x] 5B.3.2.2 Preserve fractional costs, equal-cost endpoint ties, unreachable pairs, and deterministic ordering.
+- [x] 5B.3.2.3 Reject negative, non-finite, missing, or malformed weights before they enter Dijkstra execution.
 - [ ] 5B.3.2.4 Compare full typed results and costs with the designated reference implementation.
 
 Primary files:
@@ -322,10 +322,10 @@ Description: This section changes capability claims only after complete answer e
 
 Description: Promote each BI read independently when all of its variants parse, execute, materialize, and match accepted answers.
 
-- [ ] 5B.4.1.1 Update standard read entries from `requires_fix` only after all variants pass.
-- [ ] 5B.4.1.2 Update graph read entries from `requires_extension` only after the named extension and reference comparisons pass.
-- [ ] 5B.4.1.3 Keep incomplete operations fail-closed and retain their blocking rationale.
-- [ ] 5B.4.1.4 Make capability-matrix tests derive expected totals from the completed operation evidence.
+- [x] 5B.4.1.1 Update standard read entries from `requires_fix` only after all variants pass.
+- [x] 5B.4.1.2 Update graph read entries from `requires_extension` only after the named extension and reference comparisons pass.
+- [x] 5B.4.1.3 Keep incomplete operations fail-closed and retain their blocking rationale.
+- [x] 5B.4.1.4 Make capability-matrix tests derive expected totals from the completed operation evidence.
 
 Primary files:
 
@@ -344,17 +344,17 @@ Description: Run all 31 variants against the deterministic smoke dataset and com
 
 - [ ] 5B.5.1.1 Verify columns, types, duplicate multiplicity, row order, limits, and tie breakers.
 - [ ] 5B.5.1.2 Exercise empty results, duplicate rows, numeric boundaries, timestamp boundaries, and large intermediate aggregations.
-- [ ] 5B.5.1.3 Verify parser, execution, timeout, cancellation, and result-contract failures invalidate the operation.
-- [ ] 5B.5.1.4 Reopen the store and reproduce the same answer hashes.
+- [x] 5B.5.1.3 Verify parser, execution, timeout, cancellation, and result-contract failures invalidate the operation.
+- [x] 5B.5.1.4 Reopen the store and reproduce the same answer hashes.
 
 ### Task 5B.5.2: Validate graph operations against a reference
 
 Description: Cross-check distance, reachability, path bounds, weighted cost, equal-cost ties, and disconnected graphs for all four extension operations.
 
-- [ ] 5B.5.2.1 Compare small exhaustive graph fixtures with an independent reference algorithm.
+- [x] 5B.5.2.1 Compare small exhaustive graph fixtures with an independent reference algorithm.
 - [ ] 5B.5.2.2 Compare mapped SNB smoke results with the pinned reference implementation.
-- [ ] 5B.5.2.3 Verify limit and cancellation exits release iterators and do not leave background work.
-- [ ] 5B.5.2.4 Record Sub-Phase 5B answer digests and capability transitions in the validation record.
+- [x] 5B.5.2.3 Verify limit and cancellation exits release iterators and do not leave background work.
+- [x] 5B.5.2.4 Record Sub-Phase 5B answer digests and capability transitions in the validation record.
 
 Primary integration test:
 

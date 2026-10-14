@@ -218,6 +218,14 @@ defmodule TripleStore.QuadIndex do
   @typedoc "Quad pattern: {s_pattern, p_pattern, o_pattern, g_pattern}"
   @type quad_pattern :: {pattern_pos(), pattern_pos(), pattern_pos(), pattern_pos()}
 
+  @typedoc "Term IDs supplied for the bound positions in a quad pattern"
+  @type quad_values :: %{
+          optional(:s) => term_id(),
+          optional(:p) => term_id(),
+          optional(:o) => term_id(),
+          optional(:g) => term_id()
+        }
+
   @typedoc "Map of all four index keys for a quad"
   @type encoded_keys :: %{
           gspo: quad_index_key(),
@@ -1167,12 +1175,7 @@ defmodule TripleStore.QuadIndex do
       iex> QuadIndex.build_quad_prefix(pattern, values)
       %{index: :gspo, prefix: <<0::64-big, 100::64-big>>, needs_filter: true, filter_positions: [:p]}
   """
-  @spec build_quad_prefix(quad_pattern(), %{
-          s: term_id(),
-          p: term_id(),
-          o: term_id(),
-          g: term_id()
-        }) ::
+  @spec build_quad_prefix(quad_pattern(), quad_values()) ::
           pattern_match()
   def build_quad_prefix(pattern, values) when is_tuple(pattern) and is_map(values) do
     %{
