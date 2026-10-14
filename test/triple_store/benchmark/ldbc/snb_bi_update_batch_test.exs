@@ -2,7 +2,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
   use ExUnit.Case, async: false
 
   alias TripleStore.Backend.RocksDB.ErlangAdapter
-  alias TripleStore.Benchmark.LDBC.SNB.{BI.Checkpoint, BI.UpdateBatch, Mapping, UpdateStream}
+
+  alias TripleStore.Benchmark.LDBC.SNB.{
+    BI.Checkpoint,
+    BI.UpdateBatch,
+    BI.UpdateSchema,
+    UpdateStream
+  }
+
   alias TripleStore.Benchmark.LDBC.SNB.Converter
   alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.QuadOperations
@@ -12,30 +19,33 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     on_exit(fn -> File.rm_rf!(path) end)
     assert {:ok, store} = TripleStore.open(path, schema: :quad)
 
-    graph = Mapping.graph_iri(:snb_bi, :updates)
+    alice = person_record(1, "1", "Alice")
+    bob = person_record(2, "2", "Bob")
+    delete_alice = %{fixture("delete-01") | sequence: 3, fields: %{"personId" => "1"}}
 
-    assert {:ok, alice} =
-             Mapping.entity_quads("Person", %{"id" => "1", "firstName" => "Alice"}, graph)
-
-    assert {:ok, bob} =
-             Mapping.entity_quads("Person", %{"id" => "2", "firstName" => "Bob"}, graph)
+    assert {:ok, [alice_mutation]} = UpdateSchema.translate_records(nil, [alice])
+    assert {:ok, [bob_mutation]} = UpdateSchema.translate_records(nil, [%{bob | sequence: 1}])
 
     update_path = path <> ".updates"
 
     assert {:ok, 3} =
              UpdateStream.write(update_path, [
-               %{sequence: 1, operation: :insert, quads: alice},
-               %{sequence: 2, operation: :insert, quads: bob},
-               %{sequence: 3, operation: :delete, quads: alice}
+               alice,
+               bob,
+               delete_alice
              ])
 
     assert {:ok, receipt} = UpdateBatch.apply(store, update_path)
     assert receipt.records == 3
     assert receipt.last_sequence == 3
 
-    assert {:ok, encoded_alice} = TripleStore.Adapter.from_rdf_quads(store.dict_manager, alice)
-    assert {:ok, encoded_bob} = TripleStore.Adapter.from_rdf_quads(store.dict_manager, bob)
-    refute Enum.any?(encoded_alice, &QuadOperations.quad_exists?(store.db, &1))
+    assert {:ok, encoded_alice} =
+             TripleStore.Adapter.from_rdf_quads(store.dict_manager, alice_mutation.quads)
+
+    assert {:ok, encoded_bob} =
+             TripleStore.Adapter.from_rdf_quads(store.dict_manager, bob_mutation.quads)
+
+    refute encoded_alice |> List.first() |> then(&QuadOperations.quad_exists?(store.db, &1))
     assert Enum.all?(encoded_bob, &QuadOperations.quad_exists?(store.db, &1))
 
     assert :ok = TripleStore.close(store)
@@ -45,12 +55,11 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     path = tmp_path(test)
     on_exit(fn -> File.rm_rf!(path) end)
     assert {:ok, store} = TripleStore.open(path, schema: :quad)
-    graph = Mapping.graph_iri(:snb_bi, :updates)
-    assert {:ok, quads} = Mapping.entity_quads("Person", %{"id" => "3"}, graph)
     update_path = path <> ".updates"
+    record = person_record(1, "3", "Carol")
 
     assert {:ok, 1} =
-             UpdateStream.write(update_path, [%{sequence: 1, operation: :insert, quads: quads}])
+             UpdateStream.write(update_path, [record])
 
     assert {:error, {:atomic_update_failed, :injected}} =
              UpdateBatch.apply(store, update_path,
@@ -58,6 +67,47 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
                after_commit: fn _store -> flunk("post-commit callback ran") end
              )
 
+    assert :ok = TripleStore.close(store)
+  end
+
+  test "canonical records are translated into one ordered mixed batch", %{test: test} do
+    path = tmp_path(test)
+    on_exit(fn -> File.rm_rf!(path) end)
+    assert {:ok, store} = TripleStore.open(path, schema: :quad)
+    update_path = path <> ".updates"
+    parent = self()
+
+    [person, friendship, delete_friendship] =
+      ["insert-01", "insert-08", "delete-08"]
+      |> Enum.map(fn type -> Enum.find(UpdateSchema.fixture_records(), &(&1.type == type)) end)
+      |> Enum.with_index(1)
+      |> Enum.map(fn {record, sequence} -> %{record | sequence: sequence} end)
+
+    assert {:ok, 3} = UpdateStream.write(update_path, [person, friendship, delete_friendship])
+
+    writer = fn _db, mutations, [sync: true] ->
+      send(parent, {:mutations, mutations})
+      :ok
+    end
+
+    assert {:ok, %{records: 3}} =
+             UpdateBatch.apply(store, update_path,
+               writer: writer,
+               cache_invalidator: fn _db ->
+                 send(parent, :cache_invalidated)
+                 :ok
+               end,
+               statistics_invalidator: fn _db ->
+                 send(parent, :statistics_invalidated)
+                 :ok
+               end
+             )
+
+    assert_receive {:mutations, mutations}
+    assert Enum.any?(mutations, &(elem(&1, 0) == :insert))
+    assert Enum.any?(mutations, &(elem(&1, 0) == :delete))
+    assert_receive :cache_invalidated
+    assert_receive :statistics_invalidated
     assert :ok = TripleStore.close(store)
   end
 
@@ -110,4 +160,16 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
         System.tmp_dir!(),
         "triple-store-bi-update-#{test}-#{System.unique_integer([:positive])}"
       )
+
+  defp fixture(type), do: Enum.find(UpdateSchema.fixture_records(), &(&1.type == type))
+
+  defp person_record(sequence, id, first_name) do
+    base = fixture("insert-01")
+
+    %{
+      base
+      | sequence: sequence,
+        fields: %{base.fields | "personId" => id, "personFirstName" => first_name}
+    }
+  end
 end

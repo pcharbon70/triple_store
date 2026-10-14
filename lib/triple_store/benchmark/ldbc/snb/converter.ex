@@ -234,22 +234,59 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
          {:ok, operation_value} <- fetch_row(row, spec.operation_column, source, row_number),
          {:ok, operation} <- update_operation(operation_value),
          {:ok, id} <- fetch_row(row, spec.id_column, source, row_number),
-         mapped_row <-
-           row
-           |> Map.drop([spec.sequence_column, spec.operation_column])
-           |> Map.put("id", id),
-         {:ok, quads} <-
-           Mapping.entity_quads(
-             spec.entity_type,
-             mapped_row,
-             Mapping.graph_iri(profile.suite, :updates)
-           ) do
-      %{sequence: sequence, operation: operation, quads: quads}
+         {:ok, record} <- canonical_update_record(profile, spec, row, operation, id) do
+      Map.put(record, :sequence, sequence)
     else
       :error -> %{error: {:invalid_update_sequence, source, row_number}}
       {:error, reason} -> %{error: reason}
     end
   end
+
+  defp canonical_update_record(%{suite: :snb_bi}, %{entity_type: "Person"}, row, :insert, id) do
+    {:ok,
+     %{
+       type: "insert-01",
+       fields: %{
+         "personId" => id,
+         "personFirstName" => row["firstName"],
+         "personLastName" => row["lastName"],
+         "gender" => row["gender"],
+         "birthday" => row["birthday"],
+         "creationDate" => row["creationDate"],
+         "locationIP" => row["locationIP"],
+         "browserUsed" => row["browserUsed"],
+         "cityId" => Map.get(row, "cityId", "0"),
+         "languages" => split_update_array(row["languages"]),
+         "emails" => split_update_array(row["email"]),
+         "tagIds" => split_update_array(row["tagIds"]),
+         "studyAt" => [],
+         "workAt" => []
+       }
+     }}
+  end
+
+  defp canonical_update_record(%{suite: :snb_bi}, %{entity_type: "Person"}, _row, :delete, id),
+    do: {:ok, %{type: "delete-01", fields: %{"personId" => id}}}
+
+  defp canonical_update_record(profile, spec, row, operation, id) do
+    mapped_row =
+      row
+      |> Map.drop([spec.sequence_column, spec.operation_column])
+      |> Map.put("id", id)
+
+    with {:ok, quads} <-
+           Mapping.entity_quads(
+             spec.entity_type,
+             mapped_row,
+             Mapping.graph_iri(profile.suite, :updates)
+           ) do
+      {:ok, %{operation: operation, quads: quads}}
+    end
+  end
+
+  defp split_update_array(nil), do: []
+  defp split_update_array(""), do: []
+  defp split_update_array(value), do: String.split(value, ";", trim: true)
 
   defp convert_parameters(profile, source_root, output_dir, dataset_checksum) do
     Enum.reduce_while(profile.parameters, {:ok, []}, fn spec, {:ok, components} ->

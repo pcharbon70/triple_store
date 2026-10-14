@@ -76,15 +76,23 @@ defmodule TripleStore.Benchmark.LDBC.SNB.MappingAndConverterTest do
     refute interactive.source.generator_pin == bi_first.source.generator_pin
     assert interactive.transformation.mapping_version == bi_first.transformation.mapping_version
 
+    [bi_update] =
+      Enum.filter(bi_first.components, &(&1.role != :initial and &1.role != :parameters))
+
+    assert [%{sequence: 1, type: "insert-01", fields: fields}] =
+             bi_update.path |> UpdateStream.stream() |> Enum.to_list()
+
+    assert fields["personId"] != nil
+
+    [interactive_update] =
+      Enum.filter(interactive.components, &(&1.role != :initial and &1.role != :parameters))
+
+    assert [%{sequence: 1, operation: :insert, quads: quads}] =
+             interactive_update.path |> UpdateStream.stream() |> Enum.to_list()
+
+    assert quads != []
+
     for manifest <- [bi_first, interactive] do
-      [update] =
-        Enum.filter(manifest.components, &(&1.role != :initial and &1.role != :parameters))
-
-      assert [%{sequence: 1, operation: :insert, quads: quads}] =
-               update.path |> UpdateStream.stream() |> Enum.to_list()
-
-      assert quads != []
-
       [parameters] = Enum.filter(manifest.components, &(&1.role == :parameters))
       document = parameters.path |> File.read!() |> :erlang.binary_to_term([:safe])
       assert document.dataset_checksum == manifest.transformation.output_checksum

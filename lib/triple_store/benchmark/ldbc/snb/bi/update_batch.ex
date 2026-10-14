@@ -9,6 +9,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
 
   alias TripleStore.Adapter
   alias TripleStore.Benchmark.Artifact
+  alias TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema
   alias TripleStore.Benchmark.LDBC.SNB.UpdateStream
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
@@ -38,11 +39,13 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
   defp read_records(path) do
     path
     |> UpdateStream.stream()
-    |> Enum.reduce_while({:ok, [], -1}, fn
-      %{sequence: sequence, operation: operation, quads: quads} = record, {:ok, records, previous}
-      when is_integer(sequence) and sequence > previous and operation in [:insert, :delete] and
-             is_list(quads) ->
-        {:cont, {:ok, [record | records], sequence}}
+    |> Enum.reduce_while({:ok, []}, fn
+      %{sequence: _sequence, type: _type, fields: _fields} = record, {:ok, records} ->
+        {:cont, {:ok, [record | records]}}
+
+      %{sequence: _sequence, operation: operation, quads: quads} = record, {:ok, records}
+      when operation in [:insert, :delete] and is_list(quads) ->
+        {:cont, {:ok, [record | records]}}
 
       {:error, reason}, _acc ->
         {:halt, {:error, reason}}
@@ -51,13 +54,47 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
         {:halt, {:error, {:invalid_or_reordered_update, record}}}
     end)
     |> case do
-      {:ok, [], _previous} -> {:error, :empty_update_batch}
-      {:ok, records, _previous} -> {:ok, Enum.reverse(records)}
-      {:error, _} = error -> error
+      {:ok, []} ->
+        {:error, :empty_update_batch}
+
+      {:ok, records} ->
+        records = Enum.reverse(records)
+
+        if Enum.all?(records, &match?(%{type: _, fields: _}, &1)) do
+          with :ok <- UpdateSchema.validate_records(records), do: {:ok, records}
+        else
+          with :ok <- validate_legacy_records(records), do: {:ok, records}
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
   defp encode_records(store, records) do
+    if Enum.all?(records, &match?(%{type: _, fields: _}, &1)) do
+      encode_canonical_records(store, records)
+    else
+      encode_legacy_records(store, records)
+    end
+  end
+
+  defp encode_canonical_records(store, records) do
+    with {:ok, translated} <- UpdateSchema.translate_records(store, records) do
+      Enum.reduce_while(translated, {:ok, []}, fn mutation, {:ok, mutations} ->
+        case Adapter.from_rdf_quads(store.dict_manager, mutation.quads) do
+          {:ok, encoded} ->
+            tagged = Enum.map(encoded, &{mutation.operation, &1})
+            {:cont, {:ok, mutations ++ tagged}}
+
+          {:error, reason} ->
+            {:halt, {:error, {:update_encoding_failed, mutation.sequence, reason}}}
+        end
+      end)
+    end
+  end
+
+  defp encode_legacy_records(store, records) do
     Enum.reduce_while(records, {:ok, []}, fn record, {:ok, mutations} ->
       case Adapter.from_rdf_quads(store.dict_manager, record.quads) do
         {:ok, encoded} ->
@@ -70,6 +107,19 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     end)
   end
 
+  defp validate_legacy_records(records) do
+    records
+    |> Enum.reduce_while(-1, fn record, previous ->
+      if is_integer(record.sequence) and record.sequence > previous,
+        do: {:cont, record.sequence},
+        else: {:halt, {:error, {:invalid_or_reordered_update, record}}}
+    end)
+    |> case do
+      {:error, _} = error -> error
+      _sequence -> :ok
+    end
+  end
+
   defp write(db, mutations, opts) do
     writer = Keyword.get(opts, :writer, &QuadOperations.apply_mutations/3)
 
@@ -80,13 +130,22 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
   end
 
   defp after_commit(store, opts) do
-    Helpers.invalidate_result_caches(store.db)
-    Statistics.invalidate_all_quad_cache(store.db)
+    cache_invalidator = Keyword.get(opts, :cache_invalidator, &Helpers.invalidate_result_caches/1)
 
-    opts
-    |> Keyword.get(:after_commit, fn _store -> :ok end)
-    |> then(& &1.(store))
-    |> case do
+    statistics_invalidator =
+      Keyword.get(opts, :statistics_invalidator, &Statistics.invalidate_all_quad_cache/1)
+
+    with :ok <- normalize_post_commit(cache_invalidator.(store.db)),
+         :ok <- normalize_post_commit(statistics_invalidator.(store.db)) do
+      opts
+      |> Keyword.get(:after_commit, fn _store -> :ok end)
+      |> then(& &1.(store))
+      |> normalize_post_commit()
+    end
+  end
+
+  defp normalize_post_commit(result) do
+    case result do
       :ok -> :ok
       {:ok, _value} -> :ok
       {:error, reason} -> {:error, {:post_commit_refresh_failed, reason}}
