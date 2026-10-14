@@ -2,6 +2,7 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
   use ExUnit.Case, async: true
 
   alias TripleStore.Benchmark.LDBC.{Artifacts, Baseline, Correctness, Result}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity
 
   test "compares ordered, unordered, duplicate-bearing, empty, numeric, and timestamp answers" do
     ordered = result([[1], [2]], %{mode: :ordered}, [:id])
@@ -258,7 +259,7 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
 
   defp state_identity(checkpoint, batch, value) do
     {:ok, identity} =
-      TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity.new(%{
+      StateIdentity.new(%{
         dataset_checksum: checksum("dataset"),
         mapping_version: "snb-rdf-v1",
         checkpoint_name: checkpoint,

@@ -1,7 +1,14 @@
 defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
   use ExUnit.Case, async: true
 
-  alias TripleStore.Benchmark.LDBC.SNB.BI.{PlanEvidence, Protocol, Scoring, StateIdentity}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{
+    Parameters,
+    PlanEvidence,
+    Protocol,
+    Scoring,
+    StateIdentity,
+    Workload
+  }
 
   test "official schedule preserves update-read blocks and canonical variant order" do
     assert {:ok, [validation]} = Protocol.schedule(:validation)
@@ -181,7 +188,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
   end
 
   defp parameter_bundle do
-    {:ok, definitions} = TripleStore.Benchmark.LDBC.SNB.BI.Workload.load()
+    {:ok, definitions} = Workload.load()
 
     sequences =
       Map.new(definitions, fn definition ->
@@ -194,9 +201,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
       end)
 
     {:ok, bundle} =
-      TripleStore.Benchmark.LDBC.SNB.BI.Parameters.new(parameter_manifest(), sequences,
-        provenance: :smoke
-      )
+      Parameters.new(parameter_manifest(), sequences, provenance: :smoke)
 
     bundle
   end
