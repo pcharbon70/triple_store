@@ -1,10 +1,45 @@
+field_types = %{
+  "personId" => :identifier,
+  "postId" => :identifier,
+  "commentId" => :identifier,
+  "forumId" => :identifier,
+  "moderatorId" => :identifier,
+  "authorPersonId" => :identifier,
+  "countryId" => :identifier,
+  "person1Id" => :identifier,
+  "person2Id" => :identifier,
+  "replyToPostId" => :identifier,
+  "replyToCommentId" => :identifier,
+  "cityId" => :identifier,
+  "personFirstName" => :string,
+  "personLastName" => :string,
+  "gender" => :string,
+  "birthday" => :date,
+  "creationDate" => :timestamp,
+  "locationIP" => :string,
+  "browserUsed" => :string,
+  "forumTitle" => :string,
+  "imageFile" => :string,
+  "language" => :string,
+  "content" => :string,
+  "length" => :integer,
+  "languages" => {:list, :string},
+  "emails" => {:list, :string},
+  "tagIds" => {:list, :identifier},
+  "studyAt" => {:list, {:pair, "organisationId", "classYear"}},
+  "workAt" => {:list, {:pair, "organisationId", "workFrom"}}
+}
+
 schema = fn id, operation, identity, required, optional, dependencies, effect ->
+  fields = required ++ optional
+
   %{
     id: id,
     operation: operation,
     identity: identity,
     required_fields: required,
     optional_fields: optional,
+    field_types: Map.take(field_types, fields),
     dependencies: dependencies,
     effect: effect
   }

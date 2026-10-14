@@ -1,8 +1,11 @@
 defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
   use ExUnit.Case, async: false
 
+  alias TripleStore.Adapter
   alias TripleStore.Benchmark.LDBC.SNB.Converter
+  alias TripleStore.Benchmark.LDBC.SNB.Mapping
   alias TripleStore.Benchmark.LDBC.StoreFixture
+  alias TripleStore.QuadOperations
 
   alias TripleStore.Benchmark.LDBC.SNB.BI.{
     Analytics,
@@ -66,10 +69,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
     assert {:ok, post_validation_snapshot} = StateProbe.capture(fixture.store)
     assert_index_agreement(post_validation_snapshot)
     assert :ok = StateProbe.verify_transition(initial_snapshot, post_validation_snapshot)
-    assert post_validation_snapshot.counts == expected_counts(7, 21, 52, 2, 118)
+    assert post_validation_snapshot.counts == expected_counts(12, 21, 67, 2, 138)
 
     assert post_validation_snapshot.state_checksum ==
-             "sha256:16a13d0c4d0037f18ff199e3edf61369a1dce6514739d645a9e2c58c73cd0102"
+             "sha256:79aeb4964ba8a2c8e7a593e7194aee7ef1c149e5584f90d1ffb499960c867f3b"
 
     post_validation_answers = answer_hashes(fixture.store, selected_definitions)
 
@@ -106,10 +109,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
     assert relationship_delete_receipt.last_sequence == 12
     assert {:ok, pre_power_snapshot} = StateProbe.capture(fixture.store)
     assert_index_agreement(pre_power_snapshot)
-    assert pre_power_snapshot.counts == expected_counts(7, 17, 48, 2, 94)
+    assert pre_power_snapshot.counts == expected_counts(12, 17, 63, 2, 114)
 
     assert pre_power_snapshot.state_checksum ==
-             "sha256:5be8fd1ab530aef984d0ef09fe8a8961c7abf198243ffba2602c8c7d9518250a"
+             "sha256:5741cecccacf502904f500885eb6648b1a81f2aa1df157bd07a44e43bd7984b3"
 
     pre_power_answers = answer_hashes(fixture.store, selected_definitions)
 
@@ -290,6 +293,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
     update_path = Path.join(root, "updates.bin")
 
     assert {:ok, store} = TripleStore.open(store_path, schema: :quad)
+    assert :ok = seed_dependencies(store)
     [record | _rest] = UpdateSchema.fixture_records()
     assert {:ok, before} = StateProbe.capture(store)
 
@@ -339,6 +343,47 @@ defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
              Scoring.calculate([scoring_record], scale_factor: 1, load_time_s: 0.1)
 
     assert :incorrect_or_incomplete_operation in errors
+    assert :ok = TripleStore.close(store)
+  end
+
+  test "post-commit probe failure reports indeterminate committed state", %{test: test} do
+    root = tmp_dir(test)
+    on_exit(fn -> File.rm_rf!(root) end)
+    store_path = Path.join(root, "store")
+    update_path = Path.join(root, "updates.bin")
+
+    assert {:ok, store} = TripleStore.open(store_path, schema: :quad)
+    assert :ok = seed_dependencies(store)
+    [record | _rest] = UpdateSchema.fixture_records()
+    assert {:ok, before} = StateProbe.capture(store)
+
+    assert {:ok, initial_identity} =
+             StateIdentity.new(%{
+               dataset_checksum: sha256("phase-5c-probe-failure-fixture"),
+               mapping_version: "snb-rdf-v1",
+               checkpoint_name: :initial_load,
+               last_applied_batch: 0,
+               update_stream_checksum: nil,
+               state_checksum: before.state_checksum
+             })
+
+    assert {:ok, 1} = UpdateStream.write(update_path, [record])
+
+    assert {:error, {:post_commit_state_probe_failed, {:state_probe_failed, _}, evidence}} =
+             UpdateBatch.apply(store, update_path,
+               cache_observer: fn -> raise "injected probe failure" end,
+               state_identity: initial_identity,
+               batch_position: 1
+             )
+
+    assert evidence.committed?
+    refute evidence.complete?
+    refute evidence.score_eligible?
+    refute evidence.retry_safe?
+    assert evidence.state_identity == :indeterminate
+    assert evidence.prior_state_identity == initial_identity
+    assert {:ok, after_failure} = StateProbe.capture(store)
+    refute after_failure.state_checksum == before.state_checksum
     assert :ok = TripleStore.close(store)
   end
 
@@ -421,6 +466,26 @@ defmodule TripleStore.Benchmark.LDBC.Phase5CUpdateStateIntegrationTest do
 
   defp sha256(value),
     do: "sha256:" <> (:crypto.hash(:sha256, value) |> Base.encode16(case: :lower))
+
+  defp seed_dependencies(store) do
+    graph = Mapping.graph_iri(:snb_bi, :initial)
+
+    quads =
+      [
+        {"Place", "9001"},
+        {"Tag", "8001"},
+        {"Organisation", "7001"},
+        {"Organisation", "7002"}
+      ]
+      |> Enum.flat_map(fn {type, id} ->
+        {:ok, quads} = Mapping.entity_quads(type, %{"id" => id}, graph)
+        quads
+      end)
+
+    with {:ok, encoded} <- Adapter.from_rdf_quads(store.dict_manager, quads) do
+      QuadOperations.insert_quads(store.db, encoded, sync: true)
+    end
+  end
 
   defp tmp_dir(test) do
     Path.join(

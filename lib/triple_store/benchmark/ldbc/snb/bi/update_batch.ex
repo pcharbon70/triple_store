@@ -34,8 +34,13 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
   defp finish_commit(store, checksum, records, mutations, opts) do
     case after_commit(store, opts) do
       :ok ->
-        with {:ok, state} <- capture_state(store, opts) do
-          {:ok, receipt(checksum, records, mutations, state)}
+        case capture_state(store, opts) do
+          {:ok, state} ->
+            {:ok, receipt(checksum, records, mutations, state)}
+
+          {:error, reason} ->
+            evidence = indeterminate_commit_evidence(checksum, records, mutations, reason, opts)
+            {:error, {:post_commit_state_probe_failed, reason, evidence}}
         end
 
       {:error, reason} ->
@@ -50,21 +55,49 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
             {:error, {:post_commit_maintenance_failed, reason, committed}}
 
           {:error, probe_reason} ->
-            {:error, {:post_commit_maintenance_failed, reason, %{probe_error: probe_reason}}}
+            evidence =
+              indeterminate_commit_evidence(checksum, records, mutations, probe_reason, opts)
+
+            {:error, {:post_commit_maintenance_failed, reason, evidence}}
         end
     end
   end
 
   defp receipt(checksum, records, mutations, state) do
+    Map.merge(receipt_metadata(checksum, records, mutations), %{
+      state_checksum: state.state_checksum,
+      state_counts: state.counts
+    })
+  end
+
+  defp receipt_metadata(checksum, records, mutations) do
     %{
       checksum: checksum,
       records: length(records),
       mutations: length(mutations),
       first_sequence: records |> List.first() |> Map.fetch!(:sequence),
-      last_sequence: records |> List.last() |> Map.fetch!(:sequence),
-      state_checksum: state.state_checksum,
-      state_counts: state.counts
+      last_sequence: records |> List.last() |> Map.fetch!(:sequence)
     }
+  end
+
+  defp indeterminate_commit_evidence(checksum, records, mutations, probe_error, opts) do
+    receipt_metadata(checksum, records, mutations)
+    |> Map.merge(%{
+      committed?: true,
+      complete?: false,
+      score_eligible?: false,
+      retry_safe?: false,
+      state_identity: :indeterminate,
+      probe_error: probe_error
+    })
+    |> maybe_put_prior_identity(opts)
+  end
+
+  defp maybe_put_prior_identity(evidence, opts) do
+    case Keyword.get(opts, :state_identity) do
+      %StateIdentity{} = identity -> Map.put(evidence, :prior_state_identity, identity)
+      _other -> evidence
+    end
   end
 
   defp attach_state_identity(receipt, opts) do
@@ -200,7 +233,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     |> then(&StateProbe.capture(store, &1))
     |> case do
       {:ok, state} -> {:ok, state}
-      {:error, reason} -> {:error, {:post_commit_state_probe_failed, reason}}
+      {:error, reason} -> {:error, reason}
     end
   end
 end

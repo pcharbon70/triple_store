@@ -42,6 +42,38 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateSchemaTest do
              ])
   end
 
+  test "validation rejects malformed required values before translation" do
+    person = fixture("insert-01")
+
+    assert {:error, {:invalid_update_field, 1, "tagIds"}} =
+             UpdateSchema.validate_records([put_in(person, [:fields, "tagIds"], nil)])
+
+    assert {:error, {:invalid_update_field, 1, "studyAt"}} =
+             UpdateSchema.validate_records([
+               put_in(person, [:fields, "studyAt"], [%{"organisationId" => "7001"}])
+             ])
+
+    assert {:error, {:invalid_update_source_field, "cityId", ""}} =
+             UpdateSchema.normalize_source_fields(
+               "insert-01",
+               Map.put(person.fields, "cityId", "")
+             )
+
+    assert {:error, {:invalid_update_field, 1, "birthday"}} =
+             UpdateSchema.validate_records([
+               put_in(person, [:fields, "birthday"], "not-a-date")
+             ])
+
+    assert {:error, {:invalid_update_field, 1, "personId"}} =
+             UpdateSchema.validate_records([put_in(person, [:fields, "personId"], " ")])
+
+    assert {:error, {:unknown_update_source_fields, ["postId"]}} =
+             UpdateSchema.normalize_source_fields(
+               "insert-01",
+               Map.put(person.fields, "postId", "6001")
+             )
+  end
+
   test "validation rejects duplicate identities and out-of-order dependencies" do
     person = fixture("insert-01")
 

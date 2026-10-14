@@ -15,7 +15,10 @@
     license: "Apache-2.0",
     entities: [
       %{path: "entities/person.csv", type: "Person", id_column: "id"},
-      %{path: "entities/forum.csv", type: "Forum", id_column: "id"}
+      %{path: "entities/forum.csv", type: "Forum", id_column: "id"},
+      %{path: "entities/place.csv", type: "Place", id_column: "id"},
+      %{path: "entities/tag.csv", type: "Tag", id_column: "id"},
+      %{path: "entities/organisation.csv", type: "Organisation", id_column: "id"}
     ],
     relationships: [
       %{
@@ -39,12 +42,10 @@
     ],
     updates: [
       %{
-        path: "updates/person-batch.csv",
+        path: "updates/bi-batch.csv",
         role: :bi_update_batch,
-        entity_type: "Person",
-        id_column: "id",
         sequence_column: "sequence",
-        operation_column: "operation"
+        type_column: "type"
       }
     ],
     parameters: [%{path: "parameters/bi-read-1.csv"}]

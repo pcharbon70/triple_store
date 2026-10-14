@@ -285,9 +285,9 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateAnswersTest do
     assert {:ok, fixture, receipt} = StoreFixture.apply_updates(fixture, update.path)
 
     assert receipt.first_sequence == 1
-    assert receipt.last_sequence == 1
-    assert receipt.state_checksum == expected.checkpoints.after_person_batch.state_checksum
-    assert :ok = StateProbe.verify(fixture.store, expected.checkpoints.after_person_batch)
+    assert receipt.last_sequence == 16
+    assert receipt.state_checksum == expected.checkpoints.after_update_batch.state_checksum
+    assert :ok = StateProbe.verify(fixture.store, expected.checkpoints.after_update_batch)
     assert :ok = StoreFixture.teardown(fixture, delete: true)
   end
 

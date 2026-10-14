@@ -1,6 +1,7 @@
 defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
   use ExUnit.Case, async: false
 
+  alias TripleStore.Adapter
   alias TripleStore.Backend.RocksDB.ErlangAdapter
 
   alias TripleStore.Benchmark.LDBC.SNB.{
@@ -12,6 +13,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
   }
 
   alias TripleStore.Benchmark.LDBC.SNB.Converter
+  alias TripleStore.Benchmark.LDBC.SNB.Mapping
   alias TripleStore.Benchmark.LDBC.StoreFixture
   alias TripleStore.QuadOperations
 
@@ -19,6 +21,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     path = tmp_path(test)
     on_exit(fn -> File.rm_rf!(path) end)
     assert {:ok, store} = TripleStore.open(path, schema: :quad)
+    assert :ok = seed_dependencies(store)
 
     alice = person_record(1, "1", "Alice")
     bob = person_record(2, "2", "Bob")
@@ -56,6 +59,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     path = tmp_path(test)
     on_exit(fn -> File.rm_rf!(path) end)
     assert {:ok, store} = TripleStore.open(path, schema: :quad)
+    assert :ok = seed_dependencies(store)
     update_path = path <> ".updates"
     record = person_record(1, "3", "Carol")
 
@@ -71,10 +75,38 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     assert :ok = TripleStore.close(store)
   end
 
+  test "canonical translation rejects dependencies absent from persisted state", %{test: test} do
+    path = tmp_path(test)
+    on_exit(fn -> File.rm_rf!(path) end)
+    assert {:ok, store} = TripleStore.open(path, schema: :quad)
+    update_path = path <> ".updates"
+
+    record = person_record(1, "3", "Carol")
+    record = put_in(record.fields["tagIds"], [])
+    record = put_in(record.fields["studyAt"], [])
+    record = put_in(record.fields["workAt"], [])
+
+    wrong_class_quad =
+      {Mapping.entity_iri("Place", "9001"),
+       RDF.iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+       RDF.iri("https://ldbcouncil.org/snb/ontology/Tag"), Mapping.graph_iri(:snb_bi, :initial)}
+
+    assert {:ok, [encoded]} = Adapter.from_rdf_quads(store.dict_manager, [wrong_class_quad])
+    assert :ok = QuadOperations.insert_quad(store.db, encoded)
+
+    assert {:ok, 1} = UpdateStream.write(update_path, [record])
+
+    assert {:error, {:missing_update_dependency, 1, {"Place", "9001"}}} =
+             UpdateBatch.apply(store, update_path)
+
+    assert :ok = TripleStore.close(store)
+  end
+
   test "canonical records are translated into one ordered mixed batch", %{test: test} do
     path = tmp_path(test)
     on_exit(fn -> File.rm_rf!(path) end)
     assert {:ok, store} = TripleStore.open(path, schema: :quad)
+    assert :ok = seed_dependencies(store)
     update_path = path <> ".updates"
     parent = self()
 
@@ -129,12 +161,12 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
 
     update = Enum.find(manifest.components, &(&1.role == :bi_update_batch))
     assert {:ok, receipt} = UpdateBatch.apply(fixture.store, update.path)
-    assert count(fixture) > initial_count
+    assert count(fixture) == initial_count
 
     assert {:ok, restored, restored_identity} = Checkpoint.restore(fixture, initial, identity)
     assert count(restored) == initial_count
     assert restored_identity == identity
-    assert receipt.last_sequence == 1
+    assert receipt.last_sequence == 16
     assert :ok = StoreFixture.teardown(restored, delete: true)
   end
 
@@ -223,5 +255,26 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
       | sequence: sequence,
         fields: %{base.fields | "personId" => id, "personFirstName" => first_name}
     }
+  end
+
+  defp seed_dependencies(store) do
+    graph = Mapping.graph_iri(:snb_bi, :initial)
+
+    quads =
+      [
+        {"Place", "9001"},
+        {"Tag", "8001"},
+        {"Organisation", "7001"},
+        {"Organisation", "7002"},
+        {"Person", "1002"}
+      ]
+      |> Enum.flat_map(fn {type, id} ->
+        {:ok, quads} = Mapping.entity_quads(type, %{"id" => id}, graph)
+        quads
+      end)
+
+    with {:ok, encoded} <- Adapter.from_rdf_quads(store.dict_manager, quads) do
+      QuadOperations.insert_quads(store.db, encoded, sync: true)
+    end
   end
 end

@@ -93,7 +93,7 @@ and reject malformed or non-positive weights through tagged errors.
 The contextual qualification integration executes all 31 variants successfully
 against the reduced mapped smoke store and reproduces the same typed result
 digests after close and reopen. The ordered aggregate digest is
-`sha256:02cd4914ca255871dc36732eb406cc3b96ad09f92426ce62078fe112bbd9cfa1`.
+`sha256:f762b3cd7ad6593f0dc56b3537173703572100f651e77890be5dfcc5efa4b4a1`.
 Timeout, cancellation, and result-contract
 failures remain per-variant evidence and prevent qualification without erasing
 the other results.
@@ -117,9 +117,9 @@ The three updated checkpoints have these deterministic persisted states:
 
 | Checkpoint | Statements | Entities | Relationships | Properties | Graphs | State checksum |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `post_validation` | 118 | 7 | 21 | 52 | 2 | `sha256:16a13d0c4d0037f18ff199e3edf61369a1dce6514739d645a9e2c58c73cd0102` |
-| `pre_power` | 94 | 7 | 17 | 48 | 2 | `sha256:5be8fd1ab530aef984d0ef09fe8a8961c7abf198243ffba2602c8c7d9518250a` |
-| `pre_throughput` | 42 | 3 | 3 | 24 | 1 | `sha256:4e699f53e569540a0c9be3d5524fa6763a02863d5467c44ac7c1c0a72e5d0385` |
+| `post_validation` | 138 | 12 | 21 | 67 | 2 | `sha256:79aeb4964ba8a2c8e7a593e7194aee7ef1c149e5584f90d1ffb499960c867f3b` |
+| `pre_power` | 114 | 12 | 17 | 63 | 2 | `sha256:5741cecccacf502904f500885eb6648b1a81f2aa1df157bd07a44e43bd7984b3` |
+| `pre_throughput` | 62 | 8 | 3 | 39 | 1 | `sha256:4681fa0b234d737fa2bfef89215295f433382bf6349973784d48138dae6cc246` |
 
 All four named checkpoints restore their recorded counts, state checksum, and
 selected affected BI answer hashes. BI 1 changes from
@@ -134,9 +134,11 @@ Injected translation, dependency, storage, interruption, and checkpoint
 restore failures preserve the pre-commit state and all explicit indices.
 Post-commit cache invalidation failure returns the full committed state identity
 with `complete?: false` and `score_eligible?: false`; the scorer rejects that
-record. Checkpoint restore validates the statement count recorded by the
-selected checkpoint instead of applying the initial-load count to every update
-state.
+record. If the committed state probe itself fails, the receipt instead marks
+the state identity as indeterminate, the commit as incomplete and ineligible,
+and retry as unsafe. Checkpoint restore validates the statement count recorded
+by the selected checkpoint instead of applying the initial-load count to every
+update state.
 
 Sub-Phase 5C's update and state exit gate is complete. Phase 5 remains open:
 Sub-Phase 5D protocol qualification, scoring equivalence, optimization, and
@@ -145,8 +147,9 @@ still blocked on accepted reference answers.
 
 ## Executed checks
 
-- Phase 5C update-state integration: 3 tests, 0 failures
-- Phase 5C integration and adjacent LDBC regressions: 41 tests, 0 failures
+- Phase 5C update-state integration: 4 tests, 0 failures
+- Phase 5C focused update-state regressions: 36 tests, 0 failures
+- Complete LDBC regression directory: 165 tests, 0 failures
 - Final Phase 5B focused regression set after review remediation: 166 tests,
   0 failures, 4 excluded by the default test configuration
 - Final default suite: 25 doctests, 10 properties, 6,901 tests, 0 failures,
@@ -169,7 +172,7 @@ still blocked on accepted reference answers.
 - `mix credo --strict`: no issues
 - specs, guides, RFC, and code-doc validators: passed (RFC skipped because the
   repository has no `rfcs/` directory)
-- `mix test`: 25 doctests, 10 properties, 6,849 tests, 0 failures, 53 skipped,
+- `mix test`: 25 doctests, 10 properties, 6,930 tests, 0 failures, 53 skipped,
   345 excluded by the default test configuration
 
 Strict compilation reported warnings from third-party dependencies. The

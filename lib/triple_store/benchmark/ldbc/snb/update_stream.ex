@@ -12,30 +12,32 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
   @spec write(Path.t(), Enumerable.t()) :: {:ok, non_neg_integer()} | {:error, term()}
   def write(path, records) do
     temporary = path <> ".partial"
-    records = Enum.to_list(records)
 
-    with :ok <- validate_records(records),
-         :ok <- File.mkdir_p(Path.dirname(path)),
+    with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, io} <- File.open(temporary, [:write, :binary, :exclusive]) do
       result =
         try do
           records
-          |> Enum.reduce_while({:ok, 0, -1}, fn record, {:ok, count, _previous} ->
+          |> Enum.reduce_while({:ok, 0}, fn record, {:ok, count} ->
             binary = :erlang.term_to_binary(record, [:deterministic])
             :ok = IO.binwrite(io, Base.encode64(binary) <> "\n")
-            {:cont, {:ok, count + 1, record.sequence}}
+            {:cont, {:ok, count + 1}}
           end)
         after
           File.close(io)
         end
 
       case result do
-        {:ok, count, _sequence} ->
-          with :ok <- File.rename(temporary, path), do: {:ok, count}
+        {:ok, count} ->
+          with :ok <- validate_file(temporary),
+               :ok <- File.rename(temporary, path) do
+            {:ok, count}
+          else
+            {:error, _} = error -> cleanup_error(temporary, error)
+          end
 
         {:error, _} = error ->
-          File.rm(temporary)
-          error
+          cleanup_error(temporary, error)
       end
     end
   end
@@ -48,11 +50,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
     |> Stream.map(&decode_line/1)
   end
 
-  defp validate_records(records) do
-    if Enum.all?(records, &match?(%{type: _, fields: _}, &1)) do
-      UpdateSchema.validate_records(records)
-    else
-      validate_legacy_records(records)
+  defp validate_file(path) do
+    case path |> stream() |> Enum.take(1) do
+      [] -> :ok
+      [%{type: _type, fields: _fields}] -> UpdateSchema.validate_stream(fn -> stream(path) end)
+      [_record] -> validate_legacy_records(stream(path))
     end
   end
 
@@ -74,6 +76,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.UpdateStream do
       {:error, _} = error -> error
       _sequence -> :ok
     end
+  end
+
+  defp cleanup_error(temporary, error) do
+    File.rm(temporary)
+    error
   end
 
   defp decode_line(line) do

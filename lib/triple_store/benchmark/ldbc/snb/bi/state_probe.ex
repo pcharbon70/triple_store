@@ -416,7 +416,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.StateProbe do
          checkpoints: checkpoints
        })
        when is_map(checkpoints) do
-    required = [:initial, :after_person_batch]
+    required = [:initial, :after_update_batch]
 
     if mapping_version == Mapping.version() and
          Enum.all?(required, &Map.has_key?(checkpoints, &1)) and

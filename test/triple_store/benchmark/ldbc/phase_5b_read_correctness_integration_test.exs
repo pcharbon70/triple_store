@@ -53,7 +53,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5BReadCorrectnessIntegrationTest do
            end)
 
     assert run_digest(first) ==
-             "sha256:02cd4914ca255871dc36732eb406cc3b96ad09f92426ce62078fe112bbd9cfa1"
+             "sha256:f762b3cd7ad6593f0dc56b3537173703572100f651e77890be5dfcc5efa4b4a1"
 
     assert {:ok, closed} = StoreFixture.close(fixture)
     assert {:ok, reopened} = StoreFixture.reopen(closed)

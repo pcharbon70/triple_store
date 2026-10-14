@@ -79,15 +79,55 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
 
   @doc "Validates a complete ordered microbatch before translation."
   @spec validate_records([map()]) :: :ok | {:error, term()}
-  def validate_records(records) when is_list(records) do
+  def validate_records(records) when is_list(records),
+    do: validate_record_source(fn -> records end)
+
+  def validate_records(_records), do: {:error, :invalid_update_records}
+
+  @doc "Validates a replayable record stream without retaining every record."
+  @spec validate_stream((-> Enumerable.t())) :: :ok | {:error, term()}
+  def validate_stream(record_source) when is_function(record_source, 0),
+    do: validate_record_source(record_source)
+
+  def validate_stream(_record_source), do: {:error, :invalid_update_records}
+
+  @doc "Returns the pinned schema for one canonical update record type."
+  @spec record_schema(String.t()) :: {:ok, map()} | {:error, term()}
+  def record_schema(type) when is_binary(type) do
+    with {:ok, value} <- catalog(),
+         %{} = schema <- Enum.find(value.record_types, &(&1.id == type)) do
+      {:ok, schema}
+    else
+      nil -> {:error, {:unknown_update_type, type}}
+      {:error, _} = error -> error
+    end
+  end
+
+  def record_schema(type), do: {:error, {:unknown_update_type, type}}
+
+  @doc "Normalizes delimited source values according to the pinned field catalog."
+  @spec normalize_source_fields(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def normalize_source_fields(type, raw_fields) when is_binary(type) and is_map(raw_fields) do
+    with {:ok, schema} <- record_schema(type),
+         :ok <- validate_source_extras(schema, raw_fields),
+         {:ok, fields} <- normalize_schema_fields(schema, raw_fields),
+         {:cont, :ok} <- validate_fields(0, fields, schema) do
+      {:ok, fields}
+    else
+      {:halt, {:error, reason}} -> {:error, reason}
+      {:error, _} = error -> error
+    end
+  end
+
+  def normalize_source_fields(_type, _raw_fields), do: {:error, :invalid_update_fields}
+
+  defp validate_record_source(record_source) do
     case catalog() do
       {:ok, value} ->
         schemas = Map.new(value.record_types, &{&1.id, &1})
 
-        with :ok <- validate_shapes(records, schemas),
-             :ok <- validate_sequence(records),
-             :ok <- validate_duplicate_identities(records, schemas) do
-          validate_dependency_order(records, schemas)
+        with {:ok, insert_positions} <- validate_first_pass(record_source.(), schemas) do
+          validate_dependency_order(record_source.(), schemas, insert_positions)
         end
 
       {:error, _} = error ->
@@ -95,16 +135,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
     end
   end
 
-  def validate_records(_records), do: {:error, :invalid_update_records}
-
   @doc "Translates validated records into ordered canonical RDF quad mutations."
   @spec translate_records(TripleStore.store() | nil, [record()]) ::
           {:ok, [%{operation: :insert | :delete, quads: [RDF.Quad.t()], sequence: pos_integer()}]}
           | {:error, term()}
   def translate_records(store, records) do
     with :ok <- validate_records(records),
+         {:ok, catalog} <- catalog(),
          {:ok, initial} <- current_quads(store),
-         {:ok, translated, _state} <- translate_in_order(records, initial, []) do
+         schemas = Map.new(catalog.record_types, &{&1.id, &1}),
+         {:ok, translated, _state} <-
+           translate_in_order(records, initial, [], schemas, not is_nil(store)) do
       {:ok, translated}
     end
   end
@@ -135,10 +176,6 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
 
   defp validate_catalog(_catalog), do: {:error, :update_schema_pin_mismatch}
 
-  defp validate_shapes(records, schemas) do
-    Enum.reduce_while(records, :ok, &validate_shape(&1, &2, schemas))
-  end
-
   defp validate_shape(
          %{sequence: sequence, type: type, fields: fields},
          :ok,
@@ -161,10 +198,20 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
     missing = allowed_fields_missing(fields, schema.required_fields)
 
     cond do
-      unknown != [] -> {:halt, {:error, {:unknown_update_fields, sequence, unknown}}}
-      missing != [] -> {:halt, {:error, {:missing_update_fields, sequence, missing}}}
-      schema.id == "insert-07" -> validate_reply_target(sequence, fields)
-      true -> {:cont, :ok}
+      unknown != [] ->
+        {:halt, {:error, {:unknown_update_fields, sequence, unknown}}}
+
+      missing != [] ->
+        {:halt, {:error, {:missing_update_fields, sequence, missing}}}
+
+      invalid = invalid_field(fields, schema.field_types) ->
+        {:halt, {:error, {:invalid_update_field, sequence, invalid}}}
+
+      schema.id == "insert-07" ->
+        validate_reply_target(sequence, fields)
+
+      true ->
+        {:cont, :ok}
     end
   end
 
@@ -179,47 +226,165 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
     |> Enum.sort()
   end
 
+  defp invalid_field(fields, field_types) do
+    Enum.find_value(field_types, &invalid_field_name(fields, &1))
+  end
+
+  defp invalid_field_name(fields, {field, type}) do
+    case Map.fetch(fields, field) do
+      {:ok, value} -> if valid_field_value?(value, type), do: nil, else: field
+      :error -> nil
+    end
+  end
+
+  defp valid_field_value?(value, :identifier),
+    do: (is_integer(value) and value >= 0) or non_negative_integer_string?(value)
+
+  defp valid_field_value?(value, :string), do: is_binary(value)
+  defp valid_field_value?(value, :date), do: valid_iso_date?(value)
+
+  defp valid_field_value?(value, type) when type in [:integer, :timestamp],
+    do: is_integer(value) or integer_string?(value)
+
+  defp valid_field_value?(values, {:list, item_type}) when is_list(values),
+    do: Enum.all?(values, &valid_field_value?(&1, item_type))
+
+  defp valid_field_value?(
+         %{} = pair,
+         {:pair, identity_field, property_field}
+       ) do
+    Map.keys(pair) |> Enum.sort() == Enum.sort([identity_field, property_field]) and
+      valid_field_value?(Map.get(pair, identity_field), :identifier) and
+      valid_field_value?(Map.get(pair, property_field), :integer)
+  end
+
+  defp valid_field_value?(_value, _type), do: false
+
+  defp integer_string?(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {_integer, ""} -> true
+      _other -> false
+    end
+  end
+
+  defp integer_string?(_value), do: false
+
+  defp non_negative_integer_string?(value) do
+    integer_string?(value) and String.to_integer(value) >= 0
+  end
+
+  defp valid_iso_date?(value) when is_binary(value),
+    do: match?({:ok, _date}, Date.from_iso8601(value))
+
+  defp valid_iso_date?(_value), do: false
+
+  defp validate_source_extras(schema, raw_fields) do
+    allowed = MapSet.new(schema.required_fields ++ schema.optional_fields ++ ~w(sequence type))
+
+    extras =
+      raw_fields
+      |> Enum.filter(fn {field, value} ->
+        not MapSet.member?(allowed, field) and value not in [nil, ""]
+      end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.sort()
+
+    if extras == [], do: :ok, else: {:error, {:unknown_update_source_fields, extras}}
+  end
+
+  defp normalize_schema_fields(schema, raw_fields) do
+    fields = schema.required_fields ++ schema.optional_fields
+
+    Enum.reduce_while(fields, {:ok, %{}}, fn field, acc ->
+      normalize_schema_field(field, acc, schema, raw_fields)
+    end)
+  end
+
+  defp normalize_schema_field(field, {:ok, normalized}, schema, raw_fields) do
+    value = Map.get(raw_fields, field)
+
+    if field in schema.optional_fields and value in [nil, ""] do
+      {:cont, {:ok, normalized}}
+    else
+      normalize_and_put_field(normalized, field, value, schema.field_types)
+    end
+  end
+
+  defp normalize_and_put_field(normalized, field, value, field_types) do
+    case normalize_source_value(value, Map.fetch!(field_types, field)) do
+      {:ok, normalized_value} -> {:cont, {:ok, Map.put(normalized, field, normalized_value)}}
+      :error -> {:halt, {:error, {:invalid_update_source_field, field, value}}}
+    end
+  end
+
+  defp normalize_source_value(value, :identifier)
+       when is_binary(value) and value != "",
+       do: {:ok, value}
+
+  defp normalize_source_value(value, type) when type in [:string, :date] and is_binary(value),
+    do: {:ok, value}
+
+  defp normalize_source_value(value, type) when type in [:integer, :timestamp] do
+    case value do
+      integer when is_integer(integer) -> {:ok, integer}
+      binary when is_binary(binary) -> parse_integer(binary)
+      _other -> :error
+    end
+  end
+
+  defp normalize_source_value(nil, {:list, _item_type}), do: {:ok, []}
+  defp normalize_source_value("", {:list, _item_type}), do: {:ok, []}
+
+  defp normalize_source_value(value, {:list, {:pair, identity_field, property_field}})
+       when is_binary(value) do
+    value
+    |> String.split(";", trim: true)
+    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, pairs} ->
+      case normalize_pair(entry, identity_field, property_field) do
+        {:ok, pair} -> {:cont, {:ok, [pair | pairs]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, pairs} -> {:ok, Enum.reverse(pairs)}
+      :error -> :error
+    end
+  end
+
+  defp normalize_source_value(value, {:list, item_type}) when is_binary(value) do
+    values = String.split(value, ";", trim: true)
+
+    if Enum.all?(values, &valid_field_value?(&1, item_type)),
+      do: {:ok, values},
+      else: :error
+  end
+
+  defp normalize_source_value(value, type) do
+    if valid_field_value?(value, type), do: {:ok, value}, else: :error
+  end
+
+  defp normalize_pair(entry, identity_field, property_field) do
+    case String.split(entry, ":", parts: 2) do
+      [identity, property] when identity != "" ->
+        with {:ok, property} <- parse_integer(property) do
+          {:ok, %{identity_field => identity, property_field => property}}
+        end
+
+      _other ->
+        :error
+    end
+  end
+
+  defp parse_integer(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> {:ok, integer}
+      _other -> :error
+    end
+  end
+
   defp present?(value), do: value not in [nil, ""]
 
-  defp validate_sequence(records) do
-    records
-    |> Enum.reduce_while({:ok, 0}, fn record, {:ok, previous} ->
-      if record.sequence > previous,
-        do: {:cont, {:ok, record.sequence}},
-        else: {:halt, {:error, {:invalid_or_reordered_update, record}}}
-    end)
-    |> case do
-      {:ok, _} -> :ok
-      {:error, _} = error -> error
-    end
-  end
-
-  defp validate_duplicate_identities(records, schemas) do
-    records
-    |> Enum.reduce_while(MapSet.new(), fn record, seen ->
-      schema = Map.fetch!(schemas, record.type)
-      identity = Enum.map(schema.identity, &to_string(Map.fetch!(record.fields, &1)))
-      key = {schema.operation, record.type, identity}
-
-      if MapSet.member?(seen, key),
-        do: {:halt, {:error, {:duplicate_update_identity, record.type, identity}}},
-        else: {:cont, MapSet.put(seen, key)}
-    end)
-    |> case do
-      {:error, _} = error -> error
-      _seen -> :ok
-    end
-  end
-
-  defp validate_dependency_order(records, schemas) do
-    insert_positions =
-      records
-      |> Enum.with_index()
-      |> Enum.reduce(%{}, fn {record, index}, positions ->
-        schema = Map.fetch!(schemas, record.type)
-        put_insert_position(positions, schema, record, index)
-      end)
-
+  defp validate_dependency_order(records, schemas, insert_positions) do
     records
     |> Enum.with_index()
     |> Enum.reduce_while(:ok, fn {record, index}, :ok ->
@@ -233,6 +398,48 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
         error -> {:halt, error}
       end
     end)
+  end
+
+  defp validate_first_pass(records, schemas) do
+    initial = %{previous: 0, seen: MapSet.new(), insert_positions: %{}}
+
+    records
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, initial}, fn {record, index}, {:ok, acc} ->
+      with {:cont, :ok} <- validate_shape(record, :ok, schemas),
+           :ok <- validate_next_sequence(record, acc.previous),
+           schema <- Map.fetch!(schemas, record.type),
+           {:ok, seen} <- put_identity(acc.seen, schema, record) do
+        next = %{
+          previous: record.sequence,
+          seen: seen,
+          insert_positions: put_insert_position(acc.insert_positions, schema, record, index)
+        }
+
+        {:cont, {:ok, next}}
+      else
+        {:halt, {:error, _} = error} -> {:halt, error}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, acc} -> {:ok, acc.insert_positions}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_next_sequence(%{sequence: sequence}, previous) when sequence > previous, do: :ok
+
+  defp validate_next_sequence(record, _previous),
+    do: {:error, {:invalid_or_reordered_update, record}}
+
+  defp put_identity(seen, schema, record) do
+    identity = Enum.map(schema.identity, &to_string(Map.fetch!(record.fields, &1)))
+    key = {schema.operation, record.type, identity}
+
+    if MapSet.member?(seen, key),
+      do: {:error, {:duplicate_update_identity, record.type, identity}},
+      else: {:ok, MapSet.put(seen, key)}
   end
 
   defp put_insert_position(positions, %{operation: :insert} = schema, record, index) do
@@ -277,13 +484,34 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema do
 
   defp dependency_values(value), do: [value]
 
-  defp translate_in_order([], state, translated), do: {:ok, Enum.reverse(translated), state}
+  defp translate_in_order([], state, translated, _schemas, _verify_dependencies?),
+    do: {:ok, Enum.reverse(translated), state}
 
-  defp translate_in_order([record | rest], state, translated) do
-    with {:ok, mutation} <- translate(record, state) do
+  defp translate_in_order([record | rest], state, translated, schemas, verify_dependencies?) do
+    schema = Map.fetch!(schemas, record.type)
+
+    with :ok <- verify_dependencies(record, schema, state, verify_dependencies?),
+         {:ok, mutation} <- translate(record, state) do
       next_state = apply_to_state(state, mutation)
-      translate_in_order(rest, next_state, [mutation | translated])
+      translate_in_order(rest, next_state, [mutation | translated], schemas, verify_dependencies?)
     end
+  end
+
+  defp verify_dependencies(_record, _schema, _state, false), do: :ok
+
+  defp verify_dependencies(record, schema, state, true) do
+    case Enum.find(dependency_identities(schema.dependencies, record.fields), fn {type, id} ->
+           not dependency_exists?(state, type, id)
+         end) do
+      nil -> :ok
+      identity -> {:error, {:missing_update_dependency, record.sequence, identity}}
+    end
+  end
+
+  defp dependency_exists?(state, type, id) do
+    entity = Mapping.entity_iri(type, id)
+    class = ontology(type)
+    Enum.any?(state, &match?({^entity, @rdf_type, ^class, _graph}, &1))
   end
 
   defp translate(%{type: "insert-01", fields: fields} = record, _state) do

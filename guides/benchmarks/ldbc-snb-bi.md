@@ -26,10 +26,16 @@ rules. Hand-selected parameter rows are rejected for that profile.
   cancellation, visited-vertex and intermediate-result bounds, and deterministic
   tie handling.
 - A BI microbatch is dictionary-encoded before one ordered mixed RocksDB batch.
+  The converter emits all 16 canonical record types, validates typed fields,
+  and requires every referenced entity to exist in persisted state or an
+  earlier insert in the batch. Update files are written and validated as
+  replayable streams without retaining the complete source batch in memory.
   Result caches and statistics are invalidated after a successful commit. If
   post-commit maintenance fails, protocol callers that supply the current state
   identity and batch position receive the advanced committed identity in an
-  explicitly incomplete, score-ineligible error.
+  explicitly incomplete, score-ineligible error. If the state probe fails after
+  commit, the error marks the committed identity as indeterminate and retry as
+  unsafe.
 - Initial-load, post-validation, pre-power, and pre-throughput checkpoints are
   copied only while the database is closed. Restore validates each checkpoint's
   own statement count, persisted checksum, update position, and selected BI

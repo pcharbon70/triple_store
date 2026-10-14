@@ -58,11 +58,12 @@ defmodule TripleStore.Benchmark.LDBC.Phase2DataPipelineIntegrationTest do
     on_exit(fn -> File.rm_rf!(root) end)
 
     for {profile, suite, fixture_name, update_role, entity_count, relationship_count,
-         parameter_quad} <- [
-          {:snb_bi_smoke, :snb_bi, "snb-bi", :bi_update_batch, 3, 3,
+         update_count, net_change?, parameter_quad} <- [
+          {:snb_bi_smoke, :snb_bi, "snb-bi", :bi_update_batch, 8, 3, 16, false,
            first_name_quad(:snb_bi, "1", "Alice")},
           {:snb_interactive_smoke, :snb_interactive, "snb-interactive",
-           :interactive_update_stream, 3, 2, first_name_quad(:snb_interactive, "10", "Dora")}
+           :interactive_update_stream, 3, 2, 1, true,
+           first_name_quad(:snb_interactive, "10", "Dora")}
         ] do
       output = Path.join(root, "#{profile}-converted")
       fixture_root = Path.join(root, "#{profile}-fixture")
@@ -89,8 +90,15 @@ defmodule TripleStore.Benchmark.LDBC.Phase2DataPipelineIntegrationTest do
       assert parameter_document.rows != []
 
       update = Enum.find(manifest.components, &(&1.role == update_role))
-      assert {:ok, updated, %{records: 1}} = StoreFixture.apply_updates(fixture, update.path)
-      assert count_index(updated.store.db, :gspo) > manifest.transformation.statement_count
+
+      assert {:ok, updated, %{records: ^update_count}} =
+               StoreFixture.apply_updates(fixture, update.path)
+
+      updated_count = count_index(updated.store.db, :gspo)
+
+      if net_change?,
+        do: assert(updated_count > manifest.transformation.statement_count),
+        else: assert(updated_count == manifest.transformation.statement_count)
 
       answer_probe = fn store ->
         if answer_vector(store, initial) == expected_answers,
