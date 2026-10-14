@@ -157,6 +157,83 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
     refute Map.has_key?(blocked_summary, "official_score")
   end
 
+  test "BI artifacts reconcile block identities across JSON records and Markdown" do
+    directory =
+      Path.join(System.tmp_dir!(), "ldbc-bi-artifacts-#{System.unique_integer([:positive])}")
+
+    on_exit(fn -> File.rm_rf(directory) end)
+    first = state_identity(:pre_power, 1, "one")
+    second = state_identity(:pre_power, 2, "two")
+
+    run = bi_run(first, second)
+    assert {:ok, artifact} = Artifacts.write(directory, run)
+    assert artifact.schema_version == 2
+    assert File.exists?(artifact.paths.protocol)
+
+    protocol = artifact.paths.protocol |> File.read!() |> Jason.decode!()
+    assert get_in(protocol, ["blocks", Access.at(0), "state_identity", "last_applied_batch"]) == 1
+
+    manifest = artifact.paths.manifest |> File.read!() |> Jason.decode!()
+    disclosure = artifact.paths.disclosure |> File.read!() |> Jason.decode!()
+    assert manifest["state_identity"] == disclosure["state_identity"]
+    assert manifest["state_identity"]["last_applied_batch"] == 2
+
+    report = File.read!(artifact.paths.report_markdown)
+    assert report =~ "## State identities"
+    assert report =~ "pre_power"
+    assert report =~ second.state_checksum
+  end
+
+  test "BI artifact generation rejects missing or inconsistent block identities" do
+    root = Path.join(System.tmp_dir!(), "ldbc-bi-invalid-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(root) end)
+    first = state_identity(:pre_power, 1, "one")
+    second = state_identity(:pre_power, 2, "two")
+    run = bi_run(first, second)
+
+    missing = update_in(run.protocol_blocks, &[Map.delete(hd(&1), :state_identity) | tl(&1)])
+
+    assert {:error, {:invalid_state_identity, {:protocol_block, 1, :missing}}} =
+             Artifacts.write(Path.join(root, "missing"), missing)
+
+    refute File.exists?(Path.join(root, "missing/manifest.json"))
+
+    inconsistent = put_in(run, [:correctness, Access.at(1), :state_identity], first)
+
+    assert {:error, {:inconsistent_state_identity, {:correctness, 2}}} =
+             Artifacts.write(Path.join(root, "inconsistent"), inconsistent)
+  end
+
+  test "BI artifact generation rejects duplicate, missing, and unexpected correctness positions" do
+    root = Path.join(System.tmp_dir!(), "ldbc-bi-positions-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(root) end)
+    first = state_identity(:pre_power, 1, "one")
+    second = state_identity(:pre_power, 2, "two")
+    run = bi_run(first, second)
+
+    duplicate = update_in(run.correctness, &[hd(&1) | &1])
+
+    assert {:error,
+            {:invalid_state_identity,
+             {:correctness_positions, %{duplicates: [1], missing: [], unexpected: []}}}} =
+             Artifacts.write(Path.join(root, "duplicate"), duplicate)
+
+    missing = update_in(run.correctness, &Enum.reject(&1, fn record -> record.position == 2 end))
+
+    assert {:error,
+            {:invalid_state_identity,
+             {:correctness_positions, %{duplicates: [], missing: [2], unexpected: []}}}} =
+             Artifacts.write(Path.join(root, "missing"), missing)
+
+    unexpected =
+      update_in(run.correctness, &(&1 ++ [%{position: 3, state_identity: second}]))
+
+    assert {:error,
+            {:invalid_state_identity,
+             {:correctness_positions, %{duplicates: [], missing: [], unexpected: [3]}}}} =
+             Artifacts.write(Path.join(root, "unexpected"), unexpected)
+  end
+
   test "baseline acceptance is explicit, checks correctness, and leaves provenance" do
     directory =
       Path.join(System.tmp_dir!(), "ldbc-baseline-#{System.unique_integer([:positive])}")
@@ -178,4 +255,48 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
     columns = Enum.with_index(types, 1) |> Enum.map(fn {_type, index} -> "c#{index}" end)
     %Result{columns: columns, types: types, rows: rows, ordering: ordering}
   end
+
+  defp state_identity(checkpoint, batch, value) do
+    {:ok, identity} =
+      TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity.new(%{
+        dataset_checksum: checksum("dataset"),
+        mapping_version: "snb-rdf-v1",
+        checkpoint_name: checkpoint,
+        last_applied_batch: batch,
+        update_stream_checksum: checksum("update-#{batch}"),
+        state_checksum: checksum(value)
+      })
+
+    identity
+  end
+
+  defp bi_run(first, second) do
+    blocks = [
+      %{position: 1, kind: :power, state_identity: first},
+      %{position: 2, kind: :throughput, state_identity: second}
+    ]
+
+    %{
+      suite: :snb_bi,
+      manifest: %{dataset_id: "bi-smoke", state_identity: second},
+      environment: %{},
+      catalog: [],
+      raw_samples: [],
+      errors: [],
+      correctness: Enum.map(blocks, &Map.take(&1, [:position, :state_identity])),
+      protocol_blocks: blocks,
+      disclosure: %{state_identity: second},
+      resources: %{},
+      summary: %{},
+      gates: %{
+        profile: true,
+        correctness: true,
+        scheduling: true,
+        duration: true,
+        completeness: true
+      }
+    }
+  end
+
+  defp checksum(value), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, value), case: :lower)
 end

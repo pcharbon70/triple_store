@@ -384,7 +384,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.StateProbe do
     payload = Enum.map(quads, &quad_key/1)
 
     "sha256:" <>
-      Base.encode16(:crypto.hash(:sha256, :erlang.term_to_binary(payload)), case: :lower)
+      Base.encode16(:crypto.hash(:sha256, :erlang.term_to_binary(payload, [:deterministic])),
+        case: :lower
+      )
   end
 
   defp quad_key({s, p, o, g}), do: {term_key(s), term_key(p), term_key(o), term_key(g)}

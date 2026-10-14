@@ -5,6 +5,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
 
   alias TripleStore.Benchmark.LDBC.SNB.{
     BI.Checkpoint,
+    BI.StateIdentity,
     BI.UpdateBatch,
     BI.UpdateSchema,
     UpdateStream
@@ -121,21 +122,72 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIUpdateBatchTest do
     assert {:ok, fixture} = StoreFixture.setup(Path.join(root, "fixture"), manifest)
     initial_count = count(fixture)
 
+    assert {:ok, identity} = StateIdentity.capture(fixture, :initial_load)
+
     assert {:ok, fixture, initial} =
-             Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), %{
-               batch_position: 0,
-               batch_checksum: nil
-             })
+             Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), identity)
 
     update = Enum.find(manifest.components, &(&1.role == :bi_update_batch))
     assert {:ok, receipt} = UpdateBatch.apply(fixture.store, update.path)
     assert count(fixture) > initial_count
 
-    assert {:ok, restored, state} = Checkpoint.restore(fixture, initial)
+    assert {:ok, restored, restored_identity} = Checkpoint.restore(fixture, initial, identity)
     assert count(restored) == initial_count
-    assert state == %{batch_position: 0, batch_checksum: nil}
+    assert restored_identity == identity
     assert receipt.last_sequence == 1
     assert :ok = StoreFixture.teardown(restored, delete: true)
+  end
+
+  test "checkpoint rejects an identity that disagrees with persisted state", %{test: test} do
+    root = tmp_path(test)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, manifest} =
+             Converter.convert(:snb_bi_smoke, snb_fixture(), Path.join(root, "converted"))
+
+    assert {:ok, fixture} = StoreFixture.setup(Path.join(root, "fixture"), manifest)
+    assert {:ok, identity} = StateIdentity.capture(fixture, :initial_load)
+    stale = %{identity | state_checksum: "sha256:" <> String.duplicate("0", 64)}
+
+    assert {:error, {:state_identity_mismatch, :state_checksum, _, _}} =
+             Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), stale)
+
+    assert fixture.store != nil
+    assert :ok = StoreFixture.teardown(fixture, delete: true)
+  end
+
+  test "checkpoint metadata and restore continuation must preserve the exact identity", %{
+    test: test
+  } do
+    root = tmp_path(test)
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    assert {:ok, manifest} =
+             Converter.convert(:snb_bi_smoke, snb_fixture(), Path.join(root, "converted"))
+
+    assert {:ok, fixture} = StoreFixture.setup(Path.join(root, "fixture"), manifest)
+    assert {:ok, identity} = StateIdentity.capture(fixture, :initial_load)
+
+    assert {:ok, fixture, checkpoint} =
+             Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), identity)
+
+    mismatched = %{identity | mapping_version: "other-mapping"}
+
+    assert {:error, {:state_identity_mismatch, :mapping_version, _, _}} =
+             Checkpoint.restore(fixture, checkpoint, mismatched)
+
+    metadata_path = Path.join(checkpoint.path, ".checkpoint.etf")
+    metadata = metadata_path |> File.read!() |> :erlang.binary_to_term([:safe])
+
+    File.write!(
+      metadata_path,
+      :erlang.term_to_binary(put_in(metadata.state_identity, mismatched))
+    )
+
+    assert {:error, {:checkpoint_metadata_mismatch, :initial_load}} =
+             Checkpoint.validate_checkpoint(checkpoint)
+
+    assert :ok = StoreFixture.teardown(fixture, delete: true)
   end
 
   defp count(fixture) do

@@ -10,6 +10,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     Parameters,
     Protocol,
     Scoring,
+    StateIdentity,
     UpdateBatch,
     Workload
   }
@@ -36,11 +37,15 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     assert :ok =
              Parameters.validate(bundle, fixture, definitions, reference_profile: :snb_bi_smoke)
 
+    assert {:ok, initial_identity} = StateIdentity.capture(fixture, :initial_load)
+
     assert {:ok, fixture, checkpoint} =
-             Checkpoint.create(fixture, :initial_load, Path.join(root, "checkpoints"), %{
-               batch_position: 0,
-               batch_checksum: nil
-             })
+             Checkpoint.create(
+               fixture,
+               :initial_load,
+               Path.join(root, "checkpoints"),
+               initial_identity
+             )
 
     assert_path_extension_uses_store_indices(fixture)
     update = Enum.find(manifest.components, &(&1.role == :bi_update_batch))
@@ -50,6 +55,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
              Protocol.run(schedule, bundle,
                manifest: manifest,
                fixture: fixture,
+               state_identity: initial_identity,
                reference_profile: :snb_bi_smoke,
                apply_update: fn block ->
                  with {:ok, receipt} <- UpdateBatch.apply(fixture.store, update.path) do
@@ -72,8 +78,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     assert length(run.parameter_sequence) == 56
     assert Enum.all?(run.blocks, & &1.complete?)
 
-    assert {:ok, restored, state} = Checkpoint.restore(fixture, checkpoint)
-    assert state.batch_position == 0
+    assert {:ok, restored, restored_identity} =
+             Checkpoint.restore(fixture, checkpoint, initial_identity)
+
+    assert restored_identity == initial_identity
 
     records = scoring_fixture()
 
@@ -121,13 +129,21 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
 
   defp assert_fail_closed_protocol(bundle, fixture) do
     assert {:ok, schedule} = Protocol.schedule(:validation)
+    assert {:ok, identity} = StateIdentity.capture(fixture, :post_validation)
 
     assert {:error, %{stage: :reads, score_eligible?: false}} =
              Protocol.run(schedule, bundle,
                manifest: fixture.manifest,
                fixture: fixture,
+               state_identity: identity,
                reference_profile: :snb_bi_smoke,
-               apply_update: fn _block -> {:ok, %{}} end,
+               apply_update: fn _block ->
+                 {:ok,
+                  %{
+                    checksum: checksum("read-failure-update"),
+                    state_checksum: identity.state_checksum
+                  }}
+               end,
                precompute: fn _block -> {:ok, %{}} end,
                execute_read: fn %{variant: variant} ->
                  if variant == "10a", do: {:error, :timeout}, else: {:ok, %{correct?: true}}
@@ -138,6 +154,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
              Protocol.run(schedule, bundle,
                manifest: fixture.manifest,
                fixture: fixture,
+               state_identity: identity,
                reference_profile: :snb_bi_smoke,
                apply_update: fn _block -> {:error, :injected} end,
                precompute: fn _block -> {:ok, %{}} end,
@@ -182,20 +199,26 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
         }
       end
 
+    final_identity = run.state_identity
+
     Artifacts.write(directory, %{
+      suite: :snb_bi,
       manifest: %{
         dataset_id: manifest.dataset_id,
-        checksum: manifest.transformation.output_checksum
+        checksum: manifest.transformation.output_checksum,
+        state_identity: final_identity
       },
       environment: %{profile: :snb_bi_smoke, schema: :quad},
       catalog: Enum.map(definitions, & &1.id),
       raw_samples: samples,
       errors: [],
-      correctness: Enum.map(run.blocks, &%{position: &1.position, complete?: &1.complete?}),
+      correctness: Enum.map(run.blocks, &Map.take(&1, [:position, :complete?, :state_identity])),
+      protocol_blocks: run.blocks,
       disclosure: %{
         protocol_reduction: "two dated blocks; minimum duration disabled",
         comparable: false,
-        official_score_name_used: false
+        official_score_name_used: false,
+        state_identity: final_identity
       },
       resources: %{blocks: length(run.blocks)},
       summary: %{
@@ -220,6 +243,9 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
     assert summary["official_score_eligible"] == false
     refute Map.has_key?(summary, "official_score")
   end
+
+  defp checksum(value),
+    do: "sha256:" <> (:crypto.hash(:sha256, value) |> Base.encode16(case: :lower))
 
   defp parameter_sequences(definitions) do
     Map.new(definitions, fn definition ->
