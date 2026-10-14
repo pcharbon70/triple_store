@@ -60,7 +60,12 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Checkpoint do
          :ok <- File.rm(Path.join(stage, ".checkpoint.etf")),
          :ok <- exchange(closed.store_path, stage, replaced),
          {:ok, reopened} <-
-           finalize_restore(closed, replaced, checkpoint.state_identity) do
+           finalize_restore(
+             closed,
+             replaced,
+             checkpoint.state_identity,
+             checkpoint.statement_count
+           ) do
       {:ok, reopened, checkpoint.state_identity}
     else
       {:error, _} = error ->
@@ -79,10 +84,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Checkpoint do
           name: name,
           path: path,
           fingerprint: expected,
+          statement_count: statement_count,
           state_identity: %StateIdentity{} = identity
         } = checkpoint
       )
-      when name in @names do
+      when name in @names and is_integer(statement_count) and statement_count >= 0 do
     with :ok <- verify_checkpoint_name(identity, name),
          :ok <- StateIdentity.validate(identity),
          :ok <- verify_metadata(checkpoint) do
@@ -179,8 +185,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Checkpoint do
     end
   end
 
-  defp finalize_restore(closed, replaced, identity) do
-    case StoreFixture.reopen(closed) do
+  defp finalize_restore(closed, replaced, identity, statement_count) do
+    case StoreFixture.reopen(closed, expected_statement_count: statement_count) do
       {:ok, reopened} ->
         case StateIdentity.verify_persisted(identity, reopened) do
           :ok ->

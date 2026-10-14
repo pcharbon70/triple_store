@@ -107,8 +107,46 @@ bundle from the pinned reference implementation. The reduced smoke data and
 synthetic parameter rows also remain diagnostic rather than comparable-run
 evidence.
 
+## Phase 5C update and state qualification
+
+The complete deterministic smoke sequence now covers all eight insert and all
+eight delete record types. Inserts run in dependency order; relationship deletes
+precede deep entity deletes. Every accepted microbatch is submitted as one mixed
+RocksDB batch and produces matching `gspo`, `gpos`, `spog`, and `posg` contents.
+The three updated checkpoints have these deterministic persisted states:
+
+| Checkpoint | Statements | Entities | Relationships | Properties | Graphs | State checksum |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `post_validation` | 118 | 7 | 21 | 52 | 2 | `sha256:16a13d0c4d0037f18ff199e3edf61369a1dce6514739d645a9e2c58c73cd0102` |
+| `pre_power` | 94 | 7 | 17 | 48 | 2 | `sha256:5be8fd1ab530aef984d0ef09fe8a8961c7abf198243ffba2602c8c7d9518250a` |
+| `pre_throughput` | 42 | 3 | 3 | 24 | 1 | `sha256:4e699f53e569540a0c9be3d5524fa6763a02863d5467c44ac7c1c0a72e5d0385` |
+
+All four named checkpoints restore their recorded counts, state checksum, and
+selected affected BI answer hashes. BI 1 changes from
+`sha256:3255eb8b221ef966e538e2172935bd856d8e7a0f48f57b66592a969453d91424`
+to
+`sha256:058df443305256117a13ed7d0f921b16f7869c6f1b7d09c003724010e672328c`
+after inserts, and the complete delete sequence reproduces the initial hash.
+These are deterministic smoke-state oracles; they do not replace the missing
+accepted-answer corpus described in the Phase 5B boundary.
+
+Injected translation, dependency, storage, interruption, and checkpoint
+restore failures preserve the pre-commit state and all explicit indices.
+Post-commit cache invalidation failure returns the full committed state identity
+with `complete?: false` and `score_eligible?: false`; the scorer rejects that
+record. Checkpoint restore validates the statement count recorded by the
+selected checkpoint instead of applying the initial-load count to every update
+state.
+
+Sub-Phase 5C's update and state exit gate is complete. Phase 5 remains open:
+Sub-Phase 5D protocol qualification, scoring equivalence, optimization, and
+final evidence have not been completed, and analytical capability promotion is
+still blocked on accepted reference answers.
+
 ## Executed checks
 
+- Phase 5C update-state integration: 3 tests, 0 failures
+- Phase 5C integration and adjacent LDBC regressions: 41 tests, 0 failures
 - Final Phase 5B focused regression set after review remediation: 166 tests,
   0 failures, 4 excluded by the default test configuration
 - Final default suite: 25 doctests, 10 properties, 6,901 tests, 0 failures,

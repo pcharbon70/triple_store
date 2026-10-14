@@ -4,12 +4,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
 
   All records are decoded and dictionary-encoded before a single mixed RocksDB
   batch is submitted. Cache and statistics callbacks run only after commit.
-  The returned receipt binds the batch position to the source checksum.
+  The returned receipt binds the batch position to the source checksum. When
+  callers supply `:state_identity` and `:batch_position`, a post-commit
+  maintenance error also carries the fully advanced committed state identity
+  and remains explicitly incomplete and ineligible for scoring.
   """
 
   alias TripleStore.Adapter
   alias TripleStore.Benchmark.Artifact
-  alias TripleStore.Benchmark.LDBC.SNB.BI.{StateProbe, UpdateSchema}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{StateIdentity, StateProbe, UpdateSchema}
   alias TripleStore.Benchmark.LDBC.SNB.UpdateStream
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
@@ -21,22 +24,57 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     with {:ok, checksum} <- Artifact.checksum(path),
          {:ok, records} <- read_records(path),
          {:ok, mutations} <- encode_records(store, records),
-         :ok <- write(store.db, mutations, opts),
-         :ok <- after_commit(store, opts),
-         {:ok, state} <- capture_state(store, opts) do
-      {:ok,
-       %{
-         checksum: checksum,
-         records: length(records),
-         mutations: length(mutations),
-         first_sequence: records |> List.first() |> Map.fetch!(:sequence),
-         last_sequence: records |> List.last() |> Map.fetch!(:sequence),
-         state_checksum: state.state_checksum,
-         state_counts: state.counts
-       }}
+         :ok <- write(store.db, mutations, opts) do
+      finish_commit(store, checksum, records, mutations, opts)
     end
   rescue
     error in File.Error -> {:error, {:update_stream_failed, error.reason}}
+  end
+
+  defp finish_commit(store, checksum, records, mutations, opts) do
+    case after_commit(store, opts) do
+      :ok ->
+        with {:ok, state} <- capture_state(store, opts) do
+          {:ok, receipt(checksum, records, mutations, state)}
+        end
+
+      {:error, reason} ->
+        case capture_state(store, opts) do
+          {:ok, state} ->
+            committed =
+              checksum
+              |> receipt(records, mutations, state)
+              |> attach_state_identity(opts)
+              |> Map.merge(%{committed?: true, complete?: false, score_eligible?: false})
+
+            {:error, {:post_commit_maintenance_failed, reason, committed}}
+
+          {:error, probe_reason} ->
+            {:error, {:post_commit_maintenance_failed, reason, %{probe_error: probe_reason}}}
+        end
+    end
+  end
+
+  defp receipt(checksum, records, mutations, state) do
+    %{
+      checksum: checksum,
+      records: length(records),
+      mutations: length(mutations),
+      first_sequence: records |> List.first() |> Map.fetch!(:sequence),
+      last_sequence: records |> List.last() |> Map.fetch!(:sequence),
+      state_checksum: state.state_checksum,
+      state_counts: state.counts
+    }
+  end
+
+  defp attach_state_identity(receipt, opts) do
+    with %StateIdentity{} = current <- Keyword.get(opts, :state_identity),
+         batch when is_integer(batch) and batch > 0 <- Keyword.get(opts, :batch_position),
+         {:ok, committed} <- StateIdentity.advance(current, batch, receipt) do
+      Map.put(receipt, :state_identity, committed)
+    else
+      _missing_or_invalid -> receipt
+    end
   end
 
   defp read_records(path) do

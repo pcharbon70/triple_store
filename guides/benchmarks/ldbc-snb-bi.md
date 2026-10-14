@@ -26,9 +26,21 @@ rules. Hand-selected parameter rows are rejected for that profile.
   cancellation, visited-vertex and intermediate-result bounds, and deterministic
   tie handling.
 - A BI microbatch is dictionary-encoded before one ordered mixed RocksDB batch.
-  Result caches and statistics are invalidated after a successful commit.
+  Result caches and statistics are invalidated after a successful commit. If
+  post-commit maintenance fails, protocol callers that supply the current state
+  identity and batch position receive the advanced committed identity in an
+  explicitly incomplete, score-ineligible error.
 - Initial-load, post-validation, pre-power, and pre-throughput checkpoints are
-  copied only while the database is closed and are verified before restore.
+  copied only while the database is closed. Restore validates each checkpoint's
+  own statement count, persisted checksum, update position, and selected BI
+  answer hashes.
+
+The deterministic update-state integration covers all eight insert and eight
+delete record types. It verifies the `gspo`, `gpos`, `spog`, and `posg` indices
+after each accepted microbatch, restores all four named checkpoints, and proves
+that translation, dependency, storage, interruption, and restore failures do
+not advance persisted state. The complete insert/delete cycle reproduces the
+initial state checksum and selected answer hashes exactly.
 
 ## Current qualification boundary
 
@@ -51,5 +63,6 @@ Run the focused validation with:
 ```sh
 mix test test/triple_store/benchmark/ldbc/phase_5_snb_bi_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs
+mix test test/triple_store/benchmark/ldbc/phase_5c_update_state_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/snb_bi_*_test.exs
 ```

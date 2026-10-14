@@ -229,16 +229,17 @@ bi_reads =
 bi_updates = [
   entry.(
     "ldbc/snb-bi/update-batch@v1.0.3",
-    :requires_fix,
-    :translation_required,
-    :unverified,
+    :supported,
+    :not_applicable,
+    :verified,
     [:ordered_microbatch, :atomic_mutation, :insert, :delete],
-    "TripleStore.Transaction",
+    "TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch",
     5,
-    "The BI batch must be mapped to RDF and applied with a defined request boundary and checkpoint lifecycle.",
+    "All 16 mandatory insert and delete record types map to RDF, commit atomically through every explicit quad index, and pass state, checkpoint, failure, and reset integration evidence.",
     [
-      "specs/contracts/transaction_and_isolation_contract.md",
-      "ldbc_snb_bi:{cypher,tigergraph,umbra}/dml"
+      "lib/triple_store/benchmark/ldbc/snb/bi/update_schema.ex",
+      "lib/triple_store/benchmark/ldbc/snb/bi/update_batch.ex",
+      "test/triple_store/benchmark/ldbc/phase_5c_update_state_integration_test.exs"
     ]
   )
 ]
