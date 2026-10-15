@@ -1,0 +1,60 @@
+site_name: TripleStore Code Companion
+site_description: Evidence-aware tours of the TripleStore implementation
+repo_url: https://github.com/pcharbon70/triple_store
+repo_name: pcharbon70/triple_store
+
+docs_dir: docs/code-companion
+site_dir: site-code-companion
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Store lifecycle and explicit data: store-lifecycle-and-explicit-data.md
+  - SPARQL query path: sparql-query-path.md
+  - Reasoning and derived facts: reasoning-and-derived-facts.md
+  - SPARQL update and transactions: sparql-update-and-transactions.md
+  - Operations and recovery: operations-and-recovery.md
+  - Glossary: glossary.md
+  - Module guide template: module-guide-template.md

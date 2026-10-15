@@ -123,6 +123,14 @@ See [Named Graphs](guides/user/quads/07-named-graphs.md) for more details on qua
 
 ## Development
 
+The [Code Companion](docs/code-companion/index.md) is a guided source-reading
+path covering store lifecycle, queries, updates, reasoning, and operations. It
+uses Material for MkDocs. Run `python3 -m venv .venv-docs` and
+`.venv-docs/bin/python -m pip install -r requirements-docs.txt`, then run
+`bash scripts/docs/serve.sh` for a local live preview, or run
+`bash scripts/docs/verify-code-companion.sh` to check its metadata and strict
+site build. Generated pages are written to the ignored `site-code-companion/`.
+
 ```bash
 # Enable tracked git hooks
 git config core.hooksPath .githooks
