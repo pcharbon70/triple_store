@@ -5,6 +5,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     Parameters,
     PlanEvidence,
     Protocol,
+    ProtocolReconciler,
     Scoring,
     StateIdentity,
     Workload
@@ -145,6 +146,49 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     assert %StateIdentity{last_applied_batch: 2} = throughput.state_identity
     assert power.state_identity.dataset_checksum == identity.dataset_checksum
     assert throughput.state_identity.update_stream_checksum == checksum("2")
+  end
+
+  test "protocol reconciliation binds every scheduled operation to one scoring record" do
+    identity = identity(:pre_power, 0, nil, "a")
+    assert {:ok, schedule} = Protocol.schedule(:power)
+
+    assert {:ok, run} =
+             Protocol.run(schedule, parameter_bundle(),
+               manifest: parameter_manifest(),
+               state_identity: identity,
+               apply_update: fn _block ->
+                 {:ok, %{checksum: checksum("1"), state_checksum: checksum("b")}}
+               end,
+               precompute: fn _block -> {:ok, %{operations: []}} end,
+               execute_read: fn operation ->
+                 {:ok,
+                  %{
+                    correct?: true,
+                    complete?: true,
+                    result_checksum: checksum(operation.variant)
+                  }}
+               end
+             )
+
+    assert {:ok, records} = ProtocolReconciler.score_records(run)
+    assert length(records) == 32
+    assert Enum.map(records, & &1.label) == ["writes" | Protocol.official_variants()]
+
+    assert {:ok, evidence} = ProtocolReconciler.reconcile(schedule, run, records)
+    assert evidence.operation_count == 32
+    assert evidence.block_count == 1
+    assert String.starts_with?(evidence.input_checksum, "sha256:")
+
+    assert {:error, {:duplicate_score_record, _identity}} =
+             ProtocolReconciler.reconcile(schedule, run, [hd(records) | records])
+
+    stale = put_in(hd(records)[:state_checksum], checksum("stale"))
+
+    assert {:error, {:score_record_mismatch, 0, :state_checksum, _, _}} =
+             ProtocolReconciler.reconcile(schedule, run, [stale | tl(records)])
+
+    assert {:error, {:score_record_count, 32, 31}} =
+             ProtocolReconciler.reconcile(schedule, run, tl(records))
   end
 
   test "protocol rejects continuation when any reported identity field disagrees" do
