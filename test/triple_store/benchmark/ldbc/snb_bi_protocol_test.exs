@@ -109,10 +109,15 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     measurements = %{
       plan: :hash_join,
       estimated_cardinality: 3,
+      actual_cardinality: 3,
+      elapsed_us: 100,
       iterator_count: 2,
       materialized_rows: 3,
       memory_bytes: 128,
-      io_bytes: 256
+      io_bytes: 256,
+      environment_identity: "sha256:test-environment",
+      cleanup_status: :complete,
+      protocol_eligible?: true
     }
 
     assert {:ok, evidence} = PlanEvidence.record("bi-1", [[1], [2]], [[1], [2]], measurements)
