@@ -135,18 +135,20 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ProtocolReconciler do
       Enum.zip(schedule, blocks)
       |> Enum.with_index()
       |> Enum.reduce_while(:ok, fn {{planned, actual}, index}, :ok ->
-        expected = {planned.position, planned.date, planned.kind, planned.variants}
-
-        observed =
-          {actual.position, actual.date, actual.kind, Enum.map(actual.reads, & &1.variant)}
-
-        if expected == observed,
-          do: {:cont, :ok},
-          else: {:halt, {:error, {:protocol_block_mismatch, index, expected, observed}}}
+        reconcile_block(planned, actual, index)
       end)
     else
       {:error, {:protocol_block_count, length(schedule), length(blocks)}}
     end
+  end
+
+  defp reconcile_block(planned, actual, index) do
+    expected = {planned.position, planned.date, planned.kind, planned.variants}
+    observed = {actual.position, actual.date, actual.kind, Enum.map(actual.reads, & &1.variant)}
+
+    if expected == observed,
+      do: {:cont, :ok},
+      else: {:halt, {:error, {:protocol_block_mismatch, index, expected, observed}}}
   end
 
   defp reconcile_state_chain([]), do: {:error, :empty_protocol_run}

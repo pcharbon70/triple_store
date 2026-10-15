@@ -174,28 +174,34 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
 
       case timed_call(Keyword.fetch!(opts, :execute_read), operation, :read) do
         {:ok, result} ->
-          receipt =
-            result
-            |> normalize_read_receipt()
-            |> Map.merge(%{
-              variant: variant,
-              operation_id: definition.catalog_id,
-              parameter_index: index,
-              parameter_row_identity: parameter_identity
-            })
-
-          case read_eligibility(receipt) do
-            :ok ->
-              {:cont, {:ok, reads ++ [receipt], Map.put(positions, variant, index + 1)}}
-
-            {:error, status} ->
-              {:halt, {:error, {:read_failed, {:ineligible_read, variant, status}, reads}}}
-          end
+          handle_read_result(result, operation, reads, positions)
 
         {:error, {:callback_failed, :read, reason}} ->
           {:halt, {:error, {:read_failed, {variant, reason}, reads}}}
       end
     end)
+  end
+
+  defp handle_read_result(result, operation, reads, positions) do
+    receipt =
+      result
+      |> normalize_read_receipt()
+      |> Map.merge(%{
+        variant: operation.variant,
+        operation_id: operation.operation_id,
+        parameter_index: operation.parameter_index,
+        parameter_row_identity: operation.parameter_row_identity
+      })
+
+    case read_eligibility(receipt) do
+      :ok ->
+        next_positions = Map.put(positions, operation.variant, operation.parameter_index + 1)
+        {:cont, {:ok, reads ++ [receipt], next_positions}}
+
+      {:error, status} ->
+        reason = {:ineligible_read, operation.variant, status}
+        {:halt, {:error, {:read_failed, reason, reads}}}
+    end
   end
 
   defp normalize_read_receipt(result) do

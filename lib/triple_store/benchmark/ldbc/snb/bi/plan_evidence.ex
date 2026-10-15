@@ -83,35 +83,42 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.PlanEvidence do
   @doc "Accepts a measured improvement only when answers and execution gates remain intact."
   @spec accept_improvement(map(), map()) :: {:ok, map()} | {:error, term()}
   def accept_improvement(baseline, candidate) when is_map(baseline) and is_map(candidate) do
-    cond do
-      baseline[:operation_id] != candidate[:operation_id] ->
-        {:error, :operation_identity_mismatch}
-
-      baseline[:environment_identity] != candidate[:environment_identity] ->
-        {:error, :environment_identity_mismatch}
-
-      baseline[:answer_digest] != candidate[:answer_digest] ->
-        {:error, :answer_changed}
-
-      candidate[:cleanup_status] != :complete ->
-        {:error, :resource_cleanup_incomplete}
-
-      candidate[:protocol_eligible?] != true ->
-        {:error, :protocol_ineligible}
-
-      not is_number(candidate[:elapsed_us]) or candidate.elapsed_us >= baseline.elapsed_us ->
-        {:error, :latency_not_improved}
-
-      true ->
-        {:ok,
-         Map.merge(candidate, %{
-           baseline_elapsed_us: baseline.elapsed_us,
-           elapsed_improvement_us: baseline.elapsed_us - candidate.elapsed_us
-         })}
+    with :ok <- matching_value(baseline, candidate, :operation_id, :operation_identity_mismatch),
+         :ok <-
+           matching_value(
+             baseline,
+             candidate,
+             :environment_identity,
+             :environment_identity_mismatch
+           ),
+         :ok <- matching_value(baseline, candidate, :answer_digest, :answer_changed),
+         :ok <-
+           required_value(candidate, :cleanup_status, :complete, :resource_cleanup_incomplete),
+         :ok <- required_value(candidate, :protocol_eligible?, true, :protocol_ineligible),
+         :ok <- improved_latency(baseline, candidate) do
+      {:ok,
+       Map.merge(candidate, %{
+         baseline_elapsed_us: baseline.elapsed_us,
+         elapsed_improvement_us: baseline.elapsed_us - candidate.elapsed_us
+       })}
     end
   end
 
   def accept_improvement(_baseline, _candidate), do: {:error, :invalid_plan_evidence}
+
+  defp matching_value(left, right, key, error) do
+    if left[key] == right[key], do: :ok, else: {:error, error}
+  end
+
+  defp required_value(value, key, expected, error) do
+    if value[key] == expected, do: :ok, else: {:error, error}
+  end
+
+  defp improved_latency(baseline, candidate) do
+    if is_number(candidate[:elapsed_us]) and candidate.elapsed_us < baseline.elapsed_us,
+      do: :ok,
+      else: {:error, :latency_not_improved}
+  end
 
   defp valid_measurements?(measurements) do
     Enum.all?(

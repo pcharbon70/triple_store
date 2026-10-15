@@ -317,9 +317,8 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
 
     with :ok <- validate_qualification_identities(identities),
          :ok <- validate_qualification_count(qualification, catalog),
-         :ok <- validate_variant_count(qualification),
-         :ok <- validate_qualification_status(qualification) do
-      :ok
+         :ok <- validate_variant_count(qualification) do
+      validate_qualification_status(qualification)
     end
   end
 
