@@ -20,7 +20,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
              extension_adapter_gap: 9
            }
 
-    assert first.reference_coverage == %{contract_fixture: 1, missing: 30}
+    assert first.reference_coverage == %{accepted_answer: 31}
     assert first.groups[:qualification_context_required] == 22
     assert first.groups[:graph_qualification_context_required] == 9
 
@@ -72,13 +72,13 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
 
     assert Enum.all?(matrix.operations, fn operation ->
              :execution_incomplete in operation.blockers and
-               :accepted_answers_incomplete in operation.blockers and
+               :accepted_answers_incomplete not in operation.blockers and
                :result_comparison_incomplete in operation.blockers
            end)
 
     read_1 = Enum.find(matrix.operations, &String.contains?(&1.operation_id, "read-01@"))
     assert read_1.variants == ["default"]
-    refute read_1.accepted_answers_complete?
+    assert read_1.accepted_answers_complete?
   end
 
   test "records shared semantic requirements without claiming they already fail" do
@@ -174,7 +174,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     assert Qualification.classify(passing, false) == :passing
   end
 
-  test "qualification evidence preserves missing-answer blockers and closes only on complete proof" do
+  test "qualification evidence recognizes complete answers and closes only on complete proof" do
     assert {:ok, definitions} = Workload.load()
     assert {:ok, matrix} = Qualification.matrix(definitions)
     identities = qualification_identities()
@@ -188,7 +188,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     refute evidence.complete?
     assert evidence.operation_count == 31
     assert evidence.variant_count == 31
-    assert :accepted_answers_incomplete in evidence.blockers
+    refute :accepted_answers_incomplete in evidence.blockers
+    assert :execution_incomplete in evidence.blockers
     assert :result_comparison_incomplete in evidence.blockers
 
     qualified =

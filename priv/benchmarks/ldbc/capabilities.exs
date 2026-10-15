@@ -213,9 +213,9 @@ bi_reads =
       5,
       if(extension?,
         do:
-          "The operation-specific graph adapter is registered, protocol-reconciled, and tested, but every variant still lacks accepted-answer comparison evidence.",
+          "The operation-specific graph adapter is registered, protocol-reconciled, and passes the pinned accepted answers on the reduced smoke profile; official scale-factor qualification remains open.",
         else:
-          "The checked-in SPARQL translation and standard handler are registered, protocol-reconciled, and tested, but every variant still lacks accepted-answer comparison evidence."
+          "The checked-in SPARQL translation and standard handler are registered, protocol-reconciled, and pass the pinned accepted answers on the reduced smoke profile; official scale-factor qualification remains open."
       ),
       [
         "ldbc_snb_docs:query-specifications/bi-read-#{padded}.yaml",

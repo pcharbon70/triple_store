@@ -142,48 +142,40 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
     end
   end
 
-  test "checked-in reference coverage is explicit, deterministic, and fail closed" do
+  test "checked-in accepted-answer coverage is complete, deterministic, and fail closed" do
     assert {:ok, definitions} = Workload.load()
     manifest = read_manifest(ReferenceAnswers.default_root())
 
     coverage = reference_coverage(definitions, manifest.answers)
-    assert Enum.count(coverage, &(&1.status == :contract_fixture)) == 1
+    assert Enum.count(coverage, &(&1.status == :checked_in)) == 31
+    refute Enum.any?(coverage, &(&1.status == :contract_fixture))
     refute Enum.any?(coverage, &(&1.status == :external))
-    assert Enum.count(coverage, &(&1.status == :missing)) == 30
+    refute Enum.any?(coverage, &(&1.status == :missing))
 
-    assert [%{number: 1, variant: "default", status: :contract_fixture}] =
-             Enum.filter(coverage, &(&1.status == :contract_fixture))
+    {dataset, parameters} = checked_in_context(definitions)
 
-    {dataset, parameters} = checked_in_context()
-    assert {:ok, definition} = Workload.fetch(definitions, 1)
+    Enum.each(definitions, fn definition ->
+      assert {:ok, first} =
+               ReferenceAnswers.load(definition, 0, dataset, parameters,
+                 reference_source: @reference_source
+               )
 
-    assert {:ok, first} =
-             ReferenceAnswers.load(definition, 0, dataset, parameters,
-               reference_source: @reference_source
-             )
+      assert {:ok, second} =
+               ReferenceAnswers.load(definition, 0, dataset, parameters,
+                 reference_source: @reference_source
+               )
 
-    assert {:ok, second} =
-             ReferenceAnswers.load(definition, 0, dataset, parameters,
-               reference_source: @reference_source
-             )
+      assert first.purpose == :accepted_answer
+      assert first.content_checksum == second.content_checksum
+      assert first.identity == second.identity
 
-    assert first.result.rows == []
-    assert first.content_checksum == second.content_checksum
-    assert first.identity == second.identity
+      assert {:ok, comparison} =
+               ReferenceAnswers.compare(definition, 0, first.result, dataset, parameters,
+                 reference_source: @reference_source
+               )
 
-    assert {:error, {:reference_answer_not_accepted, :contract_fixture}} =
-             ReferenceAnswers.compare(definition, 0, first.result, dataset, parameters,
-               reference_source: @reference_source
-             )
-
-    assert {:ok, missing_definition} = Workload.fetch(definitions, 2, "a")
-
-    assert {:error, {:reference_answer_not_found, operation_id, "a", 0}} =
-             ReferenceAnswers.load(missing_definition, 0, dataset, parameters,
-               reference_source: @reference_source
-             )
-
-    assert operation_id == missing_definition.catalog_id
+      assert comparison.status == :correct
+    end)
   end
 
   test "missing, malformed, and checksum-mismatched reference artifacts fail closed", %{
@@ -418,22 +410,30 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
 
       status =
         case entries do
-          [%{purpose: :contract_fixture}] -> :contract_fixture
-          [%{purpose: :accepted_answer, artifact: %{kind: :embedded}}] -> :checked_in
-          [%{artifact: %{kind: :external}}] -> :external
-          [] -> :missing
+          [%{purpose: :contract_fixture}] ->
+            :contract_fixture
+
+          [%{purpose: :accepted_answer, artifact: %{kind: kind}}]
+          when kind in [:embedded, :embedded_bundle] ->
+            :checked_in
+
+          [%{artifact: %{kind: :external}}] ->
+            :external
+
+          [] ->
+            :missing
         end
 
       %{number: definition.number, variant: definition.variant, status: status}
     end)
   end
 
-  defp checked_in_context do
+  defp checked_in_context(definitions) do
     dataset = %{
       dataset_id: "snb-bi-smoke",
       transformation: %{
         output_checksum:
-          "sha256:90f9b6e38f2689be479c0d40b368db3e2f0542d503cb7d1ec9950b0e524ecf33",
+          "sha256:dc5cad59cb66a5437daf25a27fe277401b632ad855f1577c15107e10596ce657",
         mapping_version: "snb-rdf-v1"
       }
     }
@@ -442,7 +442,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5ACorpusAndReferenceIntegrationTest do
       dataset_checksum: dataset.transformation.output_checksum,
       source_id: "snb-bi-1.0.3",
       generator_pin: "5f7967235593eefa98b336e240039780b6a76a9a",
-      sequences: %{"1" => [%{"datetime" => "2012-11-29T00:00:00Z"}]}
+      sequences: parameter_sequences(definitions)
     }
 
     {dataset, parameters}

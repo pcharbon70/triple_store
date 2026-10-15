@@ -34,19 +34,15 @@ defmodule TripleStore.Benchmark.LDBC.Phase5BReadCorrectnessIntegrationTest do
 
     assert length(first.entries) == 31
     assert first.execution == %{pass: 31}
-    assert first.comparisons == %{blocked: 31}
-    refute first.qualified?
+    assert first.comparisons == %{pass: 31}
+    assert first.qualified?
     assert Enum.all?(first.operations, & &1.execution_complete?)
-    refute Enum.any?(first.operations, & &1.qualified?)
-
-    assert Enum.count(first.entries, fn entry ->
-             entry.comparison.reason == {:ineligible_reference_purpose, :contract_fixture}
-           end) == 1
-
-    assert Enum.count(first.entries, &(&1.comparison.reason == :accepted_answer_missing)) == 30
+    assert Enum.all?(first.operations, & &1.qualified?)
 
     assert Enum.all?(first.entries, fn entry ->
              entry.execution.status == :pass and
+               entry.comparison.status == :pass and
+               entry.qualified? and
                String.starts_with?(entry.execution.digest, "sha256:") and
                is_list(entry.execution.columns) and
                is_list(entry.execution.types)
@@ -65,6 +61,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5BReadCorrectnessIntegrationTest do
              )
 
     assert execution_digests(second) == execution_digests(first)
+    assert comparison_digests(second) == comparison_digests(first)
+    assert second.qualified?
     assert :ok = StoreFixture.teardown(reopened, delete: true)
   end
 
@@ -134,6 +132,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5BReadCorrectnessIntegrationTest do
 
   defp execution_digests(run) do
     Map.new(run.entries, &{{&1.operation_id, &1.variant}, &1.execution.digest})
+  end
+
+  defp comparison_digests(run) do
+    Map.new(run.entries, &{{&1.operation_id, &1.variant}, &1.comparison.digest})
   end
 
   defp run_digest(run) do

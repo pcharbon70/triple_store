@@ -10,15 +10,15 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     version: "v1.0.3",
     commit: "5f7967235593eefa98b336e240039780b6a76a9a"
   }
+  @smoke_dataset_checksum "sha256:dc5cad59cb66a5437daf25a27fe277401b632ad855f1577c15107e10596ce657"
 
-  test "checked-in smoke answers are bound to the deterministic fixture dataset" do
+  test "checked-in accepted answers are bound to the deterministic fixture dataset" do
     {definition, _dataset, parameters} = context()
 
     dataset = %{
       dataset_id: "snb-bi-smoke",
       transformation: %{
-        output_checksum:
-          "sha256:90f9b6e38f2689be479c0d40b368db3e2f0542d503cb7d1ec9950b0e524ecf33",
+        output_checksum: @smoke_dataset_checksum,
         mapping_version: "snb-rdf-v1"
       }
     }
@@ -31,35 +31,30 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
              )
 
     assert answer.result.rows == []
-    assert answer.purpose == :contract_fixture
+    assert answer.purpose == :accepted_answer
 
     assert answer.content_checksum ==
-             "sha256:bd349c43a8039831620a4df23fb14c83577447ba6170596357bce8762d9ebfe4"
+             "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
   end
 
-  test "inventory distinguishes contract fixtures from accepted answers" do
-    assert {:ok, [entry]} = ReferenceAnswers.inventory()
-    assert entry.purpose == :contract_fixture
-    assert entry.artifact.kind == :embedded
+  test "inventory exposes one accepted bundled answer for every canonical variant" do
+    assert {:ok, entries} = ReferenceAnswers.inventory()
+    assert length(entries) == 31
+    assert Enum.all?(entries, &(&1.purpose == :accepted_answer))
+    assert Enum.all?(entries, &(&1.artifact.kind == :embedded_bundle))
+    assert MapSet.size(MapSet.new(entries, &{&1.operation_id, &1.variant})) == 31
   end
 
-  test "contract fixtures cannot satisfy accepted-answer comparison" do
-    {definition, _dataset, parameters} = context()
-
-    dataset = %{
-      dataset_id: "snb-bi-smoke",
-      transformation: %{
-        output_checksum:
-          "sha256:90f9b6e38f2689be479c0d40b368db3e2f0542d503cb7d1ec9950b0e524ecf33",
-        mapping_version: "snb-rdf-v1"
-      }
-    }
-
-    parameters = %{parameters | dataset_checksum: dataset.transformation.output_checksum}
+  test "contract fixtures cannot satisfy accepted-answer comparison", %{test: test} do
+    {definition, dataset, parameters} = context()
+    root = write_reference_root(test, definition, dataset, parameters, [])
+    manifest = read_manifest(root)
+    write_manifest(root, put_in(manifest, [:answers, Access.at(0), :purpose], :contract_fixture))
     assert {:ok, actual} = ResultContract.materialize(definition, [])
 
     assert {:error, {:reference_answer_not_accepted, :contract_fixture}} =
              ReferenceAnswers.compare(definition, 0, actual, dataset, parameters,
+               root: root,
                reference_source: @reference_source
              )
   end
@@ -242,6 +237,44 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
     assert address.uri == "https://results.example.test/by-sha256/answer.json"
   end
 
+  test "bundled answers reject a selected row checksum mismatch", %{test: test} do
+    {definition, _dataset, parameters} = context()
+
+    dataset = %{
+      dataset_id: "snb-bi-smoke",
+      transformation: %{
+        output_checksum: @smoke_dataset_checksum,
+        mapping_version: "snb-rdf-v1"
+      }
+    }
+
+    parameters = %{parameters | dataset_checksum: dataset.transformation.output_checksum}
+    root = copy_reference_root(test)
+    bundle_path = Path.join(root, "generated/smoke-v1.0.3/answers.json")
+    bundle = bundle_path |> File.read!() |> Jason.decode!()
+
+    bundle =
+      put_in(
+        bundle,
+        ["answers", Access.at(0), "rows_checksum"],
+        sha256("incorrect selected rows")
+      )
+
+    File.write!(bundle_path, Jason.encode!(bundle, pretty: true) <> "\n")
+    bundle_checksum = file_checksum(bundle_path)
+    manifest = read_manifest(root)
+
+    manifest =
+      update_in(manifest, [:answers], fn answers ->
+        Enum.map(answers, &put_in(&1, [:artifact, :checksum], bundle_checksum))
+      end)
+
+    write_manifest(root, manifest)
+
+    assert {:error, {:malformed_reference_answer_bundle, :rows_checksum_mismatch}} =
+             load(root, definition, dataset, parameters)
+  end
+
   test "compares through the shared correctness model with full smoke differences", %{test: test} do
     {definition, dataset, parameters} = context()
     expected_rows = [read_1_row(2012, 7, 2.5), read_1_row(2012, 7, 2.5)]
@@ -397,6 +430,18 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIReferenceAnswersTest do
 
     write_manifest(root, manifest)
     File.cp!(Path.join(root, "manifest.exs"), Path.join(root, "manifest.backup.exs"))
+    root
+  end
+
+  defp copy_reference_root(test) do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "snb_bi_bundle_#{:erlang.phash2(test)}_#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf!(root) end)
+    File.cp_r!(ReferenceAnswers.default_root(), root)
     root
   end
 

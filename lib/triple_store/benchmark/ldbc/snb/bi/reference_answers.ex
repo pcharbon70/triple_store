@@ -14,6 +14,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
 
   @manifest_schema_version 2
   @payload_schema_version 1
+  @bundle_schema_version 1
   @layout_version "snb-bi-reference-answers-v1"
 
   @doc "Returns the checked-in reference-answer root."
@@ -64,7 +65,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
          :ok <- validate_manifest(manifest),
          {:ok, entry} <- find_entry(manifest, definition, parameter_row_index),
          :ok <- validate_identity(manifest, entry, definition, dataset, parameters, opts),
-         {:ok, payload, checksum} <- read_artifact(root, entry.artifact),
+         {:ok, payload, checksum} <- read_artifact(root, entry, parameters),
          {:ok, result} <- materialize_payload(definition, payload) do
       {:ok,
        %{
@@ -191,8 +192,9 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
 
   defp validate_identity(manifest, entry, definition, dataset, parameters, opts) do
     reference_source = Keyword.get(opts, :reference_source)
-    dataset_checksum = get_in(dataset, [:transformation, :output_checksum])
-    mapping_version = get_in(dataset, [:transformation, :mapping_version])
+    transformation = Map.get(dataset, :transformation, %{})
+    dataset_checksum = Map.get(transformation, :output_checksum)
+    mapping_version = Map.get(transformation, :mapping_version)
     parameter_row = parameter_row(parameters, entry.parameter)
 
     errors =
@@ -241,7 +243,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
     |> Map.take([:source_id, :path, :commit, :reference])
   end
 
-  defp read_artifact(root, %{kind: :embedded, path: relative, checksum: expected}) do
+  defp read_artifact(
+         root,
+         %{artifact: %{kind: :embedded, path: relative, checksum: expected}},
+         _parameters
+       ) do
     with {:ok, path} <- resolve_embedded_path(root, relative),
          {:ok, binary} <- read_answer_file(path),
          actual <- binary_checksum(binary),
@@ -251,7 +257,29 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
     end
   end
 
-  defp read_artifact(_root, %{kind: :external} = artifact),
+  defp read_artifact(
+         root,
+         %{
+           artifact: %{
+             kind: :embedded_bundle,
+             path: relative,
+             checksum: expected_bundle,
+             answer_checksum: expected_answer
+           }
+         } = entry,
+         parameters
+       ) do
+    with {:ok, path} <- resolve_embedded_path(root, relative),
+         {:ok, binary} <- read_answer_file(path),
+         actual_bundle <- binary_checksum(binary),
+         :ok <- verify_checksum(expected_bundle, actual_bundle),
+         {:ok, payload, actual_answer} <- decode_bundle_answer(binary, entry, parameters),
+         :ok <- verify_checksum(expected_answer, actual_answer) do
+      {:ok, payload, actual_answer}
+    end
+  end
+
+  defp read_artifact(_root, %{artifact: %{kind: :external} = artifact}, _parameters),
     do: {:error, {:external_reference_answer_required, artifact}}
 
   defp resolve_embedded_path(root, relative) do
@@ -291,6 +319,65 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
         {:error, {:malformed_reference_answer, Exception.message(reason)}}
     end
   end
+
+  defp decode_bundle_answer(binary, entry, parameters) do
+    with {:ok, bundle} <- Jason.decode(binary),
+         {:ok, answers} <- bundle_answers(bundle),
+         {:ok, answer} <- select_bundle_answer(answers, entry),
+         :ok <- validate_bundle_parameters(answer, entry, parameters),
+         {:ok, rows} <- bundle_rows(answer),
+         actual_checksum <- canonical_checksum(rows),
+         :ok <- verify_bundle_rows_checksum(answer, actual_checksum) do
+      {:ok, %{"rows" => rows}, actual_checksum}
+    else
+      {:error, {:malformed_reference_answer_bundle, _reason} = error} ->
+        {:error, error}
+
+      {:error, %Jason.DecodeError{} = error} ->
+        {:error, {:malformed_reference_answer_bundle, Exception.message(error)}}
+    end
+  end
+
+  defp bundle_answers(%{"schema_version" => @bundle_schema_version, "answers" => answers})
+       when is_list(answers),
+       do: {:ok, answers}
+
+  defp bundle_answers(_bundle),
+    do: {:error, {:malformed_reference_answer_bundle, :invalid_payload}}
+
+  defp select_bundle_answer(answers, entry) do
+    matches =
+      Enum.filter(answers, fn answer ->
+        answer["operation_id"] == entry.operation_id and answer["variant"] == entry.variant and
+          answer["parameter_row_index"] == entry.parameter.row_index
+      end)
+
+    case matches do
+      [answer] -> {:ok, answer}
+      [] -> {:error, {:malformed_reference_answer_bundle, :answer_not_found}}
+      _answers -> {:error, {:malformed_reference_answer_bundle, :duplicate_answer}}
+    end
+  end
+
+  defp validate_bundle_parameters(answer, entry, parameters) do
+    case parameter_row(parameters, entry.parameter) do
+      {:ok, row} ->
+        if answer["parameters"] == row,
+          do: :ok,
+          else: {:error, {:malformed_reference_answer_bundle, :parameter_mismatch}}
+
+      :error ->
+        {:error, {:malformed_reference_answer_bundle, :parameter_mismatch}}
+    end
+  end
+
+  defp bundle_rows(%{"rows" => rows}) when is_list(rows), do: {:ok, rows}
+  defp bundle_rows(_answer), do: {:error, {:malformed_reference_answer_bundle, :invalid_rows}}
+
+  defp verify_bundle_rows_checksum(%{"rows_checksum" => checksum}, checksum), do: :ok
+
+  defp verify_bundle_rows_checksum(_answer, _actual),
+    do: {:error, {:malformed_reference_answer_bundle, :rows_checksum_mismatch}}
 
   defp materialize_payload(definition, %{"rows" => rows}) do
     case ResultContract.decode_reference(definition, rows) do
@@ -332,6 +419,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
   defp valid_artifact?(%{kind: :embedded, path: path, checksum: checksum}),
     do: non_empty?(path) and checksum?(checksum)
 
+  defp valid_artifact?(%{
+         kind: :embedded_bundle,
+         path: path,
+         checksum: checksum,
+         answer_checksum: answer_checksum
+       }),
+       do: non_empty?(path) and checksum?(checksum) and checksum?(answer_checksum)
+
   defp valid_artifact?(%{kind: :external, uri: uri, checksum: checksum}),
     do: non_empty?(uri) and checksum?(checksum)
 
@@ -342,6 +437,24 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ReferenceAnswers do
 
   defp binary_checksum(binary),
     do: "sha256:" <> (:crypto.hash(:sha256, binary) |> Base.encode16(case: :lower))
+
+  defp canonical_checksum(value), do: value |> canonical_json() |> binary_checksum()
+
+  defp canonical_json(value) when is_list(value),
+    do: "[" <> Enum.map_join(value, ",", &canonical_json/1) <> "]"
+
+  defp canonical_json(value) when is_map(value) do
+    encoded =
+      value
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map_join(",", fn {key, nested} ->
+        Jason.encode!(key) <> ":" <> canonical_json(nested)
+      end)
+
+    "{" <> encoded <> "}"
+  end
+
+  defp canonical_json(value), do: Jason.encode!(value)
 
   defp checksum?("sha256:" <> digest),
     do: byte_size(digest) == 64 and String.match?(digest, ~r/\A[0-9a-f]+\z/)

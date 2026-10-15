@@ -13,14 +13,17 @@ not considered implemented until its typed, ordered result matches accepted answ
 - BI 10, 15, 19, and 20 and Interactive 13 and 14 require path length, returned
   paths, or weighted path cost unavailable from standard SPARQL property paths.
   Phase 5 now provides the four BI operation adapters over bounded index-backed
-  traversal. Their capability entries remain `requires_extension` until every
-  variant has an accepted answer and a passing comparison.
+  traversal. All nine BI graph variants pass their accepted-answer comparisons
+  on the reduced smoke profile; their entries remain `requires_extension`
+  because those operations use explicit graph adapters rather than standard
+  SPARQL execution.
 - The SNB BI protocol, scoring, atomic microbatch, checkpoint, artifact, standard
   analytical handler, and graph-adapter boundaries are implemented. Analytical
-  capabilities remain fail-closed until their typed results pass accepted-answer
-  validation. Protocol reconciliation, pinned-scorer golden equivalence, and
-  qualification artifact identities are executable, but do not substitute for
-  the 30 missing accepted answers; see
+  capabilities now have complete checksum-pinned accepted-answer coverage and
+  all 31 reduced smoke comparisons pass. Protocol reconciliation,
+  pinned-scorer golden equivalence, and qualification artifact identities are
+  executable. The reduced fixture remains diagnostic and does not establish
+  official scale-factor conformance or comparable performance; see
   [the SNB BI guide](ldbc-snb-bi.md).
 - `TripleStore.query/3` does not enter the store transaction coordinator. Direct
   insert, delete, and loader paths also remain outside its queue. Interactive must
