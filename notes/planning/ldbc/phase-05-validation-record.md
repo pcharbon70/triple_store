@@ -196,6 +196,19 @@ external evidence prerequisite for closing the remaining gate.
 ## Executed checks
 
 - Phase 5D focused SNB BI and Phase 5 integration gates: 92 tests, 0 failures
+- Phase 5D complete LDBC regression directory after review remediation: 175
+  tests, 0 failures
+- Phase 5D final default suite: 25 doctests, 10 properties, 6,940 tests, 0
+  failures, 53 skipped, and 345 excluded by the default test configuration
+- The first Phase 5D full-suite attempt encountered a transient pooled RocksDB
+  fixture corruption and cascading snapshot checkout timeouts. The isolated
+  snapshot suite then passed 32 tests with 4 excluded, and two complete reruns
+  with the original seed passed with no failures.
+- Phase 5D `mix format --check-formatted`, strict application compilation,
+  `mix credo --strict`, and `mix dialyzer --format short`: passed; strict
+  compilation warnings came from third-party dependencies
+- Phase 5D specs, guides, code-doc, and full conformance governance validators:
+  passed; RFC governance skipped because the repository has no `rfcs/` directory
 - Phase 5C update-state integration: 4 tests, 0 failures
 - Phase 5C focused update-state regressions: 36 tests, 0 failures
 - Complete LDBC regression directory: 165 tests, 0 failures
