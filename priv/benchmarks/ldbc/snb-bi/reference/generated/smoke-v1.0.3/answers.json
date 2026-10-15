@@ -1,0 +1,453 @@
+{
+  "answers": [
+    {
+      "operation_id": "ldbc/snb-bi/read-01@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "datetime": "2012-11-29T00:00:00Z"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "date": "2012-11-29",
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "date": "2012-11-29",
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "date": "2012-11-29",
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "m"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-03@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country": "value",
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-04@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "date": "2012-11-29"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-05@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-06@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-07@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "startDate": "2012-11-29",
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "startDate": "2012-11-29",
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "startDate": "2012-11-29",
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "m"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-09@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "startDate": "2012-11-29"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-10@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country": "value",
+        "maxPathDistance": 1,
+        "minPathDistance": 1,
+        "personId": 1,
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-10@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country": "value",
+        "maxPathDistance": 1,
+        "minPathDistance": 1,
+        "personId": 1,
+        "tagClass": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-11@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country": "value",
+        "endDate": "2012-11-29",
+        "startDate": "2012-11-29"
+      },
+      "rows": [
+        {
+          "count": 0
+        }
+      ],
+      "rows_checksum": "sha256:831fd6181808cdbd39d2e91a92418809d34d80f8bbc8ab49373a5eabe92f6b51",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-12@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "languages": [
+          "value"
+        ],
+        "lengthThreshold": 1,
+        "startDate": "2012-11-29"
+      },
+      "rows": [
+        {
+          "messageCount": 0,
+          "personCount": 3
+        }
+      ],
+      "rows_checksum": "sha256:da0d63de70da7950a23575232c2106559cfd77cdbd9b60d13551d4a9489f8dc4",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-13@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country": "value",
+        "endDate": "2012-11-29"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-14@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country1": "value",
+        "country2": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-14@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "country1": "value",
+        "country2": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-15@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "person1Id": 1,
+        "person2Id": 1,
+        "startDate": "2012-11-29"
+      },
+      "rows": [
+        {
+          "weight": 0.0
+        }
+      ],
+      "rows_checksum": "sha256:4d521c4c98a1624cd689d5e77ff41fc51650058af7d078a1430972ef78f0f444",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-15@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "endDate": "2012-11-29",
+        "person1Id": 1,
+        "person2Id": 1,
+        "startDate": "2012-11-29"
+      },
+      "rows": [
+        {
+          "weight": 0.0
+        }
+      ],
+      "rows_checksum": "sha256:4d521c4c98a1624cd689d5e77ff41fc51650058af7d078a1430972ef78f0f444",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-16@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "dateA": "2012-11-29",
+        "dateB": "2012-11-29",
+        "maxKnowsLimit": 1,
+        "tagA": "value",
+        "tagB": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-16@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "dateA": "2012-11-29",
+        "dateB": "2012-11-29",
+        "maxKnowsLimit": 1,
+        "tagA": "value",
+        "tagB": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-17@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "delta": 1,
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-18@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "tag": "value"
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "default"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-19@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "city1Id": 1,
+        "city2Id": 1
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-19@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "city1Id": 1,
+        "city2Id": 1
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "company": "value",
+        "person2Id": 1
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "a"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "company": "value",
+        "person2Id": 1
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "b"
+    },
+    {
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "parameter_row_index": 0,
+      "parameters": {
+        "company": "value",
+        "person2Id": 1
+      },
+      "rows": [],
+      "rows_checksum": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "variant": "m"
+    }
+  ],
+  "bundle_id": "snb-bi-smoke-v1.0.3-row0-reference-answers",
+  "catalog_id": "ldbc-snb-bi-v1.0.3",
+  "dataset": {
+    "id": "snb-bi-smoke",
+    "license": "Apache-2.0",
+    "mapping_version": "snb-rdf-v1",
+    "output_checksum": "sha256:dc5cad59cb66a5437daf25a27fe277401b632ad855f1577c15107e10596ce657",
+    "source_checksum": "sha256:c839b0cac54a582c8e41ac4429aecaa0382ebf540789f638c383226d4171c440"
+  },
+  "generation": {
+    "query_source_checksums": {
+      "common/result_mapping.py": "sha256:07efe881ea6b9241e045fefa9ad32ff139f5746433eb5987a491439939fb4270",
+      "cypher/queries.py": "sha256:22bfbd03202426229b1f39428bb10744265b59e034c03a7d202f0b90e89681e5",
+      "cypher/queries/bi-1.cypher": "sha256:e71af823063d32f55d26302606f56aa5876fccead95ad9704495d9617b3ff439",
+      "cypher/queries/bi-10.cypher": "sha256:6bf459234690bec4b184e24c75a0d845d9029670fc638e6fe4fb8d456d65b9b0",
+      "cypher/queries/bi-11.cypher": "sha256:95e420f9975cfe7281410ac8ba9973b0448c5c0f81fb0cb2ac13de079672efa5",
+      "cypher/queries/bi-12.cypher": "sha256:ad65e156ff14fb94ba4c44d5536d752a8c914afc7ac0891bd7d0015a21843c2e",
+      "cypher/queries/bi-13.cypher": "sha256:16c5db71455f9bf9dc0c588b51f4d7be1cf4e39471133f6dbbb3a736436ca62d",
+      "cypher/queries/bi-14.cypher": "sha256:d76a37054d945d8b5d5e48d22b5e2c902260e5fb5eef9c4d18cc6053f866b825",
+      "cypher/queries/bi-15.cypher": "sha256:ea48125edb75c8cfb04868be43404d6df40e11d8d4cbff4cf29e685ebb77c190",
+      "cypher/queries/bi-16.cypher": "sha256:cfa0bd8b1e8c89fe3b0c959114e35b2082505dd3c761524fba636ab56e0dbb8a",
+      "cypher/queries/bi-17.cypher": "sha256:18476c2b8c3929b1d91ecd3c77c0658853da0b1c8c28e437bd09e262c9852946",
+      "cypher/queries/bi-18.cypher": "sha256:cb5c762add6f7e900333fc145d1cb2c16e20e66651ae8ce00494459774404983",
+      "cypher/queries/bi-19-create-graph.cypher": "sha256:7b9a6c0798facb4d5f498d3dc6f4a1b48d48245706c219f5c4c85e0698be5f41",
+      "cypher/queries/bi-19-drop-graph.cypher": "sha256:5734ae17b0c934d64c4b774b7f3c0395dd184f05b3b62cc9a4a6658fbef1768a",
+      "cypher/queries/bi-19.cypher": "sha256:78398398e09803ced1b8c6df1f2a7f031ffeb4a49eb5c27d9e16bc6ce3ea35db",
+      "cypher/queries/bi-2.cypher": "sha256:35821f1f2a62cdd8b9859d6a7123074c14b9c6b551e46cbbed1120b4673c82a7",
+      "cypher/queries/bi-20-create-graph.cypher": "sha256:054c4acbbd300aad7d8fac9c0f38d0858dd754d7dcfdd677b4bc4a28884f6599",
+      "cypher/queries/bi-20-drop-graph.cypher": "sha256:30a94a848ae5422f977c08bc4e4cef19e3efd671f991518fcd3a73919bf24f75",
+      "cypher/queries/bi-20.cypher": "sha256:930d8ecc546eae23af1abe89eb43ecaef69cd7dc496768602d2bc32f926916a3",
+      "cypher/queries/bi-3.cypher": "sha256:34b8bb1823f3be39c1ba422518559459148cfd0eafd868578814ca85808811cc",
+      "cypher/queries/bi-4.cypher": "sha256:a7dccfc160e654a2256f2e6c3cc4e4d7946ddce9c9d37e515f3c8f00a9a61643",
+      "cypher/queries/bi-5.cypher": "sha256:006018dcef3456245b3b60f64d4e52bef80f3e2657522ee9d58b251ea701de08",
+      "cypher/queries/bi-6.cypher": "sha256:ef16791665cee15ed934cc46ce203c314d4452b8fe840891908a529d96b52e79",
+      "cypher/queries/bi-7.cypher": "sha256:f840fe132e706b1f0a9c231d05c1f7d70ddd0b7ecd1f2a1466d6729eedf6ed2d",
+      "cypher/queries/bi-8.cypher": "sha256:41381d2777eafc03e32c8e117f909e0e4835598be3d4e2065ccd8f561c996050",
+      "cypher/queries/bi-9.cypher": "sha256:9c2671ffedb35ea6fc3687616745f2c05f46759b3c5d001c6d11e5371cab9b9a"
+    },
+    "run_spec": "priv/benchmarks/ldbc/snb-bi/reference/run-spec.json",
+    "run_spec_checksum": "sha256:65a9a992126a378047821735a8127e1a483877fef1905c6ba5ba4378fcbacef1",
+    "tool": "scripts/generate_ldbc_snb_bi_reference_answers.py",
+    "tool_checksum": "sha256:334030fb17472e2045a3d832c76c1024cf173ce65414026e04c1ea5cbbb311e2"
+  },
+  "mapping_boundary": {
+    "external_oracle": "Neo4j property graph running pinned upstream Cypher",
+    "purpose": "answer generation only; no Cypher support in TripleStore",
+    "source": "LDBC SNB CSV fixture",
+    "triple_store": "RDF snb-rdf-v1 mapping with SPARQL and explicit graph adapters"
+  },
+  "parameter_source": {
+    "generator_pin": "5f7967235593eefa98b336e240039780b6a76a9a",
+    "source_id": "snb-bi-1.0.3"
+  },
+  "reference_source": {
+    "commit": "5f7967235593eefa98b336e240039780b6a76a9a",
+    "implementation": "ldbc-snb-bi-cypher",
+    "repository": "https://github.com/ldbc/ldbc_snb_bi",
+    "version": "v1.0.3"
+  },
+  "runtime": {
+    "apoc": "5.1.0",
+    "graph_data_science": "2.4.6",
+    "image_digest": "neo4j@sha256:8e5d3d32ab4d18544694091a825a13a8e7a48af35a177a6e7645f74a9186de4a",
+    "image_id": "sha256:43eb20e91b26463d9a206c03ae97182ee6a83e63b83255bba256fb5f517603ef",
+    "image_reference": "neo4j:5.1.0",
+    "neo4j": "5.1.0",
+    "plugin_checksums": {
+      "apoc": "sha256:f45f7b313e48288c35c01fec33d390626d4a5cbddab298332127dc1150f6007d",
+      "graph_data_science": "sha256:480fd5836cc8bc1563ed4a22c7a9a71acc122c4df3bba59d2ff3e31399e7f3bc"
+    },
+    "python": "3.12.12",
+    "python_driver": "4.4.8"
+  },
+  "schema_version": 1
+}

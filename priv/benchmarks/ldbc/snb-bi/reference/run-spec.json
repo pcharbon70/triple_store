@@ -1,0 +1,581 @@
+{
+  "dataset": {
+    "id": "snb-bi-smoke",
+    "source_checksum": "sha256:c839b0cac54a582c8e41ac4429aecaa0382ebf540789f638c383226d4171c440",
+    "output_checksum": "sha256:dc5cad59cb66a5437daf25a27fe277401b632ad855f1577c15107e10596ce657",
+    "mapping_version": "snb-rdf-v1",
+    "license": "Apache-2.0"
+  },
+  "entries": [
+    {
+      "number": 1,
+      "parameters": {
+        "datetime": {
+          "type": "DateTime",
+          "value": "2012-11-29T00:00:00Z"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-01@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 2,
+      "parameters": {
+        "date": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 2,
+      "parameters": {
+        "date": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 2,
+      "parameters": {
+        "date": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-02@v1.0.3",
+      "variant": "m",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 3,
+      "parameters": {
+        "country": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-03@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 4,
+      "parameters": {
+        "date": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-04@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 5,
+      "parameters": {
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-05@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 6,
+      "parameters": {
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-06@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 7,
+      "parameters": {
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-07@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 8,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 8,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 8,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-08@v1.0.3",
+      "variant": "m",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 9,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-09@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 10,
+      "parameters": {
+        "country": {
+          "type": "String",
+          "value": "value"
+        },
+        "maxPathDistance": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "minPathDistance": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "personId": {
+          "type": "ID",
+          "value": 1
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-10@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 10,
+      "parameters": {
+        "country": {
+          "type": "String",
+          "value": "value"
+        },
+        "maxPathDistance": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "minPathDistance": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "personId": {
+          "type": "ID",
+          "value": 1
+        },
+        "tagClass": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-10@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 11,
+      "parameters": {
+        "country": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-11@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 12,
+      "parameters": {
+        "languages": {
+          "type": "\\{String\\}",
+          "value": [
+            "value"
+          ]
+        },
+        "lengthThreshold": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-12@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 13,
+      "parameters": {
+        "country": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-13@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 14,
+      "parameters": {
+        "country1": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "country2": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-14@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 14,
+      "parameters": {
+        "country1": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "country2": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-14@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 15,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "person1Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "person2Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-15@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 15,
+      "parameters": {
+        "endDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "person1Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "person2Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "startDate": {
+          "type": "Date",
+          "value": "2012-11-29"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-15@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 16,
+      "parameters": {
+        "dateA": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "dateB": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "maxKnowsLimit": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "tagA": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "tagB": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-16@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 16,
+      "parameters": {
+        "dateA": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "dateB": {
+          "type": "Date",
+          "value": "2012-11-29"
+        },
+        "maxKnowsLimit": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "tagA": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "tagB": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-16@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 17,
+      "parameters": {
+        "delta": {
+          "type": "32-bit Integer",
+          "value": 1
+        },
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-17@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 18,
+      "parameters": {
+        "tag": {
+          "type": "Long String",
+          "value": "value"
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-18@v1.0.3",
+      "variant": "default",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 19,
+      "parameters": {
+        "city1Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "city2Id": {
+          "type": "ID",
+          "value": 1
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-19@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 19,
+      "parameters": {
+        "city1Id": {
+          "type": "ID",
+          "value": 1
+        },
+        "city2Id": {
+          "type": "ID",
+          "value": 1
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-19@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 20,
+      "parameters": {
+        "company": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "person2Id": {
+          "type": "ID",
+          "value": 1
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "variant": "a",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 20,
+      "parameters": {
+        "company": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "person2Id": {
+          "type": "ID",
+          "value": 1
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "variant": "b",
+      "parameter_row_index": 0
+    },
+    {
+      "number": 20,
+      "parameters": {
+        "company": {
+          "type": "Long String",
+          "value": "value"
+        },
+        "person2Id": {
+          "type": "ID",
+          "value": 1
+        }
+      },
+      "operation_id": "ldbc/snb-bi/read-20@v1.0.3",
+      "variant": "m",
+      "parameter_row_index": 0
+    }
+  ],
+  "catalog_id": "ldbc-snb-bi-v1.0.3",
+  "schema_version": 1,
+  "parameter_source": {
+    "source_id": "snb-bi-1.0.3",
+    "generator_pin": "5f7967235593eefa98b336e240039780b6a76a9a"
+  },
+  "reference_source": {
+    "version": "v1.0.3",
+    "repository": "https://github.com/ldbc/ldbc_snb_bi",
+    "implementation": "ldbc-snb-bi-cypher",
+    "commit": "5f7967235593eefa98b336e240039780b6a76a9a"
+  }
+}
