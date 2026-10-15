@@ -85,7 +85,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
                scale_factor: 10,
                load_time_s: 3_600,
                throughput_min_s: 3_600,
-               comparable: true
+               comparable: true,
+               reconciled?: true
              )
 
     assert_in_delta score.power, 900.0, 1.0e-9
@@ -99,7 +100,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
              Scoring.calculate([bad | tl(power)] ++ throughput,
                scale_factor: 10,
                load_time_s: 3_600,
-               comparable: true
+               comparable: true,
+               reconciled?: true
              )
 
     assert :incorrect_or_incomplete_operation in errors
@@ -194,6 +196,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
 
     assert {:error, {:score_record_count, 32, 31}} =
              ProtocolReconciler.reconcile(schedule, run, tl(records))
+
+    inconsistent_identity = %{hd(run.blocks).state_identity | state_checksum: checksum("stale")}
+
+    inconsistent_run =
+      put_in(run, [:blocks, Access.at(0), :state_identity], inconsistent_identity)
+
+    assert {:error, {:protocol_state_identity_mismatch, 1}} =
+             ProtocolReconciler.reconcile(schedule, inconsistent_run, records)
   end
 
   test "protocol rejects continuation when any reported identity field disagrees" do
@@ -247,7 +257,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
       label: label,
       duration_s: duration,
       correct?: true,
-      complete?: true
+      complete?: true,
+      score_eligible?: true
     }
   end
 

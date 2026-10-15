@@ -11,7 +11,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIScoringEquivalenceTest do
                scale_factor: golden.inputs.scale_factor,
                load_time_s: golden.inputs.load_time_s,
                throughput_min_s: golden.inputs.throughput_min_s,
-               comparable: true
+               comparable: true,
+               reconciled?: true
              )
 
     assert_in_delta score.power, golden.expected.power, 1.0e-9
@@ -24,7 +25,13 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIScoringEquivalenceTest do
 
   test "duplicate, incomplete, invalid, and unreconciled inputs fail closed" do
     golden = golden_fixture()
-    opts = [scale_factor: 10, load_time_s: 3_600.0, throughput_min_s: 3_600.0]
+
+    opts = [
+      scale_factor: 10,
+      load_time_s: 3_600.0,
+      throughput_min_s: 3_600.0,
+      reconciled?: true
+    ]
 
     duplicate = [hd(golden.records) | golden.records]
     assert {:error, errors} = Scoring.calculate(duplicate, opts)
@@ -38,7 +45,13 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIScoringEquivalenceTest do
     assert {:error, errors} = Scoring.calculate(invalid, opts)
     assert :incorrect_or_incomplete_operation in errors
 
-    assert {:error, errors} = Scoring.calculate(golden.records, opts ++ [reconciled?: false])
+    ineligible = put_in(golden.records, [Access.at(0), :score_eligible?], false)
+    assert {:error, errors} = Scoring.calculate(ineligible, opts)
+    assert :incorrect_or_incomplete_operation in errors
+
+    assert {:error, errors} =
+             Scoring.calculate(golden.records, Keyword.delete(opts, :reconciled?))
+
     assert :protocol_reconciliation_failed in errors
   end
 

@@ -8,6 +8,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ProtocolReconciler do
   reordered, or stale-state inputs to fail before scoring.
   """
 
+  alias TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity
+
   @comparison_fields [
     :block_position,
     :batch_type,
@@ -154,13 +156,41 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.ProtocolReconciler do
   defp reconcile_state_chain([]), do: {:error, :empty_protocol_run}
 
   defp reconcile_state_chain(blocks) do
-    blocks
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.reduce_while(:ok, fn [left, right], :ok ->
-      if left.end_state_identity == right.start_state_identity,
-        do: {:cont, :ok},
-        else: {:halt, {:error, {:stale_protocol_state, left.position, right.position}}}
+    with :ok <- validate_block_state_identities(blocks) do
+      blocks
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.reduce_while(:ok, fn [left, right], :ok ->
+        if left.end_state_identity == right.start_state_identity,
+          do: {:cont, :ok},
+          else: {:halt, {:error, {:stale_protocol_state, left.position, right.position}}}
+      end)
+    end
+  end
+
+  defp validate_block_state_identities(blocks) do
+    Enum.reduce_while(blocks, :ok, fn block, :ok ->
+      case validate_block_state_identity(block) do
+        :ok -> {:cont, :ok}
+        {:error, _reason} = error -> {:halt, error}
+      end
     end)
+  end
+
+  defp validate_block_state_identity(block) do
+    start_identity = block.start_state_identity
+    end_identity = block.end_state_identity
+
+    valid? =
+      StateIdentity.validate(start_identity) == :ok and
+        StateIdentity.validate(end_identity) == :ok and
+        StateIdentity.compare(end_identity, block.state_identity) == :ok and
+        start_identity.last_applied_batch + 1 == block.position and
+        end_identity.last_applied_batch == block.position and
+        Map.get(block.update, :state_checksum) == end_identity.state_checksum
+
+    if valid?,
+      do: :ok,
+      else: {:error, {:protocol_state_identity_mismatch, block.position}}
   end
 
   defp reject_duplicate_records(records) do

@@ -37,7 +37,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Scoring do
         load_time_s,
         throughput_min_s,
         comparable?,
-        Keyword.get(opts, :reconciled?, true)
+        Keyword.get(opts, :reconciled?, false)
       )
 
     if errors == [] do
@@ -89,7 +89,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Scoring do
   end
 
   defp eligible?(record) do
-    record[:correct?] == true and record[:complete?] == true and is_number(record[:duration_s]) and
+    record[:correct?] == true and record[:complete?] == true and
+      record[:score_eligible?] == true and is_number(record[:duration_s]) and
       record.duration_s > 0
   end
 
