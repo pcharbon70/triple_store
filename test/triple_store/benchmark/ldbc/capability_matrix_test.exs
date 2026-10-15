@@ -36,6 +36,11 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     assert bi_standard.parse_support == :verified
     assert bi_standard.execution_support == :unverified
 
+    bi_update = find_operation(matrix, "ldbc/snb-bi/update-batch@v1.0.3")
+    assert bi_update.status == :supported
+    assert bi_update.parse_support == :not_applicable
+    assert bi_update.execution_support == :verified
+
     interactive_path = find_operation(matrix, "ldbc/snb-interactive/complex-read-14@v1.2.0")
     assert interactive_path.status == :requires_extension
 

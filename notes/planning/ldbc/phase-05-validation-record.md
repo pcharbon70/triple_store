@@ -93,7 +93,7 @@ and reject malformed or non-positive weights through tagged errors.
 The contextual qualification integration executes all 31 variants successfully
 against the reduced mapped smoke store and reproduces the same typed result
 digests after close and reopen. The ordered aggregate digest is
-`sha256:02cd4914ca255871dc36732eb406cc3b96ad09f92426ce62078fe112bbd9cfa1`.
+`sha256:f762b3cd7ad6593f0dc56b3537173703572100f651e77890be5dfcc5efa4b4a1`.
 Timeout, cancellation, and result-contract
 failures remain per-variant evidence and prevent qualification without erasing
 the other results.
@@ -107,8 +107,49 @@ bundle from the pinned reference implementation. The reduced smoke data and
 synthetic parameter rows also remain diagnostic rather than comparable-run
 evidence.
 
+## Phase 5C update and state qualification
+
+The complete deterministic smoke sequence now covers all eight insert and all
+eight delete record types. Inserts run in dependency order; relationship deletes
+precede deep entity deletes. Every accepted microbatch is submitted as one mixed
+RocksDB batch and produces matching `gspo`, `gpos`, `spog`, and `posg` contents.
+The three updated checkpoints have these deterministic persisted states:
+
+| Checkpoint | Statements | Entities | Relationships | Properties | Graphs | State checksum |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `post_validation` | 138 | 12 | 21 | 67 | 2 | `sha256:79aeb4964ba8a2c8e7a593e7194aee7ef1c149e5584f90d1ffb499960c867f3b` |
+| `pre_power` | 114 | 12 | 17 | 63 | 2 | `sha256:5741cecccacf502904f500885eb6648b1a81f2aa1df157bd07a44e43bd7984b3` |
+| `pre_throughput` | 62 | 8 | 3 | 39 | 1 | `sha256:4681fa0b234d737fa2bfef89215295f433382bf6349973784d48138dae6cc246` |
+
+All four named checkpoints restore their recorded counts, state checksum, and
+selected affected BI answer hashes. BI 1 changes from
+`sha256:3255eb8b221ef966e538e2172935bd856d8e7a0f48f57b66592a969453d91424`
+to
+`sha256:058df443305256117a13ed7d0f921b16f7869c6f1b7d09c003724010e672328c`
+after inserts, and the complete delete sequence reproduces the initial hash.
+These are deterministic smoke-state oracles; they do not replace the missing
+accepted-answer corpus described in the Phase 5B boundary.
+
+Injected translation, dependency, storage, interruption, and checkpoint
+restore failures preserve the pre-commit state and all explicit indices.
+Post-commit cache invalidation failure returns the full committed state identity
+with `complete?: false` and `score_eligible?: false`; the scorer rejects that
+record. If the committed state probe itself fails, the receipt instead marks
+the state identity as indeterminate, the commit as incomplete and ineligible,
+and retry as unsafe. Checkpoint restore validates the statement count recorded
+by the selected checkpoint instead of applying the initial-load count to every
+update state.
+
+Sub-Phase 5C's update and state exit gate is complete. Phase 5 remains open:
+Sub-Phase 5D protocol qualification, scoring equivalence, optimization, and
+final evidence have not been completed, and analytical capability promotion is
+still blocked on accepted reference answers.
+
 ## Executed checks
 
+- Phase 5C update-state integration: 4 tests, 0 failures
+- Phase 5C focused update-state regressions: 36 tests, 0 failures
+- Complete LDBC regression directory: 165 tests, 0 failures
 - Final Phase 5B focused regression set after review remediation: 166 tests,
   0 failures, 4 excluded by the default test configuration
 - Final default suite: 25 doctests, 10 properties, 6,901 tests, 0 failures,
@@ -131,7 +172,7 @@ evidence.
 - `mix credo --strict`: no issues
 - specs, guides, RFC, and code-doc validators: passed (RFC skipped because the
   repository has no `rfcs/` directory)
-- `mix test`: 25 doctests, 10 properties, 6,849 tests, 0 failures, 53 skipped,
+- `mix test`: 25 doctests, 10 properties, 6,930 tests, 0 failures, 53 skipped,
   345 excluded by the default test configuration
 
 Strict compilation reported warnings from third-party dependencies. The

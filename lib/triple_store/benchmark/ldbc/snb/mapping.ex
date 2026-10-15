@@ -221,7 +221,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Mapping do
     end
   end
 
-  defp relationship_iri(type, from_type, from_id, to_type, to_id) do
+  @doc "Builds the deterministic resource IRI used for a relationship with properties."
+  @spec relationship_iri(String.t(), String.t(), term(), String.t(), term()) :: RDF.IRI.t()
+  def relationship_iri(type, from_type, from_id, to_type, to_id)
+      when type in @relationship_types and from_type in @entity_types and
+             to_type in @entity_types do
     identity = Enum.join([type, from_type, from_id, to_type, to_id], "\u0000")
     digest = :crypto.hash(:sha256, identity) |> Base.url_encode64(padding: false)
     RDF.iri(@base <> "relationship/#{type}/#{digest}")

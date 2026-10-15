@@ -8,7 +8,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   provenance and the one-hour throughput termination condition.
   """
 
-  alias TripleStore.Benchmark.LDBC.SNB.BI.{Parameters, Workload}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{Parameters, StateIdentity, Workload}
 
   @start_date ~D[2012-11-29]
   @end_date ~D[2013-01-01]
@@ -41,7 +41,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
             %{
               position: offset + 1,
               date: date,
-              kind: if(offset == 0, do: :power, else: :throughput),
+              kind: block_kind(mode, offset),
               stages: [:updates, :precomputations, :reads],
               variants: @official_variants
             }
@@ -56,21 +56,30 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   def run(schedule, parameter_bundle, opts) when is_list(schedule) and is_map(parameter_bundle) do
     with :ok <- validate_callbacks(opts),
          {:ok, definitions} <- Workload.load(),
-         :ok <- validate_parameters(parameter_bundle, opts, definitions) do
-      execute_blocks(schedule, parameter_bundle, opts)
+         :ok <- validate_parameters(parameter_bundle, opts, definitions),
+         {:ok, identity} <- fetch_state_identity(opts),
+         :ok <- StateIdentity.verify_manifest(identity, Keyword.fetch!(opts, :manifest)) do
+      execute_blocks(schedule, parameter_bundle, identity, opts)
     else
       {:error, reason} -> {:error, %{stage: :setup, reason: reason, score_eligible?: false}}
     end
   end
 
-  defp execute_blocks(schedule, bundle, opts) do
-    initial = %{blocks: [], cursors: %{}, score_eligible?: true}
+  defp execute_blocks(schedule, bundle, identity, opts) do
+    initial = %{blocks: [], cursors: %{}, state_identity: identity, score_eligible?: true}
 
     schedule
     |> Enum.reduce_while({:ok, initial}, fn block, {:ok, run} ->
-      case execute_block(block, bundle, run.cursors, opts) do
-        {:ok, receipt, cursors} ->
-          {:cont, {:ok, %{run | blocks: run.blocks ++ [receipt], cursors: cursors}}}
+      case execute_block(block, bundle, run.cursors, run.state_identity, opts) do
+        {:ok, receipt, cursors, next_identity} ->
+          {:cont,
+           {:ok,
+            %{
+              run
+              | blocks: run.blocks ++ [receipt],
+                cursors: cursors,
+                state_identity: next_identity
+            }}}
 
         {:error, stage, reason, partial} ->
           {:halt,
@@ -97,12 +106,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
     end
   end
 
-  defp execute_block(block, bundle, cursors, opts) do
+  defp execute_block(block, bundle, cursors, identity, opts) do
     started = System.monotonic_time()
+    update_block = Map.put(block, :continuation_state_identity, identity)
 
-    with {:ok, update} <- timed_call(Keyword.fetch!(opts, :apply_update), block, :update),
-         {:ok, precompute} <- timed_call(Keyword.fetch!(opts, :precompute), block, :precompute),
-         {:ok, reads, next_cursors} <- execute_reads(block, bundle, cursors, opts) do
+    with :ok <- validate_continuation_position(identity, block),
+         {:ok, update} <- timed_call(Keyword.fetch!(opts, :apply_update), update_block, :update),
+         {:ok, next_identity} <- StateIdentity.advance(identity, block.position, update),
+         state_block <- Map.put(block, :state_identity, next_identity),
+         {:ok, precompute} <-
+           timed_call(Keyword.fetch!(opts, :precompute), state_block, :precompute),
+         {:ok, reads, next_cursors} <- execute_reads(state_block, bundle, cursors, opts) do
       duration_s = elapsed_seconds(started)
 
       {:ok,
@@ -110,6 +124,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
          position: block.position,
          date: block.date,
          kind: block.kind,
+         state_identity: next_identity,
          update: update,
          precompute: precompute,
          reads: reads,
@@ -117,8 +132,14 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
          operation_count: 1 + length(reads),
          parameter_sequence: Enum.map(reads, &{&1.variant, &1.parameter_index}),
          complete?: length(reads) == length(@official_variants)
-       }, next_cursors}
+       }, next_cursors, next_identity}
     else
+      {:error, {:state_identity_mismatch, _, _, _} = reason} ->
+        {:error, :updates, reason, block}
+
+      {:error, {:invalid_state_identity, _} = reason} ->
+        {:error, :updates, reason, block}
+
       {:error, {:callback_failed, :update, reason}} ->
         {:error, :updates, reason, block}
 
@@ -194,6 +215,24 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
     Parameters.validate(bundle, validation_target, definitions, validation_opts)
   end
 
+  defp fetch_state_identity(opts) do
+    case Keyword.fetch(opts, :state_identity) do
+      {:ok, %StateIdentity{} = identity} ->
+        with :ok <- StateIdentity.validate(identity), do: {:ok, identity}
+
+      _other ->
+        {:error, {:invalid_state_identity, :missing}}
+    end
+  end
+
+  defp validate_continuation_position(identity, %{position: position}) do
+    expected = identity.last_applied_batch + 1
+
+    if position == expected,
+      do: :ok,
+      else: {:error, {:state_identity_mismatch, :last_applied_batch, expected, position}}
+  end
+
   defp maybe_put_reference_profile(opts, nil), do: opts
 
   defp maybe_put_reference_profile(opts, profile),
@@ -202,6 +241,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   defp default_batches(:validation), do: 1
   defp default_batches(:power), do: 1
   defp default_batches(:throughput), do: Date.diff(@end_date, @start_date)
+
+  defp block_kind(:validation, _offset), do: :validation
+  defp block_kind(:power, _offset), do: :power
+  defp block_kind(:throughput, 0), do: :power
+  defp block_kind(:throughput, _offset), do: :throughput
 
   defp elapsed_seconds(started),
     do:

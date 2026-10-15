@@ -9,6 +9,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
 
   alias TripleStore.Benchmark.Artifact
   alias TripleStore.Benchmark.LDBC.{DatasetManifest, Delimited, RDFStream}
+  alias TripleStore.Benchmark.LDBC.SNB.BI.UpdateSchema
   alias TripleStore.Benchmark.LDBC.SNB.{Mapping, UpdateStream}
 
   @index_table __MODULE__.ReferenceIndex
@@ -228,28 +229,52 @@ defmodule TripleStore.Benchmark.LDBC.SNB.Converter do
   defp update_component({:error, _} = error, _spec, _destination, _components),
     do: {:halt, error}
 
+  defp update_record(%{suite: :snb_bi}, spec, row, source, row_number) do
+    with {:ok, sequence_value} <- fetch_row(row, spec.sequence_column, source, row_number),
+         {sequence, ""} <- Integer.parse(sequence_value),
+         {:ok, type} <- update_type(spec, row, source, row_number),
+         {:ok, fields} <- UpdateSchema.normalize_source_fields(type, row) do
+      %{sequence: sequence, type: type, fields: fields}
+    else
+      :error -> %{error: {:invalid_update_sequence, source, row_number}}
+      {:error, reason} -> %{error: reason}
+    end
+  end
+
   defp update_record(profile, spec, row, source, row_number) do
     with {:ok, sequence_value} <- fetch_row(row, spec.sequence_column, source, row_number),
          {sequence, ""} <- Integer.parse(sequence_value),
          {:ok, operation_value} <- fetch_row(row, spec.operation_column, source, row_number),
          {:ok, operation} <- update_operation(operation_value),
          {:ok, id} <- fetch_row(row, spec.id_column, source, row_number),
-         mapped_row <-
-           row
-           |> Map.drop([spec.sequence_column, spec.operation_column])
-           |> Map.put("id", id),
-         {:ok, quads} <-
-           Mapping.entity_quads(
-             spec.entity_type,
-             mapped_row,
-             Mapping.graph_iri(profile.suite, :updates)
-           ) do
-      %{sequence: sequence, operation: operation, quads: quads}
+         {:ok, record} <- legacy_update_record(profile, spec, row, operation, id) do
+      Map.put(record, :sequence, sequence)
     else
       :error -> %{error: {:invalid_update_sequence, source, row_number}}
       {:error, reason} -> %{error: reason}
     end
   end
+
+  defp legacy_update_record(profile, spec, row, operation, id) do
+    mapped_row =
+      row
+      |> Map.drop([spec.sequence_column, spec.operation_column])
+      |> Map.put("id", id)
+
+    with {:ok, quads} <-
+           Mapping.entity_quads(
+             spec.entity_type,
+             mapped_row,
+             Mapping.graph_iri(profile.suite, :updates)
+           ) do
+      {:ok, %{operation: operation, quads: quads}}
+    end
+  end
+
+  defp update_type(%{record_type: type}, _row, _source, _row_number), do: {:ok, type}
+
+  defp update_type(%{type_column: column}, row, source, row_number),
+    do: fetch_row(row, column, source, row_number)
 
   defp convert_parameters(profile, source_root, output_dir, dataset_checksum) do
     Enum.reduce_while(profile.parameters, {:ok, []}, fn spec, {:ok, components} ->

@@ -1,0 +1,17 @@
+sequence|type|personId|personFirstName|personLastName|gender|birthday|creationDate|locationIP|browserUsed|cityId|languages|emails|tagIds|studyAt|workAt|postId|commentId|forumId|forumTitle|moderatorId|imageFile|language|content|length|authorPersonId|countryId|replyToPostId|replyToCommentId|person1Id|person2Id
+1|insert-01|1001|Ada|Lovelace|female|1815-12-10|1262304000000|192.0.2.1|Firefox|9001|en|ada@example.test|8001|7001:1835|7002:1840|||||||||||||||
+2|insert-04||||||1262304003000||||||8001|||||5001|Analytical Engines|1001||||||||||
+3|insert-06||||||1262304005000|192.0.2.1|Firefox||||8001|||6001||5001||||en|post|4|1001|9001||||
+4|insert-07||||||1262304006000|192.0.2.1|Firefox||||8001||||6101||||||reply|5|1001|9001|6001|||
+5|insert-02|1001|||||1262304001000|||||||||6001||||||||||||||
+6|insert-03|1001|||||1262304002000||||||||||6101|||||||||||||
+7|insert-05|1001|||||1262304004000|||||||||||5001||||||||||||
+8|insert-08||||||1262304007000||||||||||||||||||||||1001|1002
+9|delete-02|1001||||||||||||||6001||||||||||||||
+10|delete-03|1001|||||||||||||||6101|||||||||||||
+11|delete-05|1001||||||||||||||||5001||||||||||||
+12|delete-08||||||||||||||||||||||||||||1001|1002
+13|delete-07||||||||||||||||6101|||||||||||||
+14|delete-06|||||||||||||||6001||||||||||||||
+15|delete-04|||||||||||||||||5001||||||||||||
+16|delete-01|1001||||||||||||||||||||||||||||

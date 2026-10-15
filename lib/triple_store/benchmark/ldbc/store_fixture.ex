@@ -72,7 +72,16 @@ defmodule TripleStore.Benchmark.LDBC.StoreFixture do
   def apply_updates(%__MODULE__{store: store} = fixture, path) when not is_nil(store) do
     case UpdateBatch.apply(store, path) do
       {:ok, receipt} ->
-        {:ok, fixture, %{records: receipt.records, last_sequence: receipt.last_sequence}}
+        evidence =
+          Map.take(receipt, [
+            :records,
+            :first_sequence,
+            :last_sequence,
+            :state_checksum,
+            :state_counts
+          ])
+
+        {:ok, fixture, evidence}
 
       {:error, reason} ->
         {:error, {:update_failed, reason}}

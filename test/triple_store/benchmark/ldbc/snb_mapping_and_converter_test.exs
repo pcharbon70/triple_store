@@ -61,7 +61,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.MappingAndConverterTest do
     assert {:ok, bi_second} = Converter.convert(:snb_bi_smoke, bi_source, Path.join(root, "bi-2"))
 
     assert bi_first.transformation.output_checksum == bi_second.transformation.output_checksum
-    assert bi_first.transformation.entity_count == 3
+    assert bi_first.transformation.entity_count == 8
     assert bi_first.transformation.relationship_count == 3
     assert bi_first.store.schema == :quad
 
@@ -76,15 +76,34 @@ defmodule TripleStore.Benchmark.LDBC.SNB.MappingAndConverterTest do
     refute interactive.source.generator_pin == bi_first.source.generator_pin
     assert interactive.transformation.mapping_version == bi_first.transformation.mapping_version
 
+    [bi_update] =
+      Enum.filter(bi_first.components, &(&1.role != :initial and &1.role != :parameters))
+
+    bi_records = bi_update.path |> UpdateStream.stream() |> Enum.to_list()
+
+    assert length(bi_records) == 16
+
+    assert MapSet.new(Enum.map(bi_records, & &1.type)) ==
+             MapSet.new(
+               for operation <- ~w(insert delete), number <- 1..8 do
+                 "#{operation}-#{number |> Integer.to_string() |> String.pad_leading(2, "0")}"
+               end
+             )
+
+    assert %{sequence: 1, type: "insert-01", fields: fields} = hd(bi_records)
+
+    assert fields["personId"] != nil
+    assert fields["cityId"] == "9001"
+
+    [interactive_update] =
+      Enum.filter(interactive.components, &(&1.role != :initial and &1.role != :parameters))
+
+    assert [%{sequence: 1, operation: :insert, quads: quads}] =
+             interactive_update.path |> UpdateStream.stream() |> Enum.to_list()
+
+    assert quads != []
+
     for manifest <- [bi_first, interactive] do
-      [update] =
-        Enum.filter(manifest.components, &(&1.role != :initial and &1.role != :parameters))
-
-      assert [%{sequence: 1, operation: :insert, quads: quads}] =
-               update.path |> UpdateStream.stream() |> Enum.to_list()
-
-      assert quads != []
-
       [parameters] = Enum.filter(manifest.components, &(&1.role == :parameters))
       document = parameters.path |> File.read!() |> :erlang.binary_to_term([:safe])
       assert document.dataset_checksum == manifest.transformation.output_checksum
@@ -104,6 +123,22 @@ defmodule TripleStore.Benchmark.LDBC.SNB.MappingAndConverterTest do
     File.write!(relationship, "Person1.id|Person2.id|creationDate\n1|999|1262304005000\n")
 
     assert {:error, {:source_row_error, ^relationship, 2, {:missing_reference, "Person", "999"}}} =
+             Converter.convert(:snb_bi_smoke, source, output)
+  end
+
+  test "BI conversion rejects a missing required update dependency", %{test: test} do
+    root = temp_root(test)
+    source = Path.join(root, "source")
+    output = Path.join(root, "output")
+    on_exit(fn -> File.rm_rf!(root) end)
+    File.mkdir_p!(root)
+    File.cp_r!(fixture_root("snb-bi"), source)
+
+    update = Path.join(source, "updates/bi-batch.csv")
+    contents = File.read!(update)
+    File.write!(update, String.replace(contents, "|9001|", "||", global: false))
+
+    assert {:error, {:invalid_update_source_field, "cityId", ""}} =
              Converter.convert(:snb_bi_smoke, source, output)
   end
 

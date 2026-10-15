@@ -4,11 +4,15 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
 
   All records are decoded and dictionary-encoded before a single mixed RocksDB
   batch is submitted. Cache and statistics callbacks run only after commit.
-  The returned receipt binds the batch position to the source checksum.
+  The returned receipt binds the batch position to the source checksum. When
+  callers supply `:state_identity` and `:batch_position`, a post-commit
+  maintenance error also carries the fully advanced committed state identity
+  and remains explicitly incomplete and ineligible for scoring.
   """
 
   alias TripleStore.Adapter
   alias TripleStore.Benchmark.Artifact
+  alias TripleStore.Benchmark.LDBC.SNB.BI.{StateIdentity, StateProbe, UpdateSchema}
   alias TripleStore.Benchmark.LDBC.SNB.UpdateStream
   alias TripleStore.QuadOperations
   alias TripleStore.SPARQL.Update.Helpers
@@ -20,29 +24,102 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     with {:ok, checksum} <- Artifact.checksum(path),
          {:ok, records} <- read_records(path),
          {:ok, mutations} <- encode_records(store, records),
-         :ok <- write(store.db, mutations, opts),
-         :ok <- after_commit(store, opts) do
-      {:ok,
-       %{
-         checksum: checksum,
-         records: length(records),
-         mutations: length(mutations),
-         first_sequence: records |> List.first() |> Map.fetch!(:sequence),
-         last_sequence: records |> List.last() |> Map.fetch!(:sequence)
-       }}
+         :ok <- write(store.db, mutations, opts) do
+      finish_commit(store, checksum, records, mutations, opts)
     end
   rescue
     error in File.Error -> {:error, {:update_stream_failed, error.reason}}
   end
 
+  defp finish_commit(store, checksum, records, mutations, opts) do
+    case after_commit(store, opts) do
+      :ok ->
+        case capture_state(store, opts) do
+          {:ok, state} ->
+            {:ok, receipt(checksum, records, mutations, state)}
+
+          {:error, reason} ->
+            evidence = indeterminate_commit_evidence(checksum, records, mutations, reason, opts)
+            {:error, {:post_commit_state_probe_failed, reason, evidence}}
+        end
+
+      {:error, reason} ->
+        case capture_state(store, opts) do
+          {:ok, state} ->
+            committed =
+              checksum
+              |> receipt(records, mutations, state)
+              |> attach_state_identity(opts)
+              |> Map.merge(%{committed?: true, complete?: false, score_eligible?: false})
+
+            {:error, {:post_commit_maintenance_failed, reason, committed}}
+
+          {:error, probe_reason} ->
+            evidence =
+              indeterminate_commit_evidence(checksum, records, mutations, probe_reason, opts)
+
+            {:error, {:post_commit_maintenance_failed, reason, evidence}}
+        end
+    end
+  end
+
+  defp receipt(checksum, records, mutations, state) do
+    Map.merge(receipt_metadata(checksum, records, mutations), %{
+      state_checksum: state.state_checksum,
+      state_counts: state.counts
+    })
+  end
+
+  defp receipt_metadata(checksum, records, mutations) do
+    %{
+      checksum: checksum,
+      records: length(records),
+      mutations: length(mutations),
+      first_sequence: records |> List.first() |> Map.fetch!(:sequence),
+      last_sequence: records |> List.last() |> Map.fetch!(:sequence)
+    }
+  end
+
+  defp indeterminate_commit_evidence(checksum, records, mutations, probe_error, opts) do
+    receipt_metadata(checksum, records, mutations)
+    |> Map.merge(%{
+      committed?: true,
+      complete?: false,
+      score_eligible?: false,
+      retry_safe?: false,
+      state_identity: :indeterminate,
+      probe_error: probe_error
+    })
+    |> maybe_put_prior_identity(opts)
+  end
+
+  defp maybe_put_prior_identity(evidence, opts) do
+    case Keyword.get(opts, :state_identity) do
+      %StateIdentity{} = identity -> Map.put(evidence, :prior_state_identity, identity)
+      _other -> evidence
+    end
+  end
+
+  defp attach_state_identity(receipt, opts) do
+    with %StateIdentity{} = current <- Keyword.get(opts, :state_identity),
+         batch when is_integer(batch) and batch > 0 <- Keyword.get(opts, :batch_position),
+         {:ok, committed} <- StateIdentity.advance(current, batch, receipt) do
+      Map.put(receipt, :state_identity, committed)
+    else
+      _missing_or_invalid -> receipt
+    end
+  end
+
   defp read_records(path) do
     path
     |> UpdateStream.stream()
-    |> Enum.reduce_while({:ok, [], -1}, fn
-      %{sequence: sequence, operation: operation, quads: quads} = record, {:ok, records, previous}
-      when is_integer(sequence) and sequence > previous and operation in [:insert, :delete] and
-             is_list(quads) ->
-        {:cont, {:ok, [record | records], sequence}}
+    |> Enum.reduce_while({:ok, []}, fn
+      %{sequence: _sequence, type: _type, fields: _fields} = record, {:ok, records} ->
+        {:cont, {:ok, [record | records]}}
+
+      %{sequence: _sequence, operation: operation, quads: quads} = record, {:ok, records}
+      when operation in [:insert, :delete] and is_list(quads) ->
+        {:cont, {:ok, [record | records]}}
 
       {:error, reason}, _acc ->
         {:halt, {:error, reason}}
@@ -51,13 +128,47 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
         {:halt, {:error, {:invalid_or_reordered_update, record}}}
     end)
     |> case do
-      {:ok, [], _previous} -> {:error, :empty_update_batch}
-      {:ok, records, _previous} -> {:ok, Enum.reverse(records)}
-      {:error, _} = error -> error
+      {:ok, []} ->
+        {:error, :empty_update_batch}
+
+      {:ok, records} ->
+        records = Enum.reverse(records)
+
+        if Enum.all?(records, &match?(%{type: _, fields: _}, &1)) do
+          with :ok <- UpdateSchema.validate_records(records), do: {:ok, records}
+        else
+          with :ok <- validate_legacy_records(records), do: {:ok, records}
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
   defp encode_records(store, records) do
+    if Enum.all?(records, &match?(%{type: _, fields: _}, &1)) do
+      encode_canonical_records(store, records)
+    else
+      encode_legacy_records(store, records)
+    end
+  end
+
+  defp encode_canonical_records(store, records) do
+    with {:ok, translated} <- UpdateSchema.translate_records(store, records) do
+      Enum.reduce_while(translated, {:ok, []}, fn mutation, {:ok, mutations} ->
+        case Adapter.from_rdf_quads(store.dict_manager, mutation.quads) do
+          {:ok, encoded} ->
+            tagged = Enum.map(encoded, &{mutation.operation, &1})
+            {:cont, {:ok, mutations ++ tagged}}
+
+          {:error, reason} ->
+            {:halt, {:error, {:update_encoding_failed, mutation.sequence, reason}}}
+        end
+      end)
+    end
+  end
+
+  defp encode_legacy_records(store, records) do
     Enum.reduce_while(records, {:ok, []}, fn record, {:ok, mutations} ->
       case Adapter.from_rdf_quads(store.dict_manager, record.quads) do
         {:ok, encoded} ->
@@ -70,6 +181,19 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
     end)
   end
 
+  defp validate_legacy_records(records) do
+    records
+    |> Enum.reduce_while(-1, fn record, previous ->
+      if is_integer(record.sequence) and record.sequence > previous,
+        do: {:cont, record.sequence},
+        else: {:halt, {:error, {:invalid_or_reordered_update, record}}}
+    end)
+    |> case do
+      {:error, _} = error -> error
+      _sequence -> :ok
+    end
+  end
+
   defp write(db, mutations, opts) do
     writer = Keyword.get(opts, :writer, &QuadOperations.apply_mutations/3)
 
@@ -80,17 +204,36 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.UpdateBatch do
   end
 
   defp after_commit(store, opts) do
-    Helpers.invalidate_result_caches(store.db)
-    Statistics.invalidate_all_quad_cache(store.db)
+    cache_invalidator = Keyword.get(opts, :cache_invalidator, &Helpers.invalidate_result_caches/1)
 
-    opts
-    |> Keyword.get(:after_commit, fn _store -> :ok end)
-    |> then(& &1.(store))
-    |> case do
+    statistics_invalidator =
+      Keyword.get(opts, :statistics_invalidator, &Statistics.invalidate_all_quad_cache/1)
+
+    with :ok <- normalize_post_commit(cache_invalidator.(store.db)),
+         :ok <- normalize_post_commit(statistics_invalidator.(store.db)) do
+      opts
+      |> Keyword.get(:after_commit, fn _store -> :ok end)
+      |> then(& &1.(store))
+      |> normalize_post_commit()
+    end
+  end
+
+  defp normalize_post_commit(result) do
+    case result do
       :ok -> :ok
       {:ok, _value} -> :ok
       {:error, reason} -> {:error, {:post_commit_refresh_failed, reason}}
       other -> {:error, {:invalid_post_commit_result, other}}
+    end
+  end
+
+  defp capture_state(store, opts) do
+    opts
+    |> Keyword.take([:cache_observer, :statistics_observer])
+    |> then(&StateProbe.capture(store, &1))
+    |> case do
+      {:ok, state} -> {:ok, state}
+      {:error, reason} -> {:error, reason}
     end
   end
 end
