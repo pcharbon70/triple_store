@@ -5,12 +5,14 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     Parameters,
     PlanEvidence,
     Protocol,
+    ProtocolReconciler,
     Scoring,
     StateIdentity,
     Workload
   }
 
   test "official schedule preserves update-read blocks and canonical variant order" do
+    assert {:ok, definitions} = Workload.load()
     assert {:ok, [validation]} = Protocol.schedule(:validation)
     assert validation.kind == :validation
 
@@ -21,9 +23,51 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     assert throughput.kind == :throughput
     assert power.stages == [:updates, :precomputations, :reads]
     assert power.variants == Protocol.official_variants()
+    assert power.variants == Workload.variant_labels(definitions)
+    assert length(power.variants) == 31
 
     assert {:error, :comparable_schedule_cannot_be_reduced} =
              Protocol.schedule(:throughput, max_batches: 2, comparable: true)
+  end
+
+  test "protocol records complete operation identity and fails fast on ineligible reads" do
+    identity = identity(:initial_load, 0, nil, "a")
+    assert {:ok, schedule} = Protocol.schedule(:validation)
+
+    callbacks = [
+      manifest: parameter_manifest(),
+      state_identity: identity,
+      apply_update: fn _block ->
+        {:ok, %{checksum: checksum("1"), state_checksum: checksum("b")}}
+      end,
+      precompute: fn _block -> {:ok, %{operations: []}} end,
+      execute_read: fn operation ->
+        {:ok,
+         %{
+           correct?: operation.variant != "8m",
+           complete?: true,
+           result_checksum: checksum(operation.variant)
+         }}
+      end
+    ]
+
+    assert {:error, failure} = Protocol.run(schedule, parameter_bundle(), callbacks)
+    assert failure.stage == :reads
+    assert failure.score_eligible? == false
+    assert failure.reason == {:ineligible_read, "8m", :incorrect}
+
+    assert Enum.map(failure.partial.reads, & &1.variant) ==
+             Enum.take_while(Protocol.official_variants(), &(&1 != "8m"))
+
+    assert Enum.all?(failure.partial.reads, fn receipt ->
+             receipt.operation_id =~ "ldbc/snb-bi/read-" and
+               receipt.parameter_row_identity.variant == receipt.variant and
+               receipt.parameter_row_identity.row_index == 0 and
+               String.starts_with?(receipt.parameter_row_identity.checksum, "sha256:") and
+               String.starts_with?(receipt.result_checksum, "sha256:") and
+               receipt.correctness_status == :correct and
+               receipt.score_eligible? == true and receipt.duration_s > 0
+           end)
   end
 
   test "local scorer matches pinned formulas and fails closed" do
@@ -41,7 +85,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
                scale_factor: 10,
                load_time_s: 3_600,
                throughput_min_s: 3_600,
-               comparable: true
+               comparable: true,
+               reconciled?: true
              )
 
     assert_in_delta score.power, 900.0, 1.0e-9
@@ -55,7 +100,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
              Scoring.calculate([bad | tl(power)] ++ throughput,
                scale_factor: 10,
                load_time_s: 3_600,
-               comparable: true
+               comparable: true,
+               reconciled?: true
              )
 
     assert :incorrect_or_incomplete_operation in errors
@@ -65,10 +111,15 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     measurements = %{
       plan: :hash_join,
       estimated_cardinality: 3,
+      actual_cardinality: 3,
+      elapsed_us: 100,
       iterator_count: 2,
       materialized_rows: 3,
       memory_bytes: 128,
-      io_bytes: 256
+      io_bytes: 256,
+      environment_identity: "sha256:test-environment",
+      cleanup_status: :complete,
+      protocol_eligible?: true
     }
 
     assert {:ok, evidence} = PlanEvidence.record("bi-1", [[1], [2]], [[1], [2]], measurements)
@@ -102,6 +153,57 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     assert %StateIdentity{last_applied_batch: 2} = throughput.state_identity
     assert power.state_identity.dataset_checksum == identity.dataset_checksum
     assert throughput.state_identity.update_stream_checksum == checksum("2")
+  end
+
+  test "protocol reconciliation binds every scheduled operation to one scoring record" do
+    identity = identity(:pre_power, 0, nil, "a")
+    assert {:ok, schedule} = Protocol.schedule(:power)
+
+    assert {:ok, run} =
+             Protocol.run(schedule, parameter_bundle(),
+               manifest: parameter_manifest(),
+               state_identity: identity,
+               apply_update: fn _block ->
+                 {:ok, %{checksum: checksum("1"), state_checksum: checksum("b")}}
+               end,
+               precompute: fn _block -> {:ok, %{operations: []}} end,
+               execute_read: fn operation ->
+                 {:ok,
+                  %{
+                    correct?: true,
+                    complete?: true,
+                    result_checksum: checksum(operation.variant)
+                  }}
+               end
+             )
+
+    assert {:ok, records} = ProtocolReconciler.score_records(run)
+    assert length(records) == 32
+    assert Enum.map(records, & &1.label) == ["writes" | Protocol.official_variants()]
+
+    assert {:ok, evidence} = ProtocolReconciler.reconcile(schedule, run, records)
+    assert evidence.operation_count == 32
+    assert evidence.block_count == 1
+    assert String.starts_with?(evidence.input_checksum, "sha256:")
+
+    assert {:error, {:duplicate_score_record, _identity}} =
+             ProtocolReconciler.reconcile(schedule, run, [hd(records) | records])
+
+    stale = put_in(hd(records)[:state_checksum], checksum("stale"))
+
+    assert {:error, {:score_record_mismatch, 0, :state_checksum, _, _}} =
+             ProtocolReconciler.reconcile(schedule, run, [stale | tl(records)])
+
+    assert {:error, {:score_record_count, 32, 31}} =
+             ProtocolReconciler.reconcile(schedule, run, tl(records))
+
+    inconsistent_identity = %{hd(run.blocks).state_identity | state_checksum: checksum("stale")}
+
+    inconsistent_run =
+      put_in(run, [:blocks, Access.at(0), :state_identity], inconsistent_identity)
+
+    assert {:error, {:protocol_state_identity_mismatch, 1}} =
+             ProtocolReconciler.reconcile(schedule, inconsistent_run, records)
   end
 
   test "protocol rejects continuation when any reported identity field disagrees" do
@@ -155,7 +257,8 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
       label: label,
       duration_s: duration,
       correct?: true,
-      complete?: true
+      complete?: true,
+      score_eligible?: true
     }
   end
 

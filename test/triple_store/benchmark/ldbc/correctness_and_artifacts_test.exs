@@ -168,7 +168,7 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
 
     run = bi_run(first, second)
     assert {:ok, artifact} = Artifacts.write(directory, run)
-    assert artifact.schema_version == 2
+    assert artifact.schema_version == 3
     assert File.exists?(artifact.paths.protocol)
 
     protocol = artifact.paths.protocol |> File.read!() |> Jason.decode!()
@@ -233,6 +233,62 @@ defmodule TripleStore.Benchmark.LDBC.CorrectnessAndArtifactsTest do
             {:invalid_state_identity,
              {:correctness_positions, %{duplicates: [], missing: [], unexpected: [3]}}}} =
              Artifacts.write(Path.join(root, "unexpected"), unexpected)
+  end
+
+  test "BI qualification artifacts bind complete identities and cross-file counts" do
+    root = Path.join(System.tmp_dir!(), "ldbc-bi-qualified-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(root) end)
+    first = state_identity(:pre_power, 1, "one")
+    second = state_identity(:pre_power, 2, "two")
+
+    qualification = %{
+      complete?: false,
+      operation_count: 2,
+      variant_count: 31,
+      reconciled?: true,
+      identities: %{
+        dataset: checksum("dataset"),
+        mapping: "snb-rdf-v1",
+        translation: checksum("translation"),
+        parameters: checksum("parameters"),
+        reference_answers: checksum("reference-answers"),
+        update_stream: checksum("updates"),
+        checkpoint: checksum("checkpoint"),
+        scorer: checksum("scorer"),
+        environment: checksum("environment")
+      },
+      blockers: [:accepted_answers_incomplete]
+    }
+
+    run =
+      first
+      |> bi_run(second)
+      |> Map.put(:catalog, [%{id: "read-1"}, %{id: "read-2"}])
+      |> Map.put(:qualification, qualification)
+
+    assert {:ok, artifact} = Artifacts.write(root, run)
+    assert artifact.schema_version == 3
+    assert File.regular?(artifact.paths.qualification)
+    assert File.regular?(artifact.paths.checksums)
+
+    summary = artifact.paths.summary |> File.read!() |> Jason.decode!()
+    assert summary["claim_profile"] == "diagnostic"
+    assert summary["qualification_complete"] == false
+    assert summary["official_score_eligible"] == false
+
+    qualification_json = artifact.paths.qualification |> File.read!() |> Jason.decode!()
+    assert qualification_json["operation_count"] == 2
+    assert qualification_json["identities"]["scorer"] == checksum("scorer")
+
+    missing = update_in(run.qualification.identities, &Map.delete(&1, :scorer))
+
+    assert {:error, {:invalid_qualification_identity, :scorer}} =
+             Artifacts.write(Path.join(root, "missing"), missing)
+
+    mismatched = put_in(run.qualification.operation_count, 1)
+
+    assert {:error, {:qualification_operation_count, 2, 1}} =
+             Artifacts.write(Path.join(root, "mismatch"), mismatched)
   end
 
   test "baseline acceptance is explicit, checks correctness, and leaves provenance" do

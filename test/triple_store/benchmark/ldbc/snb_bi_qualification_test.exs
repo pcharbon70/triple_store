@@ -174,8 +174,63 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIQualificationTest do
     assert Qualification.classify(passing, false) == :passing
   end
 
+  test "qualification evidence preserves missing-answer blockers and closes only on complete proof" do
+    assert {:ok, definitions} = Workload.load()
+    assert {:ok, matrix} = Qualification.matrix(definitions)
+    identities = qualification_identities()
+
+    assert {:ok, evidence} =
+             Qualification.evidence(matrix.entries, identities,
+               reconciled?: true,
+               updates_complete?: true
+             )
+
+    refute evidence.complete?
+    assert evidence.operation_count == 31
+    assert evidence.variant_count == 31
+    assert :accepted_answers_incomplete in evidence.blockers
+    assert :result_comparison_incomplete in evidence.blockers
+
+    qualified =
+      Enum.map(matrix.entries, fn entry ->
+        entry
+        |> put_in([:expected_result, :purpose], :accepted_answer)
+        |> put_in([:expected_result, :comparison_status], :pass)
+        |> put_in([:stages, :execution], %{status: :pass})
+      end)
+
+    assert {:ok, %{complete?: true, blockers: []}} =
+             Qualification.evidence(qualified, identities,
+               reconciled?: true,
+               updates_complete?: true
+             )
+
+    assert {:error, {:qualification_identity_missing, :scorer}} =
+             Qualification.evidence(qualified, Map.delete(identities, :scorer),
+               reconciled?: true,
+               updates_complete?: true
+             )
+  end
+
   defp entries_for(matrix, number), do: Enum.filter(matrix.entries, &(&1.number == number))
   defp failure(reason), do: %{status: :fail, reason: reason}
+
+  defp qualification_identities do
+    Map.new(
+      [
+        :dataset,
+        :mapping,
+        :translation,
+        :parameters,
+        :reference_answers,
+        :update_stream,
+        :checkpoint,
+        :scorer,
+        :environment
+      ],
+      &{&1, "sha256:#{&1}"}
+    )
+  end
 
   defp variant_label(%{number: number, variant: "default"}), do: Integer.to_string(number)
 

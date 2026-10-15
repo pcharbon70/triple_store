@@ -74,8 +74,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
                end
              )
 
-    assert run.operation_count == 58
-    assert length(run.parameter_sequence) == 56
+    assert run.operation_count == 64
+    assert length(run.parameter_sequence) == 62
     assert Enum.all?(run.blocks, & &1.complete?)
 
     assert {:ok, restored, restored_identity} =
@@ -89,7 +89,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
              Scoring.calculate(records,
                scale_factor: 1,
                load_time_s: 1,
-               throughput_min_s: 1
+               throughput_min_s: 1,
+               reconciled?: true
              )
 
     assert diagnostic_score.namespace == :diagnostic
@@ -286,7 +287,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
       label: label,
       duration_s: duration,
       correct?: true,
-      complete?: true
+      complete?: true,
+      score_eligible?: true
     }
   end
 

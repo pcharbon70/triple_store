@@ -28,6 +28,17 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
   @graph_operations MapSet.new([10, 15, 19, 20])
   @numeric_types ["ID", "32-bit Integer", "64-bit Integer", "32-bit Float", "64-bit Float"]
+  @qualification_identities [
+    :dataset,
+    :mapping,
+    :translation,
+    :parameters,
+    :reference_answers,
+    :update_stream,
+    :checkpoint,
+    :scorer,
+    :environment
+  ]
 
   @type stage_status :: :pass | :fail | :blocked | :not_applicable
   @type stage_evidence :: %{
@@ -99,6 +110,85 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
   def run(_definitions, _fixture, _parameter_bundle, _opts),
     do: {:error, :invalid_qualification_context}
+
+  @doc "Builds the fail-closed qualification envelope used by Phase 5 artifacts."
+  @spec evidence([map()], map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def evidence(entries, identities, opts \\ [])
+
+  def evidence(entries, identities, opts) when is_list(entries) and is_map(identities) do
+    with :ok <- validate_qualification_identities(identities) do
+      reconciled? = Keyword.get(opts, :reconciled?, false)
+      updates_complete? = Keyword.get(opts, :updates_complete?, false)
+
+      blockers =
+        []
+        |> maybe_add(
+          not Enum.all?(entries, &implementation_complete?/1),
+          :implementation_incomplete
+        )
+        |> maybe_add(not Enum.all?(entries, &execution_complete?/1), :execution_incomplete)
+        |> maybe_add(
+          not Enum.all?(entries, &accepted_answer_complete?/1),
+          :accepted_answers_incomplete
+        )
+        |> maybe_add(
+          not Enum.all?(entries, &result_comparison_complete?/1),
+          :result_comparison_incomplete
+        )
+        |> maybe_add(not updates_complete?, :updates_incomplete)
+        |> maybe_add(not reconciled?, :protocol_reconciliation_incomplete)
+        |> Enum.reverse()
+
+      {:ok,
+       %{
+         complete?: blockers == [],
+         operation_count: length(entries),
+         variant_count: length(entries),
+         reconciled?: reconciled?,
+         identities: identities,
+         blockers: blockers
+       }}
+    end
+  end
+
+  def evidence(_entries, _identities, _opts), do: {:error, :invalid_qualification_evidence}
+
+  @doc "Combines structural inventory with contextual execution and comparison evidence."
+  @spec reconcile_entries([map()], [map()]) :: {:ok, [map()]} | {:error, term()}
+  def reconcile_entries(structural, runtime) when is_list(structural) and is_list(runtime) do
+    structural_keys = Enum.map(structural, &entry_key/1)
+    runtime_keys = Enum.map(runtime, &entry_key/1)
+
+    cond do
+      length(runtime_keys) != length(Enum.uniq(runtime_keys)) ->
+        {:error, :duplicate_runtime_qualification_entry}
+
+      MapSet.new(structural_keys) != MapSet.new(runtime_keys) ->
+        {:error, {:qualification_entry_coverage, structural_keys, runtime_keys}}
+
+      true ->
+        runtime_index = Map.new(runtime, &{entry_key(&1), &1})
+
+        combined =
+          Enum.map(structural, fn entry ->
+            observed = Map.fetch!(runtime_index, entry_key(entry))
+
+            entry
+            |> put_in([:stages, :execution], observed.execution)
+            |> put_in([:stages, :result_contract], runtime_result_contract(observed))
+            |> update_in(
+              [:expected_result],
+              &Map.put(&1, :comparison_status, observed.comparison.status)
+            )
+            |> Map.put(:runtime_evidence, observed)
+          end)
+
+        {:ok, combined}
+    end
+  end
+
+  def reconcile_entries(_structural, _runtime),
+    do: {:error, :invalid_qualification_entries}
 
   @doc "Compares complete post-update answers for reads affected by mapped RDF mutations."
   @spec post_update_evidence(
@@ -466,6 +556,41 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Qualification do
 
   defp execution_opts(opts) do
     Keyword.take(opts, [:timeout, :max_visited, :max_intermediate, :cancelled?])
+  end
+
+  defp validate_qualification_identities(identities) do
+    case Enum.find(@qualification_identities, &(not present_identity?(Map.get(identities, &1)))) do
+      nil -> :ok
+      identity -> {:error, {:qualification_identity_missing, identity}}
+    end
+  end
+
+  defp entry_key(entry), do: {entry[:operation_id], entry[:variant]}
+
+  defp runtime_result_contract(%{execution: %{status: :pass, digest: digest}}),
+    do: %{status: :pass, digest: digest}
+
+  defp runtime_result_contract(%{execution: %{status: :fail, reason: reason}}),
+    do: %{status: :fail, reason: reason}
+
+  defp present_identity?(value) when is_binary(value), do: value != ""
+  defp present_identity?(value) when is_map(value), do: map_size(value) > 0
+  defp present_identity?(_value), do: false
+
+  defp implementation_complete?(entry),
+    do: get_in(entry, [:stages, :implementation, :status]) == :pass
+
+  defp execution_complete?(entry) do
+    get_in(entry, [:stages, :execution, :status]) == :pass or
+      get_in(entry, [:execution, :status]) == :pass
+  end
+
+  defp accepted_answer_complete?(entry),
+    do: get_in(entry, [:expected_result, :purpose]) == :accepted_answer
+
+  defp result_comparison_complete?(entry) do
+    get_in(entry, [:expected_result, :comparison_status]) == :pass or
+      get_in(entry, [:comparison, :status]) == :pass
   end
 
   defp reference_inventory_opts(opts) do

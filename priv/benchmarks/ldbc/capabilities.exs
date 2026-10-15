@@ -213,13 +213,14 @@ bi_reads =
       5,
       if(extension?,
         do:
-          "The operation-specific graph adapter is registered and tested, but every variant still lacks accepted-answer comparison evidence.",
+          "The operation-specific graph adapter is registered, protocol-reconciled, and tested, but every variant still lacks accepted-answer comparison evidence.",
         else:
-          "The checked-in SPARQL translation and standard handler are registered and tested, but every variant still lacks accepted-answer comparison evidence."
+          "The checked-in SPARQL translation and standard handler are registered, protocol-reconciled, and tested, but every variant still lacks accepted-answer comparison evidence."
       ),
       [
         "ldbc_snb_docs:query-specifications/bi-read-#{padded}.yaml",
         "lib/triple_store/benchmark/ldbc/snb/bi/qualification.ex",
+        "test/triple_store/benchmark/ldbc/phase_5d_qualification_integration_test.exs",
         "notes/planning/ldbc/phase-05-validation-record.md"
         | implementation_evidence
       ]

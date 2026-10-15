@@ -64,11 +64,29 @@ from the pinned reference implementation. `SNB.BI.Qualification.run/4` records
 missing or ineligible answers per variant while preserving successful execution
 evidence.
 
+The Phase 5D protocol path schedules all 31 variants, including `2m`, `8m`, and
+`20m`, and records the operation, parameter row, result checksum, duration,
+correctness status, and start/end state identity for each execution. Protocol
+reconciliation derives score inputs from those receipts and rejects missing,
+duplicated, reordered, or stale-state records. The local scorer is checked
+against golden outputs from the pinned v1.0.3 `calculate-scores.py`; it preserves
+the upstream rule that the median variants execute but are excluded from the
+power geometric mean.
+
+BI artifact schema version 3 adds a qualification envelope and a checksum
+manifest. The envelope binds dataset, mapping, translation, parameter,
+reference-answer, update-stream, checkpoint, scorer, and environment identities.
+Reduced runs retain the `diagnostic` claim profile. A `comparable` profile cannot
+become score-eligible until the qualification envelope has no blockers. The
+current checked-in smoke run therefore remains diagnostic because accepted
+answers are incomplete.
+
 Run the focused validation with:
 
 ```sh
 mix test test/triple_store/benchmark/ldbc/phase_5_snb_bi_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/phase_5c_update_state_integration_test.exs
+mix test test/triple_store/benchmark/ldbc/phase_5d_qualification_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/snb_bi_*_test.exs
 ```

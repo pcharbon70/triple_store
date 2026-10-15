@@ -18,7 +18,9 @@ not considered implemented until its typed, ordered result matches accepted answ
 - The SNB BI protocol, scoring, atomic microbatch, checkpoint, artifact, standard
   analytical handler, and graph-adapter boundaries are implemented. Analytical
   capabilities remain fail-closed until their typed results pass accepted-answer
-  validation; see
+  validation. Protocol reconciliation, pinned-scorer golden equivalence, and
+  qualification artifact identities are executable, but do not substitute for
+  the 30 missing accepted answers; see
   [the SNB BI guide](ldbc-snb-bi.md).
 - `TripleStore.query/3` does not enter the store transaction coordinator. Direct
   insert, delete, and loader paths also remain outside its queue. Interactive must
