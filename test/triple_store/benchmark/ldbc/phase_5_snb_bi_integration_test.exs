@@ -74,8 +74,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5SNBBIIntegrationTest do
                end
              )
 
-    assert run.operation_count == 58
-    assert length(run.parameter_sequence) == 56
+    assert run.operation_count == 64
+    assert length(run.parameter_sequence) == 62
     assert Enum.all?(run.blocks, & &1.complete?)
 
     assert {:ok, restored, restored_identity} =

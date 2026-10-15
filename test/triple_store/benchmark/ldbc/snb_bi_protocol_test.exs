@@ -11,6 +11,7 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
   }
 
   test "official schedule preserves update-read blocks and canonical variant order" do
+    assert {:ok, definitions} = Workload.load()
     assert {:ok, [validation]} = Protocol.schedule(:validation)
     assert validation.kind == :validation
 
@@ -21,9 +22,51 @@ defmodule TripleStore.Benchmark.LDBC.SNBBIProtocolTest do
     assert throughput.kind == :throughput
     assert power.stages == [:updates, :precomputations, :reads]
     assert power.variants == Protocol.official_variants()
+    assert power.variants == Workload.variant_labels(definitions)
+    assert length(power.variants) == 31
 
     assert {:error, :comparable_schedule_cannot_be_reduced} =
              Protocol.schedule(:throughput, max_batches: 2, comparable: true)
+  end
+
+  test "protocol records complete operation identity and fails fast on ineligible reads" do
+    identity = identity(:initial_load, 0, nil, "a")
+    assert {:ok, schedule} = Protocol.schedule(:validation)
+
+    callbacks = [
+      manifest: parameter_manifest(),
+      state_identity: identity,
+      apply_update: fn _block ->
+        {:ok, %{checksum: checksum("1"), state_checksum: checksum("b")}}
+      end,
+      precompute: fn _block -> {:ok, %{operations: []}} end,
+      execute_read: fn operation ->
+        {:ok,
+         %{
+           correct?: operation.variant != "8m",
+           complete?: true,
+           result_checksum: checksum(operation.variant)
+         }}
+      end
+    ]
+
+    assert {:error, failure} = Protocol.run(schedule, parameter_bundle(), callbacks)
+    assert failure.stage == :reads
+    assert failure.score_eligible? == false
+    assert failure.reason == {:ineligible_read, "8m", :incorrect}
+
+    assert Enum.map(failure.partial.reads, & &1.variant) ==
+             Enum.take_while(Protocol.official_variants(), &(&1 != "8m"))
+
+    assert Enum.all?(failure.partial.reads, fn receipt ->
+             receipt.operation_id =~ "ldbc/snb-bi/read-" and
+               receipt.parameter_row_identity.variant == receipt.variant and
+               receipt.parameter_row_identity.row_index == 0 and
+               String.starts_with?(receipt.parameter_row_identity.checksum, "sha256:") and
+               String.starts_with?(receipt.result_checksum, "sha256:") and
+               receipt.correctness_status == :correct and
+               receipt.score_eligible? == true and receipt.duration_s > 0
+           end)
   end
 
   test "local scorer matches pinned formulas and fails closed" do

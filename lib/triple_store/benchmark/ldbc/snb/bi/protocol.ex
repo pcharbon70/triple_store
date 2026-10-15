@@ -12,7 +12,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
 
   @start_date ~D[2012-11-29]
   @end_date ~D[2013-01-01]
-  @official_variants ~w(1 2a 2b 3 4 5 6 7 8a 8b 9 10a 10b 11 12 13 14a 14b 15a 15b 16a 16b 17 18 19a 19b 20a 20b)
+  @official_variants ~w(1 2a 2b 2m 3 4 5 6 7 8a 8b 8m 9 10a 10b 11 12 13 14a 14b 15a 15b 16a 16b 17 18 19a 19b 20a 20b 20m)
 
   @doc "Returns the immutable official read order used for power scoring."
   @spec official_variants() :: [String.t()]
@@ -59,18 +59,19 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
          :ok <- validate_parameters(parameter_bundle, opts, definitions),
          {:ok, identity} <- fetch_state_identity(opts),
          :ok <- StateIdentity.verify_manifest(identity, Keyword.fetch!(opts, :manifest)) do
-      execute_blocks(schedule, parameter_bundle, identity, opts)
+      definitions_by_variant = Map.new(definitions, &{variant_label(&1), &1})
+      execute_blocks(schedule, parameter_bundle, identity, definitions_by_variant, opts)
     else
       {:error, reason} -> {:error, %{stage: :setup, reason: reason, score_eligible?: false}}
     end
   end
 
-  defp execute_blocks(schedule, bundle, identity, opts) do
+  defp execute_blocks(schedule, bundle, identity, definitions, opts) do
     initial = %{blocks: [], cursors: %{}, state_identity: identity, score_eligible?: true}
 
     schedule
     |> Enum.reduce_while({:ok, initial}, fn block, {:ok, run} ->
-      case execute_block(block, bundle, run.cursors, run.state_identity, opts) do
+      case execute_block(block, bundle, run.cursors, run.state_identity, definitions, opts) do
         {:ok, receipt, cursors, next_identity} ->
           {:cont,
            {:ok,
@@ -106,7 +107,7 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
     end
   end
 
-  defp execute_block(block, bundle, cursors, identity, opts) do
+  defp execute_block(block, bundle, cursors, identity, definitions, opts) do
     started = System.monotonic_time()
     update_block = Map.put(block, :continuation_state_identity, identity)
 
@@ -116,7 +117,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
          state_block <- Map.put(block, :state_identity, next_identity),
          {:ok, precompute} <-
            timed_call(Keyword.fetch!(opts, :precompute), state_block, :precompute),
-         {:ok, reads, next_cursors} <- execute_reads(state_block, bundle, cursors, opts) do
+         {:ok, reads, next_cursors} <-
+           execute_reads(state_block, bundle, cursors, definitions, opts) do
       duration_s = elapsed_seconds(started)
 
       {:ok,
@@ -124,6 +126,8 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
          position: block.position,
          date: block.date,
          kind: block.kind,
+         start_state_identity: identity,
+         end_state_identity: next_identity,
          state_identity: next_identity,
          update: update,
          precompute: precompute,
@@ -151,28 +155,79 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
     end
   end
 
-  defp execute_reads(block, bundle, cursors, opts) do
+  defp execute_reads(block, bundle, cursors, definitions, opts) do
     Enum.reduce_while(block.variants, {:ok, [], cursors}, fn variant, {:ok, reads, positions} ->
       sequence = Map.fetch!(bundle.sequences, variant)
       index = Map.get(positions, variant, 0)
       parameters = Enum.at(sequence, rem(index, length(sequence)))
+      definition = Map.fetch!(definitions, variant)
+      parameter_identity = parameter_row_identity(bundle, variant, index, parameters)
 
       operation = %{
         block: block,
         variant: variant,
+        operation_id: definition.catalog_id,
         parameters: parameters,
-        parameter_index: index
+        parameter_index: index,
+        parameter_row_identity: parameter_identity
       }
 
       case timed_call(Keyword.fetch!(opts, :execute_read), operation, :read) do
         {:ok, result} ->
-          receipt = Map.merge(result, %{variant: variant, parameter_index: index})
-          {:cont, {:ok, reads ++ [receipt], Map.put(positions, variant, index + 1)}}
+          receipt =
+            result
+            |> normalize_read_receipt()
+            |> Map.merge(%{
+              variant: variant,
+              operation_id: definition.catalog_id,
+              parameter_index: index,
+              parameter_row_identity: parameter_identity
+            })
+
+          case read_eligibility(receipt) do
+            :ok ->
+              {:cont, {:ok, reads ++ [receipt], Map.put(positions, variant, index + 1)}}
+
+            {:error, status} ->
+              {:halt, {:error, {:read_failed, {:ineligible_read, variant, status}, reads}}}
+          end
 
         {:error, {:callback_failed, :read, reason}} ->
           {:halt, {:error, {:read_failed, {variant, reason}, reads}}}
       end
     end)
+  end
+
+  defp normalize_read_receipt(result) do
+    correct? = Map.get(result, :correct?) == true
+    complete? = Map.get(result, :complete?) == true
+    warmup? = Map.get(result, :mode) == :warmup
+
+    score_eligible? =
+      correct? and complete? and not warmup? and Map.get(result, :score_eligible?, true)
+
+    result
+    |> Map.put_new(:result_checksum, digest(Map.drop(result, [:duration_s])))
+    |> Map.put(:correctness_status, correctness_status(correct?, complete?))
+    |> Map.put(:score_eligible?, score_eligible?)
+  end
+
+  defp read_eligibility(%{correctness_status: :correct, score_eligible?: true}), do: :ok
+  defp read_eligibility(%{correctness_status: status}), do: {:error, status}
+
+  defp correctness_status(_correct?, false), do: :incomplete
+  defp correctness_status(true, true), do: :correct
+  defp correctness_status(false, true), do: :incorrect
+
+  defp parameter_row_identity(bundle, variant, index, parameters) do
+    %{
+      variant: variant,
+      row_index: index,
+      dataset_checksum: bundle.dataset_checksum,
+      source_id: bundle.source_id,
+      generator_pin: bundle.generator_pin,
+      checksum: digest(parameters)
+    }
   end
 
   defp timed_call(callback, argument, stage) do
@@ -238,6 +293,11 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   defp maybe_put_reference_profile(opts, profile),
     do: Keyword.put(opts, :reference_profile, profile)
 
+  defp variant_label(definition) do
+    suffix = if definition.variant == "default", do: "", else: definition.variant
+    Integer.to_string(definition.number) <> suffix
+  end
+
   defp default_batches(:validation), do: 1
   defp default_batches(:power), do: 1
   defp default_batches(:throughput), do: Date.diff(@end_date, @start_date)
@@ -247,9 +307,20 @@ defmodule TripleStore.Benchmark.LDBC.SNB.BI.Protocol do
   defp block_kind(:throughput, 0), do: :power
   defp block_kind(:throughput, _offset), do: :throughput
 
-  defp elapsed_seconds(started),
-    do:
+  defp elapsed_seconds(started) do
+    elapsed =
       (System.monotonic_time() - started)
-      |> System.convert_time_unit(:native, :microsecond)
-      |> Kernel./(1_000_000)
+      |> System.convert_time_unit(:native, :nanosecond)
+      |> Kernel./(1_000_000_000)
+
+    max(elapsed, 1.0e-9)
+  end
+
+  defp digest(term) do
+    "sha256:" <>
+      (term
+       |> :erlang.term_to_binary([:deterministic])
+       |> then(&:crypto.hash(:sha256, &1))
+       |> Base.encode16(case: :lower))
+  end
 end
