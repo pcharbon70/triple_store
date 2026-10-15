@@ -9,7 +9,18 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
   alias TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity
 
   @schema_version 1
-  @bi_schema_version 2
+  @bi_schema_version 3
+  @qualification_identities [
+    :dataset,
+    :mapping,
+    :translation,
+    :parameters,
+    :reference_answers,
+    :update_stream,
+    :checkpoint,
+    :scorer,
+    :environment
+  ]
   @required_gates [:profile, :correctness, :scheduling, :duration, :completeness]
   @json_files [
     :manifest,
@@ -33,21 +44,35 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
          enriched <- enrich(run, schema_version),
          {:ok, json_paths} <- write_json_files(directory, enriched, schema_version),
          {:ok, csv_path} <- write_csv(directory, enriched.raw_samples),
-         {:ok, markdown_path} <- write_markdown(directory, enriched, schema_version) do
-      paths = Map.merge(json_paths, %{samples_csv: csv_path, report_markdown: markdown_path})
+         {:ok, markdown_path} <- write_markdown(directory, enriched, schema_version),
+         paths <- Map.merge(json_paths, %{samples_csv: csv_path, report_markdown: markdown_path}),
+         {:ok, paths} <- maybe_write_checksum_manifest(directory, paths, enriched) do
       {:ok, %{schema_version: schema_version, paths: paths, checksums: checksums(paths)}}
     end
   end
 
   defp enrich(run, schema_version) do
     gates = Map.get(run, :gates, %{})
-    eligible? = Enum.all?(@required_gates, &(Map.get(gates, &1) == true))
+    qualification = Map.get(run, :qualification)
+    qualification_complete? = qualification_complete?(qualification)
+
+    eligible? =
+      Enum.all?(@required_gates, &(Map.get(gates, &1) == true)) and
+        (not bi_run?(run) or qualification_complete?)
+
+    claim_profile =
+      if bi_run?(run) and eligible? and get_in(run, [:disclosure, :comparable]) == true,
+        do: :comparable,
+        else: :diagnostic
+
     supplied_summary = Map.get(run, :summary, %{})
 
     summary =
       supplied_summary
       |> Map.put(:schema_version, schema_version)
       |> Map.put(:official_score_eligible, eligible?)
+      |> Map.put(:qualification_complete, qualification_complete?)
+      |> Map.put(:claim_profile, claim_profile)
       |> maybe_put_score(eligible?, Map.get(run, :official_score))
 
     manifest =
@@ -67,6 +92,7 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
     |> Map.put_new(:correctness, [])
     |> Map.put_new(:disclosure, %{})
     |> Map.put_new(:resources, %{})
+    |> Map.put_new(:qualification, default_qualification())
     |> maybe_put_protocol()
   end
 
@@ -157,12 +183,14 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
              run |> Map.get(:manifest, %{}) |> Map.get(:state_identity),
              final,
              :manifest
+           ),
+         :ok <-
+           validate_named_identity(
+             run |> Map.get(:disclosure, %{}) |> Map.get(:state_identity),
+             final,
+             :disclosure
            ) do
-      validate_named_identity(
-        run |> Map.get(:disclosure, %{}) |> Map.get(:state_identity),
-        final,
-        :disclosure
-      )
+      validate_qualification(Map.get(run, :qualification), Map.get(run, :catalog, []))
     end
   end
 
@@ -273,12 +301,107 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
 
   defp schema_version(run), do: if(bi_run?(run), do: @bi_schema_version, else: @schema_version)
 
-  defp json_files(run), do: if(bi_run?(run), do: @json_files ++ [:protocol], else: @json_files)
+  defp json_files(run),
+    do: if(bi_run?(run), do: @json_files ++ [:protocol, :qualification], else: @json_files)
 
   defp maybe_put_protocol(run) do
     if bi_run?(run),
       do: Map.put(run, :protocol, %{blocks: Map.fetch!(run, :protocol_blocks)}),
       else: run
+  end
+
+  defp validate_qualification(nil, _catalog), do: :ok
+
+  defp validate_qualification(qualification, catalog) when is_map(qualification) do
+    identities = Map.get(qualification, :identities, %{})
+
+    with :ok <- validate_qualification_identities(identities),
+         :ok <- validate_qualification_count(qualification, catalog),
+         :ok <- validate_variant_count(qualification),
+         :ok <- validate_qualification_status(qualification) do
+      :ok
+    end
+  end
+
+  defp validate_qualification(_qualification, _catalog),
+    do: {:error, :invalid_qualification_evidence}
+
+  defp validate_qualification_identities(identities) when is_map(identities) do
+    case Enum.find(@qualification_identities, &(not present_identity?(Map.get(identities, &1)))) do
+      nil -> :ok
+      identity -> {:error, {:invalid_qualification_identity, identity}}
+    end
+  end
+
+  defp validate_qualification_identities(_identities),
+    do: {:error, :invalid_qualification_identities}
+
+  defp validate_qualification_count(qualification, catalog) do
+    expected = length(catalog)
+    actual = Map.get(qualification, :operation_count)
+
+    if expected == actual,
+      do: :ok,
+      else: {:error, {:qualification_operation_count, expected, actual}}
+  end
+
+  defp validate_variant_count(%{variant_count: 31}), do: :ok
+
+  defp validate_variant_count(qualification),
+    do: {:error, {:qualification_variant_count, 31, Map.get(qualification, :variant_count)}}
+
+  defp validate_qualification_status(%{
+         complete?: complete?,
+         reconciled?: reconciled?,
+         blockers: blockers
+       })
+       when is_boolean(complete?) and is_boolean(reconciled?) and is_list(blockers) do
+    if complete? and (not reconciled? or blockers != []),
+      do: {:error, :inconsistent_qualification_status},
+      else: :ok
+  end
+
+  defp validate_qualification_status(_qualification),
+    do: {:error, :invalid_qualification_status}
+
+  defp present_identity?(value) when is_binary(value), do: value != ""
+  defp present_identity?(value) when is_map(value), do: map_size(value) > 0
+  defp present_identity?(_value), do: false
+
+  defp qualification_complete?(%{complete?: true, reconciled?: true, blockers: []}), do: true
+  defp qualification_complete?(_qualification), do: false
+
+  defp default_qualification do
+    %{
+      complete?: false,
+      reconciled?: false,
+      operation_count: 0,
+      variant_count: 0,
+      identities: %{},
+      blockers: [:qualification_evidence_missing]
+    }
+  end
+
+  defp maybe_write_checksum_manifest(directory, paths, run) do
+    if bi_run?(run) do
+      path = Path.join(directory, "checksums.json")
+      file_checksums = checksums(paths)
+      payload = %{schema_version: @bi_schema_version, files: file_checksums}
+
+      with :ok <- File.write(path, Jason.encode!(payload, pretty: true) <> "\n", [:binary]),
+           :ok <- verify_checksum_manifest(paths, file_checksums) do
+        {:ok, Map.put(paths, :checksums, path)}
+      else
+        {:error, reason} -> {:error, {:artifact_write_failed, :checksums, reason}}
+      end
+    else
+      {:ok, paths}
+    end
+  end
+
+  defp verify_checksum_manifest(paths, expected) do
+    observed = checksums(paths)
+    if observed == expected, do: :ok, else: {:error, :artifact_checksum_mismatch}
   end
 
   defp state_identity_markdown(%{protocol_blocks: blocks} = run) do
