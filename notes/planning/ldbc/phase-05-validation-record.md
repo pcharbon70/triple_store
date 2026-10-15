@@ -145,8 +145,52 @@ Sub-Phase 5D protocol qualification, scoring equivalence, optimization, and
 final evidence have not been completed, and analytical capability promotion is
 still blocked on accepted reference answers.
 
+## Phase 5D protocol qualification and evidence
+
+The canonical protocol schedule now contains all 31 variants. Earlier schedules
+omitted `2m`, `8m`, and `20m` and therefore reported 28 reads per block. Each
+read receipt now binds the catalog operation, parameter-row identity, result
+checksum, correctness status, score eligibility, duration, and block start/end
+state identities. Incorrect or incomplete reads stop the block before later
+operations can enter score inputs.
+
+`ProtocolReconciler` derives power and throughput score records from completed
+protocol receipts and proves their schedule order, block position, persisted
+state checksum, duration, and operation identity. Duplicate, missing, reordered,
+and stale-state records fail closed. The pinned v1.0.3 scorer source has SHA-256
+`02086291b5732f0a96de4af870b707653a76f528d01e56d33e57635c1929ebbe`.
+Golden inputs evaluated by that source produced power
+`278.17453399866326`, power at scale `2781.7453399866326`, throughput `41.4`,
+and throughput at scale `414.0`; the local scorer reproduces them within the
+declared tolerance. The pinned scorer excludes median variants from the power
+geometric mean even though the protocol executes and records them.
+
+Optimization evidence now ranks elapsed time, iterator count, materialized rows,
+memory, I/O, and cardinality-estimate error under one environment identity.
+Candidate improvements are rejected unless answer digests, cleanup evidence,
+protocol eligibility, and environment identity remain unchanged. No shared query
+optimizer change was made because the diagnostic smoke evidence did not establish
+a qualified general-engine cost center.
+
+BI artifact schema version 3 adds a qualification envelope and a checksum
+manifest. The envelope binds dataset, mapping, translation, parameter,
+reference-answer, update-stream, checkpoint, scorer, and environment identities
+and validates catalog/variant counts before writing. The integrated Phase 5D
+smoke workflow executes 31 reads plus one update, reconciles 32 score records,
+restores the initial checkpoint with identical execution digests, and validates
+the completed artifact set.
+
+The Phase 5D implementation remains deliberately diagnostic. Thirty variants
+still have no immutable accepted answer, and the BI 1 artifact remains a
+`contract_fixture`. The qualification envelope therefore reports
+`accepted_answers_incomplete` and `result_comparison_incomplete`; capability
+entries remain unpromoted and Phase 5 is not correctness-qualified. Supplying a
+complete immutable answer bundle from the pinned reference implementation is an
+external evidence prerequisite for closing the remaining gate.
+
 ## Executed checks
 
+- Phase 5D focused SNB BI and Phase 5 integration gates: 92 tests, 0 failures
 - Phase 5C update-state integration: 4 tests, 0 failures
 - Phase 5C focused update-state regressions: 36 tests, 0 failures
 - Complete LDBC regression directory: 165 tests, 0 failures
