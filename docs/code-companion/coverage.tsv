@@ -1,0 +1,41 @@
+# source-path	guide-path	role
+lib/triple_store.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Public facade and store lifecycle
+lib/triple_store/application.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Default OTP services
+lib/triple_store/backend/rocksdb/erlang_adapter.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Schema-aware RocksDB boundary
+lib/triple_store/dictionary.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Tagged term IDs and dictionary rules
+lib/triple_store/loader.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	RDF input and direct write routing
+lib/triple_store/index.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Triple index fanout
+lib/triple_store/quad_index.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Quad key layout and lookup
+lib/triple_store/quad_operations.ex	docs/code-companion/store-lifecycle-and-explicit-data.md	Atomic quad mutations
+test/triple_store/backend/rocksdb/schema_versioning_test.exs	docs/code-companion/store-lifecycle-and-explicit-data.md	Persisted schema compatibility cases
+test/triple_store/quad_operations_test.exs	docs/code-companion/store-lifecycle-and-explicit-data.md	Quad mutation cases
+lib/triple_store/sparql/query.ex	docs/code-companion/sparql-query-path.md	Query orchestration and timeout boundary
+lib/triple_store/sparql/parser.ex	docs/code-companion/sparql-query-path.md	Native parser facade
+lib/triple_store/sparql/algebra.ex	docs/code-companion/sparql-query-path.md	Parsed query to executable algebra
+lib/triple_store/sparql/optimizer.ex	docs/code-companion/sparql-query-path.md	Logical and cost-aware rewrites
+lib/triple_store/sparql/executor.ex	docs/code-companion/sparql-query-path.md	Index-backed query execution
+lib/triple_store/sparql/parser/nif.ex	docs/code-companion/sparql-query-path.md	Rust parser adapter contract
+native/sparql_parser_nif/src/lib.rs	docs/code-companion/sparql-query-path.md	Rust SPARQL parsing boundary
+test/triple_store/sparql/query_test.exs	docs/code-companion/sparql-query-path.md	Public query orchestration cases
+test/triple_store/sparql/leapfrog/quad_iterator_cleanup_test.exs	docs/code-companion/sparql-query-path.md	Lazy iterator lifetime regression
+lib/triple_store/reasoner/reasoning_profile.ex	docs/code-companion/reasoning-and-derived-facts.md	Rule profile selection
+lib/triple_store/reasoner/fact_loader.ex	docs/code-companion/reasoning-and-derived-facts.md	Explicit SPO fact loading and iterator ownership
+lib/triple_store/reasoner/semi_naive.ex	docs/code-companion/reasoning-and-derived-facts.md	Fixpoint evaluation
+lib/triple_store/reasoner/graph_scoped_reasoner.ex	docs/code-companion/reasoning-and-derived-facts.md	Graph-aware materialization
+lib/triple_store/reasoner/derived_store.ex	docs/code-companion/reasoning-and-derived-facts.md	Derived fact persistence and lookup
+test/triple_store/reasoner/fact_loader_test.exs	docs/code-companion/reasoning-and-derived-facts.md	Local fact scan and cleanup cases
+test/triple_store/reasoner/graph_scoped_reasoning_integration_test.exs	docs/code-companion/reasoning-and-derived-facts.md	Graph reasoning integration cases
+lib/triple_store/transaction.ex	docs/code-companion/sparql-update-and-transactions.md	Store-owned SPARQL update coordination
+lib/triple_store/sparql/update_executor.ex	docs/code-companion/sparql-update-and-transactions.md	Typed request operation execution
+lib/triple_store/sparql/update_session.ex	docs/code-companion/sparql-update-and-transactions.md	Request-local staged mutation overlay
+lib/triple_store/sparql/update/helpers.ex	docs/code-companion/sparql-update-and-transactions.md	Conversion authorization and cache helpers
+test/triple_store/phase_2_transaction_integration_test.exs	docs/code-companion/sparql-update-and-transactions.md	Request atomicity and both-schema integration cases
+test/triple_store/transaction_serialization_test.exs	docs/code-companion/sparql-update-and-transactions.md	Coordinator ordering cases
+lib/triple_store/telemetry.ex	docs/code-companion/operations-and-recovery.md	Sanitized shared instrumentation
+lib/triple_store/health.ex	docs/code-companion/operations-and-recovery.md	Liveness readiness and full health
+lib/triple_store/backup.ex	docs/code-companion/operations-and-recovery.md	Full and incremental backup and restore
+lib/triple_store/graph_backup.ex	docs/code-companion/operations-and-recovery.md	Graph-scoped dataset recovery
+lib/triple_store/scheduled_backup.ex	docs/code-companion/operations-and-recovery.md	Monitored rotating backup process
+lib/triple_store/snapshot.ex	docs/code-companion/operations-and-recovery.md	Globally supervised snapshot lifecycle
+test/triple_store/backup_test.exs	docs/code-companion/operations-and-recovery.md	Full-store recovery cases
+test/triple_store/health_test.exs	docs/code-companion/operations-and-recovery.md	Health state cases

@@ -10,6 +10,10 @@
 # Where third-party dependencies like ExDoc output generated docs.
 /doc/
 
+# Generated Material for MkDocs output
+/site-code-companion/
+/.venv-docs/
+
 # Ignore .fetch files in case you like to edit your project deps locally.
 /.fetch
 
@@ -49,4 +53,3 @@ OPTIONS-*
 # OS
 .DS_Store
 Thumbs.db
-

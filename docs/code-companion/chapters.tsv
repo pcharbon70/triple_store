@@ -1,0 +1,6 @@
+# step	guide-path	title	inspected-revision	state	summary
+1	docs/code-companion/store-lifecycle-and-explicit-data.md	Store lifecycle and explicit data	29608a6217a7db4204fc2f583978451805afd8fb	current	Follow open, RDF term encoding, schema-specific index writes, and close.
+2	docs/code-companion/sparql-query-path.md	SPARQL query path	29608a6217a7db4204fc2f583978451805afd8fb	current	Trace query text through parsing, planning, execution, and result boundaries.
+3	docs/code-companion/reasoning-and-derived-facts.md	Reasoning and derived facts	29608a6217a7db4204fc2f583978451805afd8fb	current	Compare local in-memory materialization with graph-scoped derived persistence.
+4	docs/code-companion/sparql-update-and-transactions.md	SPARQL update and transactions	29608a6217a7db4204fc2f583978451805afd8fb	current	Follow serialized update requests through staged operations and one explicit-index batch.
+5	docs/code-companion/operations-and-recovery.md	Operations and recovery	29608a6217a7db4204fc2f583978451805afd8fb	current	Connect telemetry and health to full-store and graph-scoped recovery paths.

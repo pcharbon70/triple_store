@@ -19,6 +19,8 @@ Start with these sources, then inspect the implementation and adjacent tests:
   [governance](specs/specs-governance-and-compliance-guide.md) explains traceability.
 - [User guides](guides/user/README.md) split triple and quad workflows.
   [Developer guides](guides/developer/README.md) explain internals and data flow.
+- [Code Companion](docs/code-companion/index.md) is a guided source-reading path
+  with a chapter ledger and a one-owner map for covered files.
 - `notes/planning/` holds delivery plans; `notes/research/` is background;
   `notes/review/` contains historical reviews. Neither proves current behavior.
 - `docs/production/` contains operational checklists/runbooks;
@@ -31,6 +33,22 @@ proof of complete standards conformance. `CLAUDE.md` and `CONTRIBUTING.md` conta
 older architecture/path references; verify them before following examples.
 The separate `.claude/AGENTS.md` describes Claude-specific orchestration and is
 not the root project architecture guide.
+
+## Code Companion maintenance
+
+Author chapters in `docs/code-companion/` and build them with Material for
+MkDocs. Do not edit or commit generated `site-code-companion/` output. When a
+mapped implementation or test file changes, review its owning chapter and
+`coverage.tsv` row. For a new chapter, use `module-guide-template.md`, append
+a permanent step to `chapters.tsv`, match the chapter frontmatter and overview
+row, and add the page to `mkdocs.yml`. Keep one primary guide owner per mapped
+file; unmapped code is outside the current Companion corpus.
+
+Separate contract requirements, inspected implementation behavior, and test
+evidence. State the inspected revision and actual verification results; do not
+present test-file references as passing tests. Run
+`bash scripts/docs/verify-code-companion.sh` before handing off Companion or
+covered implementation changes. This check does not replace Elixir tests.
 
 ## Source map and runtime flow
 
@@ -52,8 +70,10 @@ not the root project architecture guide.
 
 `TripleStore.open/2` validates the path, opens the selected schema, starts a
 dictionary manager (optionally sharded), and returns a map containing `db`,
-`dict_manager`, `transaction`, `path`, and `schema`. `transaction` starts as `nil`.
-`close/1` stops the dictionary manager and closes storage. Separately started
+`dict_manager`, `transaction`, `transaction_owner`, `path`, and `schema`.
+By default `open/2` starts one store-owned transaction coordinator; an
+explicit external coordinator remains caller-owned. `close/1` stops the
+store-owned coordinator, dictionary manager, and storage. Separately started
 statistics, result-cache, metrics, and scheduled-backup helpers need explicit
 lifecycle management; do not assume the facade starts or stops them.
 
@@ -91,14 +111,15 @@ Elixir-owned and preemptible.
 ## API distinctions and current caveats
 
 - `insert/2`, `delete/2`, and load APIs use direct loader/storage writes.
-  `update/2` uses the handle's transaction manager or creates a temporary one
-  per call. `query/3` goes directly to `SPARQL.Query`, not `Transaction.query/3`.
-  Serialization through one coordinator does not establish a shared lock
-  across independent temporary coordinators or direct writes.
+  `update/2` uses the handle's coordinator, which is store-owned by default.
+  `query/3` goes directly to `SPARQL.Query`, not `Transaction.query/3`.
+  Serialization through the coordinator does not establish a shared lock with
+  direct writes or facade queries.
 - Review isolation claims against `transaction.ex` implementation: update
-  handling is synchronous, and the query context does not receive the snapshot
-  created during update execution. Snapshot lifecycle support alone does not
-  prove concurrent snapshot reads or whole-request rollback across batches.
+  handling is synchronous; coordinator queries wait behind updates. Update
+  execution does not create a snapshot. Its request-level staged overlay
+  commits explicit-index mutations as one batch, while facade queries and
+  direct writes remain outside the coordinator.
 - `SPARQL.PlanCache` is automatically supervised. `TripleStore.Query.Cache`
   is the optional result cache used by `SPARQL.Query`. `SPARQL.QueryCache` is a
   separate tested implementation. Production result keys include the open-store
