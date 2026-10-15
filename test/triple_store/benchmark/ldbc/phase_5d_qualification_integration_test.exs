@@ -184,13 +184,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
   test "Phase 5D failure gates reject incorrect reads and incomplete score inputs" do
     assert {:ok, schedule} = Protocol.schedule(:power)
 
-    assert {:error, {:score_record_count, 1, 0}} =
-             ProtocolReconciler.reconcile(
-               [],
-               %{blocks: []},
-               []
-             )
-             |> normalize_empty_reconciliation()
+    assert {:error, :empty_protocol_run} =
+             ProtocolReconciler.reconcile([], %{blocks: []}, [])
 
     record = %{
       batch_type: :power,
@@ -214,9 +209,6 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
     assert :protocol_reconciliation_failed in errors
     assert length(schedule) == 1
   end
-
-  defp normalize_empty_reconciliation({:error, :empty_protocol_run}),
-    do: {:error, {:score_record_count, 1, 0}}
 
   defp definition_for(definitions, label) do
     Enum.find(definitions, fn definition -> variant_label(definition) == label end)

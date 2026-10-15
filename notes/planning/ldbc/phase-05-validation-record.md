@@ -140,10 +140,11 @@ and retry as unsafe. Checkpoint restore validates the statement count recorded
 by the selected checkpoint instead of applying the initial-load count to every
 update state.
 
-Sub-Phase 5C's update and state exit gate is complete. Phase 5 remains open:
-Sub-Phase 5D protocol qualification, scoring equivalence, optimization, and
-final evidence have not been completed, and analytical capability promotion is
-still blocked on accepted reference answers.
+Sub-Phase 5C's update and state exit gate is complete. At that checkpoint,
+Phase 5 remained open because Sub-Phase 5D protocol qualification, scoring
+equivalence, optimization, and final evidence had not been completed, and
+analytical capability promotion was still blocked on accepted reference
+answers.
 
 ## Phase 5D protocol qualification and evidence
 
@@ -163,7 +164,11 @@ Golden inputs evaluated by that source produced power
 `278.17453399866326`, power at scale `2781.7453399866326`, throughput `41.4`,
 and throughput at scale `414.0`; the local scorer reproduces them within the
 declared tolerance. The pinned scorer excludes median variants from the power
-geometric mean even though the protocol executes and records them.
+geometric mean even though the protocol executes and records them. The score
+tables and printed score values were produced before the upstream script's
+later LaTeX-report step rejected DuckDB 1.4.1's strict integer formatting of a
+floating batch count; repository equivalence tests consume the persisted
+numeric values rather than that failed report output.
 
 Optimization evidence now ranks elapsed time, iterator count, materialized rows,
 memory, I/O, and cardinality-estimate error under one environment identity.
