@@ -200,6 +200,41 @@ defmodule TripleStore.Benchmark.RunnerTest do
     end
   end
 
+  describe "run/3 execution" do
+    test "executes raw benchmark SPARQL through the query pipeline" do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "triple_store_runner_#{System.unique_integer([:positive])}"
+        )
+
+      {:ok, store} = TripleStore.open(path)
+
+      on_exit(fn ->
+        TripleStore.close(store)
+        File.rm_rf!(path)
+      end)
+
+      namespace = "http://gmark.example.org/"
+
+      graph =
+        RDF.Graph.new([
+          {RDF.iri(namespace <> "Conference1"), RDF.type(), RDF.iri(namespace <> "Conference")},
+          {RDF.iri(namespace <> "Conference1"), RDF.iri(namespace <> "heldIn"),
+           RDF.iri(namespace <> "City1")},
+          {RDF.iri(namespace <> "City1"), RDF.type(), RDF.iri(namespace <> "City")},
+          {RDF.iri(namespace <> "City1"), RDF.iri(namespace <> "cityId"), RDF.literal("1")}
+        ])
+
+      assert {:ok, 4} = TripleStore.load_graph(store, graph)
+
+      assert {:ok, result} =
+               Runner.run(store, :gmark, queries: [:c1], warmup: 0, iterations: 1)
+
+      assert [%{query_id: :c1, result_count: 1}] = result.query_results
+    end
+  end
+
   describe "percentile calculation accuracy" do
     test "percentile calculation is mathematically correct for known distributions" do
       # Test with a known uniform distribution

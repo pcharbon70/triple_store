@@ -1,9 +1,14 @@
 defmodule TripleStore.Benchmark.WatDivQueries do
   @moduledoc """
-  WatDiv (Waterloo SPARQL Diversity Test) query templates.
+  WatDiv-shaped query templates retained for local diagnostic tests.
 
-  Implements the 20 standard WatDiv benchmark queries testing diverse
-  SPARQL query patterns over heterogeneous RDF data.
+  These templates are not output from the official WatDiv query generator and
+  must not be used for published or cross-engine WatDiv comparisons. The valid
+  workflow loads fully instantiated upstream queries through
+  `TripleStore.Benchmark.WatDiv.Workload`.
+
+  Implements 20 repository-defined queries inspired by diverse SPARQL graph
+  pattern shapes.
 
   ## Usage
 
@@ -18,7 +23,7 @@ defmodule TripleStore.Benchmark.WatDivQueries do
 
   ## Query Categories
 
-  WatDiv queries are organized into 4 categories based on their graph pattern shape:
+  The local queries are organized into 4 categories based on graph pattern shape:
 
   | Category | Queries | Description |
   |----------|---------|-------------|
@@ -106,7 +111,7 @@ defmodule TripleStore.Benchmark.WatDivQueries do
         }
 
   @doc """
-  Returns all WatDiv query templates.
+  Returns all local WatDiv-shaped query templates.
   """
   @spec all() :: [query_template()]
   def all do

@@ -15,7 +15,7 @@ unchanged.
 Run the deterministic Phase 4 workflow with:
 
 ```sh
-mix test test/triple_store/benchmark/ldbc/phase_4_spb_integration_test.exs
+./scripts/run_ldbc_spb_benchmark.sh
 ```
 
 The workflow generates and validates a smoke N-Quads dataset, loads its ontology,

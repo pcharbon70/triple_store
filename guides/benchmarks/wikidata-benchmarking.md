@@ -39,6 +39,12 @@ mix benchmark.wikidata medium --source /path/to/wikidata-medium.nt --source-url 
 mix benchmark.wikidata full --source /path/to/wikidata-full.nt --source-url https://example.org/wikidata-full.nt
 ```
 
+The equivalent script entry point forwards the same mode and options:
+
+```sh
+./scripts/run_wikidata_benchmark.sh smoke
+```
+
 Useful options:
 
 ```text

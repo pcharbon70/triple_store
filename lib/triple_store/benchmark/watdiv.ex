@@ -1,15 +1,21 @@
 defmodule TripleStore.Benchmark.WatDiv do
   @moduledoc """
-  WatDiv (Waterloo SPARQL Diversity Test) data generator.
+  A small WatDiv-shaped synthetic data generator for local diagnostics.
+
+  This module does not implement the official WatDiv data generator and its
+  output is not suitable for published or cross-engine WatDiv comparisons.
+  Use `Mix.Tasks.Benchmark.Watdiv` and the scripts documented in the WatDiv
+  benchmark guide when benchmark validity matters.
 
   Generates synthetic heterogeneous RDF datasets for benchmarking RDF stores.
   The data simulates an e-commerce scenario with users, products, reviews,
   offers, purchases, and social relationships.
 
-  ## Scale Factor
+  ## Synthetic Scale Parameter
 
-  The scale factor determines the number of triples generated.
-  WatDiv scale factor 1 generates approximately 100,000 triples.
+  The local scale parameter determines the number of triples generated. It does
+  not reproduce the official WatDiv scale-factor distribution. A local scale of
+  1 generates approximately 100,000 triples.
 
   - Scale 1: ~100K triples
   - Scale 10: ~1M triples
@@ -26,9 +32,9 @@ defmodule TripleStore.Benchmark.WatDiv do
       # Generate as stream for large datasets
       stream = TripleStore.Benchmark.WatDiv.stream(10)
 
-  ## WatDiv Characteristics
+  ## Fixture Characteristics
 
-  Unlike BSBM and LUBM, WatDiv uses:
+  The fixture approximates several structural ideas associated with WatDiv:
   - **Heterogeneous structure**: Same entity types don't always have same attributes
   - **Probabilistic attributes**: Attributes appear with specific probabilities
   - **Correlated attributes**: Attributes grouped using pgroup construct
@@ -37,7 +43,7 @@ defmodule TripleStore.Benchmark.WatDiv do
 
   ## Ontology
 
-  The WatDiv ontology defines:
+  The fixture vocabulary includes:
   - User (social network users)
   - Product (goods for sale)
   - Review (product reviews)
@@ -85,11 +91,11 @@ defmodule TripleStore.Benchmark.WatDiv do
         ]
 
   @doc """
-  Generates WatDiv benchmark data as an RDF.Graph.
+  Generates local diagnostic data as an RDF.Graph.
 
   ## Arguments
 
-  - `scale_factor` - Scale factor (1 = ~100K triples)
+  - `scale_factor` - Local synthetic scale (1 = ~100K triples)
 
   ## Options
 
