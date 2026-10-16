@@ -202,9 +202,9 @@ bi_reads =
 
     entry.(
       "ldbc/snb-bi/read-#{padded}@v1.0.3",
-      if(extension?, do: :requires_extension, else: :requires_fix),
+      :supported,
       if(extension?, do: :not_applicable, else: :verified),
-      :unverified,
+      :verified,
       if(extension?,
         do: [:graph_algorithm, :shortest_path, :path_cost],
         else: [:aggregation, :subquery, :expressions, :ordering, :slicing]
@@ -213,13 +213,15 @@ bi_reads =
       5,
       if(extension?,
         do:
-          "The operation-specific graph adapter is registered, protocol-reconciled, and passes the pinned accepted answers on the reduced smoke profile; official scale-factor qualification remains open.",
+          "The operation-specific graph adapter is protocol-reconciled and every variant passes its pinned accepted answer on the reduced smoke profile; official scale-factor qualification remains open.",
         else:
-          "The checked-in SPARQL translation and standard handler are registered, protocol-reconciled, and pass the pinned accepted answers on the reduced smoke profile; official scale-factor qualification remains open."
+          "The checked-in SPARQL translation and standard handler are protocol-reconciled and every variant passes its pinned accepted answer on the reduced smoke profile; official scale-factor qualification remains open."
       ),
       [
         "ldbc_snb_docs:query-specifications/bi-read-#{padded}.yaml",
         "lib/triple_store/benchmark/ldbc/snb/bi/qualification.ex",
+        "priv/benchmarks/ldbc/snb-bi/reference/manifest.exs",
+        "test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs",
         "test/triple_store/benchmark/ldbc/phase_5d_qualification_integration_test.exs",
         "notes/planning/ldbc/phase-05-validation-record.md"
         | implementation_evidence

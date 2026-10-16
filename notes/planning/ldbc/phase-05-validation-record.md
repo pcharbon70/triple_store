@@ -59,14 +59,15 @@ fixtures continue to prove empty, duplicate-bearing, ordered, timestamp,
 32/64-bit integer, and floating-point round trips, along with missing-row,
 unexpected-row, ordering, type, provenance, and deterministic-hash failures.
 
-## Phase 5A qualification boundary
+## Historical Phase 5A qualification boundary
 
-The checked-in smoke fixture is not an official scale-factor dataset and has no
-accepted answer corpus for all BI operations. Thirty canonical variants still
-lack registered reference answers. At the end of Phase 5A, exact analytical
-handlers for BI 1-9, 11-14, and 16-18 and operation-specific graph adapters for
-BI 10, 15, 19, and 20 remained open. Phase 5B implements those handlers, as
-recorded below. The capability matrix remains intentionally unchanged because
+At the end of Phase 5A, the checked-in smoke fixture was not an official
+scale-factor dataset and did not yet have an accepted answer corpus for all BI
+operations. Thirty canonical variants lacked registered reference answers.
+Exact analytical handlers for BI 1-9, 11-14, and 16-18 and operation-specific
+graph adapters for BI 10, 15, 19, and 20 remained open. Phase 5B implements
+those handlers, as recorded below. The capability matrix remains intentionally
+unchanged because
 implementation availability alone does not establish accepted-answer
 correctness, and the reduced workflow exposes only diagnostic scores.
 
@@ -186,8 +187,7 @@ the completed artifact set.
 The Phase 5D implementation remains deliberately diagnostic. The later
 accepted-answer binding closes the reduced smoke answer and comparison blockers,
 but the synthetic smoke dataset and parameter provenance remain ineligible for
-official scale-factor or comparable performance claims. Capability entries
-remain unpromoted pending that broader qualification boundary.
+official scale-factor or comparable performance claims.
 
 ## Post-Phase 5 accepted-answer binding
 
@@ -201,10 +201,16 @@ TripleStore continues to execute SPARQL over its RDF triple/quad model.
 All 31 reduced smoke executions match their accepted answers before update,
 after the deterministic update microbatch, and after checkpoint restore. The
 qualification envelope has no accepted-answer or result-comparison blocker,
-while artifact scoring remains in the diagnostic namespace.
+while artifact scoring remains in the diagnostic namespace. The capability
+matrix therefore promotes all 20 BI read operations to `supported` with verified
+execution for the reduced smoke profile. This promotion does not change the
+official scale-factor or comparable-performance boundary.
 
 ## Executed checks
 
+- Capability reconciliation focused regressions: 11 tests, 0 failures
+- Capability reconciliation complete LDBC regression directory: 179 tests, 0
+  failures
 - Accepted-answer binding and Phase 5A/5B/5D focused regressions: 40 tests, 0
   failures
 - Accepted-answer binding complete LDBC regression directory: 178 tests, 0

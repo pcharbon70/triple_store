@@ -305,7 +305,7 @@ Description: Define the exact interaction and tag edge weights, endpoint candida
 - [x] 5B.3.2.1 Derive edge weights from mapped relationship and message facts without driver-side materialization.
 - [x] 5B.3.2.2 Preserve fractional costs, equal-cost endpoint ties, unreachable pairs, and deterministic ordering.
 - [x] 5B.3.2.3 Reject negative, non-finite, missing, or malformed weights before they enter Dijkstra execution.
-- [ ] 5B.3.2.4 Compare full typed results and costs with the designated reference implementation.
+- [x] 5B.3.2.4 Compare full typed results and costs with the designated reference implementation.
 
 Primary files:
 
@@ -342,7 +342,7 @@ Description: This final section proves that every BI read produces the complete 
 
 Description: Run all 31 variants against the deterministic smoke dataset and compare every row with the accepted-answer oracle.
 
-- [ ] 5B.5.1.1 Verify columns, types, duplicate multiplicity, row order, limits, and tie breakers.
+- [x] 5B.5.1.1 Verify columns, types, duplicate multiplicity, row order, limits, and tie breakers.
 - [ ] 5B.5.1.2 Exercise empty results, duplicate rows, numeric boundaries, timestamp boundaries, and large intermediate aggregations.
 - [x] 5B.5.1.3 Verify parser, execution, timeout, cancellation, and result-contract failures invalidate the operation.
 - [x] 5B.5.1.4 Reopen the store and reproduce the same answer hashes.
@@ -352,7 +352,7 @@ Description: Run all 31 variants against the deterministic smoke dataset and com
 Description: Cross-check distance, reachability, path bounds, weighted cost, equal-cost ties, and disconnected graphs for all four extension operations.
 
 - [x] 5B.5.2.1 Compare small exhaustive graph fixtures with an independent reference algorithm.
-- [ ] 5B.5.2.2 Compare mapped SNB smoke results with the pinned reference implementation.
+- [x] 5B.5.2.2 Compare mapped SNB smoke results with the pinned reference implementation.
 - [x] 5B.5.2.3 Verify limit and cancellation exits release iterators and do not leave background work.
 - [x] 5B.5.2.4 Record Sub-Phase 5B answer digests and capability transitions in the validation record.
 
@@ -670,7 +670,7 @@ Description: This final section runs the full Phase 5 gate from a clean determin
 
 Description: Execute corpus validation, parameter validation, all reads, representative update batches, checkpoint restoration, protocol reconciliation, scoring equivalence, and artifact validation as one fail-fast workflow.
 
-- [ ] 5D.5.1.1 Run all 31 variants with complete typed reference comparisons.
+- [x] 5D.5.1.1 Run all 31 variants with complete typed reference comparisons.
 - [ ] 5D.5.1.2 Apply and validate every mandatory update record family represented in the smoke fixture.
 - [ ] 5D.5.1.3 Reproduce initial answer hashes after full reset.
 - [ ] 5D.5.1.4 Inject incorrect answers, missing handlers, failed updates, timeouts, stale checkpoints, scorer mismatches, and incomplete artifacts and verify the run is ineligible.

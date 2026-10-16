@@ -8,21 +8,23 @@ not considered implemented until its typed, ordered result matches accepted answ
 ## Main findings
 
 - The current parser and executor cover broad SPARQL 1.1 syntax, aggregation,
-  OPTIONAL, UNION, ordering, slicing, and property paths. Full LDBC translations
-  and typed answer comparisons remain Phase 4-6 work.
+  OPTIONAL, UNION, ordering, slicing, and property paths. SNB BI now has complete
+  reduced-smoke translations or named adapters and typed answer comparisons;
+  other LDBC suites retain their independently recorded gaps.
 - BI 10, 15, 19, and 20 and Interactive 13 and 14 require path length, returned
   paths, or weighted path cost unavailable from standard SPARQL property paths.
   Phase 5 now provides the four BI operation adapters over bounded index-backed
   traversal. All nine BI graph variants pass their accepted-answer comparisons
-  on the reduced smoke profile; their entries remain `requires_extension`
-  because those operations use explicit graph adapters rather than standard
-  SPARQL execution.
+  on the reduced smoke profile. Their entries are `supported` for that profile:
+  `parse_support` remains `not_applicable` because the named adapters are the
+  declared execution boundary rather than SPARQL text.
 - The SNB BI protocol, scoring, atomic microbatch, checkpoint, artifact, standard
   analytical handler, and graph-adapter boundaries are implemented. Analytical
   capabilities now have complete checksum-pinned accepted-answer coverage and
   all 31 reduced smoke comparisons pass. Protocol reconciliation,
   pinned-scorer golden equivalence, and qualification artifact identities are
-  executable. The reduced fixture remains diagnostic and does not establish
+  executable. All 20 BI read entries are supported for the reduced smoke
+  profile. The reduced fixture remains diagnostic and does not establish
   official scale-factor conformance or comparable performance; see
   [the SNB BI guide](ldbc-snb-bi.md).
 - `TripleStore.query/3` does not enter the store transaction coordinator. Direct
