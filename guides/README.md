@@ -13,6 +13,10 @@ currently implements.
   query execution, optimization, reasoning, telemetry, and data flow.
 - [Performance targets](benchmarks/performance-targets.md) explains the
   repository's benchmark goals and executable benchmark suites.
+- [Running benchmarks](benchmarks/running-benchmarks.md) lists one script for
+  each currently executable benchmark family.
+- [WatDiv benchmarking](benchmarks/watdiv-benchmarking.md) documents the
+  official v0.6 artifact, provenance, reference-answer, and execution workflow.
 - [Wikidata benchmarking](benchmarks/wikidata-benchmarking.md) documents the
   current corpus tasks and generated reports.
 - [Ontology getting started](ontology/getting_started.md) is a short triple-store

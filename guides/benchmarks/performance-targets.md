@@ -16,12 +16,19 @@ query mix.
 
 ## Running benchmarks
 
-The standalone WatDiv script generates scale 1 data, loads it into a temporary
-store, and measures every query in `TripleStore.Benchmark.WatDivQueries`:
+The WatDiv workflow generates official v0.6 data and instantiated workloads,
+binds them to provenance manifests, and creates independent Apache Jena ARQ
+answers before it measures TripleStore:
 
 ~~~sh
-mix run scripts/run_benchmarks.exs
+./scripts/prepare_watdiv_benchmark.sh --scale 1
+./scripts/generate_watdiv_reference_answers.sh --help
+./scripts/run_watdiv_benchmark.sh --help
 ~~~
+
+See [WatDiv benchmarking](watdiv-benchmarking.md) for the complete commands and
+validity rules. See [Running benchmarks](running-benchmarks.md) for the gMark,
+Wikidata, LDBC SPB, and LDBC SNB BI entry points.
 
 Relevant excluded test suites can be selected explicitly:
 

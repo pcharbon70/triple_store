@@ -2,7 +2,11 @@ defmodule TripleStore.Benchmark.Runner do
   alias TripleStore.SPARQL.Query
 
   @moduledoc """
-  Benchmark execution infrastructure for measuring triple store performance.
+  Benchmark execution infrastructure for synthetic diagnostic suites.
+
+  The `:watdiv` mode uses the legacy WatDiv-shaped fixtures and is not a valid
+  official WatDiv comparison. Use `TripleStore.Benchmark.WatDiv.Runner` for the
+  provenance-bound, correctness-gated official workflow.
 
   Provides a unified interface for running maintained benchmark query suites with
   configurable warmup iterations, metric collection, and output formats.
@@ -395,9 +399,7 @@ defmodule TripleStore.Benchmark.Runner do
   end
 
   defp execute_query(db, sparql) do
-    # Try to execute the query using the SPARQL query interface
-    # This is a placeholder - the actual implementation depends on the store's API
-    case Query.execute(db, sparql) do
+    case Query.query(db, sparql) do
       {:ok, results} -> {:ok, results}
       {:error, reason} -> {:error, reason}
     end

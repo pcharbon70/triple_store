@@ -85,6 +85,9 @@ official or comparable score claims.
 Run the focused validation with:
 
 ```sh
+./scripts/run_ldbc_snb_bi_benchmark.sh
+
+# Individual development gates:
 mix test test/triple_store/benchmark/ldbc/phase_5_snb_bi_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs
 mix test test/triple_store/benchmark/ldbc/phase_5c_update_state_integration_test.exs

@@ -144,9 +144,19 @@ mix compile
 # Run tests
 mix test
 
-# Run benchmarks
-mix run bench/bsbm.exs
+# List and run the maintained benchmark entry points
+./scripts/prepare_watdiv_benchmark.sh --help
+./scripts/generate_watdiv_reference_answers.sh --help
+./scripts/run_watdiv_benchmark.sh --help
+./scripts/run_gmark_benchmark.sh --help
+./scripts/run_wikidata_benchmark.sh --help
+./scripts/run_ldbc_spb_benchmark.sh --help
+./scripts/run_ldbc_snb_bi_benchmark.sh --help
 ```
+
+See [Running benchmarks](guides/benchmarks/running-benchmarks.md) for scope,
+arguments, and qualification limits. SNB Interactive remains catalogued but is
+not runnable until its Phase 6 implementation is complete.
 
 `mix compile` builds the SPARQL parser NIF from `native/sparql_parser_nif` into `priv/native/`.
 Those native artifacts are generated locally and SHOULD NOT be committed.

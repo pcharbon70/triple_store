@@ -210,8 +210,10 @@ does not supply a working parser. Rebuild stale local parser artifacts after
 toolchain/branch changes rather than committing a platform-specific binary.
 
 Existing benchmark entry points include `mix benchmark.wikidata parser`,
-`mix benchmark.wikidata corpus-smoke`, `mix benchmark.wikidata smoke`, and
-`mix run scripts/run_benchmarks.exs` (WatDiv). See
+`mix benchmark.wikidata corpus-smoke`, `mix benchmark.wikidata smoke`, and the
+official WatDiv preparation, reference, and run scripts documented in
+`guides/benchmarks/watdiv-benchmarking.md`. The old
+`mix run scripts/run_benchmarks.exs` entry point is only a deprecated shim. See
 [Wikidata benchmarking](guides/benchmarks/wikidata-benchmarking.md) for baselines,
 correctness comparisons, and artifacts. README's `bench/bsbm.exs` is absent.
 Do not equate synthetic benchmark targets with measured production performance.
