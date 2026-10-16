@@ -179,6 +179,10 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrix do
       Map.get(entry, :execution_support) in @execution_states,
       {id, :execution_support, "is invalid"}
     )
+    |> maybe_error(
+      Map.get(entry, :status) != :supported or Map.get(entry, :execution_support) == :verified,
+      {id, :execution_support, "must be verified when status is supported"}
+    )
     |> maybe_error(is_list(Map.get(entry, :features)), {id, :features, "must be a list"})
     |> maybe_error(is_binary(Map.get(entry, :owner)), {id, :owner, "must be a module name"})
     |> maybe_error(

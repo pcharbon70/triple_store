@@ -21,10 +21,12 @@ answers for all 31 canonical variants. `SHA256SUMS` fixes the complete bundle,
 and `run-spec.json` binds the generation input to the current smoke source and
 RDF output checksums, canonical parameter rows, and pinned v1.0.3 source.
 
-The bundle is deliberately not listed in `manifest.exs` yet. Generating answers
-and binding them to the runtime manifest are separate review steps; until the
-binding is reviewed, `ReferenceAnswers` continues to report the existing
-contract fixture and missing accepted answers.
+`manifest.exs` binds each canonical variant to the bundle as an
+`accepted_answer`. `ReferenceAnswers` verifies the complete bundle checksum,
+selects the exact operation, variant, and parameter-row identity, verifies the
+selected parameter row and row checksum, and then decodes the rows through the
+operation's typed result contract. The checked-in smoke workflow therefore has
+complete accepted-answer coverage while remaining a reduced diagnostic profile.
 
 The pinned upstream project supplies a Neo4j/Cypher reference implementation.
 It is used here only as an external answer oracle over the source CSV fixture.

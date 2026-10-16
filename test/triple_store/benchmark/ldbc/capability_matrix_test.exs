@@ -26,15 +26,15 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     assert spb.execution_support == :verified
 
     bi_path = find_operation(matrix, "ldbc/snb-bi/read-19@v1.0.3")
-    assert bi_path.status == :requires_extension
+    assert bi_path.status == :supported
     assert bi_path.parse_support == :not_applicable
-    assert bi_path.execution_support == :unverified
+    assert bi_path.execution_support == :verified
     assert :path_cost in bi_path.features
 
     bi_standard = find_operation(matrix, "ldbc/snb-bi/read-12@v1.0.3")
-    assert bi_standard.status == :requires_fix
+    assert bi_standard.status == :supported
     assert bi_standard.parse_support == :verified
-    assert bi_standard.execution_support == :unverified
+    assert bi_standard.execution_support == :verified
 
     bi_update = find_operation(matrix, "ldbc/snb-bi/update-batch@v1.0.3")
     assert bi_update.status == :supported
@@ -46,6 +46,26 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
 
     v2_delete = find_operation(matrix, "ldbc/snb-interactive/delete-01@commit-30a73a28")
     assert v2_delete.status == :profile_exclusion
+  end
+
+  test "rejects a supported operation without verified execution" do
+    {:ok, matrix} = CapabilityMatrix.load()
+    operation = Enum.find(matrix.operations, &(&1.status == :supported))
+
+    invalid = %{
+      matrix
+      | operations:
+          Enum.map(matrix.operations, fn entry ->
+            if entry.operation_id == operation.operation_id,
+              do: %{entry | execution_support: :unverified},
+              else: entry
+          end)
+    }
+
+    assert {:error, errors} = CapabilityMatrix.validate(invalid, load_catalogs())
+
+    assert {operation.operation_id, :execution_support,
+            "must be verified when status is supported"} in errors
   end
 
   test "records ownership and evidence for transaction, reasoning, and resilience gaps" do
@@ -80,6 +100,11 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
   defp find_operation(matrix, id), do: Enum.find(matrix.operations, &(&1.operation_id == id))
   defp find_finding(matrix, id), do: Enum.find(matrix.system_findings, &(&1.id == id))
 
+  defp load_catalogs do
+    {:ok, catalogs} = Catalog.load_all()
+    catalogs
+  end
+
   defp expected_summary(matrix) do
     assert {:ok, definitions} = Workload.load()
     assert {:ok, qualification} = Qualification.matrix(definitions)
@@ -91,9 +116,14 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
       Map.new(qualification.operations, fn evidence ->
         status =
           cond do
-            evidence.qualified? -> :supported
-            evidence.extension? -> :requires_extension
-            true -> :requires_fix
+            evidence.implementation_available? and evidence.accepted_answers_complete? ->
+              :supported
+
+            evidence.extension? ->
+              :requires_extension
+
+            true ->
+              :requires_fix
           end
 
         {evidence.operation_id, status}
@@ -113,7 +143,7 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     case Map.fetch(bi_statuses, operation.operation_id) do
       {:ok, expected} ->
         assert operation.status == expected
-        assert_supported_is_qualified(operation, bi_evidence[operation.operation_id])
+        assert_supported_has_structural_evidence(operation, bi_evidence[operation.operation_id])
         expected
 
       :error ->
@@ -121,8 +151,12 @@ defmodule TripleStore.Benchmark.LDBC.CapabilityMatrixTest do
     end
   end
 
-  defp assert_supported_is_qualified(%{status: :supported}, evidence),
-    do: assert(evidence.qualified?)
+  defp assert_supported_has_structural_evidence(%{status: :supported} = operation, evidence) do
+    assert evidence.implementation_available?
+    assert evidence.accepted_answers_complete?
 
-  defp assert_supported_is_qualified(_operation, _evidence), do: :ok
+    assert "test/triple_store/benchmark/ldbc/phase_5b_read_correctness_integration_test.exs" in operation.evidence
+  end
+
+  defp assert_supported_has_structural_evidence(_operation, _evidence), do: :ok
 end

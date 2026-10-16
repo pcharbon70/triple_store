@@ -17,7 +17,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase1FoundationIntegrationTest do
     assert report.finding_count == 12
     assert report.architecture_decision == "ADR-0002"
     assert map_size(report.catalog_digests) == 4
-    assert report.capability_summary.requires_extension == 6
+    assert report.capability_summary.requires_extension == 2
     assert report.capability_summary.profile_exclusion == 17
   end
 

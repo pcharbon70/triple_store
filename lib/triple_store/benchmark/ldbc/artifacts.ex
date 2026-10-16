@@ -3,7 +3,8 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
   Writes versioned, checksummed evidence for an LDBC benchmark run.
 
   Diagnostic reports always include raw failures and correctness. The official
-  score field appears only when every declared protocol gate passes.
+  score field appears only when every declared protocol gate passes and a BI run
+  has complete qualification evidence with an explicitly comparable profile.
   """
 
   alias TripleStore.Benchmark.LDBC.SNB.BI.StateIdentity
@@ -55,13 +56,14 @@ defmodule TripleStore.Benchmark.LDBC.Artifacts do
     gates = Map.get(run, :gates, %{})
     qualification = Map.get(run, :qualification)
     qualification_complete? = qualification_complete?(qualification)
+    comparable? = get_in(run, [:disclosure, :comparable]) == true
 
     eligible? =
       Enum.all?(@required_gates, &(Map.get(gates, &1) == true)) and
-        (not bi_run?(run) or qualification_complete?)
+        (not bi_run?(run) or (qualification_complete? and comparable?))
 
     claim_profile =
-      if bi_run?(run) and eligible? and get_in(run, [:disclosure, :comparable]) == true,
+      if bi_run?(run) and eligible?,
         do: :comparable,
         else: :diagnostic
 

@@ -8,11 +8,12 @@ and throughput protocols. Official score names remain gated on exact protocol an
 correctness compliance.
 
 Implementation status: the workload, parameter, traversal, atomic update,
-checkpoint, protocol, scoring, and artifact boundaries are implemented. Exact
-analytical handlers and accepted answers for every read remain open, so this
-phase is not yet correctness-qualified and cannot emit a comparable score. See
-[the validation record](phase-05-validation-record.md). The remaining work is
-sequenced in the
+checkpoint, protocol, scoring, and artifact boundaries are implemented. Every
+read has an exact handler or named graph adapter, and all 31 variants match
+checksum-pinned accepted answers for the reduced smoke profile. That profile is
+correctness-qualified and remains diagnostic; official scale-factor and
+comparable-score qualification are still open. See [the validation
+record](phase-05-validation-record.md). The remaining work is sequenced in the
 [Phase 5 correctness qualification sub-plan](phase-05-correctness-qualification-sub-plan.md).
 
 ---
@@ -81,7 +82,7 @@ shortest paths or other graph algorithms beyond standard SPARQL 1.1 connectivity
   cancellation, timeout, and deterministic tie behavior.
 - [x] 5.2.2.3 Keep graph algorithms inside a measurable engine boundary; prohibit
   driver-side graph extraction followed by hidden computation.
-- [ ] 5.2.2.4 Validate weighted distance, reachability, path bounds, and disconnected
+- [x] 5.2.2.4 Validate weighted distance, reachability, path bounds, and disconnected
   cases against a reference implementation.
 - [x] 5.2.2.5 Add explain and telemetry output sufficient to diagnose traversal cost.
 
@@ -155,8 +156,8 @@ update batches, reference answers, protocol execution, scoring, and cleanup.
 Description: Execute every canonical BI operation against a deterministic smoke
 dataset and verify exact typed results.
 
-- [ ] 5.5.1.1 Run all BI reads and variants with smoke validation parameters.
-- [ ] 5.5.1.2 Compare full ordered results with the designated reference implementation.
+- [x] 5.5.1.1 Run all BI reads and variants with smoke validation parameters.
+- [x] 5.5.1.2 Compare full ordered results with the designated reference implementation.
 - [ ] 5.5.1.3 Apply representative insert/delete batches and repeat affected answers.
 - [ ] 5.5.1.4 Exercise empty, disconnected, tie, overflow, large-aggregation, and
   weighted-path boundary cases.
@@ -180,7 +181,7 @@ Description: Establish SNB BI as correctness-qualified for scheduled scale runs.
 
 - [x] 5.5.3.1 Run formatting, strict compilation, affected query/update/path tests,
   and the complete BI smoke integration suite.
-- [ ] 5.5.3.2 Verify the operation catalog has no unimplemented mandatory BI item.
+- [x] 5.5.3.2 Verify the operation catalog has no unimplemented mandatory BI item.
 - [ ] 5.5.3.3 Generate and validate all BI result, correctness, score-input, environment,
   and disclosure artifacts.
 - [ ] 5.5.3.4 Record exact commands, counts, protocol reductions, and excluded large

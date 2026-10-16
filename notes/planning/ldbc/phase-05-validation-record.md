@@ -47,27 +47,27 @@ Reference-answer coverage is recorded explicitly rather than inferred:
 
 | Coverage kind | Canonical variants | Evidence |
 | --- | ---: | --- |
-| Checked-in | 1 | BI 1 `default`, parameter row 0 |
+| Checked-in | 31 | All canonical variants, parameter row 0 |
 | External | 0 | No immutable external answer bundle is registered |
-| Missing | 30 | Lookup returns `reference_answer_not_found` |
+| Missing | 0 | The runtime manifest has complete variant coverage |
 
-The checked-in BI 1 tuple is a deterministic contract fixture bound to the
-smoke dataset, parameter row, operation source, and pinned reference-source
-identity. It supplies the single deterministic tuple required by the Phase 5A
-exit gate; it is not represented as complete reference-engine output. Synthetic
-test-only contract fixtures prove empty, duplicate-bearing, ordered, timestamp,
+The checked-in bundle contains independently generated row-zero answers from the
+pinned external reference implementation. Each runtime entry binds the smoke
+dataset checksum, parameter row, operation source, reference source, complete
+bundle checksum, and selected row checksum. Synthetic test-only contract
+fixtures continue to prove empty, duplicate-bearing, ordered, timestamp,
 32/64-bit integer, and floating-point round trips, along with missing-row,
 unexpected-row, ordering, type, provenance, and deterministic-hash failures.
-They are not accepted benchmark answers.
 
-## Phase 5A qualification boundary
+## Historical Phase 5A qualification boundary
 
-The checked-in smoke fixture is not an official scale-factor dataset and has no
-accepted answer corpus for all BI operations. Thirty canonical variants still
-lack registered reference answers. At the end of Phase 5A, exact analytical
-handlers for BI 1-9, 11-14, and 16-18 and operation-specific graph adapters for
-BI 10, 15, 19, and 20 remained open. Phase 5B implements those handlers, as
-recorded below. The capability matrix remains intentionally unchanged because
+At the end of Phase 5A, the checked-in smoke fixture was not an official
+scale-factor dataset and did not yet have an accepted answer corpus for all BI
+operations. Thirty canonical variants lacked registered reference answers.
+Exact analytical handlers for BI 1-9, 11-14, and 16-18 and operation-specific
+graph adapters for BI 10, 15, 19, and 20 remained open. Phase 5B implements
+those handlers, as recorded below. The capability matrix remains intentionally
+unchanged because
 implementation availability alone does not establish accepted-answer
 correctness, and the reduced workflow exposes only diagnostic scores.
 
@@ -98,14 +98,13 @@ Timeout, cancellation, and result-contract
 failures remain per-variant evidence and prevent qualification without erasing
 the other results.
 
-The reference manifest uses schema version 2 to distinguish an
-`accepted_answer` from a `contract_fixture`. The one embedded BI 1 artifact is a
-contract fixture and is ineligible for accepted-answer comparison; 30 variants
-have no artifact. Consequently all 20 BI capability entries remain unpromoted,
-and the Sub-Phase 5B exit gate is blocked on a complete immutable accepted-answer
-bundle from the pinned reference implementation. The reduced smoke data and
-synthetic parameter rows also remain diagnostic rather than comparable-run
-evidence.
+At the Phase 5B checkpoint, the schema-version-2 reference manifest contained
+one embedded BI 1 contract fixture and no artifact for the other 30 variants.
+That checkpoint therefore left all 20 BI capability entries unpromoted and the
+Sub-Phase 5B exit gate blocked on a complete immutable accepted-answer bundle.
+The later post-Phase 5 binding below supersedes that answer-coverage state. The
+reduced smoke data and synthetic parameter rows remain diagnostic rather than
+comparable-run evidence.
 
 ## Phase 5C update and state qualification
 
@@ -185,16 +184,39 @@ smoke workflow executes 31 reads plus one update, reconciles 32 score records,
 restores the initial checkpoint with identical execution digests, and validates
 the completed artifact set.
 
-The Phase 5D implementation remains deliberately diagnostic. Thirty variants
-still have no immutable accepted answer, and the BI 1 artifact remains a
-`contract_fixture`. The qualification envelope therefore reports
-`accepted_answers_incomplete` and `result_comparison_incomplete`; capability
-entries remain unpromoted and Phase 5 is not correctness-qualified. Supplying a
-complete immutable answer bundle from the pinned reference implementation is an
-external evidence prerequisite for closing the remaining gate.
+The Phase 5D implementation remains deliberately diagnostic. The later
+accepted-answer binding closes the reduced smoke answer and comparison blockers,
+but the synthetic smoke dataset and parameter provenance remain ineligible for
+official scale-factor or comparable performance claims.
+
+## Post-Phase 5 accepted-answer binding
+
+The generated v1.0.3 bundle is now bound into the schema-version-2 runtime
+manifest for all 31 canonical variants. `ReferenceAnswers` verifies the bundle
+checksum, exact operation/variant/parameter-row selection, parameter values,
+and canonical selected-row checksum before typed decoding. The external
+Neo4j/Cypher implementation remains an isolated answer-generation oracle;
+TripleStore continues to execute SPARQL over its RDF triple/quad model.
+
+All 31 reduced smoke executions match their accepted answers before update,
+after the deterministic update microbatch, and after checkpoint restore. The
+qualification envelope has no accepted-answer or result-comparison blocker,
+while artifact scoring remains in the diagnostic namespace. The capability
+matrix therefore promotes all 20 BI read operations to `supported` with verified
+execution for the reduced smoke profile. This promotion does not change the
+official scale-factor or comparable-performance boundary.
 
 ## Executed checks
 
+- Capability reconciliation focused regressions: 11 tests, 0 failures
+- Capability reconciliation complete LDBC regression directory: 179 tests, 0
+  failures
+- Accepted-answer binding and Phase 5A/5B/5D focused regressions: 40 tests, 0
+  failures
+- Accepted-answer binding complete LDBC regression directory: 178 tests, 0
+  failures
+- Reduced smoke qualification: 31 execution passes and 31 accepted-answer
+  comparison passes before update and after checkpoint restore
 - Phase 5D focused SNB BI and Phase 5 integration gates: 92 tests, 0 failures
 - Phase 5D complete LDBC regression directory after review remediation: 175
   tests, 0 failures
@@ -219,7 +241,7 @@ external evidence prerequisite for closing the remaining gate.
 - Phase 5B `mix dialyzer --format short`: 0 errors and 0 skipped warnings
 - Phase 5B contextual qualification and adjacent SNB BI regressions: 61 tests,
   0 failures
-- Phase 5B reduced smoke qualification: 31 execution passes, 1 ineligible
+- Historical Phase 5B reduced smoke qualification: 31 execution passes, 1 ineligible
   contract fixture, 30 missing accepted answers, 0 capability promotions
 - Phase 5B `mix credo --strict`: no issues
 - Phase 5B strict application compilation: passed; warnings came from third-party

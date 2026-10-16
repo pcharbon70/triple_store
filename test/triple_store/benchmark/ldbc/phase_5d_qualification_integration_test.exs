@@ -19,7 +19,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
 
   @moduletag :integration
 
-  test "Phase 5D reconciles complete diagnostic execution and preserves qualification blockers",
+  test "Phase 5D reconciles complete diagnostic execution and accepted-answer evidence",
        %{test: test} do
     root = tmp_dir(test)
     on_exit(fn -> File.rm_rf!(root) end)
@@ -51,7 +51,8 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
              )
 
     assert before.execution == %{pass: 31}
-    assert before.comparisons == %{blocked: 31}
+    assert before.comparisons == %{pass: 31}
+    assert before.qualified?
     update = Enum.find(manifest.components, &(&1.role == :bi_update_batch))
     assert {:ok, schedule} = Protocol.schedule(:power)
 
@@ -120,13 +121,9 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
                updates_complete?: true
              )
 
-    refute qualification.complete?
+    assert qualification.complete?
     assert qualification.operation_count == 31
-
-    assert qualification.blockers == [
-             :accepted_answers_incomplete,
-             :result_comparison_incomplete
-           ]
+    assert qualification.blockers == []
 
     assert {:ok, restored, restored_identity} =
              Checkpoint.restore(fixture, checkpoint, initial_identity)
@@ -140,6 +137,7 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
              )
 
     assert execution_digests(after_restore) == execution_digests(before)
+    assert comparison_digests(after_restore) == comparison_digests(before)
 
     artifact_run = %{
       suite: :snb_bi,
@@ -216,6 +214,10 @@ defmodule TripleStore.Benchmark.LDBC.Phase5DQualificationIntegrationTest do
 
   defp execution_digests(run) do
     Map.new(run.entries, &{{&1.operation_id, &1.variant}, &1.execution.digest})
+  end
+
+  defp comparison_digests(run) do
+    Map.new(run.entries, &{{&1.operation_id, &1.variant}, &1.comparison.digest})
   end
 
   defp qualification_identities(manifest, definitions, parameters, run, checkpoint) do
